@@ -1,0 +1,37 @@
+{
+  "version": "4.1.0",
+  "performance": {
+    "cache": {
+      "enabled": true,
+      "ttl_seconds": 3600,
+      "max_size": 1000,
+      "compression": true
+    },
+    "vector_search": {
+      "top_k": 20,
+      "max_distance": 0.8,
+      "use_ann": true,
+      "ann_algorithm": "hnsw"
+    },
+    "embedding": {
+      "batch_size": 10,
+      "timeout_ms": 30000,
+      "cache_embeddings": true
+    },
+    "gpu": {
+      "enabled": true,
+      "backend": "auto",
+      "fallback_to_cpu": true
+    },
+    "avx512": {
+      "enabled": true,
+      "auto_detect": true
+    }
+  },
+  "optimization": {
+    "auto_vacuum": true,
+    "auto_reindex": true,
+    "cleanup_orphans": true,
+    "backup_before_optimize": true
+  }
+}

@@ -1,0 +1,94 @@
+{
+  "id": "claw-core",
+  "name": "小艺 Claw 核心引擎",
+  "description": "将 xiaoyi-claw-omega-final 的 13 层架构（防幻觉、知识图谱、CRAG、投机解码等 119 个模块）注册为 OpenClaw 插件，提供增强记忆检索、防幻觉验证、系统健康检测、R-CCAM 认知循环等能力。支持常驻 Python Worker 进程（零进程开销，硬件加速预热）。v4 新增 DAG 上下文管理器（SQLite 持久化 + 摘要回溯），集成到 ContextEngine 的 ingest/compact 流程。",
+  "contracts": {
+    "contextEngine": {
+      "id": "claw-core-engine"
+    },
+    "tools": [
+      "claw_recall",
+      "claw_health",
+      "claw_store",
+      "claw_verify",
+      "claw_rccam"
+    ]
+  },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": true,
+    "properties": {
+      "autoRecall": {
+        "type": "object",
+        "description": "对话中自动增强检索",
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "default": true,
+            "description": "是否启用自动增强记忆检索"
+          }
+        }
+      },
+      "contextEngine": {
+        "type": "object",
+        "description": "ContextEngine 上下文引擎配置（要求 OpenClaw >= 2026.3.7）",
+        "properties": {
+          "maxRecentMessages": {
+            "type": "number",
+            "default": 20,
+            "description": "压缩时保留的最近消息条数"
+          },
+          "recallOnAssemble": {
+            "type": "boolean",
+            "default": true,
+            "description": "assemble 时是否注入增强检索结果"
+          },
+          "dagEnabled": {
+            "type": "boolean",
+            "default": true,
+            "description": "是否启用 DAG 上下文管理器（SQLite 持久化、摘要节点回溯）"
+          }
+        }
+      },
+      "tools": {
+        "type": "object",
+        "description": "工具注册配置",
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "default": true,
+            "description": "是否注册工具到 agent"
+          }
+        }
+      },
+      "communication": {
+        "type": "object",
+        "description": "通信通道配置（ZMQ/mmap/UDS），默认值开箱即用，一般无需修改",
+        "properties": {
+          "zmqPort": {
+            "type": "number",
+            "default": 5559,
+            "description": "ZMQ PUB 事件推送端口（Worker → Plugin）"
+          },
+          "mmapPath": {
+            "type": "string",
+            "default": "/dev/shm/claw_dag_cache",
+            "description": "mmap 共享内存文件路径（DAG 上下文零拷贝）"
+          }
+        }
+      },
+      "worker": {
+        "type": "object",
+        "description": "常驻 Python Worker 进程配置",
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "default": true,
+            "description": "是否启用常驻 Worker 进程（替换 spawnSync，MKL/FMA/io_uring 预热后零进程开销）"
+          }
+        }
+      }
+    }
+  },
+  "main": "dist/index.js"
+}

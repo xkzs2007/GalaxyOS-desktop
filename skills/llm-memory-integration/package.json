@@ -1,0 +1,29 @@
+{
+  "name": "llm-memory-integration",
+  "version": "2.1.4",
+  "description": "LLM + 向量模型集成方案。支持任意 LLM + Embedding 模型，用户自行配置。支持混合检索、智能路由、渐进式启用、用户画像自动更新。",
+  "license": "MIT-0",
+  "author": "xkzs2007",
+  "homepage": "https://clawhub.ai/skill/llm-memory-integration",
+  "keywords": ["llm", "embedding", "memory", "search", "vector", "hybrid", "rrf"],
+  "requirements": {
+    "binaries": {
+      "required": ["python3", "sqlite3"],
+      "description": "Python 3 for running scripts, SQLite 3 for vector database"
+    },
+    "envVars": {
+      "required": ["EMBEDDING_API_KEY"],
+      "optional": ["LLM_API_KEY"],
+      "description": "API keys for embedding and LLM services - must be configured by user"
+    },
+    "network": {
+      "required": true,
+      "endpoints": "user-configured",
+      "description": "Calls to user-configured LLM and embedding API endpoints"
+    }
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://clawhub.ai/skill/llm-memory-integration"
+  }
+}

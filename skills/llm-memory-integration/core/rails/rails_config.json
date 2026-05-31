@@ -1,0 +1,45 @@
+{
+  "description": "小艺 Claw Rails 护栏默认配置文件（2026-05-12）",
+  "version": "1.0.0",
+  "defaults": {
+    "scope_defaults": {
+      "user": "allow",
+      "session": "allow",
+      "feature": "allow",
+      "admin": "deny",
+      "export": "ask_user",
+      "external": "ask_user"
+    }
+  },
+  "features": {
+    "memory_write": {
+      "default": "allow",
+      "description": "写入记忆操作"
+    },
+    "memory_read": {
+      "default": "allow",
+      "description": "读取记忆操作"
+    },
+    "memory_delete": {
+      "default": "ask_user",
+      "description": "删除记忆（需要确认）"
+    },
+    "export_file": {
+      "default": "ask_user",
+      "description": "导出文件（需要确认）"
+    },
+    "network_access": {
+      "default": "ask_user",
+      "description": "网络访问（需要确认）"
+    },
+    "execute_command": {
+      "default": "deny",
+      "description": "执行系统命令（默认拒绝）"
+    },
+    "tool_install": {
+      "default": "deny",
+      "description": "安装新工具/技能（默认拒绝）"
+    }
+  },
+  "override_rules": []
+}

@@ -1,0 +1,92 @@
+/**
+ * Claw Bootstrap Hook V4 - DAG 上下文管理器版
+ * 
+ * 替代 OpenClaw 默认的 safeguard 有损压缩，
+ * 使用 DAG 上下文管理器进行无损上下文管理。
+ * 
+ * 流程:
+ *   1. 每次消息到来 → DAG 添加消息节点
+ *   2. 人格节点 priority:critical → 永不压缩、永不裁减
+ *   3. DAG 增量摘要 → 旧消息自动打包摘要
+ *   4. DAG 组装 → 替换 event.messages
+ *   5. 语义缓存 → 同 session 零重复组装
+ */
+const handler = async (event) => {
+  if (event.type !== "message" || event.action !== "received") {
+    return;
+  }
+
+  const WS = event.context?.workspaceDir || "/home/sandbox/.openclaw/workspace";
+  const userText = event.context?.content || "";
+  const sessionKey = event.context?.session?.sessionKey || 
+                     event.messages?.[0]?.sessionKey || 
+                     "default";
+
+  if (!userText || userText.trim().length < 2) {
+    return;
+  }
+
+  const DAG_SHIM = `${WS}/scripts/dag_shim.py`;
+
+  try {
+    const { exec } = await import("child_process");
+    const util = await import("util");
+    const execPromise = util.promisify(exec);
+    // OpenClaw 环境下使用 event.run
+    const run = typeof event.run === "function" ? event.run : null;
+
+    // === Step 0: 首次调用时初始化 DAG + 人格注入 ===
+    // 通过检查人格节点是否存在来判断（首次会话或 /new 后）
+    const isFirstMessage = !event.messages || event.messages.length === 0;
+    
+    if (isFirstMessage) {
+      try {
+        const cmd = `python3 "${DAG_SHIM}" init --session "${sessionKey}" 2>/dev/null`;
+        const { stdout } = await execPromise(cmd, { timeout: 5000 });
+        const initResult = JSON.parse(stdout);
+        console.log(`[dag] 初始化完成: ${initResult.persona_tokens} tokens 人格`);
+      } catch (initErr) {
+        // 首次初始化失败可能因为之前已初始化，静默跳过
+        console.error(`[dag] init warning: ${initErr.message}`);
+      }
+    }
+
+    // === Step 1: 添加消息到 DAG ===
+    try {
+      const addCmd = `python3 "${DAG_SHIM}" add --session "${sessionKey}" --msg "${userText.replace(/"/g, '\\"').replace(/'/g, '\\'')}" --role user 2>/dev/null`;
+      const { stdout: addOut } = await execPromise(addCmd, { timeout: 8000 });
+      const addResult = JSON.parse(addOut);
+      if (addResult.summary?.summarized > 0) {
+        console.log(`[dag] 增量摘要: ${addResult.summary.summarized} 条`);
+      }
+    } catch (addErr) {
+      console.error(`[dag] add message error: ${addErr.message}`);
+      // add 失败不影响流程
+    }
+
+    // === Step 2: 用 DAG 组装替换 event.messages ===
+    try {
+      const assemCmd = `python3 "${DAG_SHIM}" assemble --session "${sessionKey}" 2>/dev/null`;
+      const { stdout: assemOut } = await execPromise(assemCmd, { timeout: 10000 });
+      const assemResult = JSON.parse(assemOut);
+      
+      if (assemResult.assembled_text) {
+        // 用 DAG 组装的上下文替换 event.messages
+        // 人格(priority:critical) + 最近消息 + 摘要 已由 DAG 组装好
+        event.messages = [{ role: "system", content: assemResult.assembled_text }];
+        
+        const stats = assemResult.stats || {};
+        console.log(`[dag] 组装完成: ${stats.total_tokens}/${stats.max_tokens}t, ` +
+                    `人格=${stats.critical_nodes}, 最近=${stats.recent_messages}, ` +
+                    `摘要=${stats.summary_nodes_used}, 缓存=${stats.from_cache || stats.cached}`);
+      }
+    } catch (assemErr) {
+      console.error(`[dag] assemble error: ${assemErr.message}`);
+    }
+
+  } catch (err) {
+    console.error(`[dag] fatal: ${err.message}`);
+  }
+};
+
+export default handler;

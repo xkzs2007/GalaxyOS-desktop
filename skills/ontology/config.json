@@ -1,0 +1,5 @@
+{
+  "db_path": "~/.openclaw/workspace/ontology.db",
+  "entity_types": ["Person", "Project", "Task", "Event", "Document"],
+  "auto_index": true
+}

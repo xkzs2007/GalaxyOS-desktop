@@ -1,0 +1,43 @@
+{
+  "id": "openclaw-better-gateway",
+  "name": "Better Gateway",
+  "version": "1.2.5",
+  "description": "Enhanced gateway UI with auto-reconnect, WebSocket handling, and File API",
+  "main": "dist/index.js",
+  "configSchema": {
+    "type": "object",
+    "properties": {
+      "reconnectIntervalMs": {
+        "type": "number",
+        "default": 3000,
+        "description": "WebSocket reconnection interval in milliseconds"
+      },
+      "maxReconnectAttempts": {
+        "type": "number",
+        "default": 10,
+        "description": "Maximum number of reconnection attempts before giving up"
+      },
+      "maxFileSize": {
+        "type": "number",
+        "default": 10485760,
+        "description": "Maximum file size in bytes for File API operations (default: 10MB)"
+      },
+      "autoReconnectOnGap": {
+        "type": "boolean",
+        "default": true,
+        "description": "Automatically reconnect when an event-gap message is detected"
+      },
+      "autoReconnectOnVisibility": {
+        "type": "boolean",
+        "default": true,
+        "description": "Automatically reconnect when the tab becomes visible after being hidden"
+      },
+      "visibilityReconnectThresholdMs": {
+        "type": "number",
+        "default": 30000,
+        "description": "How long the tab must be hidden (ms) before a visibility reconnect is triggered (default: 30s)"
+      }
+    },
+    "required": []
+  }
+}

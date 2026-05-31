@@ -1,0 +1,10 @@
+{
+  "name": "example-skill",
+  "version": "1.0.0",
+  "description": "示例技能配置",
+  "enabled": true,
+  "options": {
+    "demo_mode": true,
+    "verbose": false
+  }
+}

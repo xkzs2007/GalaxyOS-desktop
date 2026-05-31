@@ -1,0 +1,79 @@
+{
+  "version": "4.1.0",
+  "name": "xiaoyi-claw-omega-final",
+  "description": "六层架构智能助手 - 融合版",
+  "layers": {
+    "L1": {
+      "name": "Core",
+      "module": "core.prompt_integration",
+      "enabled": true
+    },
+    "L2": {
+      "name": "Memory",
+      "module": "memory_context.memory_manager",
+      "enabled": true
+    },
+    "L3": {
+      "name": "Orchestration",
+      "module": "orchestration.task_engine",
+      "enabled": true
+    },
+    "L4": {
+      "name": "Execution",
+      "module": "execution.skill_adapter_gateway",
+      "enabled": true
+    },
+    "L5": {
+      "name": "Governance",
+      "module": "governance.security.auth_integration",
+      "enabled": true
+    },
+    "L6": {
+      "name": "Infrastructure",
+      "module": "infrastructure.integration",
+      "enabled": true
+    }
+  },
+  "features": {
+    "avx512": true,
+    "gpu": true,
+    "quantization": true,
+    "ann": true,
+    "memory_integration": true,
+    "skill_registry": true,
+    "auto_capture": true,
+    "auto_recall": true,
+    "embedding": true,
+    "tfidf": true,
+    "git_notes": true,
+    "push_to_hiboard": true
+  },
+  "integrations": {
+    "llm_memory_integration": {
+      "enabled": true,
+      "path": "../llm-memory-integration",
+      "priority": 1
+    },
+      "enabled": true,
+      "plugin": true,
+      "priority": 2
+    },
+    "git_notes_memory": {
+      "enabled": true,
+      "priority": 3
+    },
+    "vector_memory_hack": {
+      "enabled": true,
+      "priority": 4
+    },
+    "today_task": {
+      "enabled": true,
+      "push_enabled": true
+    }
+  },
+  "optimization": {
+    "config_file": "performance_config.json",
+    "monitor_config": "monitor_config.json",
+    "priority_config": "priority_config.json"
+  }
+}

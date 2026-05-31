@@ -1,0 +1,2615 @@
+{
+  "version": "1.0.0",
+  "total_modules": 128,
+  "layers": {
+    "L1_memory_core": 11,
+    "L2_retrieval": 12,
+    "L3_vector": 7,
+    "L4_llm": 8,
+    "L5_cache": 6,
+    "L6_hardware": 13,
+    "L7_coordination": 5,
+    "L8_reliability": 5,
+    "L9_session": 3,
+    "L10_persona": 7,
+    "L11_nlp": 2,
+    "L12_integration": 49
+  },
+  "modules": {
+    "sqlite_vec": {
+      "description": "sqlite-vec 扩展包装模块",
+      "depends_on": [
+        "sqlite_vec"
+      ],
+      "external_deps": [
+        "pysqlite3"
+      ],
+      "provides": [
+        "get_sqlite_module",
+        "find_vec0_extension",
+        "connect",
+        "_validate_extension_path",
+        "connect_with_extension",
+        "get_vec_version",
+        "is_vec_available",
+        "get_installation_guide",
+        "print_status"
+      ],
+      "file": "skills/llm-memory-integration/core/sqlite_vec.py"
+    },
+    "exceptions": {
+      "description": "统一异常体系",
+      "depends_on": [],
+      "external_deps": [],
+      "provides": [
+        "SkillError",
+        "EmbeddingError",
+        "LLMError",
+        "CacheError",
+        "SafetyError",
+        "SearchError",
+        "AuthenticationError",
+        "DependencyError",
+        "SerializationError",
+        "__init__"
+      ],
+      "file": "skills/llm-memory-integration/core/exceptions.py"
+    },
+    "memory_bank": {
+      "description": "记忆银行 (Memory Bank)",
+      "depends_on": [],
+      "external_deps": [
+        "numpy"
+      ],
+      "provides": [
+        "MemoryBankError",
+        "BankMemory",
+        "MemoryBank",
+        "main",
+        "__post_init__",
+        "get_age_days",
+        "get_retention_score",
+        "to_dict",
+        "from_dict",
+        "__init__"
+      ],
+      "file": "skills/llm-memory-integration/core/memory_bank.py"
+    },
+    "semantic_cache": {
+      "description": "语义缓存模块 (Semantic Cache)",
+      "depends_on": [],
+      "external_deps": [
+        "httpx",
+        "numpy"
+      ],
+      "provides": [
+        "SemanticCacheEntry",
+        "EmbeddingClient",
+        "SemanticCache",
+        "__init__",
+        "embed",
+        "_embed_urllib",
+        "batch_embed",
+        "__init__",
+        "get",
+        "put"
+      ],
+      "file": "skills/llm-memory-integration/core/semantic_cache.py"
+    },
+    "zram_detector": {
+      "description": "ZRAM/Zswap 内存压缩检测模块",
+      "depends_on": [],
+      "external_deps": [],
+      "provides": [
+        "ZRAMDetector",
+        "ZswapDetector",
+        "MemoryCompressionStatus",
+        "check_zram_status",
+        "check_zswap_status",
+        "get_memory_compression_status",
+        "print_memory_compression_status",
+        "__init__",
+        "_detect",
+        "_get_zram_device_info"
+      ],
+      "file": "skills/llm-memory-integration/core/zram_detector.py"
+    },
+    "visual_generation": {
+      "description": "视觉生成模块 - Visual Generation Module",
+      "depends_on": [],
+      "external_deps": [],
+      "provides": [
+        "VisualGenerator",
+        "VisualGenerationWorkflow",
+        "visualize_memory",
+        "visualize_concept",
+        "generate_image",
+        "__init__",
+        "generate_image",
+        "visualize_memory",
+        "visualize_knowledge_graph",
+        "enhance_report"
+      ],
+      "file": "skills/llm-memory-integration/core/visual_generation.py"
+    },
+    "graph_constructor": {
+      "description": "Graph Constructor - 知识图谱构建器",
+      "depends_on": [],
+      "external_deps": [
+        "numpy"
+      ],
+      "provides": [
+        "Entity",
+        "Relation",
+        "GraphConstructor",
+        "to_dict",
+        "from_dict",
+        "to_dict",
+        "__init__",
+        "_generate_id",
+        "add_entity",
+        "add_relation"
+      ],
+      "file": "skills/llm-memory-integration/core/graph_constructor.py"
+    },
+    "unified_vector_store": {
+      "description": "统一向量存储接口",
+      "depends_on": [],
+      "external_deps": [
+        "faiss",
+        "numpy"
+      ],
+      "provides": [
+        "VectorRecord",
+        "VectorStoreBackend",
+        "SQLiteVecBackend",
+        "FAISSBackend",
+        "UnifiedVectorStore",
+        "get_vector_store",
+        "add_memory_vectors",
+        "search_memory",
+        "add",
+        "search"
+      ],
+      "file": "skills/llm-memory-integration/core/unified_vector_store.py"
+    },
+    "io_optimizer": {
+      "description": "I/O 优化模块 (I/O Optimizer)",
+      "depends_on": [],
+      "external_deps": [],
+      "provides": [
+        "IODevice",
+        "IOOptimizationRecommendation",
+        "BlockDeviceScanner",
+        "IOOptimizer",
+        "get_io_optimizer",
+        "check_io_status",
+        "__init__",
+        "_scan_devices",
+        "_parse_device",
+        "_check_io_uring"
+      ],
+      "file": "skills/llm-memory-integration/core/io_optimizer.py"
+    },
+    "numa_optimizer": {
+      "description": "NUMA 亲和性优化模块",
+      "depends_on": [],
+      "external_deps": [],
+      "provides": [
+        "NUMATopology",
+        "NUMAOptimizer",
+        "get_numa_optimizer",
+        "check_numa_status",
+        "__init__",
+        "_check_numactl",
+        "_detect_topology",
+        "_parse_cpu_range",
+        "get_info",
+        "is_numa_available"
+      ],
+      "file": "skills/llm-memory-integration/core/numa_optimizer.py"
+    },
+    "gat_layer": {
+      "description": "GAT Layer - 图注意力层",
+      "depends_on": [],
+      "external_deps": [
+        "numpy",
+        "torch"
+      ],
+      "provides": [
+        "GraphAttentionLayer",
+        "SparseGraphAttentionLayer",
+        "MultiHeadGraphAttentionLayer",
+        "GATLayer",
+        "GAT",
+        "__init__",
+        "reset_parameters",
+        "forward",
+        "__repr__",
+        "__init__"
+      ],
+      "file": "skills/llm-memory-integration/core/gat_layer.py"
+    },
+    "memory_ontology_bridge": {
+      "description": "记忆与知识图谱桥接模块",
+      "depends_on": [],
+      "external_deps": [],
+      "provides": [
+        "Entity",
+        "MemoryEntityLink",
+        "OntologyReader",
+        "EntityExtractor",
+        "MemoryOntologyBridge",
+        "get_bridge",
+        "link_memory",
+        "get_entity_info",
+        "__init__",
+        "_load_graph"
+      ],
+      "file": "skills/llm-memory-integration/core/memory_ontology_bridge.py"
+    },
+    "module_coordinator": {
+      "description": "模块协同与进程管理器 (Module Coordinator)",
+      "depends_on": [],
+      "external_deps": [],
+      "provides": [
+        "ModuleLayer",
+        "ProcessStatus",
+        "EventType",
+        "Event",
+        "WorkerSpec",
+        "WorkerInfo",
+        "PipelineStage",
+        "PipelineSpec",
+        "EventBus",
+        "ProcessManager"
+      ],
+      "file": "skills/llm-memory-integration/core/module_coordinator.py"
+    },
+    "platform_adapter": {
+      "description": "Platform Adapter - 跨平台兼容层",
+      "depends_on": [],
+      "external_deps": [
+        "numpy"
+      ],
+      "provides": [
+        "PlatformInfo",
+        "PlatformAdapter",
+        "get_platform_info",
+        "get_binary",
+        "get_platform_config",
+        "__init__",
+        "_detect_platform",
+        "_setup_paths",
+        "get_binary",
+        "get_library"
+      ],
+      "file": "skills/llm-memory-integration/core/platform_adapter.py"
+    },
+    "mkl_accelerator": {
+      "description": "Intel MKL/FMAL 加速模块",
+      "depends_on": [],
+      "external_deps": [
+        "numpy"
+      ],
+      "provides": [
+        "check_mkl_available",
+        "check_amx_available",
+        "check_intel_cpu",
+        "MKLAccelerator",
+        "FMALAccelerator",
+        "OptimizedMatrixOps",
+        "INT8QuantizedOps",
+        "print_mkl_status",
+        "check_mkl_status",
+        "check_fmal_status"
+      ],
+      "file": "skills/llm-memory-integration/core/mkl_accelerator.py"
+    },
+    "isrel_predictor": {
+      "description": "IsREL Predictor - 检索必要性预测器",
+      "depends_on": [],
+      "external_deps": [],
+      "provides": [
+        "QueryType",
+        "RetrievalDecision",
+        "IsRELPredictor",
+        "should_retrieve",
+        "__init__",
+        "predict",
+        "should_retrieve",
+        "_classify_query_type",
+        "_calculate_retrieval_score",
+        "_calculate_no_retrieval_score"
+      ],
+      "file": "skills/llm-memory-integration/core/isrel_predictor.py"
+    },
+    "cross_lingual": {
+      "description": "跨语言搜索模块",
+      "depends_on": [],
+      "external_deps": [
+        "numpy"
+      ],
+      "provides": [
+        "LanguageDetector",
+        "CrossLingualEncoder",
+        "CrossLingualSearcher",
+        "__init__",
+        "detect",
+        "__init__",
+        "_init_real_api",
+        "encode",
+        "_encode_with_api",
+        "_encode_deterministic"
+      ],
+      "file": "skills/llm-memory-integration/core/cross_lingual.py"
+    },
+    "context_compressor": {
+      "description": "上下文压缩模块 (Context Compression / LLMLingua)",
+      "depends_on": [],
+      "external_deps": [
+        "numpy"
+      ],
+      "provides": [
+        "CompressionResult",
+        "RuleBasedCompressor",
+        "LLMCompressor",
+        "ContextCompressor",
+        "compress",
+        "_select_relevant_sentences",
+        "_deduplicate_sentences",
+        "__init__",
+        "compress",
+        "__init__"
+      ],
+      "file": "skills/llm-memory-integration/core/context_compressor.py"
+    },
+    "create_v2_modules": {
+      "description": "模块安装脚本",
+      "depends_on": [],
+      "external_deps": [],
+      "provides": [
+        "calculate_file_hash",
+        "copy_template_module",
+        "main"
+      ],
+      "file": "skills/llm-memory-integration/core/create_v2_modules.py"
+    },
+    "approximate_cache": {
+      "description": "近似缓存模块",
+      "depends_on": [],
+      "external_deps": [
+        "numpy"
+      ],
+      "provides": [
+        "ApproximateCacheEntry",
+        "SemanticSimilarityMatcher",
+        "ApproximateCache",
+        "SemanticPromptCache",
+        "print_approximate_cache_status",
+        "__init__",
+        "compute_similarity",
+        "is_similar",
+        "find_most_similar",
+        "__init__"
+      ],
+      "file": "skills/llm-memory-integration/core/approximate_cache.py"
+    },
+    "opq_quantization": {
+      "description": "OPQ 量化模块",
+      "depends_on": [],
+      "external_deps": [
+        "numpy",
+        "sklearn"
+      ],
+      "provides": [
+        "OPQQuantizer",
+        "__init__",
+        "train",
+        "_train_subspace_quantizers",
+        "_kmeans",
+        "_update_rotation",
+        "encode",
+        "decode",
+        "compute_distance_table",
+        "search"
+      ],
+      "file": "skills/llm-memory-integration/core/opq_quantization.py"
+    },
+    "resource_orchestrator": {
+      "description": "统一资源编排层 (Resource Orchestrator)",
+      "depends_on": [
+        "cache_allocator",
+        "cache_aware_scheduler",
+        "cxl_optimizer",
+        "gpu_optimizer",
+        "hardware_optimize",
+        "numa_optimizer",
+        "power_manager",
+        "realtime_scheduler"
+      ],
+      "external_deps": [],
+      "provides": [
+        "Priority",
+        "ResourceConstraint",
+        "TaskProfile",
+        "DeploymentPlanItem",
+        "DeploymentPlan",
+        "ResourceOrchestrator",
+        "create_orchestrator",
+        "__init__",
+        "initialize",
+        "_initialize_modules"
+      ],
+      "file": "skills/llm-memory-integration/core/resource_orchestrator.py"
+    },
+    "smart_memory_update": {
+      "description": "Smart Memory Update - 智能记忆更新",
+      "depends_on": [
+        "llm_client"
+      ],
+      "external_deps": [],
+      "provides": [
+        "_get_daily_note",
+        "read_file",
+        "write_file",
+        "append_to_file",
+        "_extract_existing_items",
+        "_deduplicate_preferences",
+        "_find_contradictions",
+        "_protect_master_persona",
+        "update_persona_with_llm",
+        "extract_scene_with_llm"
+      ],
+      "file": "skills/llm-memory-integration/core/smart_memory_update.py"
+    },
+    "unified_coordinator": {
+      "description": "小艺 Claw 统一协调器 V2 (Unified Coordinator V2)",
+      "depends_on": [
+        "knowledge_graph_gnn",
+        "memgpt_memory",
+        "memory_stream",
+        "reflection_engine",
+        "resilience_system",
+        "self_rag"
+      ],
+      "external_deps": [],
+      "provides": [
+        "ModuleType",
+        "ModuleInfo",
+        "UnifiedCoordinator",
+        "main",
+        "get_resilience_status",
+        "get_available_components",
+        "safe_call",
+        "get_coordinator_status",
+        "__init__",
+        "workflows"
+      ],
+      "file": "skills/llm-memory-integration/core/unified_coordinator.py"
+    },
+    "planning_engine": {
+      "description": "规划引擎模块 (Planning Engine Module)",
+      "depends_on": [
+        "memory_stream",
+        "reflection_engine",
+        "retrieval_formula"
+      ],
+      "external_deps": [],
+      "provides": [
+        "PlanHorizon",
+        "ActionPriority",
+        "ActionStatus",
+        "Action",
+        "Plan",
+        "PlanningEngine",
+        "create_planning_engine",
+        "plan",
+        "to_dict",
+        "from_dict"
+      ],
+      "file": "skills/llm-memory-integration/core/planning_engine.py"
+    },
+    "cxl_optimizer": {
+      "description": "CXL 内存优化增强模块",
+      "depends_on": [],
+      "external_deps": [
+        "numpy"
+      ],
+      "provides": [
+        "MemoryType",
+        "MemoryNode",
+        "CXLMemoryDetector",
+        "AdaptiveScheduler",
+        "HotDataMigrator",
+        "CXLMemoryPool",
+        "PNMComputeOffload",
+        "CXLOptimizer",
+        "print_cxl_status",
+        "__init__"
+      ],
+      "file": "skills/llm-memory-integration/core/cxl_optimizer.py"
+    },
+    "auto_tuner": {
+      "description": "自动调优模块",
+      "depends_on": [],
+      "external_deps": [
+        "numpy"
+      ],
+      "provides": [
+        "AutoTuner",
+        "PerformanceBenchmark",
+        "ABTestFramework",
+        "__init__",
+        "_sample_params",
+        "_evaluate",
+        "optimize",
+        "get_results",
+        "save_results",
+        "__init__"
+      ],
+      "file": "skills/llm-memory-integration/core/auto_tuner.py"
+    },
+    "acp_server": {
+      "description": "ACP Server - 多智能体协作协议实现",
+      "depends_on": [],
+      "external_deps": [],
+      "provides": [
+        "ACPTool",
+        "ACPAuthError",
+        "ACPServer",
+        "main",
+        "__init__",
+        "_verify_auth",
+        "_register_default_tools",
+        "register_tool",
+        "list_tools",
+        "_validate_tool_params"
+      ],
+      "file": "skills/llm-memory-integration/core/acp_server.py"
+    },
+    "isuse_predictor": {
+      "description": "IsUSE Predictor - 生成可靠性预测器",
+      "depends_on": [],
+      "external_deps": [],
+      "provides": [
+        "ReliabilityLevel",
+        "ReliabilityDecision",
+        "IsUSEPredictor",
+        "is_reliable",
+        "__init__",
+        "predict",
+        "is_reliable",
+        "_calculate_factuality",
+        "_calculate_consistency",
+        "_calculate_grounding"
+      ],
+      "file": "skills/llm-memory-integration/core/isuse_predictor.py"
+    },
+    "update_l3_profile": {
+      "description": "LLM Memory Integration - L3 长期画像更新脚本",
+      "depends_on": [],
+      "external_deps": [],
+      "provides": [
+        "read_file",
+        "write_file",
+        "append_to_ontology",
+        "create_brain_entry",
+        "main"
+      ],
+      "file": "skills/llm-memory-integration/core/update_l3_profile.py"
+    },
+    "skill_coordinator": {
+      "description": "技能协调器 (Skill Coordinator)",
+      "depends_on": [],
+      "external_deps": [],
+      "provides": [
+        "SkillCategory",
+        "SkillInfo",
+        "SkillCoordinator",
+        "parse_shortcut",
+        "main",
+        "__init__",
+        "detect_intent",
+        "recommend_skill",
+        "get_skill_info",
+        "suggest_combination"
+      ],
+      "file": "skills/llm-memory-integration/core/skill_coordinator.py"
+    },
+    "llm_streaming": {
+      "description": "LLM 流式输出模块",
+      "depends_on": [
+        "llm_client",
+        "streaming_llm"
+      ],
+      "external_deps": [],
+      "provides": [
+        "StreamChunk",
+        "LLMStreamer",
+        "SSEServer",
+        "WebSocketHandler",
+        "__init__",
+        "to_sse",
+        "to_json",
+        "__init__",
+        "streaming_llm",
+        "_record_ttft"
+      ],
+      "file": "skills/llm-memory-integration/core/llm_streaming.py"
+    },
+    "adaptive_memory": {
+      "description": "自适应记忆架构 (Adaptive Memory Architecture)",
+      "depends_on": [],
+      "external_deps": [
+        "psutil"
+      ],
+      "provides": [
+        "MemoryParameters",
+        "PerformanceMetrics",
+        "PerformanceAnalyzer",
+        "ParameterOptimizer",
+        "AdaptiveMemoryManager",
+        "main",
+        "to_dict",
+        "from_dict",
+        "to_dict",
+        "__init__"
+      ],
+      "file": "skills/llm-memory-integration/core/adaptive_memory.py"
+    },
+    "late_chunking": {
+      "description": "Late Chunking 模块",
+      "depends_on": [],
+      "external_deps": [
+        "numpy"
+      ],
+      "provides": [
+        "LateChunk",
+        "LateChunker",
+        "__init__",
+        "chunk_document",
+        "_split_text",
+        "_split_on_sentences",
+        "_split_fixed_size",
+        "_get_context_window",
+        "search",
+        "_keyword_search"
+      ],
+      "file": "skills/llm-memory-integration/core/late_chunking.py"
+    },
+    "conversation": {
+      "description": "多轮对话模块",
+      "depends_on": [],
+      "external_deps": [
+        "tiktoken"
+      ],
+      "provides": [
+        "count_tokens",
+        "Message",
+        "Conversation",
+        "ConversationManager",
+        "MemoryCompressor",
+        "__init__",
+        "to_dict",
+        "from_dict",
+        "__init__",
+        "add_message"
+      ],
+      "file": "skills/llm-memory-integration/core/conversation.py"
+    },
+    "emotion_memory": {
+      "description": "情感驱动记忆 (Emotion-Driven Memory)",
+      "depends_on": [],
+      "external_deps": [],
+      "provides": [
+        "EmotionType",
+        "EmotionScore",
+        "EmotionDetector",
+        "EmotionWeightCalculator",
+        "EmotionMemoryManager",
+        "main",
+        "to_dict",
+        "detect",
+        "calculate",
+        "get_memory_priority"
+      ],
+      "file": "skills/llm-memory-integration/core/emotion_memory.py"
+    },
+    "memory_synapse_network": {
+      "description": "记忆突触网络 (Memory Synapse Network)",
+      "depends_on": [],
+      "external_deps": [],
+      "provides": [
+        "SynapseType",
+        "MemoryNeuron",
+        "Synapse",
+        "SynapseNetwork",
+        "NeuronManager",
+        "SynapseManager",
+        "ActivationSpreader",
+        "MemorySynapseNetwork",
+        "main",
+        "to_dict"
+      ],
+      "file": "skills/llm-memory-integration/core/memory_synapse_network.py"
+    },
+    "graphsage_layer": {
+      "description": "GraphSAGE Layer - 图采样聚合层",
+      "depends_on": [],
+      "external_deps": [
+        "numpy",
+        "torch"
+      ],
+      "provides": [
+        "MeanAggregator",
+        "LSTMAggregator",
+        "PoolingAggregator",
+        "GraphSAGELayer",
+        "GraphSAGE",
+        "__init__",
+        "forward",
+        "__init__",
+        "forward",
+        "__init__"
+      ],
+      "file": "skills/llm-memory-integration/core/graphsage_layer.py"
+    },
+    "adaptive_rrf": {
+      "description": "自适应 RRF 融合模块",
+      "depends_on": [],
+      "external_deps": [],
+      "provides": [
+        "QueryCategory",
+        "RRFWeights",
+        "AdaptiveRRF",
+        "fuse_with_adaptive_rrf",
+        "__init__",
+        "classify_query",
+        "has_exact_terms",
+        "get_adaptive_weights",
+        "fuse_rankings",
+        "get_adjustment_stats"
+      ],
+      "file": "skills/llm-memory-integration/core/adaptive_rrf.py"
+    },
+    "crag_pipeline": {
+      "description": "CRAG Pipeline - 纠正性检索增强生成",
+      "depends_on": [
+        "context_compressor",
+        "hybrid_search",
+        "rag_failure_detector"
+      ],
+      "external_deps": [
+        "numpy"
+      ],
+      "provides": [
+        "RetrievalConfidence",
+        "RAGDocument",
+        "CRAGResult",
+        "RetrievalEvaluator",
+        "Reranker",
+        "SelfRAG",
+        "CRAGPipeline",
+        "__init__",
+        "evaluate",
+        "_evaluate_with_embedding"
+      ],
+      "file": "skills/llm-memory-integration/core/crag_pipeline.py"
+    },
+    "generative_agents": {
+      "description": "Generative Agents - 反思机制",
+      "depends_on": [
+        "memory_stream",
+        "planning_engine",
+        "reflection_engine",
+        "retrieval_formula"
+      ],
+      "external_deps": [],
+      "provides": [],
+      "file": "skills/llm-memory-integration/core/generative_agents.py"
+    },
+    "nlp_integration": {
+      "description": "NLP 模块整合器",
+      "depends_on": [
+        "nlp_processor"
+      ],
+      "external_deps": [],
+      "provides": [
+        "NLPConfig",
+        "NLPIntegration",
+        "get_nlp_integration",
+        "init_nlp",
+        "process_text",
+        "extract_keywords",
+        "extract_entities",
+        "analyze_sentiment",
+        "tokenize",
+        "__post_init__"
+      ],
+      "file": "skills/llm-memory-integration/core/nlp_integration.py"
+    },
+    "brain_memory_sync": {
+      "description": "个人知识库与记忆系统同步模块",
+      "depends_on": [],
+      "external_deps": [],
+      "provides": [
+        "BrainEntry",
+        "SyncRecord",
+        "BrainReader",
+        "BrainMemorySync",
+        "get_sync",
+        "sync_entry_to_memory",
+        "sync_memory_to_entry",
+        "__init__",
+        "_load_entries",
+        "_parse_entry"
+      ],
+      "file": "skills/llm-memory-integration/core/brain_memory_sync.py"
+    },
+    "model_performance": {
+      "description": "模型性能监控脚本",
+      "depends_on": [],
+      "external_deps": [
+        "requests"
+      ],
+      "provides": [
+        "ModelPerformanceMonitor",
+        "main",
+        "__init__",
+        "_load_config",
+        "get_embedding_config",
+        "test_embedding_latency",
+        "save_metrics",
+        "run_monitor",
+        "print_report"
+      ],
+      "file": "skills/llm-memory-integration/core/model_performance.py"
+    },
+    "llm_optimizer": {
+      "description": "L4 多 API 优化层 (LLM Optimizer)",
+      "depends_on": [],
+      "external_deps": [
+        "aiohttp"
+      ],
+      "provides": [
+        "TaskType",
+        "ModelConfig",
+        "CircuitState",
+        "CircuitBreaker",
+        "RetryPolicy",
+        "FallbackChain",
+        "FailoverManager",
+        "CacheEntry",
+        "SemanticCache",
+        "SmartRouter"
+      ],
+      "file": "skills/llm-memory-integration/core/llm_optimizer.py"
+    },
+    "hallucination_guard": {
+      "description": "防幻觉守护系统 (Hallucination Guard System)",
+      "depends_on": [],
+      "external_deps": [],
+      "provides": [
+        "SourceType",
+        "ConfidenceLevel",
+        "VerificationStatus",
+        "VerifiedMemory",
+        "SelfFamiliarityChecker",
+        "SourceTracer",
+        "ConflictDetector",
+        "TemporalValidator",
+        "ConfidenceCalculator",
+        "OutputValidator"
+      ],
+      "file": "skills/llm-memory-integration/core/hallucination_guard.py"
+    },
+    "dynamic_crag_threshold": {
+      "description": "CRAG 动态阈值模块",
+      "depends_on": [],
+      "external_deps": [
+        "numpy"
+      ],
+      "provides": [
+        "RetrievalStrategy",
+        "CRAGThresholds",
+        "DynamicCRAGThreshold",
+        "select_crag_strategy",
+        "__init__",
+        "analyze_retrieval_scores",
+        "get_adjusted_thresholds",
+        "select_strategy",
+        "get_strategy_stats"
+      ],
+      "file": "skills/llm-memory-integration/core/dynamic_crag_threshold.py"
+    },
+    "hardware_optimize": {
+      "description": "硬件特定优化模块",
+      "depends_on": [],
+      "external_deps": [
+        "numpy",
+        "torch"
+      ],
+      "provides": [
+        "HardwareOptimizer",
+        "AMXAccelerator",
+        "FMAAccelerator",
+        "NeuralEngineAccelerator",
+        "NEONAccelerator",
+        "CacheBlocker",
+        "__init__",
+        "_detect_hardware",
+        "_get_optimizations",
+        "get_optimal_path"
+      ],
+      "file": "skills/llm-memory-integration/core/hardware_optimize.py"
+    },
+    "hybrid_memory_search": {
+      "description": "混合记忆搜索（公开安全版）",
+      "depends_on": [],
+      "external_deps": [],
+      "provides": [
+        "load_config",
+        "get_db_connection",
+        "fts_search",
+        "hybrid_search"
+      ],
+      "file": "skills/llm-memory-integration/core/hybrid_memory_search.py"
+    },
+    "safety_alignment": {
+      "description": "安全与对齐模块",
+      "depends_on": [],
+      "external_deps": [],
+      "provides": [
+        "SafetyResult",
+        "_compile_patterns",
+        "InputSafetyFilter",
+        "HallucinationDetector",
+        "ContentPolicyEnforcer",
+        "RedTeamHelper",
+        "__init__",
+        "check",
+        "_filter_text",
+        "__init__"
+      ],
+      "file": "skills/llm-memory-integration/core/safety_alignment.py"
+    },
+    "reflection_nl": {
+      "description": "记忆反思自然语言接口",
+      "depends_on": [
+        "memory_reflector"
+      ],
+      "external_deps": [],
+      "provides": [
+        "NaturalLanguageReflector",
+        "process_user_message",
+        "main",
+        "__init__",
+        "process_message",
+        "_is_correction",
+        "_is_query",
+        "_is_apply_request",
+        "_handle_correction",
+        "_handle_query"
+      ],
+      "file": "skills/llm-memory-integration/core/reflection_nl.py"
+    },
+    "ann_selector": {
+      "description": "ANN 索引自动选择模块",
+      "depends_on": [],
+      "external_deps": [
+        "numpy",
+        "sklearn"
+      ],
+      "provides": [
+        "ANNSelector",
+        "__init__",
+        "_select_algorithm",
+        "build_index",
+        "_build_hnsw",
+        "_build_ivf",
+        "_build_lsh",
+        "search",
+        "_search_hnsw",
+        "_search_ivf"
+      ],
+      "file": "skills/llm-memory-integration/core/ann_selector.py"
+    },
+    "kunpeng_optimizer": {
+      "description": "华为鲲鹏/海思 ARM64 优化模块",
+      "depends_on": [],
+      "external_deps": [
+        "numpy"
+      ],
+      "provides": [
+        "KunpengDetector",
+        "KunpengOptimizer",
+        "get_kunpeng_optimizer",
+        "check_kunpeng_status",
+        "__init__",
+        "_detect_kunpeng",
+        "_parse_cache_size",
+        "_get_recommended_implementation",
+        "is_kunpeng",
+        "is_arm64"
+      ],
+      "file": "skills/llm-memory-integration/core/kunpeng_optimizer.py"
+    },
+    "knowledge_refiner": {
+      "description": "Knowledge Refiner - 知识精炼器",
+      "depends_on": [],
+      "external_deps": [],
+      "provides": [
+        "KnowledgeSegment",
+        "RefinedKnowledge",
+        "KnowledgeRefiner",
+        "refine_knowledge",
+        "__init__",
+        "refine",
+        "_segment_document",
+        "_classify_segments",
+        "_identify_segment_type",
+        "_score_segments"
+      ],
+      "file": "skills/llm-memory-integration/core/knowledge_refiner.py"
+    },
+    "logging_config": {
+      "description": "统一日志配置",
+      "depends_on": [],
+      "external_deps": [],
+      "provides": [
+        "setup_logging",
+        "get_logger"
+      ],
+      "file": "skills/llm-memory-integration/core/logging_config.py"
+    },
+    "self_rag": {
+      "description": "Self-RAG 主控制器",
+      "depends_on": [
+        "isrel_predictor",
+        "issup_predictor",
+        "isuse_predictor"
+      ],
+      "external_deps": [],
+      "provides": [
+        "RAGState",
+        "RAGStep",
+        "RAGResult",
+        "SelfRAG",
+        "create_self_rag",
+        "__init__",
+        "process",
+        "_step_retrieval_decision",
+        "_step_retrieve",
+        "_step_evaluate_retrieval"
+      ],
+      "file": "skills/llm-memory-integration/core/self_rag.py"
+    },
+    "hugepage_manager": {
+      "description": "大页内存管理模块",
+      "depends_on": [],
+      "external_deps": [
+        "numpy"
+      ],
+      "provides": [
+        "_check_permission",
+        "HugePageManager",
+        "__init__",
+        "_detect_hugepages",
+        "is_available",
+        "configure",
+        "allocate",
+        "get_stats",
+        "print_recommendations"
+      ],
+      "file": "skills/llm-memory-integration/core/hugepage_manager.py"
+    },
+    "reflection_chat": {
+      "description": "记忆反思对话集成",
+      "depends_on": [
+        "reflection_nl"
+      ],
+      "external_deps": [],
+      "provides": [
+        "check_and_reflect",
+        "main"
+      ],
+      "file": "skills/llm-memory-integration/core/reflection_chat.py"
+    },
+    "irq_isolator": {
+      "description": "IRQ 中断隔离模块",
+      "depends_on": [],
+      "external_deps": [],
+      "provides": [
+        "_check_permission",
+        "IRQTopology",
+        "IRQIsolator",
+        "get_irq_isolator",
+        "check_irq_status",
+        "__init__",
+        "_detect_irq_topology",
+        "_parse_cpu_list",
+        "get_info",
+        "print_topology"
+      ],
+      "file": "skills/llm-memory-integration/core/irq_isolator.py"
+    },
+    "multiresolution_search": {
+      "description": "多分辨率向量搜索模块",
+      "depends_on": [],
+      "external_deps": [
+        "numpy"
+      ],
+      "provides": [
+        "ResolutionLevel",
+        "MultiResolutionIndex",
+        "QueryComplexityEstimator",
+        "MultiResolutionSearcher",
+        "DistributedParallelSearcher",
+        "print_multiresolution_status",
+        "__init__",
+        "estimate",
+        "_count_entities",
+        "_estimate_ambiguity"
+      ],
+      "file": "skills/llm-memory-integration/core/multiresolution_search.py"
+    },
+    "proposition_retriever": {
+      "description": "Proposition 检索粒度优化模块",
+      "depends_on": [],
+      "external_deps": [
+        "numpy"
+      ],
+      "provides": [
+        "Proposition",
+        "PropositionExtractor",
+        "PropositionRetriever",
+        "__init__",
+        "extract",
+        "_extract_with_rules",
+        "_extract_with_llm",
+        "_split_sentences",
+        "_split_to_propositions",
+        "_has_subject_predicate"
+      ],
+      "file": "skills/llm-memory-integration/core/proposition_retriever.py"
+    },
+    "adaptive_ltp_ltd": {
+      "description": "自适应 LTP/LTD 模块",
+      "depends_on": [],
+      "external_deps": [],
+      "provides": [
+        "SynapseState",
+        "LTP_LTDParams",
+        "AdaptiveLTP_LTD",
+        "apply_adaptive_ltp",
+        "apply_adaptive_ltd",
+        "__init__",
+        "calculate_ltp_strength",
+        "calculate_ltd_rate",
+        "apply_ltp",
+        "apply_ltd"
+      ],
+      "file": "skills/llm-memory-integration/core/adaptive_ltp_ltd.py"
+    },
+    "tools_registry": {
+      "description": "OpenClaw Tools Registry - 横向能力注册中心",
+      "depends_on": [
+        "exceptions",
+        "hardware_optimize",
+        "llm_streaming",
+        "numa_optimizer"
+      ],
+      "external_deps": [],
+      "provides": [
+        "ToolDefinition",
+        "ToolsRegistry",
+        "register_tool",
+        "embedding_encode",
+        "llm_chat",
+        "search_hybrid",
+        "query_rewrite",
+        "result_explain",
+        "cache_get",
+        "cache_set"
+      ],
+      "file": "skills/llm-memory-integration/core/tools_registry.py"
+    },
+    "optimization_integration": {
+      "description": "优化模块集成入口",
+      "depends_on": [
+        "adaptive_hallucination_params",
+        "adaptive_ltp_ltd",
+        "adaptive_rrf",
+        "dynamic_crag_threshold",
+        "heartbeat_task_executor",
+        "intelligent_thinking_trigger"
+      ],
+      "external_deps": [],
+      "provides": [
+        "OptimizationResult",
+        "OptimizationIntegration",
+        "optimize_query",
+        "optimize_retrieval",
+        "__init__",
+        "optimize_query_processing",
+        "optimize_retrieval",
+        "optimize_memory_synapse",
+        "execute_heartbeat",
+        "_get_strategy_recommendation"
+      ],
+      "file": "skills/llm-memory-integration/core/optimization_integration.py"
+    },
+    "reflection_engine": {
+      "description": "反思引擎模块 (Reflection Engine Module)",
+      "depends_on": [
+        "memory_stream",
+        "retrieval_formula"
+      ],
+      "external_deps": [],
+      "provides": [
+        "ReflectionConfig",
+        "ReflectionTrigger",
+        "Insight",
+        "ReflectionEngine",
+        "create_reflection_engine",
+        "reflect",
+        "to_dict",
+        "__init__",
+        "should_reflect",
+        "reflect"
+      ],
+      "file": "skills/llm-memory-integration/core/reflection_engine.py"
+    },
+    "hybrid_search": {
+      "description": "混合搜索模块 (Hybrid Search + Query Rewriting)",
+      "depends_on": [],
+      "external_deps": [
+        "numpy"
+      ],
+      "provides": [
+        "BM25Index",
+        "RRFFusion",
+        "QueryRewriter",
+        "HybridSearchResult",
+        "HybridSearcher",
+        "__init__",
+        "add_documents",
+        "search",
+        "_bm25_score",
+        "_tokenize"
+      ],
+      "file": "skills/llm-memory-integration/core/hybrid_search.py"
+    },
+    "vector_api": {
+      "description": "跨平台向量计算 API 抽象层 (Portable Vector API)",
+      "depends_on": [],
+      "external_deps": [
+        "numpy"
+      ],
+      "provides": [
+        "SIMDArch",
+        "VectorBackendInfo",
+        "_HardwareDetector",
+        "_AlignedAllocator",
+        "VectorAPI",
+        "get_vector_api",
+        "detect_simd_arch",
+        "detect",
+        "_detect_linux",
+        "_detect_macos"
+      ],
+      "file": "skills/llm-memory-integration/core/vector_api.py"
+    },
+    "xiaoyi_memory": {
+      "description": "小艺记忆系统统一入口 V2 (Xiaoyi Memory System V2)",
+      "depends_on": [
+        "adaptive_memory",
+        "emotion_memory",
+        "hallucination_guard",
+        "memory_reflector",
+        "memory_synapse_network",
+        "unified_coordinator"
+      ],
+      "external_deps": [],
+      "provides": [
+        "XiaoyiMemoryV2",
+        "main",
+        "__init__",
+        "_init_all_layers",
+        "_lazy_load",
+        "_init_layer2",
+        "_init_layer3",
+        "_init_layer4",
+        "_init_layer5",
+        "_init_layer6"
+      ],
+      "file": "skills/llm-memory-integration/core/xiaoyi_memory.py"
+    },
+    "fma_accelerator": {
+      "description": "Intel FMA (Fused Multiply-Add) 加速模块",
+      "depends_on": [],
+      "external_deps": [
+        "numpy"
+      ],
+      "provides": [
+        "FMADetector",
+        "FMAAccelerator",
+        "get_fma_accelerator",
+        "check_fma_status",
+        "__init__",
+        "_detect_fma",
+        "_get_recommended_implementation",
+        "is_fma_available",
+        "get_info",
+        "print_info"
+      ],
+      "file": "skills/llm-memory-integration/core/fma_accelerator.py"
+    },
+    "knowledge_augmentor": {
+      "description": "Knowledge Augmentor - 知识补充器",
+      "depends_on": [],
+      "external_deps": [],
+      "provides": [
+        "AugmentReason",
+        "AugmentRequest",
+        "AugmentResult",
+        "KnowledgeAugmentor",
+        "augment_knowledge",
+        "__init__",
+        "analyze_and_augment",
+        "_analyze_augment_need",
+        "_execute_augment",
+        "_needs_fresh_info"
+      ],
+      "file": "skills/llm-memory-integration/core/knowledge_augmentor.py"
+    },
+    "relation_predictor": {
+      "description": "Relation Predictor - 关系预测器",
+      "depends_on": [
+        "knowledge_graph_gnn"
+      ],
+      "external_deps": [
+        "numpy",
+        "torch"
+      ],
+      "provides": [
+        "RelationPredictor",
+        "KnowledgeGraphCompletion",
+        "RelationExtractor",
+        "__init__",
+        "register_relation",
+        "forward",
+        "predict_relation",
+        "predict_tail",
+        "compute_loss",
+        "__init__"
+      ],
+      "file": "skills/llm-memory-integration/core/relation_predictor.py"
+    },
+    "async_ops": {
+      "description": "异步 I/O 优化模块",
+      "depends_on": [],
+      "external_deps": [
+        "aiohttp",
+        "numpy"
+      ],
+      "provides": [
+        "AsyncVectorSearch",
+        "AsyncLLMClient",
+        "AsyncEmbeddingClient",
+        "AsyncMemoryPipeline",
+        "__init__",
+        "_sync_search",
+        "close",
+        "__init__",
+        "semaphore",
+        "session_lock"
+      ],
+      "file": "skills/llm-memory-integration/core/async_ops.py"
+    },
+    "distributed_search": {
+      "description": "分布式向量搜索模块",
+      "depends_on": [],
+      "external_deps": [
+        "aiohttp",
+        "numpy"
+      ],
+      "provides": [
+        "VectorSharder",
+        "DistributedSearcher",
+        "__init__",
+        "_hash",
+        "add_vector",
+        "get_shard",
+        "get_all_shards",
+        "__init__",
+        "set_local_shards",
+        "_search_shard"
+      ],
+      "file": "skills/llm-memory-integration/core/distributed_search.py"
+    },
+    "speculative_hybrid": {
+      "description": "投机解码混合策略模块",
+      "depends_on": [],
+      "external_deps": [
+        "aiohttp"
+      ],
+      "provides": [
+        "RateLimiter",
+        "TrieNode",
+        "DraftTrie",
+        "RetrievalResult",
+        "RetrievalSpeculativeDecoder",
+        "SmartHybridGenerator",
+        "get_generator",
+        "can_call",
+        "record_call",
+        "remaining_calls"
+      ],
+      "file": "skills/llm-memory-integration/core/speculative_hybrid.py"
+    },
+    "realtime_scheduler": {
+      "description": "实时调度优化模块",
+      "depends_on": [],
+      "external_deps": [],
+      "provides": [
+        "SchedParam",
+        "SchedInfo",
+        "get_scheduler",
+        "set_scheduler",
+        "get_priority",
+        "set_priority",
+        "get_policy_name",
+        "get_cpu_affinity",
+        "set_cpu_affinity",
+        "RealtimeScheduler"
+      ],
+      "file": "skills/llm-memory-integration/core/realtime_scheduler.py"
+    },
+    "reflection_heartbeat": {
+      "description": "记忆反思心跳集成",
+      "depends_on": [
+        "memory_reflector"
+      ],
+      "external_deps": [],
+      "provides": [
+        "run_reflection_heartbeat"
+      ],
+      "file": "skills/llm-memory-integration/core/reflection_heartbeat.py"
+    },
+    "crag": {
+      "description": "CRAG 主控制器",
+      "depends_on": [
+        "knowledge_augmentor",
+        "knowledge_refiner",
+        "retrieval_evaluator"
+      ],
+      "external_deps": [],
+      "provides": [
+        "CRAGState",
+        "CRAGStep",
+        "CRAGResult",
+        "CRAG",
+        "create_crag",
+        "__init__",
+        "process",
+        "_step_retrieve",
+        "_step_evaluate",
+        "_step_refine"
+      ],
+      "file": "skills/llm-memory-integration/core/crag.py"
+    },
+    "full_integration": {
+      "description": "小艺 Claw 完整集成层 (Full Integration Layer)",
+      "depends_on": [
+        "crag_pipeline",
+        "hybrid_search",
+        "skill_coordinator",
+      ],
+      "external_deps": [],
+      "provides": [
+        "FullIntegration",
+        "main",
+        "__init__",
+        "_load_crag",
+        "crag_retrieve",
+        "_load_hybrid_search",
+        "hybrid_retrieve",
+        "_rrf_fusion",
+        "_load_skill_coordinator",
+        "detect_thinking_skill"
+      ],
+      "file": "skills/llm-memory-integration/core/full_integration.py"
+    },
+    "multimodal_search": {
+      "description": "多模态搜索模块",
+      "depends_on": [],
+      "external_deps": [
+        "numpy"
+      ],
+      "provides": [
+        "MultimodalEncoder",
+        "MultimodalSearcher",
+        "__init__",
+        "_init_real_api",
+        "encode_text",
+        "encode_image",
+        "encode_image_base64",
+        "encode_audio",
+        "_encode_with_api",
+        "_encode_deterministic"
+      ],
+      "file": "skills/llm-memory-integration/core/multimodal_search.py"
+    },
+      "description": "腾讯云记忆插件集成 (TencentDB Memory Integration)",
+      "depends_on": [],
+      "external_deps": [],
+      "provides": [
+        "TencentDBMemory",
+        "main",
+        "__init__",
+        "_check_data",
+        "get_memories",
+        "search_memories",
+        "add_memory",
+        "get_scene_blocks",
+        "get_scene_block",
+        "get_persona"
+      ],
+    },
+    "llm_client": {
+      "description": "LLM Client - LLM 客户端封装",
+      "depends_on": [
+        "computational_storage",
+        "semantic_cache",
+        "speculative_decoder"
+      ],
+      "external_deps": [
+        "httpx"
+      ],
+      "provides": [
+        "_get_http_client",
+        "load_config",
+        "LLMClient",
+        "main",
+        "__init__",
+        "semantic_cache",
+        "chat",
+        "_chat_httpx",
+        "_chat_urllib",
+        "_parse_response"
+      ],
+      "file": "skills/llm-memory-integration/core/llm_client.py"
+    },
+    "failover": {
+      "description": "故障转移模块 (Failover Module)",
+      "depends_on": [],
+      "external_deps": [],
+      "provides": [
+        "ServiceStatus",
+        "ServiceEndpoint",
+        "FailoverManager",
+        "get_failover_manager",
+        "__init__",
+        "register_endpoint",
+        "unregister_endpoint",
+        "check_health",
+        "check_all_health",
+        "get_healthy_endpoint"
+      ],
+      "file": "skills/llm-memory-integration/core/failover.py"
+    },
+    "memory_unified": {
+      "depends_on": [],
+      "external_deps": [],
+      "provides": [
+        "UnifiedMemory",
+        "get_unified_memory",
+        "recall",
+        "store",
+        "health_check",
+        "__init__",
+        "recall",
+        "store"
+      ],
+      "file": "skills/llm-memory-integration/core/memory_unified.py"
+    },
+    "unified_cache": {
+      "description": "统一缓存接口",
+      "depends_on": [
+        "rag_cache"
+      ],
+      "external_deps": [],
+      "provides": [
+        "UnifiedCache",
+        "_MemoryCacheBackend",
+        "__init__",
+        "_create_backend",
+        "get",
+        "set",
+        "delete",
+        "stats",
+        "backend_name",
+        "backend"
+      ],
+      "file": "skills/llm-memory-integration/core/unified_cache.py"
+    },
+    "model_router": {
+      "description": "多模型路由模块",
+      "depends_on": [],
+      "external_deps": [
+        "numpy"
+      ],
+      "provides": [
+        "TaskType",
+        "ModelCapability",
+        "CircuitState",
+        "CircuitBreaker",
+        "Model",
+        "ModelRouter",
+        "QueryComplexity",
+        "CascadeRule",
+        "ComplexityClassifier",
+        "CascadeRouter"
+      ],
+      "file": "skills/llm-memory-integration/core/model_router.py"
+    },
+    "importance_scorer": {
+      "description": "重要性评分器",
+      "depends_on": [],
+      "external_deps": [],
+      "provides": [
+        "ImportanceScore",
+        "ImportanceScorer",
+        "get_scorer",
+        "score_memory",
+        "record_access",
+        "record_feedback",
+        "__init__",
+        "_load_stats",
+        "_save_stats",
+        "record_access"
+      ],
+      "file": "skills/llm-memory-integration/core/importance_scorer.py"
+    },
+    "resilience_system": {
+      "description": "弹性系统 (Resilience System)",
+      "depends_on": [],
+      "external_deps": [],
+      "provides": [
+        "ComponentStatus",
+        "ComponentTier",
+        "FailureType",
+        "RecoveryStrategy",
+        "ComponentInfo",
+        "FailureEvent",
+        "ResilienceSystem",
+        "get_resilience_system",
+        "to_dict",
+        "to_dict"
+      ],
+      "file": "skills/llm-memory-integration/core/resilience_system.py"
+    },
+    "hallucination_integration": {
+      "description": "防幻觉系统集成器 (Hallucination Integration)",
+      "depends_on": [
+        "hallucination_guard"
+      ],
+      "external_deps": [],
+      "provides": [
+        "HallucinationIntegratedMemory",
+        "main",
+        "__init__",
+        "store",
+        "_update_memory",
+        "recall",
+        "_match_query",
+        "pre_check",
+        "generate_answer",
+        "handle_user_correction"
+      ],
+      "file": "skills/llm-memory-integration/core/hallucination_integration.py"
+    },
+    "intelligent_thinking_trigger": {
+      "description": "智能思考技能触发器",
+      "depends_on": [],
+      "external_deps": [],
+      "provides": [
+        "ThinkingSkill",
+        "QueryAnalysis",
+        "IntelligentThinkingTrigger",
+        "detect_thinking_skill",
+        "__init__",
+        "analyze_complexity",
+        "identify_question_type",
+        "estimate_confusion",
+        "detect_thinking_need",
+        "get_analysis_stats"
+      ],
+      "file": "skills/llm-memory-integration/core/intelligent_thinking_trigger.py"
+    },
+    "enhanced_hallucination_guard": {
+      "description": "增强版防幻觉系统 (Enhanced Hallucination Guard)",
+      "depends_on": [
+        "hallucination_guard"
+      ],
+      "external_deps": [],
+      "provides": [
+        "VerificationLevel",
+        "SourceType",
+        "VerificationSource",
+        "CrossValidationResult",
+        "MultiSourceCrossValidator",
+        "ThinkingSkillVerifier",
+        "EnhancedHallucinationGuard",
+        "main",
+        "__init__",
+        "_load_memories"
+      ],
+      "file": "skills/llm-memory-integration/core/enhanced_hallucination_guard.py"
+    },
+    "auto_learner": {
+      "description": "自主学习模块",
+      "depends_on": [],
+      "external_deps": [],
+      "provides": [
+        "LearningEvent",
+        "AutoLearner",
+        "get_learner",
+        "learn_preference",
+        "learn_correction",
+        "get_preference",
+        "__init__",
+        "_load_events",
+        "_save_events",
+        "_rebuild_state"
+      ],
+      "file": "skills/llm-memory-integration/core/auto_learner.py"
+    },
+    "retrieval_evaluator": {
+      "description": "Retrieval Evaluator - 检索评估器",
+      "depends_on": [],
+      "external_deps": [],
+      "provides": [
+        "RetrievalAction",
+        "RetrievalScore",
+        "EvaluationResult",
+        "RetrievalEvaluator",
+        "evaluate_retrieval",
+        "__init__",
+        "evaluate",
+        "_calculate_relevance_scores",
+        "_calculate_coverage_score",
+        "_calculate_freshness_scores"
+      ],
+      "file": "skills/llm-memory-integration/core/retrieval_evaluator.py"
+    },
+    "memory_stream": {
+      "description": "记忆流模块 (Memory Stream Module)",
+      "depends_on": [],
+      "external_deps": [],
+      "provides": [
+        "MemoryType",
+        "Memory",
+        "MemoryStream",
+        "create_memory_stream",
+        "__post_init__",
+        "to_dict",
+        "from_dict",
+        "touch",
+        "__init__",
+        "add"
+      ],
+      "file": "skills/llm-memory-integration/core/memory_stream.py"
+    },
+    "rules_manager": {
+      "description": "规则整合管理器 (Rules Integration Manager)",
+      "depends_on": [],
+      "external_deps": [],
+      "provides": [
+        "RulesManager",
+        "main",
+        "__init__",
+        "get_all_rules",
+        "_extract_core_rules",
+        "_extract_behavior_rules",
+        "_extract_tool_rules",
+        "_extract_config_rules",
+        "_extract_learning_rules",
+        "_extract_qiushi_rules"
+      ],
+      "file": "skills/llm-memory-integration/core/rules_manager.py"
+    },
+    "streaming_llm": {
+      "description": "StreamingLLM Attention Sink 模块",
+      "depends_on": [],
+      "external_deps": [
+        "numpy"
+      ],
+      "provides": [
+        "KVCacheEntry",
+        "StreamingKVCache",
+        "StreamingLLMManager",
+        "__init__",
+        "add_token",
+        "add_tokens_batch",
+        "_evict_oldest_non_sink",
+        "get_attention_weights_hint",
+        "get_info",
+        "clear"
+      ],
+      "file": "skills/llm-memory-integration/core/streaming_llm.py"
+    },
+    "full_recovery": {
+      "description": "AI 长时记忆系统完整恢复脚本",
+      "depends_on": [],
+      "external_deps": [],
+      "provides": [
+        "check_status"
+      ],
+      "file": "skills/llm-memory-integration/core/full_recovery.py"
+    },
+    "xiaoyi_claw_api": {
+      "description": "小艺 Claw 大模型 - 统一 API",
+      "depends_on": [],
+      "external_deps": [],
+      "provides": [
+        "XiaoYiClawLLM",
+        "get_xiaoyi_claw",
+        "remember",
+        "recall",
+        "forget",
+        "get_entity",
+        "learn",
+        "__init__",
+        "_init_vector_store",
+        "_init_ontology_bridge"
+      ],
+      "file": "skills/llm-memory-integration/core/xiaoyi_claw_api.py"
+    },
+    "cache_allocator": {
+      "description": "缓存分配技术模块 (Cache Allocator)",
+      "depends_on": [],
+      "external_deps": [],
+      "provides": [
+        "CLOSConfig",
+        "CacheAllocationResult",
+        "CATDetector",
+        "CacheAllocator",
+        "get_cache_allocator",
+        "check_cache_allocation_support",
+        "__init__",
+        "_check_resctrl_mounted",
+        "_detect_features",
+        "get_info"
+      ],
+      "file": "skills/llm-memory-integration/core/cache_allocator.py"
+    },
+    "memory_reflector": {
+      "description": "记忆反思模块 (Memory Reflection Module)",
+      "depends_on": [],
+      "external_deps": [],
+      "provides": [
+        "ErrorType",
+        "Priority",
+        "ReflectionStatus",
+        "Error",
+        "Pattern",
+        "Improvement",
+        "ReflectionRecorder",
+        "PatternDetector",
+        "ImprovementGenerator",
+        "RuleUpdater"
+      ],
+      "file": "skills/llm-memory-integration/core/memory_reflector.py"
+    },
+    "update_persona": {
+      "description": "LLM Memory Integration - 用户画像更新脚本",
+      "depends_on": [],
+      "external_deps": [],
+      "provides": [
+        "read_file",
+        "write_file",
+        "_extract_existing_items",
+        "backup_persona",
+        "append_to_persona",
+        "update_memory_md",
+        "main"
+      ],
+      "file": "skills/llm-memory-integration/core/update_persona.py"
+    },
+    "nlp_processor": {
+      "description": "自然语言处理模块 (NLP Processor)",
+      "depends_on": [],
+      "external_deps": [
+        "jieba",
+        "numpy",
+        "snownlp"
+      ],
+      "provides": [
+        "Token",
+        "Entity",
+        "SentimentResult",
+        "SummaryResult",
+        "NLPResult",
+        "ChineseTokenizer",
+        "NamedEntityRecognizer",
+        "KeywordExtractor",
+        "SentimentAnalyzer",
+        "TextSummarizer"
+      ],
+      "file": "skills/llm-memory-integration/core/nlp_processor.py"
+    },
+    "task_memory_bridge": {
+      "description": "任务-记忆桥接模块",
+      "depends_on": [],
+      "external_deps": [],
+      "provides": [
+        "TaskMemoryLink",
+        "TaskMemoryBridge",
+        "get_task_bridge",
+        "link_task_memory",
+        "__init__",
+        "_load_links",
+        "_save_links",
+        "link_task_to_memory",
+        "get_memories_for_task",
+        "get_tasks_for_memory"
+      ],
+      "file": "skills/llm-memory-integration/core/task_memory_bridge.py"
+    },
+    "rag_cache": {
+      "description": "RAGCache - 知识缓存系统",
+      "depends_on": [],
+      "external_deps": [
+        "numpy"
+      ],
+      "provides": [
+        "CacheEntry",
+        "KnowledgeTree",
+        "LRUKCache",
+        "RAGCache",
+        "RetrievalInferenceOverlap",
+        "print_ragcache_status",
+        "__init__",
+        "insert",
+        "search",
+        "search_ann"
+      ],
+      "file": "skills/llm-memory-integration/core/rag_cache.py"
+    },
+    "gpu_optimizer": {
+      "description": "GPU 优化器 - GPU 检测与推理优化",
+      "depends_on": [],
+      "external_deps": [
+        "pyopencl",
+        "torch"
+      ],
+      "provides": [
+        "GPUDevice",
+        "KVCacheConfig",
+        "InferenceConfig",
+        "GPUDetector",
+        "GPUOptimizer",
+        "detect_gpu",
+        "get_gpu_inference_config",
+        "detect",
+        "_detect_via_nvidia_smi",
+        "_detect_via_opencl"
+      ],
+      "file": "skills/llm-memory-integration/core/gpu_optimizer.py"
+    },
+    "rag_optimizer": {
+      "description": "RAG HyDE 查询重写模块",
+      "depends_on": [],
+      "external_deps": [],
+      "provides": [
+        "HyDEQueryRewriter",
+        "SubQueryDecomposer",
+        "QueryExpander",
+        "Reranker",
+        "MultiQueryFusion",
+        "RAGQueryOptimizer",
+        "print_optimization_summary",
+        "__init__",
+        "detect_query_type",
+        "detect_domain"
+      ],
+      "file": "skills/llm-memory-integration/core/rag_optimizer.py"
+    },
+    "issup_predictor": {
+      "description": "IsSUP Predictor - 检索支持度预测器",
+      "depends_on": [],
+      "external_deps": [],
+      "provides": [
+        "SupportLevel",
+        "SupportDecision",
+        "IsSUPPredictor",
+        "is_supported",
+        "__init__",
+        "predict",
+        "is_supported",
+        "_extract_keywords",
+        "_calculate_keyword_overlap",
+        "_calculate_semantic_match"
+      ],
+      "file": "skills/llm-memory-integration/core/issup_predictor.py"
+    },
+    "sandbox_manager": {
+      "description": "Sandbox Manager - 沙箱隔离与自动更新",
+      "depends_on": [],
+      "external_deps": [],
+      "provides": [
+        "VersionInfo",
+        "SandboxManager",
+        "__init__",
+        "_ensure_dirs",
+        "get_current_version",
+        "create_backup",
+        "restore_backup",
+        "list_backups",
+        "calculate_checksum",
+        "update_version"
+      ],
+      "file": "skills/llm-memory-integration/core/sandbox_manager.py"
+    },
+    "smart_forgetter": {
+      "description": "智能遗忘管理器",
+      "depends_on": [
+        "importance_scorer"
+      ],
+      "external_deps": [],
+      "provides": [
+        "ForgetAction",
+        "SmartForgetter",
+        "get_forgetter",
+        "analyze_memories",
+        "run_cleanup",
+        "__init__",
+        "_load_history",
+        "_save_history",
+        "analyze",
+        "execute"
+      ],
+      "file": "skills/llm-memory-integration/core/smart_forgetter.py"
+    },
+    "multimodal_memory": {
+      "description": "多模态记忆模块",
+      "depends_on": [],
+      "external_deps": [
+        "numpy"
+      ],
+      "provides": [
+        "ImageMemory",
+        "MultimodalMemoryStore",
+        "get_multimodal_store",
+        "store_image_memory",
+        "search_images",
+        "__init__",
+        "_load_index",
+        "_save_index",
+        "_generate_id",
+        "store_image"
+      ],
+      "file": "skills/llm-memory-integration/core/multimodal_memory.py"
+    },
+    "sqlite_ext": {
+      "description": "SQLite 扩展模块",
+      "depends_on": [
+        "sqlite_vec"
+      ],
+      "external_deps": [],
+      "provides": [
+        "load_config",
+        "save_config",
+        "detect_sqlite_implementations",
+        "get_best_sqlite",
+        "find_vec0_extension",
+        "print_sqlite_status",
+        "get_sqlite_module",
+        "connect",
+        "_validate_extension_path",
+        "connect_with_extension"
+      ],
+      "file": "skills/llm-memory-integration/core/sqlite_ext.py"
+    },
+    "cache_aware_scheduler": {
+      "description": "缓存感知调度 (Cache-Aware Scheduling, CAS) 模块",
+      "depends_on": [],
+      "external_deps": [],
+      "provides": [
+        "CacheTopology",
+        "CacheAwareScheduler",
+        "get_cache_aware_scheduler",
+        "check_cas_status",
+        "__init__",
+        "_detect_cache_topology",
+        "_parse_cache_size",
+        "_detect_cache_domains",
+        "_parse_cpu_list",
+        "_check_cas_support"
+      ],
+      "file": "skills/llm-memory-integration/core/cache_aware_scheduler.py"
+    },
+    "computational_storage": {
+      "description": "计算存储 (Computational Storage) 优化模块",
+      "depends_on": [],
+      "external_deps": [
+        "numpy"
+      ],
+      "provides": [
+        "ComputeMode",
+        "KVCacheQuantScheme",
+        "KVCacheConfig",
+        "CSDDevice",
+        "VectorSearchResult",
+        "KIVIQuantizer",
+        "KVCacheManager",
+        "CSDVectorSearchEngine",
+        "CIMInferenceSimulator",
+        "PIMKVCacheAccelerator"
+      ],
+      "file": "skills/llm-memory-integration/core/computational_storage.py"
+    },
+    "progressive_setup": {
+      "description": "渐进式启用脚本",
+      "depends_on": [],
+      "external_deps": [],
+      "provides": [
+        "load_config",
+        "save_config",
+        "enable_stage",
+        "disable_stage",
+        "show_status",
+        "enable_all",
+        "main"
+      ],
+      "file": "skills/llm-memory-integration/core/progressive_setup.py"
+    },
+    "knowledge_graph_gnn": {
+      "description": "Knowledge Graph GNN - 图神经网络增强的知识图谱",
+      "depends_on": [
+        "gat_layer",
+        "graph_constructor",
+        "graphsage_layer"
+      ],
+      "external_deps": [
+        "numpy",
+        "torch"
+      ],
+      "provides": [
+        "KnowledgeGraphGNN",
+        "KnowledgeGraphEncoder",
+        "__init__",
+        "_get_entity_id",
+        "_get_relation_id",
+        "add_entity",
+        "add_relation",
+        "build_graph",
+        "forward",
+        "_get_adj_list"
+      ],
+      "file": "skills/llm-memory-integration/core/knowledge_graph_gnn.py"
+    },
+    "retrieval_formula": {
+      "description": "检索公式模块 (Retrieval Formula Module)",
+      "depends_on": [
+        "memory_stream"
+      ],
+      "external_deps": [],
+      "provides": [
+        "RetrievalWeights",
+        "RetrievalConfig",
+        "calculate_recency",
+        "calculate_relevance",
+        "calculate_importance",
+        "cosine_similarity",
+        "keyword_relevance",
+        "MemoryRetriever",
+        "retrieve_memories",
+        "tokenize"
+      ],
+      "file": "skills/llm-memory-integration/core/retrieval_formula.py"
+    },
+    "adaptive_hallucination_params": {
+      "description": "防幻觉系统参数自适应模块",
+      "depends_on": [],
+      "external_deps": [],
+      "provides": [
+        "QueryType",
+        "DomainType",
+        "AdaptiveThresholds",
+        "AdaptiveHallucinationParams",
+        "get_adaptive_thresholds",
+        "__init__",
+        "classify_query",
+        "detect_domain",
+        "adjust_thresholds",
+        "get_verification_level"
+      ],
+      "file": "skills/llm-memory-integration/core/adaptive_hallucination_params.py"
+    },
+    "memgpt_memory": {
+      "description": "MemGPT 风格记忆管理器",
+      "depends_on": [],
+      "external_deps": [
+        "numpy"
+      ],
+      "provides": [
+        "MemoryType",
+        "MemoryPriority",
+        "Memory",
+        "CoreMemory",
+        "WorkingMemory",
+        "ArchivalMemory",
+        "MemGPTMemory",
+        "main",
+        "__post_init__",
+        "touch"
+      ],
+      "file": "skills/llm-memory-integration/core/memgpt_memory.py"
+    },
+    "sparse_anns": {
+      "description": "稀疏向量 ANNS 模块",
+      "depends_on": [],
+      "external_deps": [
+        "numpy"
+      ],
+      "provides": [
+        "SparseVector",
+        "SparseInvertedIndex",
+        "CompressedSparseStorage",
+        "SparseANNS",
+        "dense_to_sparse",
+        "sparse_to_dense",
+        "print_sparse_anns_status",
+        "to_dense",
+        "dot",
+        "norm"
+      ],
+      "file": "skills/llm-memory-integration/core/sparse_anns.py"
+    },
+    "power_manager": {
+      "description": "电源管理 / 能耗感知调度模块 (Power Manager)",
+      "depends_on": [],
+      "external_deps": [],
+      "provides": [
+        "PowerState",
+        "RAPLMonitor",
+        "DVFSController",
+        "ThermalMonitor",
+        "HWPEnergyPerformanceHint",
+        "PowerManager",
+        "get_power_manager",
+        "check_power_status",
+        "__init__",
+        "_detect_rapl"
+      ],
+      "file": "skills/llm-memory-integration/core/power_manager.py"
+    },
+    "memory_functions": {
+      "description": "内存管理函数 (Memory Functions)",
+      "depends_on": [
+        "memgpt_memory"
+      ],
+      "external_deps": [],
+      "provides": [
+        "MemoryFunctions",
+        "_get_memory",
+        "remember",
+        "recall",
+        "forget",
+        "main",
+        "__init__",
+        "core_memory_append",
+        "core_memory_replace",
+        "core_memory_delete"
+      ],
+      "file": "skills/llm-memory-integration/core/memory_functions.py"
+    },
+    "retrieval_eval": {
+      "description": "检索质量评估模块",
+      "depends_on": [],
+      "external_deps": [],
+      "provides": [
+        "RelevanceJudgment",
+        "RetrievalEvalResult",
+        "NDCGEvaluator",
+        "MRREvaluator",
+        "RAGEvaluator",
+        "dcg_at_k",
+        "ndcg_at_k",
+        "evaluate",
+        "reciprocal_rank",
+        "evaluate"
+      ],
+      "file": "skills/llm-memory-integration/core/retrieval_eval.py"
+    },
+    "quantization": {
+      "description": "向量量化模块",
+      "depends_on": [],
+      "external_deps": [
+        "numpy"
+      ],
+      "provides": [
+        "FP16Quantizer",
+        "INT8Quantizer",
+        "ScalarQuantizer",
+        "ProductQuantizer",
+        "BinaryQuantizer",
+        "create_quantizer",
+        "__init__",
+        "encode",
+        "decode",
+        "__init__"
+      ],
+      "file": "skills/llm-memory-integration/core/quantization.py"
+    },
+    "rag_failure_detector": {
+      "description": "RAG 失败点检测模块",
+      "depends_on": [],
+      "external_deps": [],
+      "provides": [
+        "FailurePoint",
+        "FailureDetection",
+        "RAGFailureReport",
+        "RAGFailureDetector",
+        "__init__",
+        "detect",
+        "_detect_missing_content",
+        "_detect_wrong_retrieval",
+        "_detect_ranking_failure",
+        "_detect_context_missing"
+      ],
+      "file": "skills/llm-memory-integration/core/rag_failure_detector.py"
+    },
+    "speculative_decoder": {
+      "description": "投机解码模块 (Speculative Decoding)",
+      "depends_on": [],
+      "external_deps": [],
+      "provides": [
+        "SpecDecodingStrategy",
+        "SpecDecodingConfig",
+        "DraftResult",
+        "VerificationResult",
+        "SpecDecodingResult",
+        "DraftModel",
+        "TargetModel",
+        "SpeculativeDecoder",
+        "__init__",
+        "generate_draft"
+      ],
+      "file": "skills/llm-memory-integration/core/speculative_decoder.py"
+    },
+    "auto_update_persona": {
+      "description": "",
+      "depends_on": [
+        "llm_client"
+      ],
+      "external_deps": [],
+      "provides": [
+        "_get_llm_client",
+        "PersonaAutoUpdater",
+        "main",
+        "__init__",
+        "llm_client",
+        "_load_config",
+        "_load_persona",
+        "_save_persona",
+        "_compress_persona",
+        "_compress_with_llm"
+      ],
+      "file": "skills/llm-memory-integration/core/auto_update_persona.py"
+    },
+    "autonomous_integrator": {
+      "description": "自主任务集成器 (Autonomous Tasks Integrator)",
+      "depends_on": [],
+      "external_deps": [],
+      "provides": [
+        "AutonomousTasksIntegrator",
+        "main",
+        "__init__",
+        "get_next_proactive_task",
+        "complete_proactive_task",
+        "push_to_hiboard",
+        "start_kanban_dashboard",
+        "get_git_notes_memory",
+        "get_brain_entries",
+        "get_autonomous_status"
+      ],
+      "file": "skills/llm-memory-integration/core/autonomous_integrator.py"
+    },
+    "dep_checker": {
+      "description": "Dependency Checker - 技能依赖扩展自检测",
+      "depends_on": [],
+      "external_deps": [],
+      "provides": [
+        "DependencyInfo",
+        "ModuleStatus",
+        "DependencyChecker",
+        "check_dependencies",
+        "print_dependency_report",
+        "get_missing_dependencies",
+        "get_module_status",
+        "__init__",
+        "check",
+        "_check_package"
+      ],
+      "file": "skills/llm-memory-integration/core/dep_checker.py"
+    },
+    "heartbeat_task_executor": {
+      "description": "心跳任务执行器",
+      "depends_on": [],
+      "external_deps": [
+        "psutil"
+      ],
+      "provides": [
+        "HeartbeatResult",
+        "HeartbeatTaskExecutor",
+        "main",
+        "__init__",
+        "execute_heartbeat",
+        "_check_proactive_tasks",
+        "_optimize_memory",
+        "_health_check",
+        "_check_skill_updates",
+        "_check_backup_needed"
+      ],
+      "file": "skills/llm-memory-integration/core/heartbeat_task_executor.py"
+    }
+  },
+  "layer_modules": {
+    "L1_memory_core": [
+      "memory_bank",
+      "adaptive_memory",
+      "emotion_memory",
+      "memory_synapse_network",
+      "hallucination_guard",
+      "self_rag",
+      "memory_stream",
+      "memory_reflector",
+      "knowledge_graph_gnn",
+      "memgpt_memory",
+      "memory_functions"
+    ],
+    "L2_retrieval": [
+      "cross_lingual",
+      "late_chunking",
+      "crag_pipeline",
+      "multiresolution_search",
+      "proposition_retriever",
+      "hybrid_search",
+      "distributed_search",
+      "crag",
+      "multimodal_search",
+      "rag_cache",
+      "rag_optimizer",
+      "rag_failure_detector"
+    ],
+    "L3_vector": [
+      "sqlite_vec",
+      "opq_quantization",
+      "ann_selector",
+      "vector_api",
+      "sqlite_ext",
+      "sparse_anns",
+      "quantization"
+    ],
+    "L4_llm": [
+      "llm_streaming",
+      "model_performance",
+      "llm_optimizer",
+      "speculative_hybrid",
+      "llm_client",
+      "model_router",
+      "streaming_llm",
+      "speculative_decoder"
+    ],
+    "L5_cache": [
+      "semantic_cache",
+      "approximate_cache",
+      "unified_cache",
+      "cache_allocator",
+      "cache_aware_scheduler",
+      "computational_storage"
+    ],
+    "L6_hardware": [
+      "zram_detector",
+      "io_optimizer",
+      "numa_optimizer",
+      "mkl_accelerator",
+      "cxl_optimizer",
+      "hardware_optimize",
+      "kunpeng_optimizer",
+      "hugepage_manager",
+      "irq_isolator",
+      "fma_accelerator",
+      "realtime_scheduler",
+      "gpu_optimizer",
+      "power_manager"
+    ],
+    "L7_coordination": [
+      "module_coordinator",
+      "resource_orchestrator",
+      "auto_tuner",
+      "skill_coordinator",
+      "tools_registry"
+    ],
+    "L8_reliability": [
+      "safety_alignment",
+      "failover",
+      "resilience_system",
+      "full_recovery",
+      "sandbox_manager"
+    ],
+    "L9_session": [
+      "context_compressor",
+      "acp_server",
+      "conversation"
+    ],
+    "L10_persona": [
+      "smart_memory_update",
+      "update_l3_profile",
+      "importance_scorer",
+      "auto_learner",
+      "update_persona",
+      "smart_forgetter",
+      "auto_update_persona"
+    ],
+    "L11_nlp": [
+      "nlp_integration",
+      "nlp_processor"
+    ],
+    "L12_integration": [
+      "exceptions",
+      "visual_generation",
+      "graph_constructor",
+      "unified_vector_store",
+      "gat_layer",
+      "memory_ontology_bridge",
+      "platform_adapter",
+      "isrel_predictor",
+      "create_v2_modules",
+      "unified_coordinator",
+      "planning_engine",
+      "isuse_predictor",
+      "graphsage_layer",
+      "adaptive_rrf",
+      "generative_agents",
+      "brain_memory_sync",
+      "dynamic_crag_threshold",
+      "hybrid_memory_search",
+      "reflection_nl",
+      "knowledge_refiner",
+      "logging_config",
+      "reflection_chat",
+      "adaptive_ltp_ltd",
+      "optimization_integration",
+      "reflection_engine",
+      "xiaoyi_memory",
+      "knowledge_augmentor",
+      "relation_predictor",
+      "async_ops",
+      "reflection_heartbeat",
+      "full_integration",
+      "memory_unified",
+      "hallucination_integration",
+      "intelligent_thinking_trigger",
+      "enhanced_hallucination_guard",
+      "retrieval_evaluator",
+      "rules_manager",
+      "xiaoyi_claw_api",
+      "task_memory_bridge",
+      "issup_predictor",
+      "multimodal_memory",
+      "progressive_setup",
+      "retrieval_formula",
+      "adaptive_hallucination_params",
+      "retrieval_eval",
+      "autonomous_integrator",
+      "dep_checker",
+      "heartbeat_task_executor"
+    ]
+  }
+}
