@@ -47,11 +47,6 @@ try:
 except ImportError:
     _HAS_TOT = False
 try:
-    from memory_editor import MemoryEditor
-    _HAS_MEMEDITOR = True
-except ImportError:
-    _HAS_MEMEDITOR = False
-try:
     from causal_reasoning import CausalReasoning
     _HAS_CAUSAL = True
 except ImportError:
@@ -77,14 +72,42 @@ try:
 except ImportError:
     _HAS_PLAN = False
 
-# ── 增强模块导入 ──
-from four_advancements import FourAdvancements as PaperEngines
-from dynamic_confidence import DynamicConfidence, get_dynamic_confidence
-from multi_agent_debate import DebateEngine, get_debate_engine
-from graph_of_thoughts import GraphOfThoughts, get_got_engine
-from memory_editor import MemoryEditor, get_memory_editor
-from hierarchical_context import ContextLayer, get_context_layer
-from fast_pil import FastPIL, get_fast_pil
+# ── 增强模块导入（9模块，缺失模块不会阻断主系统启动） ──
+try:
+    from four_advancements import FourAdvancements as PaperEngines
+    _HAS_PAPER_ENGINES = True
+except ImportError:
+    PaperEngines = None; _HAS_PAPER_ENGINES = False
+try:
+    from dynamic_confidence import DynamicConfidence, get_dynamic_confidence
+    _HAS_DYNAMIC_CONF = True
+except ImportError:
+    DynamicConfidence = None; get_dynamic_confidence = lambda *a, **kw: None; _HAS_DYNAMIC_CONF = False
+try:
+    from multi_agent_debate import DebateEngine, get_debate_engine
+    _HAS_DEBATE = True
+except ImportError:
+    DebateEngine = None; get_debate_engine = lambda *a, **kw: None; _HAS_DEBATE = False
+try:
+    from graph_of_thoughts import GraphOfThoughts, get_got_engine
+    _HAS_GOT = True
+except ImportError:
+    GraphOfThoughts = None; get_got_engine = lambda *a, **kw: None; _HAS_GOT = False
+try:
+    from memory_editor import MemoryEditor, get_memory_editor
+    _HAS_MEMEDITOR = True
+except ImportError:
+    MemoryEditor = None; get_memory_editor = lambda *a: None; _HAS_MEMEDITOR = False
+try:
+    from hierarchical_context import ContextLayer, get_context_layer
+    _HAS_HIER_CTX = True
+except ImportError:
+    ContextLayer = None; get_context_layer = lambda *a, **kw: None; _HAS_HIER_CTX = False
+try:
+    from fast_pil import FastPIL, get_fast_pil
+    _HAS_FAST_PIL = True
+except ImportError:
+    FastPIL = None; get_fast_pil = lambda *a, **kw: None; _HAS_FAST_PIL = False
 # ── 9个增强模块导入（统一API全集成） ──
 try:
     from enhanced_hallucination_guard import EnhancedHallucinationGuard, MultiSourceCrossValidator
@@ -164,6 +187,7 @@ def _async_memory_phase(claw_instance, state_snapshot: dict, session_key: str):
         _state.memory_ids = []
         _state.emotion_marked = False
         _state.evolution_triggered = False
+        _state.session_key = session_key  # 传入统一 session key 用于 emotion/TKG 写回
         claw_instance._memory_phase(_state)
         _logger.info(f"异步 Memory 完成: {len(_state.memory_ids)} mem_ids")
     except Exception as e:
@@ -2541,6 +2565,19 @@ class XiaoYiClawLLM:
         except Exception as e:
             logger.warning(f"DAG context injection failed: {e}")
 
+        # ── 跨会话记忆注入(打破 session 隔离,旧会话摘要追回)──
+        try:
+            cs_ctx = state.analysis.get('cross_session_context', '')
+            if cs_ctx:
+                existing = state.analysis.get('skill_guide', '')
+                if existing:
+                    state.analysis['skill_guide'] = existing + f"\n\n[跨会话记忆恢复]\n{cs_ctx}"
+                else:
+                    state.analysis['skill_guide'] = f"[跨会话记忆恢复]\n{cs_ctx}"
+                logger.info(f"跨会话记忆已注入 skill_guide ({len(cs_ctx)} 字符)")
+        except Exception as e:
+            logger.warning(f"Cross-session injection failed: {e}")
+
         # ═══ AriGraph 空间上下文注入 ═══
         try:
             _inferred_scene = state.analysis.get('inferred_scene') or state.analysis.get('spatial_scene')
@@ -3050,6 +3087,14 @@ class XiaoYiClawLLM:
                     if dag_ctx:
                         context = f"[当前会话 DAG 上下文]\n{dag_ctx[:2000]}"
 
+                    # 跨会话记忆注入 - 旧会话摘要恢复
+                    cs_ctx = state.analysis.get('cross_session_context', '')
+                    if cs_ctx:
+                        if context and context.strip():
+                            context = f"[跨会话记忆恢复]\n{cs_ctx[:2000]}\n\n{context}"
+                        else:
+                            context = f"[跨会话记忆恢复]\n{cs_ctx[:2000]}"
+
                     # GoT 图推理结果注入
                     _got_ctx = state.analysis.get('got_result', '')
                     if _got_ctx:
@@ -3301,14 +3346,26 @@ class XiaoYiClawLLM:
             except Exception as _fe:
                 logger.warning(f"Forest self/env/meta 写入失败: {_fe}")
 
-        # 4. 情感标记
-        if 'emotion_memory' in getattr(self, '__dict__', {}) and hasattr(self, 'memory_v2') and self.memory_v2:
-            try:
-                state.emotion_marked = True
-            except Exception:
-                pass
+        # 4. 突触 LTP/LTD 更新 + 情感写回
+        #    每次写入后根据重要性/置信度触发神经突触强化/衰减
+        _synapse_weight = float(state.answer_confidence or 0.5)
+        try:
+            _s_result = self.optimize_memory_synapse(_synapse_weight, operation="ltp")
+            state.synapse_updated = True
+            logger.debug(f"Synapse LTP: weight {_synapse_weight:.2f} → {_s_result.get('new_weight', '?')}")
+        except Exception as _se:
+            logger.debug(f"Synapse update skip: {_se}")
 
-        # 5. 自进化检查
+        # 5. 情感状态写回（EmotionTracker — 本轮交互情绪固化到下轮检索权重）
+        try:
+            if getattr(self, '_paper_int', None) and hasattr(self._paper_int, 'update_emotion'):
+                _em_text = (query or '')[:200] + ' ' + (answer or '')[:200]
+                self._paper_int.update_emotion(_em_text.strip(), getattr(state, 'session_key', ''))
+                state.emotion_marked = True
+        except Exception as _ee:
+            logger.debug(f"Emotion update skip: {_ee}")
+
+        # 6. 自进化检查
         if state.cycle_count > 0 and state.action_success:
             state.evolution_triggered = True
 
@@ -3421,13 +3478,7 @@ class XiaoYiClawLLM:
         except Exception:
             pass
 
-        # ═══ DAGIntegration: 跨会话记忆恢复（每轮） ═══
-        try:
-            if getattr(self, '_dag_integration', None) and state.cycle_count == 0:
-                self._dag_integration.cross_session_memory_restore(
-                    getattr(state, 'session_key', 'xiaoyi-claw-dag'), recent_days=3)
-        except Exception:
-            pass
+
 
 
         return state
@@ -3483,6 +3534,7 @@ class XiaoYiClawLLM:
         state.image_source = image_source
 
         _rccam_session_key = session_key if session_key else "xiaoyi-claw-dag"
+        state.session_key = _rccam_session_key  # 覆写 PhaseState 自生成 key，统一 R-CCAM 会话 ID
 
         def _write_rccam_phase(phase_name, state_obj, content=""):
             if not hasattr(self, 'dag') or not self.dag:
@@ -3542,6 +3594,16 @@ class XiaoYiClawLLM:
                     state.dag_nodes_created = _stats.get('total_cycles', 0)
             except Exception:
                 pass
+
+        # ── 跨会话记忆恢复（读旧会话摘要，打破 session 隔离） ──
+        try:
+            if getattr(self, '_dag_integration', None):
+                _cs_restored = self._dag_integration.cross_session_memory_restore(
+                    getattr(state, 'session_key', 'xiaoyi-claw-dag'), recent_days=3)
+                if _cs_restored:
+                    state.analysis['cross_session_context'] = _cs_restored[:3000]
+        except Exception:
+            pass
 
         # 读取上轮 Galaxy Kernel 分析结果（WORKSPACE/data/，与 claw_worker.py 一致）
         _galaxy_ws = os.environ.get("OPENCLAW_WORKSPACE", os.path.expanduser("~/.openclaw/workspace"))

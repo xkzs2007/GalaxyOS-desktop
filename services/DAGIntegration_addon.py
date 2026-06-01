@@ -212,3 +212,70 @@ class DAGIntegration:
         restored = "\n\n".join(parts)
         # 硬上限 3000 字符，防止撑爆注入窗口
         return restored[:3000]
+
+    def add_message_with_scene(self, session_key: str, role: str, content: str) -> str:
+        """
+        将消息写入 DAG 节点（Worker rccam/dag_ingest 调用入口）
+
+        委托给底层 DAGContextManager.add_message()，
+        自动计算重要性分数和情感分数。
+        """
+        if not session_key or not content:
+            return ""
+        # 简单关键词级重要性计算
+        importance = 0.5
+        high_importance = ["决定", "配置", "关键", "重要", "记住", "记住这个", "以后"]
+        if any(kw in content for kw in high_importance):
+            importance = 0.8
+        emotion = 0.0
+        if "!" in content or "！" in content:
+            emotion = 0.2
+        return self.dag.add_message(
+            session_key=session_key,
+            role=role,
+            content=content,
+            importance=importance,
+            emotion=emotion,
+        )
+
+    def get_all_session_keys(self) -> List[str]:
+        """
+        获取 DAG 中所有活跃的 session_key
+
+        Worker rccam() 用此方法在无 session_key 时
+        自动找到最近活跃的会话。
+        """
+        import sqlite3
+        try:
+            db_path = self.dag.db_path
+            conn = sqlite3.connect(db_path)
+            rows = conn.execute(
+                """SELECT DISTINCT session_key FROM dag_nodes ORDER BY session_key"""
+            ).fetchall()
+            # 同时查 rccam_nodes
+            rows2 = conn.execute(
+                """SELECT DISTINCT session_key FROM rccam_nodes ORDER BY session_key"""
+            ).fetchall()
+            conn.close()
+            keys = set(r[0] for r in rows if r[0])
+            keys.update(r[0] for r in rows2 if r[0])
+            # 排除内部认知节点
+            keys.discard('_cog_subtree_user')
+            keys.discard('_cog_subtree_self')
+            return sorted(keys)
+        except Exception as e:
+            logger.debug(f"get_all_session_keys failed: {e}")
+            return []
+
+    def ensure_auto_compact(self, session_key: str) -> dict:
+        """
+        确保自动压缩：检查 → 如果阈值达到则触发压缩
+
+        Worker dag_compact() 和 Galaxy Kernel 调用入口。
+        """
+        needs_compact, stats = self.dag.should_compact(session_key)
+        if not needs_compact:
+            return {"summarized": 0, "reason": "not needed", "stats": stats}
+        result = self.dag.auto_summarize(session_key)
+        result["stats"] = stats
+        return result

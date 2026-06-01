@@ -1505,21 +1505,13 @@ def main():
             from xiaoyi_claw_api import XiaoYiClawLLM
             claw = XiaoYiClawLLM()
             input_data = json.loads(args.input) if args.input else {}
-            result = {"memory_id": None, "source": None, "warnings": []}
+            result = claw.process(
                 user_input=input_data.get("user_input", args.query or ""),
                 max_cycles=input_data.get("max_cycles", 1),
                 store_memory=input_data.get("store_memory", True),
                 has_image=input_data.get("has_image", False),
                 image_source=input_data.get("image_source", "")
             )
-            # 简化输出，只保留关键信息
-            output = {
-                "answer": result.get("answer", ""),
-                "strategy": result.get("strategy", ""),
-                "cycle_count": result.get("cycle_count", 0),
-                "search_count": result.get("search_count", 0),
-            }
-            result = {"memory_id": None, "source": None, "warnings": []}
         except Exception as e:
             result = {"memory_id": None, "source": None, "warnings": []}
     

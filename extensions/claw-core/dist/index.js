@@ -1889,11 +1889,12 @@ export default function register(api) {
                     if (!content || content.trim().length < 5) return { ingested: false };
                     api.logger.debug?.(`${TAG} [context-engine] ingest: session=${sessionId}, role=${message?.role}, len=${content.length}`);
 
-                    // 新会话检测:/new 后自动清理 DAG + RCCAM 缓存
+                    // 新会话检测:/new 后自动清理当前会话的 DAG 节点和摘要缓存
+                    // 注意：不移除 _rccamCache（按 query 做 key，不依赖 session），
+                    // 新会话可从旧会话的 R-CCAM 分析结果中直接命中，避免"失忆"。
                     if (!_seenSessions.has(sessionId)) {
                         _seenSessions.add(sessionId);
-                        api.logger.info?.(`${TAG} [context-engine] new session detected: ${sessionId}, clearing caches`);
-                        _rccamCache.clear();
+                        api.logger.info?.(`${TAG} [context-engine] new session detected: ${sessionId}, clearing per-session caches`);
                         _sessionSummaries.delete(sessionId);
                         dagCall("dag_clear_session", { sessionId }).catch(() => {});
                     }
@@ -1942,6 +1943,7 @@ export default function register(api) {
                                     user_input: content.trim(),
                                     max_cycles: 1,
                                     store_memory: true,
+                                    sessionKey: sessionId,
                                 }, 30000).catch(() => null);
                                 if (!result) return;
 

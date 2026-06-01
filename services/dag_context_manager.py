@@ -82,6 +82,18 @@ class PriorityLevel:
     LOW = 3          # 优先被摘要（系统日志等）
 
 
+class CognitionForestType:
+    """Cognition Forest 子树类型"""
+    USER = "user"     # 用户画像：人格文件、偏好、记忆快照
+    SELF = "self"     # 系统能力：可用技能、模块状态、配置
+    ENV  = "env"      # 运行环境：时间、位置、设备、网络
+    META = "meta"     # 元认知：自进化建议、反思记录
+
+    ALL_TYPES = [USER, SELF, ENV, META]
+
+_COG_SUBTREE_SESSION_PREFIX = "_cog_subtree_"
+
+
 @dataclass
 class DAGNode:
     """DAG 节点"""
@@ -1021,6 +1033,67 @@ class DAGContextManager:
         except OSError:
             return 0
 
+    # ========================================================================
+    # Cognition Forest 子树（四类独立子树，CRITICAL 优先永不压缩）
+    # ========================================================================
+
+    def _cog_subtree_key(self, forest_type: str) -> str:
+        """生成 Cognition Forest 子树 session_key"""
+        return f"{_COG_SUBTREE_SESSION_PREFIX}{forest_type}"
+
+    def add_cognition_subtree(
+        self,
+        forest_type: str,
+        content: str,
+        tokens: int = 0,
+        source: str = "",
+        metadata: Optional[Dict] = None,
+    ) -> str:
+        """写入 Cognition Forest 子树数据（_memory_phase 调用入口）"""
+        if forest_type not in CognitionForestType.ALL_TYPES:
+            logger.warning(f"未知子树类型: {forest_type}, 跳过")
+            return ""
+
+        session_key = self._cog_subtree_key(forest_type)
+        node_id = f"cog_{forest_type}_{source}_{int(time.time()*1000)}_{hashlib.md5(content.encode()[:16]).hexdigest()[:8]}"
+
+        _meta = {"source": source, "forest_type": forest_type}
+        if metadata:
+            _meta.update(metadata)
+
+        node = DAGNode(
+            node_id=node_id,
+            node_type=DAGNodeType.PERSONA,
+            session_key=session_key,
+            content=content,
+            tokens=tokens or len(content) // 4,
+            priority=PriorityLevel.CRITICAL,
+            parent_ids=[],
+            importance_score=0.9 if forest_type in (CognitionForestType.USER, CognitionForestType.SELF) else 0.7,
+            timestamp=time.time(),
+            metadata=_meta,
+        )
+
+        self.add_node(node)
+        return node_id
+
+    def get_all_session_keys(self) -> List[str]:
+        """获取 DAG 中所有活跃的 session_key"""
+        with self._lock:
+            conn = sqlite3.connect(self.db_path)
+            rows = conn.execute(
+                "SELECT DISTINCT session_key FROM dag_nodes ORDER BY session_key"
+            ).fetchall()
+            rows2 = conn.execute(
+                "SELECT DISTINCT session_key FROM rccam_nodes ORDER BY session_key"
+            ).fetchall()
+            conn.close()
+        keys = set(r[0] for r in rows if r[0])
+        keys.update(r[0] for r in rows2 if r[0])
+        keys.discard('_cog_subtree_user')
+        keys.discard('_cog_subtree_self')
+        return sorted(keys)
+
     def close(self):
         """关闭资源"""
         pass
@@ -1059,5 +1132,6 @@ __all__ = [
     'DAGNodeType',
     'PhaseNodeType',
     'PriorityLevel',
+    'CognitionForestType',
     'get_dag_manager',
 ]
