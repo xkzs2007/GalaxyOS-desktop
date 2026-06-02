@@ -2367,7 +2367,7 @@ class XiaoYiClawLLM:
                         except AttributeError:
                             pass
                     if skill_path:
-                        ws_path = getattr(state, 'workspace_path', 'str(Path.home() / '.openclaw' / 'workspace')')
+                        ws_path = getattr(state, 'workspace_path', str(Path.home() / '.openclaw' / 'workspace'))
                         full_path = f"{ws_path}/skills/{skill_path}"
                         try:
                             with open(full_path, 'r', encoding='utf-8') as f:
