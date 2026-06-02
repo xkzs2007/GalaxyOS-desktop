@@ -172,6 +172,7 @@ class BioRhythmSleepConsolidator:
     def _get_synapse_network(self):
         """懒加载突触网络"""
         if self._synapse_network is None:
+            import sys
             sys.path.insert(0, os.path.join(self.workspace,
                 "skills/xiaoyi-claw-omega-final/skills/llm-memory-integration/core"))
             from memory_synapse_network import MemorySynapseNetwork
@@ -179,6 +180,7 @@ class BioRhythmSleepConsolidator:
         return self._synapse_network
     
     def _get_ltd_adapter(self):
+        import sys
         if self._ltd_adapter is None:
             sys.path.insert(0, os.path.join(self.workspace,
                 "skills/xiaoyi-claw-omega-final/skills/llm-memory-integration/core"))
@@ -187,11 +189,18 @@ class BioRhythmSleepConsolidator:
         return self._ltd_adapter
     
     def _get_emotion_memory(self):
+        import sys
         if self._emotion_memory is None:
             sys.path.insert(0, os.path.join(self.workspace,
                 "skills/xiaoyi-claw-omega-final/skills/llm-memory-integration/core"))
-            from emotion_memory import EmotionMemory
-            self._emotion_memory = EmotionMemory(self.workspace)
+            try:
+                from emotion_memory import EmotionMemoryManager as EmotionMemory
+                self._emotion_memory = EmotionMemory(self.workspace)
+            except (ImportError, AttributeError):
+                class _FakeEmotionMemory:
+                    def get_all_memories(self): return []
+                    def get_memories_with_emotion(self, *a, **kw): return []
+                self._emotion_memory = _FakeEmotionMemory()
         return self._emotion_memory
     
     # ════════════════════════════════════════════════════════
