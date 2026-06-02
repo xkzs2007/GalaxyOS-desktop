@@ -163,8 +163,7 @@ class ShortTermImporter:
         stats = {"imported": 0, "high_freq_paths": 0, "skipped": 0}
         
         try:
-            sys.path.insert(0, str(self.paths.workspace / "skills" /
-                "xiaoyi-claw-omega-final" / "skills" / "llm-memory-integration" / "core"))
+            sys.path.insert(0, str(Path(__file__).parent))
             from memory_synapse_network import MemorySynapseNetwork
         except ImportError:
             stats["error"] = "memory_synapse_network 不可用"
@@ -462,8 +461,7 @@ class DreamingBridge:
         # 尝试加载 BioRhythm
         sleep_available = False
         try:
-            sys.path.insert(0, str(self.paths.workspace / "skills" /
-                "xiaoyi-claw-omega-final" / "skills" / "llm-memory-integration" / "core"))
+            sys.path.insert(0, str(Path(__file__).parent))
             from biorhythm_sleep_consolidation import BioRhythmSleepConsolidator
             sleep_available = True
         except ImportError:
@@ -512,8 +510,7 @@ class DreamingBridge:
         
         # 2. 加载 BioRhythm 并运行周期
         try:
-            sys.path.insert(0, str(self.paths.workspace / "skills" /
-                "xiaoyi-claw-omega-final" / "skills" / "llm-memory-integration" / "core"))
+            sys.path.insert(0, str(Path(__file__).parent))
             from biorhythm_sleep_consolidation import BioRhythmSleepConsolidator
             
             self._sleep = BioRhythmSleepConsolidator(str(self.paths.workspace))
