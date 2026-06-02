@@ -455,6 +455,7 @@ def _do_dag_fallback(query: str, top_k: int) -> list:
     return _r
 
 
+def _do_tencentdb(query: str, top_k: int) -> list:
     """已移除：数据已迁移至 UnifiedVectorStore"""
     return []
 
