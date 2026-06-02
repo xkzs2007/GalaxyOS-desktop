@@ -2,6 +2,7 @@
 """
 个人知识库与记忆系统同步模块
 
+实现 2nd-brain 与 memory-tencentdb 的双向同步。
 """
 
 import os

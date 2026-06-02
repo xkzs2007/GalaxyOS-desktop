@@ -49,6 +49,7 @@ class RulesManager:
         self.memory_dir = self.workspace_path / "memory"
         
         # 腾讯云配置
+        self.tencentdb_config = Path.home() / ".openclaw/memory-tdai/config/extension_config.json"
         
         # 求是技能路径
         self.qiushi_skill_dir = self.workspace_path / "skills/qiushi-skill"
@@ -151,7 +152,9 @@ class RulesManager:
                 pass
         
         # 腾讯云配置
+        if self.tencentdb_config.exists():
             try:
+                config = json.loads(self.tencentdb_config.read_text())
                 rules["search_engines"] = list(config.get("extensions", {}).keys())
                 rules["default_engine"] = config.get("search", {}).get("default_engine")
                 rules["fallback_order"] = config.get("search", {}).get("fallback_order", [])

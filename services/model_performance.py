@@ -33,6 +33,7 @@ class ModelPerformanceMonitor:
 
     def get_embedding_config(self):
         """获取 Embedding 配置"""
+        plugin = self.config.get("plugins", {}).get("entries", {}).get("memory-tencentdb", {})
         return plugin.get("config", {}).get("embedding", {})
 
     def test_embedding_latency(self):

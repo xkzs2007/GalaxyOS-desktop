@@ -2,6 +2,7 @@
 """
 记忆与知识图谱桥接模块
 
+实现 memory-tencentdb 与 ontology 技能的双向关联。
 """
 
 import os
