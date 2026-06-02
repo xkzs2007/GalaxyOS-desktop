@@ -12,7 +12,7 @@ tags: [architecture, memory, llm, rccam, dag, smart-processor]
 > **定位**: OpenClaw 的核心底层能力引擎
 > **更新时间**: 2026-06-02 15:20
 > **架构层数**: 16 层（含 Layer 0 安装向导）
-> **总能力项**: 430+ 项
+> **总能力项**: 435+ 项
 > **IPC 三通道**: UDS RPC（双向互通，动态注册表）+ ZMQ 事件推送（双向回复）+ mmap 结构化状态（4KB JSON段）
 > **默认通信**: UDS RPC，HTTP :8765 二级降级，无 stdin/stdout，无 spawnSync
 > **IPC 演进**: stdin/stdout → UDS RPC（单 Worker 单例） → **Gateway-Worker 全透明互通（UDS注册表 + mmap 结构化 + ZMQ 双向）**
@@ -26,7 +26,7 @@ tags: [architecture, memory, llm, rccam, dag, smart-processor]
 
 GalaxyOS是 OpenClaw 的**核心底层能力引擎**，提供：
 
-1. **记忆能力** — 二层记忆体系（本地记忆系统 + DAG上下文管理）+ 记忆巩固引擎（CLS固化 + 离线重放 + 艾宾浩斯遗忘曲线 + 干扰合并 + 预测编码冲突检测）+ 隐式偏好学习
+1. **记忆能力** — 二层记忆体系（本地记忆系统 + DAG上下文管理）+ 记忆巩固引擎（CLS固化 + 离线重放 + 艾宾浩斯遗忘曲线 + 干扰合并 + 预测编码冲突检测）+ **仿生睡眠巩固引擎（NREM-SWR尖波涟漪压缩重放 + NREM-CASCADE三级同步 + REM生成式梦境碎片组合 + REM情感整合强度衰减 + DEEP-SLEEP记忆迁移）** + 隐式偏好学习
 2. **检索能力** — 向量检索 + 知识图谱 + Self-RAG + CRAG 混合检索 + CRAG 动态纠错 + 场景锚定注入（Drawing on Memory 双迹编码 + GRAVITY 结构锚定）+ bge-reranker-v2-m3 重排序 + 预测编码冲突检测 + GraphRAG社区检测 [MS 2024] + RAPTOR分层摘要树 [Sarthi 2024]
 3. **智能处理能力** — 查询改写（Pro）+ 结果总结（Flash）+ 语义过滤 + 图像理解（SmartProcessor 三模型通道：Flash/Pro/VLM）+ 自进化上下文注入 + Flash 开推理场景编码 + KV 缓存优化 + Flash NLP 路由 + **用户画像驱动内在元认知分析（Flash以用户视角分析体验数据→惰性激活下游模块）**
 4. **思考能力** — 9 个思考技能 + 11 个方法论技能 + 10 个 Matt Pocock 工程技能 + 决策引擎 + 多智能体协作 + 全部 29 技能 SKILL.md 上下文注入 + Reflexion 反思 [Shinn 2023] + Self-Refine 迭代精炼 [Madaan 2023] + Multi-Path 多路径并行探索 [Yao 2023] + Toolformer 工具路由 [Meta 2023] + GA 反思 [Park 2023]
@@ -41,7 +41,7 @@ GalaxyOS是 OpenClaw 的**核心底层能力引擎**，提供：
 ---
 
 *GalaxyOS — OpenClaw 的核心底层能力引擎*
-*文档版本: v5.0 | 最后更新: 2026-05-31 21:06*
+*文档版本: v5.1 | 最后更新: 2026-06-02 15:34*
 
 ---
 

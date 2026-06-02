@@ -80,10 +80,17 @@ class ConsolidationEngine:
         if not self.stats_path.exists():
             self.stats_path.touch()
         
+        # 标记最后用户活跃时间（供睡眠引擎用）
+        self._last_user_active = time.time()
+        
         # 懒加载
         self._synapse_network = None
         self._ltd_adapter = None
         self._dag_db = None
+        
+        # 仿生睡眠巩固引擎（懒加载）
+        self._sleep_consolidator = None
+        self._sleep_consolidator_imported = False
         
         # 运行状态
         self._running = False
@@ -127,7 +134,7 @@ class ConsolidationEngine:
         try:
             import sqlite3
             # DAG 数据库
-            dag_db_path = os.path.join(self.workspace, ".dag_context.db")
+            dag_db_path = os.path.expanduser("~/.openclaw/dag_context.db")
             if not os.path.exists(dag_db_path):
                 return stats
             
@@ -515,8 +522,50 @@ class ConsolidationEngine:
         
         return results
     
+    def _try_sleep_consolidation(self) -> Dict:
+        """尝试执行仿生睡眠巩固（空闲检测 + 懒加载导入）"""
+        idle_seconds = time.time() - self._last_user_active
+        if idle_seconds < 120:
+            return {"skipped": "not_idle", "idle_seconds": idle_seconds}
+        
+        if self._sleep_consolidator is None and not self._sleep_consolidator_imported:
+            self._sleep_consolidator_imported = True
+            try:
+                # 导入睡眠引擎
+                import importlib.util
+                sleep_path = os.path.join(self.workspace,
+                    "skills/xiaoyi-claw-omega-final/skills/llm-memory-integration/core/biorhythm_sleep_consolidation.py")
+                spec = importlib.util.spec_from_file_location("biorhythm_sleep_consolidation", sleep_path)
+                if spec and spec.loader:
+                    mod = importlib.util.module_from_spec(spec)
+                    spec.loader.exec_module(mod)
+                    self._sleep_consolidator = mod.BioRhythmSleepConsolidator(self.workspace)
+                    self._sleep_consolidator.start_background()
+            except Exception as e:
+                return {"error": f"sleep_consolidator import failed: {e}"}
+        
+        if self._sleep_consolidator is None:
+            return {"skipped": "import_failed"}
+        
+        # 执行一轮睡眠巩固
+        try:
+            result = self._sleep_consolidator.run_full_sleep_cycle()
+            return result
+        except Exception as e:
+            return {"error": str(e)}
+    
+    def mark_active(self):
+        """标记系统活跃（每次主推理调用后调用）"""
+        self._last_user_active = time.time()
+        # 也同步到睡眠引擎
+        if self._sleep_consolidator is not None:
+            try:
+                self._sleep_consolidator.mark_active()
+            except Exception:
+                pass
+    
     def _background_worker(self):
-        """后台巩固线程"""
+        """后台巩固线程 — 融合 CLS 固化 + 仿生睡眠巩固"""
         cls_counter = 0
         replay_counter = 0
         
@@ -527,16 +576,30 @@ class ConsolidationEngine:
             
             cls_counter += 10
             replay_counter += 10
+            idle_seconds = time.time() - self._last_user_active
             
-            # CLS 固化（每5分钟）
-            if cls_counter >= self.config.consolidation_interval_s:
-                try:
-                    self._run_consolidation_cycle()
-                except Exception:
-                    pass
-                cls_counter = 0
+            # ── 空闲时优先执行仿生睡眠周期（完整 5 阶段） ──
+            if idle_seconds >= 120:
+                # 每 300 秒触发一轮睡眠周期
+                if cls_counter >= self.config.consolidation_interval_s:
+                    try:
+                        sleep_result = self._try_sleep_consolidation()
+                        if "skipped" not in sleep_result:
+                            # 睡眠周期本身包含了 CLS 固化等效功能
+                            pass
+                    except Exception:
+                        pass
+                    cls_counter = 0
             
-            # （离线重放跟 CLS 同一周期执行，已包含在 _run_consolidation_cycle 里）
+            # ── 非空闲或空闲但未到睡眠周期时，走原 CLS 固化 ──
+            if cls_counter < self.config.consolidation_interval_s or idle_seconds < 120:
+                if cls_counter >= self.config.consolidation_interval_s:
+                    try:
+                        self._run_consolidation_cycle()
+                    except Exception:
+                        pass
+                    cls_counter = 0
+            
             # 每 24 小时清一次超期冲突记录
             if replay_counter >= 86400:
                 try:
