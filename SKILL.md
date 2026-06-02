@@ -1,18 +1,18 @@
 ---
 name: xiaoyi-claw-omega-final
-description: GalaxyOS v5.0 — Galaxy Kernel 重构 + 异步注入三层兜底 + 时空认知论文集成
-version: 5.0.0
+description: GalaxyOS v5.1 — R-CCAM 延迟优化 + 四思考技能管道重架构 + DAG 上下文管理器升级
+version: 5.1.0
 author: xkzs2007
 license: MIT-0
 tags: [architecture, memory, llm, rccam, dag, smart-processor]
 ---
 
-# GalaxyOS v5.0
+# GalaxyOS v5.1
 
 > **定位**: OpenClaw 的核心底层能力引擎
-> **更新时间**: 2026-05-21 19:47
-> **架构层数**: 15 层（16层→15层精简）
-> **总能力项**: 420+ 项
+> **更新时间**: 2026-06-02 15:20
+> **架构层数**: 16 层（含 Layer 0 安装向导）
+> **总能力项**: 430+ 项
 > **IPC 三通道**: UDS RPC（双向互通，动态注册表）+ ZMQ 事件推送（双向回复）+ mmap 结构化状态（4KB JSON段）
 > **默认通信**: UDS RPC，HTTP :8765 二级降级，无 stdin/stdout，无 spawnSync
 > **IPC 演进**: stdin/stdout → UDS RPC（单 Worker 单例） → **Gateway-Worker 全透明互通（UDS注册表 + mmap 结构化 + ZMQ 双向）**
@@ -655,6 +655,25 @@ claw.verify_image_claim("图片路径", "声明内容")
 | 时空认知论文 | **3 篇** (Graphiti/AriGraph/LASAR) | 2026-05-27 |
 | 10论文验证 | **8 编译通过** | 2026-05-27 |
 | 自进化首轮产出 | **4 条进化建议** | 2026-05-28 |
+| 问候快速通路 | **~24s→0.1s (240×)** | 2026-06-02 |
+| R-CCAM 全链路 | **优化后 10-15s 目标** | 2026-06-02 |
+| thinking_skills_content | **分离 skill_guide 独立字段** | 2026-06-02 |
+| 思考内容截断 | **500→2000** | 2026-06-02 |
+| DAG 上下文排序 | **时间衰减权重重排序** | 2026-06-02 |
+| install_wizard.py | **6 阶段全自动自检** | 2026-06-02 |
+
+### v5.1 (2026-06-02) — R-CCAM 延迟优化 + 四思考技能管道重架构 + DAG 上下文管理器升级 + 安装向导
+
+- ✨ **R-CCAM 延迟优化 — 查询改写+分类二合一** — `_retrieval_phase` 一次 Flash 调用替代两次 Pro 调用，输出格式 `[REWRITTEN]...[TYPE]...`，加关键词兜底防止格式漂移，节省 **1 次 API 往返 (~6s)**
+- ✨ **问候/简单查询快速通路** — 检测 `[TYPE]greeting` 或纯关键词命中时，在 retrieval 阶段直接 `should_stop=True`，跳过 Cognition+Control+Action+Memory 四阶段。**~24s → 0.1s（240 倍加速）**
+- ✨ **FLARE 并行化** — `ThreadPoolExecutor(max_workers=3)` 并行执行 judge() 和 detect_conflicts() 防幻觉验证，conflicts 只 cycle_count>1 时跑，crag_correction 只 passed=False 时跑。**节省 3-5s**
+- ✨ **四思考技能管道重架构** — `_get_thinking_skills_context()` 从 `skill_guide` 完全分离，独立 `thinking_skills_content` 字段。budget routing：<=12字符+事实关键词→`"light"`（仅显技能名），复杂查询（"对比""为什么"）→`"full"`（读 SKILL.md）。思考内容截断 500→2000
+- ✨ **DAG 上下文管理器升级** — Cognition Forest 子树常量（`CognitionForestType: USER/SELF/ENV/META`），时间衰减权重排序（30天半衰期），旧消息按时间和重要性排序填充剩余 token，R-CCAM cycle_summary 追加（最近3轮摘要）
+- ✨ **WorkflowEngine 链路修复** — `claw_worker.py` sys.path 补 `ORCHESTRATION_DIR`，Worker 重启后 `unified_entry.health_check()` → `WorkflowEngine` 导入正常
+- ✨ **记忆验证模块健壮性增强** — `HallucinationGuard from_dict()` 容错：`json.JSONDecodeError` 跳过、非记忆行跳过。`SourceType` 补 `AI_JUDGE="ai_judge"`/`DC_JUDGE="dc_judge"`。`health_check` 仅对已验证记忆检查高置信度，纯 `unverified` 记忆不报警
+- ✨ **install_wizard.py（GalaxyOS 安装+配置向导）** — 6 阶段全自动自检：环境→模块语法扫描→文件同步→服务链路（Supervisor→Worker→UDS→ZMQ→mmap→DAG→RCI→Heartbeat）→断路器检测→配置交互编辑。`--fix` 自动修复文件同步，`--report` JSON 报告输出
+- ✨ **Heuristic-only 批量记忆验证** — 基于规则检查（绝对语言/数据来源/时效性），零 LLM API 成本。75 条记忆：33 verified_true + 42 conflicting（auto-archived Q&A 历史）
+- 📊 **统计数据更新**：总能力项 430+，新增 v5.1 安装向导/延迟优化指标
 
 ### v5.0 (2026-05-31) — GalaxyOS 品牌化 + Galaxy Kernel 重构 + 异步注入三层兜底 + 时空认知论文集成
 

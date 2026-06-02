@@ -4,7 +4,7 @@
 
 ## 总览
 
-`GalaxyOS`（前身：小艺 Claw 系统）是 **OpenClaw 的底层认知增强引擎**。提供 **15 层架构、420+ 功能项、144+ 服务模块**，覆盖从记忆管理到认知推理的全链路。
+`GalaxyOS`（前身：小艺 Claw 系统）是 **OpenClaw 的底层认知增强引擎**。提供 **15 层架构、430+ 功能项、144+ 服务模块**，覆盖从记忆管理到认知推理的全链路。
 
 ### 核心能力
 
@@ -152,7 +152,7 @@ python3 -m services.xiaoyi_claw_api recall --query "查询"
 
 | 版本 | 文件 | 说明 |
 |------|------|------|
-| **v5.0 (最新)** | `docs/xiaoyi-claw-core-architecture-v5.0.md` | **GalaxyOS 品牌更名** + Galaxy Kernel 重构 + 异步注入三层兜底 + 时空认知论文集成 |
+| **v5.1 (最新)** | `docs/xiaoyi-claw-core-architecture-v5.0.md` | **R-CCAM 延迟优化** + 四思考技能管道重架构 + DAG 上下文管理器升级 + 安装向导 |
 | v4.6 | `docs/xiaoyi-claw-core-architecture-v4.6.md` | SmartProcessor 统一路由 + 三通道透明互通 |
 | v4.5 | `docs/xiaoyi-claw-core-architecture-v4.5.md` | Galaxy 增强（DAG三维绑定/Cognition Forest/KoRa/Kernel） |
 | v4.4 | `docs/xiaoyi-claw-core-architecture-v4.4.md` | 人格视觉 + Merge Gate + Rails增强版 + 内在元认知 |
@@ -161,18 +161,24 @@ python3 -m services.xiaoyi_claw_api recall --query "查询"
 | v3.1.0 | `docs/xiaoyi-claw-core-architecture-v3.1.0.md` | ContextEngine 注册、DAG 上下文中继 |
 | v3.0.0 | `docs/xiaoyi-claw-core-architecture-v3.0.0.md` | 16 层架构、R-CCAM 认知循环 |
 
-**完整架构文档（含 15 层全景图、420+ 功能列表、更新日志）：** 👉 [📖 查看 Skills 文档栏](https://cnb.cool/llm-memory-integrat/GalaxyOS?tabValue=SKILLS-ov-file)
+**完整架构文档（含 15 层全景图、430+ 功能列表、更新日志）：** 👉 [📖 查看 Skills 文档栏](https://cnb.cool/llm-memory-integrat/GalaxyOS?tabValue=SKILLS-ov-file)
 
-### v5.0 新特性
+### v5.1 新特性
 
 | 特性 | 说明 |
 |------|------|
-| **系统品牌更名 GalaxyOS** | 从小艺 Claw 系统架构升级为 GalaxyOS |
-| **process() 精简 -70%** | 863→254 行，只保留 SCL 五阶段核心 |
-| **Galaxy Kernel 扩容** | 308 行独立后台线程，6s 轮询 + Reflexion + 自进化 |
-| **异步注入三层兜底** | assemble→before_prompt_build→agent_end 不阻塞回复 |
-| **钩子化改造** | 4 工具全部移除，转为纯钩子驱动 |
-| **Pro 查询改写前置** | 从 _action_phase 移到 _retrieval_phase |
+| **R-CCAM 延迟优化** | 查询改写+分类二合一，问候快速通路 ~24s→0.1s（240×） |
+| **FLARE 并行化** | ThreadPoolExecutor 3 线程并行防幻觉验证，节省 3-5s |
+| **四思考技能管道重架构** | thinking_skills_content 从 skill_guide 分离，budget routing |
+| **DAG 上下文管理器升级** | 时间衰减权重排序 + Cognition Forest 子树 + cycle_summary 追加 |
+| **WorkflowEngine 修复** | claw_worker.py 补 ORCHESTRATION_DIR，健康检查链路正常 |
+| **记忆验证增强** | from_dict 容错、SourceType 补全、health_check 仅验证记忆检查 |
+| **install_wizard 安装向导** | 6 阶段全自动自检（环境→模块→文件→服务→断路器→配置） |
+| **Heuristic 批量验证** | 规则检查零 LLM 成本，75 条记忆批量处理 |
+| **系统品牌更名 GalaxyOS** | 从小艺 Claw 系统架构升级 |
+| **process() 精简 -70%** | 863→254 行 |
+| **Galaxy Kernel 扩容** | 308 行独立后台线程，6s 轮询 |
+| **异步注入三层兜底** | assemble→before_prompt_build→agent_end |
 | **自进化首次跑通** | 4 条/10min 进化建议产出 |
 | **时空认知集成** | Graphiti/AriGraph/LASAR 三篇论文 |
 
