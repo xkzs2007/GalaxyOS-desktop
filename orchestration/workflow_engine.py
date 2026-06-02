@@ -274,6 +274,8 @@ class WorkflowEngine:
                 WorkflowStep("brain_memory_sync", "search_entries", "同步知识库"),
                 WorkflowStep("memory_ontology_bridge", "get_entity", "更新知识图谱"),
             ],
+            "tencentdb_sync": [
+                WorkflowStep("tencentdb_integration", "get_stats", "腾讯云同步"),
             ],
             "full_recall": [
                 WorkflowStep("hybrid_search", "search", "混合检索"),

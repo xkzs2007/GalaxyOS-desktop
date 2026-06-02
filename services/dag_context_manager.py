@@ -31,10 +31,6 @@ from dataclasses import dataclass, field, asdict
 from collections import defaultdict, Counter
 from pathlib import Path
 
-import faiss
-import numpy as np
-from numpy.linalg import norm
-
 logger = logging.getLogger(__name__)
 
 # ============================================================================
@@ -42,12 +38,6 @@ logger = logging.getLogger(__name__)
 # ============================================================================
 DAG_DB_DIR = Path(os.path.expanduser("~/.openclaw"))
 DAG_DB_PATH = DAG_DB_DIR / "dag_context.db"
-DAG_FAISS_PATH = DAG_DB_DIR / "dag_faiss.idx"
-DAG_FAISS_ID_PATH = DAG_DB_DIR / "dag_faiss_ids.json"  # node_id → idx mapping
-
-# FAISS 向量索引（单例，线程安全通过 _lock 保证）
-_FAISS_INDEX = None
-_FAISS_NODE_IDS = []  # index[int] -> str(node_id)
 
 
 # ============================================================================
@@ -77,21 +67,30 @@ class PhaseNodeType:
 class PriorityLevel:
     """优先级"""
     CRITICAL = 0     # 永不压缩、永不裁减（人格）
-    HIGH = 1         # 最后被裁（重要决策、会话快照）
-    NORMAL = 2       # 普通消息，可被摘要
-    LOW = 3          # 优先被摘要（系统日志等）
 
+
+# ============================================================================
+# Cognition Forest 子树常量
+# ============================================================================
 
 class CognitionForestType:
     """Cognition Forest 子树类型"""
     USER = "user"     # 用户画像：人格文件、偏好、记忆快照
     SELF = "self"     # 系统能力：可用技能、模块状态、配置
     ENV  = "env"      # 运行环境：时间、位置、设备、网络
-    META = "meta"     # 元认知：自进化建议、反思记录
+    META = "meta"     # 元认知：自进化建议、反思记录、KoRa 模式
 
     ALL_TYPES = [USER, SELF, ENV, META]
 
 _COG_SUBTREE_SESSION_PREFIX = "_cog_subtree_"
+
+
+class PriorityLevel:
+    """优先级"""
+    CRITICAL = 0     # 永不压缩、永不裁减（人格）
+    HIGH = 1         # 最后被裁（重要决策、会话快照）
+    NORMAL = 2       # 普通消息，可被摘要
+    LOW = 3          # 优先被摘要（系统日志等）
 
 
 @dataclass
@@ -162,6 +161,9 @@ class DAGContextManager:
 
         # 初始化数据库
         self._init_db()
+
+        # SpatialTopologyGraph 懒加载（AriGraph 空间拓扑）
+        self._sg = None
 
         logger.info(f"DAG Context Manager 初始化: db={self.db_path}, "
                     f"max_tokens={max_context_tokens}, threshold={context_threshold}")
@@ -289,9 +291,14 @@ class DAGContextManager:
         keywords: Optional[List[str]] = None,
         entities: Optional[List[str]] = None,
         parent_ids: Optional[List[str]] = None,
+        metadata: Optional[Dict] = None,
     ) -> str:
         """添加一条消息节点，返回节点 ID"""
         node_id = f"{session_key}_{role}_{int(time.time()*1000)}_{hashlib.md5(content.encode()[:32]).hexdigest()[:8]}"
+
+        _meta = {"role": role}
+        if metadata:
+            _meta.update(metadata)
 
         node = DAGNode(
             node_id=node_id,
@@ -306,7 +313,7 @@ class DAGContextManager:
             keywords=keywords or [],
             entities=entities or [],
             timestamp=time.time(),
-            metadata={"role": role}
+            metadata=_meta
         )
 
         self.add_node(node)
@@ -385,42 +392,6 @@ class DAGContextManager:
         row['is_summary'] = bool(row.get('is_summary', False))
         return DAGNode.from_dict(row)
 
-    def _query_nodes(self, session_key: str, priority_eq: Optional[int] = None,
-                     priority_min: Optional[int] = None,
-                     is_summary: Optional[bool] = None,
-                     node_type: Optional[str] = None,
-                     order_asc: bool = True,
-                     limit: Optional[int] = None) -> List[DAGNode]:
-        """SQL 层面过滤的节点查询，不拉全量"""
-        conditions = ["session_key = ?"]
-        params = [session_key]
-
-        if priority_eq is not None:
-            conditions.append("priority = ?")
-            params.append(priority_eq)
-        if priority_min is not None:
-            conditions.append("priority >= ?")
-            params.append(priority_min)
-        if is_summary is not None:
-            conditions.append("is_summary = ?")
-            params.append(1 if is_summary else 0)
-        if node_type is not None:
-            conditions.append("node_type = ?")
-            params.append(node_type)
-
-        order = "ASC" if order_asc else "DESC"
-        query = f"SELECT * FROM dag_nodes WHERE {' AND '.join(conditions)} ORDER BY timestamp {order}"
-        if limit:
-            query += f" LIMIT {limit}"
-
-        with self._lock:
-            conn = sqlite3.connect(self.db_path)
-            conn.row_factory = sqlite3.Row
-            rows = [dict(r) for r in conn.execute(query, params).fetchall()]
-            conn.close()
-
-        return [self._row_to_node(r) for r in rows]
-
     def assemble_context(
         self,
         session_key: str,
@@ -439,13 +410,19 @@ class DAGContextManager:
         fresh_tail_count = fresh_tail_count or self.fresh_tail_count
         max_tokens = max_tokens or self.max_context_tokens
 
-        # 用四条定向 SQL 代替一次全表扫 + Python 分拣
-        critical_nodes = self._query_nodes(session_key, priority_eq=PriorityLevel.CRITICAL, order_asc=True)
-        summary_nodes = self._query_nodes(session_key, priority_min=PriorityLevel.NORMAL,
-                                           is_summary=True, order_asc=True)
-        message_nodes = self._query_nodes(session_key, priority_min=PriorityLevel.NORMAL,
-                                           is_summary=False, order_asc=True)
-        high_nodes = self._query_nodes(session_key, priority_eq=PriorityLevel.HIGH, order_asc=True)
+        all_nodes = self.get_session_nodes(session_key)
+
+        # 分离各类节点
+        critical_nodes = [n for n in all_nodes if n.priority == PriorityLevel.CRITICAL]
+        high_nodes = [n for n in all_nodes if n.priority == PriorityLevel.HIGH]
+        summary_nodes = [n for n in all_nodes if n.is_summary and n.priority <= PriorityLevel.NORMAL]
+        message_nodes = [n for n in all_nodes if not n.is_summary and n.priority >= PriorityLevel.NORMAL]
+
+        # 按时间排序
+        critical_nodes.sort(key=lambda n: n.timestamp)
+        high_nodes.sort(key=lambda n: n.timestamp)
+        summary_nodes.sort(key=lambda n: n.timestamp)
+        message_nodes.sort(key=lambda n: n.timestamp)
 
         # 第一步：关键节点（人格等）强制包含
         result_parts = []
@@ -455,13 +432,29 @@ class DAGContextManager:
             result_parts.append(("critical", node))
             used_tokens += node.tokens
 
-        # 第二步：最近原始消息（取最后 fresh_tail_count 条）
+        # 第二步：最近原始消息（加入时间衰减权重后重排序）
+        now = time.time()
+        def _time_weight(node):
+            age_hours = (now - node.timestamp) / 3600 if node.timestamp > 0 else 0
+            decay = max(0.1, 1.0 - age_hours / (24 * 30))  # 30天半衰期
+            return node.importance_score * decay
+
+        message_nodes.sort(key=lambda n: n.timestamp)  # 保证时间顺序
         recent_messages = message_nodes[-fresh_tail_count:] if message_nodes else []
+        older_messages = message_nodes[:-fresh_tail_count] if len(message_nodes) > fresh_tail_count else []
 
         for node in recent_messages:
             if used_tokens + node.tokens > max_tokens:
                 break
             result_parts.append(("recent", node))
+            used_tokens += node.tokens
+
+        # 用时间衰减 + 重要性排序的旧消息填充剩余空间
+        older_messages.sort(key=_time_weight, reverse=True)
+        for node in older_messages:
+            if used_tokens + node.tokens > max_tokens:
+                break
+            result_parts.append(("weighted_old", node))
             used_tokens += node.tokens
 
         # 第三步：摘要节点（从旧到新）
@@ -482,6 +475,7 @@ class DAGContextManager:
             result_parts.append(("high", node))
             used_tokens += node.tokens
 
+        # 组装最终文本
         assembled_text = "\n\n".join([node.content for _, node in result_parts])
 
         stats = {
@@ -492,51 +486,81 @@ class DAGContextManager:
             "summary_nodes_used": len([p for p in result_parts if p[0] == "summary"]),
             "summary_nodes_total": len(summary_nodes),
             "high_nodes_used": len([p for p in result_parts if p[0] == "high"]),
-            "total_queried_critical": len(critical_nodes),
-            "total_queried_summary": len(summary_nodes),
-            "total_queried_message": len(message_nodes),
+            "total_nodes_stored": len(all_nodes),
         }
+
+        # 第五步：追加 R-CCAM cycle_summary（从 rccam_nodes 读最近 3 个 cycle 的摘要）
+        try:
+            conn = sqlite3.connect(self.db_path)
+            conn.row_factory = sqlite3.Row
+            cur = conn.execute(
+                "SELECT content, cycle_id, cycle_index FROM rccam_nodes "
+                "WHERE session_key=? AND node_type='rccam_cycle_summary' AND is_compressed=0 "
+                "ORDER BY cycle_index DESC LIMIT 3",
+                (session_key,)
+            )
+            rccam_cycles = cur.fetchall()
+            conn.close()
+            if rccam_cycles:
+                rccam_parts = []
+                for row in reversed(rccam_cycles):
+                    rccam_parts.append(f"[R-CCAM 循环 {row['cycle_index']}]\n{row['content'][:500]}")
+                rccam_text = "\n\n".join(rccam_parts)
+                rccam_tokens = len(rccam_text) // 2
+                if used_tokens + rccam_tokens <= max_tokens:
+                    assembled_text += "\n\n" + rccam_text
+                    used_tokens += rccam_tokens
+                    stats["rccam_cycles_used"] = len(rccam_cycles)
+        except Exception:
+            pass
 
         return assembled_text, stats
 
     def should_compact(self, session_key: str) -> Tuple[bool, Dict]:
         """检查是否需要触发增量压缩
 
-        用 SQL 聚合代替全表拉到 Python 再 sum。
+        额外检查时序 KG 的社区摘要是否可用。
+        如果 TKG 社区摘要内容丰富，可适当降低压缩阈值（用社区摘要替代部分原始消息）
         """
-        with self._lock:
-            conn = sqlite3.connect(self.db_path)
-            raw_tokens = conn.execute(
-                "SELECT COALESCE(SUM(tokens), 0) FROM dag_nodes "
-                "WHERE session_key=? AND is_summary=0 AND priority>=?",
-                (session_key, PriorityLevel.NORMAL)
-            ).fetchone()[0]
-            raw_count = conn.execute(
-                "SELECT COUNT(*) FROM dag_nodes "
-                "WHERE session_key=? AND is_summary=0 AND priority>=?",
-                (session_key, PriorityLevel.NORMAL)
-            ).fetchone()[0]
-            summary_count = conn.execute(
-                "SELECT COUNT(*) FROM dag_nodes "
-                "WHERE session_key=? AND is_summary=1",
-                (session_key,)
-            ).fetchone()[0]
-            conn.close()
+        all_nodes = self.get_session_nodes(session_key)
+
+        raw_nodes = [n for n in all_nodes if not n.is_summary and n.priority >= PriorityLevel.NORMAL]
+        raw_tokens = sum(n.tokens for n in raw_nodes)
 
         threshold_tokens = int(self.max_context_tokens * self.context_threshold)
         needs_compact = raw_tokens > self.leaf_chunk_tokens
 
+        # 检查 TKG 社区摘要是否可用
+        community_summary_available = False
+        try:
+            tkg = self._get_temporal_kg()
+            session_graph = tkg.get_session_graph(session_key)
+            if session_graph['stats']['edge_count'] >= 2:
+                communities = tkg.build_community(min_edges=2)
+                community_summary_available = len(communities) > 0
+        except Exception:
+            pass
+
+        # 如果社区摘要可用，可提前触发压缩（减少原始消息保存压力）
+        if community_summary_available and raw_tokens > self.leaf_chunk_tokens * 0.7:
+            needs_compact = True
+
         stats = {
-            "raw_nodes": raw_count,
+            "raw_nodes": len(raw_nodes),
             "raw_tokens": raw_tokens,
-            "summary_nodes": summary_count,
+            "summary_nodes": len([n for n in all_nodes if n.is_summary]),
             "threshold_tokens": threshold_tokens,
             "leaf_chunk_tokens": self.leaf_chunk_tokens,
             "needs_compact": needs_compact,
             "context_usage_ratio": raw_tokens / self.max_context_tokens if self.max_context_tokens else 0,
+            "community_summary_available": community_summary_available,
         }
 
         return needs_compact, stats
+
+    def ensure_auto_compact(self, session_key: str) -> Dict:
+        """Worker dag_compact handler 调用的兼容入口，包装 auto_summarize"""
+        return self.auto_summarize(session_key=session_key, batch_size=10)
 
     def auto_summarize(
         self,
@@ -556,9 +580,8 @@ class DAGContextManager:
         if not needs_compact:
             return {"summarized": 0, "reason": "leaf_chunk_tokens 未达到阈值"}
 
-        # 用 _query_nodes 定向查原始消息节点，代替全表扫再分拣
-        raw_nodes = self._query_nodes(session_key, priority_min=PriorityLevel.NORMAL,
-                                       is_summary=False, order_asc=True)
+        all_nodes = self.get_session_nodes(session_key)
+        raw_nodes = [n for n in all_nodes if not n.is_summary and n.priority >= PriorityLevel.NORMAL]
 
         if len(raw_nodes) <= self.fresh_tail_count + batch_size:
             return {"summarized": 0, "reason": "消息数不够，保留最近上下文"}
@@ -567,10 +590,27 @@ class DAGContextManager:
         if not to_summarize:
             return {"summarized": 0, "reason": "没有可摘要的节点"}
 
-        # 生成摘要
+        # Flash 闪电摘要（优先）
         if not summary_text:
             combined_text = "\n".join([n.content for n in to_summarize])
+            try:
+                from xiaoyi_claw_api import get_global_xiaoyi_claw
+                _xc = get_global_xiaoyi_claw()
+                if _xc and _xc.llm_flash:
+                    _flash_resp = _xc.llm_flash.chat.completions.create(
+                        model=_xc._llm_flash_model,
+                        messages=[{"role": "user",
+                            "content": f"请用中文为以下对话内容生成简洁的摘要，保留核心信息和关键结论：\n\n{combined_text[:3000]}\n\n摘要："}],
+                        max_tokens=256, temperature=0.1,
+                    )
+                    summary_text = _flash_resp.choices[0].message.content.strip()[:800]
+                    _method = "flash"
+            except Exception:
+                pass
+
+        if not summary_text:
             summary_text = combined_text[:500] + "..." if len(combined_text) > 500 else combined_text
+            _method = "rule_truncate"
 
         # 提取关键词
         keywords = _extract_keywords(summary_text)
@@ -595,7 +635,7 @@ class DAGContextManager:
             "summarized": len(to_summarize),
             "summary_node_id": summary_node_id,
             "summary_length": len(summary_text),
-            "method": "provided" if summary_text else "rule",
+            "method": _method,
         }
 
     def expand_summary(self, summary_node_id: str) -> List[DAGNode]:
@@ -646,6 +686,126 @@ class DAGContextManager:
             stats[row[0]][row[1]] = row[2]
 
         return dict(stats)
+
+    # ========================================================================
+    # Cognition Forest 子树（四类独立子树，永不压缩）
+    # ========================================================================
+
+    def _cog_subtree_key(self, forest_type: str) -> str:
+        """生成 Cognition Forest 子树 session_key"""
+        return f"{_COG_SUBTREE_SESSION_PREFIX}{forest_type}"
+
+    def add_cognition_subtree(
+        self,
+        forest_type: str,
+        content: str,
+        tokens: int = 0,
+        source: str = "",
+        metadata: Optional[Dict] = None,
+    ) -> str:
+        """
+        写入一条 Cognition Forest 子树数据。
+
+        Args:
+            forest_type: 子树类型 (user/self/env/meta)
+            content: 数据内容
+            tokens: token 数
+            source: 数据来源（如 personality_files/dag_assemble/system_monitor）
+            metadata: 额外元数据
+
+        Returns:
+            节点 ID
+        """
+        if forest_type not in CognitionForestType.ALL_TYPES:
+            logger.warning(f"未知子树类型: {forest_type}, 跳过")
+            return ""
+
+        session_key = self._cog_subtree_key(forest_type)
+        node_id = f"cog_{forest_type}_{source}_{int(time.time()*1000)}_{hashlib.md5(content.encode()[:16]).hexdigest()[:8]}"
+
+        _meta = {"source": source, "forest_type": forest_type}
+        if metadata:
+            _meta.update(metadata)
+
+        node = DAGNode(
+            node_id=node_id,
+            node_type=DAGNodeType.PERSONA,  # 同人格节点级别保护
+            session_key=session_key,
+            content=content,
+            tokens=tokens or len(content) // 4,
+            priority=PriorityLevel.CRITICAL,  # 永不压缩
+            parent_ids=[],
+            importance_score=0.9 if forest_type in (CognitionForestType.USER, CognitionForestType.SELF) else 0.7,
+            timestamp=time.time(),
+            metadata=_meta,
+        )
+
+        self.add_node(node)
+        return node_id
+
+    def get_cognition_subtree(
+        self,
+        forest_type: str,
+        limit: Optional[int] = 5,
+    ) -> List[DAGNode]:
+        """
+        获取 Cognition Forest 子树数据（按时间倒序）。
+
+        Args:
+            forest_type: 子树类型 (user/self/env/meta)
+            limit: 返回条数，None 返回全部
+
+        Returns:
+            节点列表（最新在前）
+        """
+        session_key = self._cog_subtree_key(forest_type)
+        return self.get_session_nodes(
+            session_key=session_key,
+            priority_max=PriorityLevel.CRITICAL,
+            limit=limit,
+        )
+
+    def list_cognition_subtrees(self) -> Dict[str, int]:
+        """列出所有 Cognition Forest 子树及其节点数量"""
+        result = {}
+        with self._lock:
+            conn = sqlite3.connect(self.db_path)
+            for ft in CognitionForestType.ALL_TYPES:
+                sk = self._cog_subtree_key(ft)
+                cursor = conn.execute(
+                    "SELECT COUNT(*) FROM dag_nodes WHERE session_key = ?",
+                    (sk,)
+                )
+                result[ft] = cursor.fetchone()[0]
+            conn.close()
+        return result
+
+    def clear_cognition_subtree(self, forest_type: str) -> int:
+        """
+        清空指定 Cognition Forest 子树。
+
+        Args:
+            forest_type: 子树类型 (user/self/env/meta)
+
+        Returns:
+            删除的节点数
+        """
+        if forest_type not in CognitionForestType.ALL_TYPES:
+            logger.warning(f"未知子树类型: {forest_type}, 跳过")
+            return 0
+
+        session_key = self._cog_subtree_key(forest_type)
+        with self._lock:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.execute(
+                "DELETE FROM dag_nodes WHERE session_key = ?",
+                (session_key,)
+            )
+            deleted = cursor.rowcount
+            conn.commit()
+            conn.close()
+        logger.info(f"清空 Cognition Forest 子树 '{forest_type}': 删除 {deleted} 个节点")
+        return deleted
 
     # ========================================================================
     # R-CCAM 阶段节点（新式节点，写入 rccam_nodes 表）
@@ -744,6 +904,7 @@ class DAGContextManager:
         """获取一个 session 的所有 cycle_id 及其元信息"""
         with self._lock:
             conn = sqlite3.connect(self.db_path)
+            conn.row_factory = sqlite3.Row
             cur = conn.execute(
                 """SELECT DISTINCT cycle_id, MIN(timestamp) as first_ts,
                           MAX(cycle_index) as max_idx,
@@ -756,15 +917,17 @@ class DAGContextManager:
             conn.close()
         return cycles
 
-    def assemble_from_cycles(self, session_key, fresh_cycles=3, max_tokens=240000):
+    def assemble_from_cycles(self, session_key, fresh_cycles=3, max_tokens=240000, trace_parent_depth=2):
         """
-        按 cycle 为单元组装上下文。
+        assemble context from rccam cycles + parent_ids trace.
+        trace_parent_depth: parent_ids causal tracing depth (0=off, 1=direct parent, 2=recursive two levels)
         """
         persona_nodes = self.get_session_nodes(session_key, priority_max=0, limit=10)
         cycles = self.get_rccam_session_cycles(session_key)
 
         result_parts = []
         used_tokens = 0
+        traced_ids = set()
 
         for n in persona_nodes:
             result_parts.append(("persona", n.content))
@@ -776,15 +939,54 @@ class DAGContextManager:
 
             for c in recent:
                 nodes = self.get_rccam_cycle_nodes(session_key, c["cycle_id"])
-                for node in nodes:
-                    if node["is_compressed"]:
+                # parent_ids causal trace: collect upstream nodes
+                upstream_nodes = []
+                if trace_parent_depth > 0:
+                    stack = [(n, 0) for n in nodes]
+                    while stack:
+                        node_entry, d = stack.pop()
+                        if d >= trace_parent_depth:
+                            continue
+                        try:
+                            pids = json.loads(node_entry.get("parent_ids", "[]"))
+                        except Exception:
+                            pids = []
+                        for pid in pids:
+                            if pid in traced_ids:
+                                continue
+                            traced_ids.add(pid)
+                            with self._lock:
+                                conn = sqlite3.connect(self.db_path)
+                                conn.row_factory = sqlite3.Row
+                                cur = conn.execute(
+                                    "SELECT * FROM rccam_nodes WHERE node_id=? AND session_key=?",
+                                    (pid, session_key)
+                                )
+                                prow = cur.fetchone()
+                                conn.close()
+                            if prow:
+                                pd = dict(prow)
+                                upstream_nodes.append(pd)
+                                stack.append((pd, d + 1))
+                for up in upstream_nodes:
+                    ut = up.get("tokens", len(up.get("content","")) // 2)
+                    if used_tokens + ut > max_tokens * 0.95:
                         continue
-                    t = node["tokens"] or len(node["content"]) // 2
+                    up_label = "[upstream {}:{}] ".format(
+                        up.get("cycle_id","?")[-16:], up.get("phase_name","?"))
+                    result_parts.append((f"upstream_{up['node_id']}",
+                                         up_label + up.get("content","")[:500]))
+                    used_tokens += ut
+                for node_entry in nodes:
+                    if node_entry.get("is_compressed", 0):
+                        continue
+                    t = node_entry.get("tokens", 0) or len(node_entry.get("content","")) // 2
                     if used_tokens + t > max_tokens * 0.95:
                         break
-                    label = "[{}] ".format(node["phase_name"].upper())
-                    result_parts.append((f"cycle_{c['cycle_id']}_{node['phase_name']}",
-                                         label + node["content"]))
+                    pname = node_entry.get("phase_name", "?")
+                    label = "[{}] ".format(pname.upper())
+                    result_parts.append((f"cycle_{c['cycle_id']}_{pname}",
+                                         label + node_entry.get("content","")))
                     used_tokens += t
 
             for c in reversed(older):
@@ -793,7 +995,7 @@ class DAGContextManager:
                     st = summary.get("tokens", len(summary["content"]) // 2)
                     if used_tokens + st <= max_tokens:
                         result_parts.append((f"summ_{c['cycle_id']}",
-                                             f"[Cycle {c.get('cycle_index','?')} 摘要] {summary['content']}"))
+                                             f"[Cycle {c.get('cycle_index','?')} summary] {summary['content']}"))
                         used_tokens += st
                     else:
                         break
@@ -811,6 +1013,7 @@ class DAGContextManager:
             "persona_nodes": len(persona_nodes),
             "total_cycles": len(cycles),
             "total_parts": len(result_parts),
+            "traced_parents": len(traced_ids),
         }
         return assembled, stats
 
@@ -833,6 +1036,35 @@ class DAGContextManager:
                 d["metadata"] = {}
             return d
         return None
+
+    def write_capability_node(self, capability: dict, session_key: str):
+        """将自进化检测到的稳定模式写为 evolved_capability 节点到 rccam_nodes"""
+        import json, time, uuid
+        node_id = f"cap_{capability.get('name','pattern')[:30]}_{int(time.time())}"
+        content = json.dumps(capability, ensure_ascii=False)
+        with self._lock:
+            try:
+                conn = sqlite3.connect(self.db_path)
+                conn.execute("""
+                    INSERT OR REPLACE INTO rccam_nodes
+                    (node_id, node_type, session_key, content, tokens, confidence,
+                     parent_ids, timestamp, is_compressed)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)
+                """, (
+                    node_id,
+                    "evolved_capability",
+                    session_key,
+                    content,
+                    len(content) // 2,
+                    capability.get("confidence", 0.5),
+                    json.dumps([]),
+                    time.time(),
+                ))
+                conn.commit()
+                conn.close()
+            except Exception as e:
+                import logging
+                logging.getLogger(__name__).warning(f"write_capability_node failed: {e}")
 
     def write_cycle_summary(self, session_key, cycle_id, cycle_index,
                              user_intent, key_findings, conclusion,
@@ -874,35 +1106,96 @@ class DAGContextManager:
         return [n for n in nodes if n["node_type"] != "rccam_cycle_summary"]
 
     def rccam_compact_needed(self, session_key):
-        """检查是否需要触发压缩（τ_soft: 6K / τ_hard: 12K tokens）"""
+        """检查全域是否需要触发压缩（rccam_nodes + dag_nodes 总 token）
+
+        返回:
+            needs_soft: 总 raw_tokens > τ_soft(6K)
+            needs_hard: 总 raw_tokens > τ_hard(12K)
+            compressible_cycles: R-CCAM 可压缩的 cycle
+            compressible_dag: DAG 可压缩的消息数
+            stats: 统计信息
+
+        全域总 token = rccam_nodes raw + dag_nodes 非人格非摘要 raw
+        """
         TAU_SOFT, TAU_HARD = 6000, 12000
-        cycles = self.get_rccam_session_cycles(session_key)
 
         with self._lock:
             conn = sqlite3.connect(self.db_path)
+            # R-CCAM nodes raw（未压缩的非 cycle_summary 节点）
             cur = conn.execute(
                 "SELECT COALESCE(SUM(tokens), 0) FROM rccam_nodes "
                 "WHERE session_key=? AND is_compressed=0 AND node_type != 'rccam_cycle_summary'",
                 (session_key,)
             )
-            raw_tokens = cur.fetchone()[0] or 0
+            rccam_raw = cur.fetchone()[0] or 0
+
+            # DAG nodes raw（非摘要、priority>NORMAL 的普通消息）
+            cur = conn.execute(
+                "SELECT COALESCE(SUM(tokens), 0) FROM dag_nodes "
+                "WHERE session_key=? AND is_summary=0 AND priority>=?",
+                (session_key, PriorityLevel.NORMAL)
+            )
+            dag_raw = cur.fetchone()[0] or 0
+
+            # DAG 普通消息总数
+            cur = conn.execute(
+                "SELECT COUNT(*) FROM dag_nodes "
+                "WHERE session_key=? AND is_summary=0 AND priority>=?",
+                (session_key, PriorityLevel.NORMAL)
+            )
+            dag_raw_count = cur.fetchone()[0] or 0
             conn.close()
 
+        raw_tokens = rccam_raw + dag_raw
         needs_soft = raw_tokens > TAU_SOFT
         needs_hard = raw_tokens > TAU_HARD
 
+        cycles = self.get_rccam_session_cycles(session_key)
         compressible_cycles = []
-        if needs_soft:
+        if needs_soft and rccam_raw > 0:
+            # 策略：如果只有1个cycle但有太多phase节点，直接压这个cycle
+            # 如果多个cycle，压超过2轮以前的
+            # 如果某个cycle内有超过100个未压缩节点，也标记为可压缩
             for c in cycles:
-                if not c.get("has_summary", 0):
-                    if len(cycles) - cycles.index(c) > 2:
+                if c.get("has_summary", 0):
+                    continue
+                if len(cycles) > 2 and (len(cycles) - cycles.index(c)) > 2:
+                    compressible_cycles.append(c["cycle_id"])
+                elif len(cycles) <= 2:
+                    # 单/双 cycle 场景：检查cycle内phase节点数
+                    with self._lock:
+                        conn_inner = sqlite3.connect(self.db_path)
+                        cnt = conn_inner.execute(
+                            "SELECT COUNT(*) FROM rccam_nodes WHERE session_key=? AND cycle_id=? AND is_compressed=0 AND node_type!='rccam_cycle_summary'",
+                            (session_key, c["cycle_id"])
+                        ).fetchone()[0] or 0
+                        conn_inner.close()
+                    if cnt > 20:
                         compressible_cycles.append(c["cycle_id"])
+                        break  # 一个cycle就够了
 
-        stats = {"raw_tokens": raw_tokens, "tau_soft": TAU_SOFT, "tau_hard": TAU_HARD,
-                 "total_cycles": len(cycles), "compressible_cycles": len(compressible_cycles)}
+        # DAG 可压缩消息（保留最近 8 条，其余都可以压）
+        compressible_dag = max(0, dag_raw_count - 8) if needs_soft else 0
+
+        # 决定优先压缩哪边
+        # 策略：优先压 R-CCAM cycle（因为结构化的认知摘要更有用），
+        # 再压 DAG 消息。如果 rccam 无 cycle 可压但 dag_raw 大，压 dag。
+        compress_priority = "rccam_first"
+        if not compressible_cycles and compressible_dag > 0:
+            compress_priority = "dag_only"
+        elif not compressible_cycles and not needs_soft:
+            compress_priority = "none"
+
+        stats = {
+            "raw_tokens": raw_tokens, "rccam_raw": rccam_raw, "dag_raw": dag_raw,
+            "tau_soft": TAU_SOFT, "tau_hard": TAU_HARD,
+            "total_cycles": len(cycles), "compressible_cycles": len(compressible_cycles),
+            "dag_raw_count": dag_raw_count, "compressible_dag": compressible_dag,
+            "compress_priority": compress_priority,
+        }
         return needs_soft, needs_hard, compressible_cycles, stats
 
-    def compact_rccam_cycle(self, session_key, cycle_id):
+    def compact_rccam_cycle(self, session_key, cycle_id, expandable=False):
         """对一个旧 cycle 执行压缩（LCM 三级升级协议）
 
         Level 1: 完整结构化摘要 — 保留所有阶段内容（最适合 QA）
@@ -910,11 +1203,113 @@ class DAGContextManager:
         Level 3: 确定性 512 字符硬截断 — 绝对不溢出窗口
 
         三级协议保证：摘要质量随压缩强度梯度降级，但永远不会爆窗口。
+
+        Args:
+            session_key: 会话 key
+            cycle_id: 要压缩的 cycle ID
+            expandable: 如果 True，写入 dag_nodes 表（支持 expand 回溯）；
+                        否则写 rccam_nodes 表（默认）
         """
         nodes = self.get_rccam_cycle_nodes(session_key, cycle_id)
         if not nodes:
             return {"summarized": 0, "reason": "no nodes"}
 
+        # 处理重复 phase 场景：同一个 cycle 内有多轮五阶段
+        # 按 PHASE_ORDER 顺序检测完整轮次，每 5~6 个节点为一轮
+        # 如果不能完美切分，就按时间分块（每块最多 50 个节点）
+        phase_names = [n["phase_name"] for n in nodes]
+        unique_phases = set(phase_names)
+        multiple_rounds = len(phase_names) > len(unique_phases) * 1.5
+
+        if multiple_rounds:
+            # 多轮场景：按时间切块（每块代表 ~10 轮对话）
+            chunk_size = 50
+            total = len(nodes)
+            results = []
+            marked_ids = []
+            target_table = "dag_nodes" if expandable else "rccam_nodes"
+            for start in range(0, total, chunk_size):
+                chunk = nodes[start:start + chunk_size]
+                if not chunk:
+                    continue
+                # 从 chunk 中抽取 user_input（第一个）和 action/memory（最后一个）
+                chunk_phase_map = {}
+                for n in chunk:
+                    chunk_phase_map[n["phase_name"]] = n["content"]
+
+                user_intent = chunk_phase_map.get("user_input") or ""
+                conclusions = chunk_phase_map.get("action") or chunk_phase_map.get("control") or ""
+
+                # 收集关键发现 — 从各阶段取前 200 字符去重
+                candidate_findings = []
+                seen_findings = set()
+                for p in self.PHASE_ORDER:
+                    c = chunk_phase_map.get(p, "")
+                    if c and c[:80] not in seen_findings:
+                        candidate_findings.append(c[:200])
+                        seen_findings.add(c[:80])
+
+                chunk_content = json.dumps({
+                    "chunk": start // chunk_size,
+                    "user_intent": user_intent[:200],
+                    "key_findings": [f[:120] for f in candidate_findings[:3]],
+                    "conclusion": conclusions[:200],
+                    "compression_level": 1,
+                }, ensure_ascii=False)
+
+                if len(chunk_content) > 512:
+                    chunk_content = json.dumps({
+                        "chunk": start // chunk_size,
+                        "user_intent": user_intent[:100],
+                        "conclusion": conclusions[:150],
+                        "compression_level": 2,
+                    }, ensure_ascii=False)
+                    if len(chunk_content) > 512:
+                        chunk_content = (user_intent[:60] + " → " + conclusions[:100])[:512]
+
+                # 创建 summary 节点
+                chunk_ids = [n["node_id"] for n in chunk]
+                if target_table == "rccam_nodes":
+                    summary_node_id = self.add_rccam_node(
+                        session_key=session_key, cycle_id=cycle_id,
+                        cycle_index=chunk[0].get("cycle_index", 1),
+                        phase_name="cycle_summary",
+                        content=chunk_content, strategy="cycle_summary",
+                        confidence=0.4, validation="compressed",
+                        importance=0.5, node_type="rccam_cycle_summary",
+                    )
+                else:
+                    summary_node_id = "cog_summ_" + chunk_ids[0][:30]
+                    summary_node = DAGNode(
+                        node_id=summary_node_id,
+                        node_type="cognitive_summary",
+                        session_key=session_key,
+                        content=f"[认知摘要] {chunk_content}",
+                        tokens=len(chunk_content) // 4 or 1,
+                        priority=PriorityLevel.NORMAL,
+                        is_summary=True,
+                        summary_of_ids=chunk_ids,
+                        timestamp=chunk[-1]["timestamp"],
+                    )
+                    self.add_node(summary_node)
+
+                results.append(summary_node_id)
+                marked_ids.extend(chunk_ids)
+
+            # 标记原始节点已压缩
+            with self._lock:
+                conn = sqlite3.connect(self.db_path)
+                conn.execute(
+                    "UPDATE rccam_nodes SET is_compressed=1 WHERE node_id IN (" +
+                    ",".join(["?"] * len(marked_ids)) + ")",
+                    marked_ids
+                )
+                conn.commit()
+                conn.close()
+
+            return {"summarized": len(results), "nodes_affected": len(marked_ids)}
+
+        # ── 单轮场景（原始逻辑） ──
         cycle_index = nodes[0]["cycle_index"]
         phase_map = {n["phase_name"]: n["content"] for n in nodes}
 
@@ -941,6 +1336,8 @@ class DAGContextManager:
 
         L3_HARD_LIMIT = 512  # Level 3 绝对上限
 
+        target_table = "dag_nodes" if expandable else "rccam_nodes"
+
         if len(l1_content) > L3_HARD_LIMIT:
             # ── Level 2: 要点式压缩（删阶段细节，只留关键发现 + 结论） ──
             l2_content = json.dumps({
@@ -952,8 +1349,6 @@ class DAGContextManager:
 
             if len(l2_content) > L3_HARD_LIMIT:
                 # ── Level 3: 确定性硬截断 ──
-                # 取结论前 150 + 意图前 60 写入 cycle_summary
-                # 同时标记所有节点 is_compressed=1
                 with self._lock:
                     conn = sqlite3.connect(self.db_path)
                     conn.execute(
@@ -973,6 +1368,7 @@ class DAGContextManager:
                     l3_text = l3_text[:L3_HARD_LIMIT]
 
                 previous_cycle_id = cycle_id.replace(f"_{cycle_index}", f"_{cycle_index - 1}") if cycle_index and cycle_index > 1 else ""
+
                 return self.add_rccam_node(
                     session_key=session_key, cycle_id=cycle_id,
                     cycle_index=cycle_index, phase_name="cycle_summary",
@@ -999,6 +1395,140 @@ class DAGContextManager:
             conclusion=conclusions[:200], confidence=0.5,
             source_phases=source_phases,
         )
+
+    def cognitive_compress_dag_messages(self, session_key,
+                                          max_to_compress=20,
+                                          reserve_recent=4):
+        """
+        对 dag_nodes 的旧消息应用 LCM 三级压缩协议（认知级压缩）。
+
+        将 dag_nodes 中的普通消息按对话轮次分组，
+        每组压缩为一个结构化摘要节点（含 user_intent / key_findings / conclusion）。
+
+        Args:
+            session_key: 会话 key
+            max_to_compress: 最多压缩多少组
+            reserve_recent: 保留最近 N 轮不压缩
+
+        Returns:
+            { "summarized": 压缩的轮次数, "nodes_affected": 标记的原始节点数 }
+        """
+        all_nodes = self.get_session_nodes(session_key)
+        # 只取非摘要、priority>=NORMAL 的消息，按时间排序
+        raw_msgs = [n for n in all_nodes if not n.is_summary
+                    and n.priority >= PriorityLevel.NORMAL
+                    and n.node_type == DAGNodeType.MESSAGE]
+        raw_msgs.sort(key=lambda n: n.timestamp)
+
+        if len(raw_msgs) <= reserve_recent * 2:
+            return {"summarized": 0, "nodes_affected": 0, "reason": "消息数不够"}
+
+        # 保留最近 reserve_recent 轮（每轮 user+assistant=2 条）
+        compressible = raw_msgs[:-(reserve_recent * 2)]
+        if not compressible:
+            return {"summarized": 0, "nodes_affected": 0, "reason": "最近轮次已全部保留"}
+
+        # 按对话轮次分组（user+assistant 为一组）
+        # 消息本身就是交替 user→assistant 的，按 2 条切分即可
+        groups = []
+        i = 0
+        while i < len(compressible):
+            if i + 1 < len(compressible):
+                groups.append(compressible[i:i+2])
+                i += 2
+            else:
+                groups.append([compressible[i]])
+                i += 1
+
+        # 最多压缩 max_to_compress 组
+        groups = groups[:max_to_compress]
+        if not groups:
+            return {"summarized": 0, "nodes_affected": 0}
+
+        summarized_count = 0
+        all_affected_ids = []
+
+        for group in groups:
+            if not group:
+                continue
+            # 提取 user_intent（消息 0 = user，消息 1 = assistant，按 metadata.role 确认）
+            user_msg = ""
+            asst_msg = ""
+            for n in group:
+                meta = n.metadata or {}
+                role = meta.get('role', '')
+                if role == 'user' and not user_msg:
+                    user_msg = n.content[:300]
+                elif role == 'assistant' and not asst_msg:
+                    asst_msg = n.content[:300]
+            # 兜底：如果没有准确按 role 分出来，按位置取
+            if not user_msg and len(group) >= 1:
+                user_msg = group[0].content[:300]
+            if not asst_msg and len(group) >= 2:
+                asst_msg = group[1].content[:300]
+
+            # 提取关键词
+            keywords = self._extract_keywords(user_msg + " " + asst_msg)[:5]
+
+            # 提取实体
+            entities = []
+            for w in keywords:
+                if w and len(w) >= 2:
+                    entities.append(w)
+
+            # 构建 LCM 三级内容
+            level_content = json.dumps({
+                "user_intent": user_msg[:200],
+                "key_findings": [asst_msg[:120]] if asst_msg else [],
+                "conclusion": asst_msg[:200],
+                "compression_level": 1,
+            }, ensure_ascii=False)
+
+            if len(level_content) > 512:
+                level_content = json.dumps({
+                    "user_intent": user_msg[:100],
+                    "conclusion": asst_msg[:150],
+                    "compression_level": 2,
+                }, ensure_ascii=False)
+                if len(level_content) > 512:
+                    level_content = (user_msg[:60] + " → " + asst_msg[:100])[:512]
+
+            # 创建摘要节点
+            summary_id = f"cog_summ_{session_key}_{int(time.time()*1000)}_{hashlib.md5(group[0].node_id.encode()[:16]).hexdigest()[:6]}"
+            summary_node = DAGNode(
+                node_id=summary_id,
+                node_type="cognitive_summary",
+                session_key=session_key,
+                content=f"[认知摘要] {level_content}",
+                tokens=len(level_content) // 4 or 1,
+                priority=PriorityLevel.NORMAL,
+                is_summary=True,
+                summary_of_ids=[n.node_id for n in group],
+                timestamp=time.time(),
+                keywords=keywords,
+                entities=entities,
+            )
+
+            # 标记原始节点已摘要
+            group_ids = [n.node_id for n in group]
+            with self._lock:
+                conn = sqlite3.connect(self.db_path)
+                for nid in group_ids:
+                    conn.execute(
+                        "UPDATE dag_nodes SET is_summary=1 WHERE node_id=?",
+                        (nid,)
+                    )
+                conn.commit()
+                conn.close()
+
+            self.add_node(summary_node)
+            all_affected_ids.extend(group_ids)
+            summarized_count += 1
+
+        return {
+            "summarized": summarized_count,
+            "nodes_affected": len(all_affected_ids),
+        }
 
     def get_rccam_stats(self, session_key):
         """获取 R-CCAM DAG 全景统计"""
@@ -1034,69 +1564,986 @@ class DAGContextManager:
             return 0
 
     # ========================================================================
-    # Cognition Forest 子树（四类独立子树，CRITICAL 优先永不压缩）
+    # 时序知识图谱集成
     # ========================================================================
 
-    def _cog_subtree_key(self, forest_type: str) -> str:
-        """生成 Cognition Forest 子树 session_key"""
-        return f"{_COG_SUBTREE_SESSION_PREFIX}{forest_type}"
+    def add_temporal_edge_to_session(self, session_key: str,
+                                      src_entity: str, dst_entity: str,
+                                      relation: str, timestamp: float = None):
+        """
+        添加一条时序 KG 边并关联到 DAG 会话。
 
-    def add_cognition_subtree(
+        如果 temporal_kg 未加载，自动懒加载。
+        """
+        try:
+            tkg = self._get_temporal_kg()
+            edge_id = tkg.add_temporal_edge(
+                src_entity, dst_entity, relation,
+                timestamp=timestamp or time.time(),
+                session_key=session_key
+            )
+            return edge_id
+        except Exception as e:
+            logger.warning(f"add_temporal_edge_to_session 失败: {e}")
+            return None
+
+    def get_temporal_graph_for_session(self, session_key: str) -> dict:
+        """
+        获取会话的时序子图。
+        """
+        try:
+            tkg = self._get_temporal_kg()
+            return tkg.get_session_graph(session_key)
+        except Exception as e:
+            logger.warning(f"get_temporal_graph_for_session 失败: {e}")
+            return {"entities": [], "edges": [], "stats": {"entity_count": 0, "edge_count": 0}}
+
+    def get_session_community(self, session_key: str, min_edges: int = 2) -> list:
+        """
+        获取会话的社区聚类结果。
+        """
+        try:
+            tkg = self._get_temporal_kg()
+            session_graph = tkg.get_session_graph(session_key)
+            if session_graph['stats']['edge_count'] < min_edges:
+                return []
+            return tkg.build_community(min_edges=min_edges)
+        except Exception as e:
+            logger.warning(f"get_session_community 失败: {e}")
+            return []
+
+    def _get_temporal_kg(self):
+        """懒加载 TemporalKnowledgeGraph"""
+        if not hasattr(self, '_tkg') or self._tkg is None:
+            from temporal_kg import TemporalKnowledgeGraph
+            tkg_db = os.path.join(os.path.dirname(self.db_path), 'temporal_kg.db')
+            self._tkg = TemporalKnowledgeGraph(db_path=tkg_db)
+        return self._tkg
+
+    def _get_spatial_graph(self):
+        """懒加载 SpatialTopologyGraph"""
+        if not hasattr(self, '_sg') or self._sg is None:
+            try:
+                from spatial_topology import SpatialTopologyGraph
+                sg_db = os.path.join(os.path.dirname(self.db_path), 'spatial_topology.db')
+                self._sg = SpatialTopologyGraph(db_path=sg_db)
+            except Exception as e:
+                logger.warning(f"SpatialTopologyGraph 懒加载失败: {e}")
+                self._sg = False
+        return self._sg if self._sg else None
+
+    # ========================================================================
+    # AriGraph 空间拓扑整合（scene 感知方法）
+    # ========================================================================
+
+    def get_nearest_scene_nodes(self, session_key: str, scene_label: str,
+                                 max_distance: int = 2, limit: int = 10) -> list:
+        """
+        获取指定场景附近的 DAG 节点。
+
+        通过 spatial_topology 找到场景的拓扑邻居，
+        然后从 dag_nodes 中过滤出这些邻居对应的消息节点。
+
+        Args:
+            session_key: DAG 会话 key
+            scene_label: 场景名称
+            max_distance: 最大图遍历距离
+            limit: 最大返回数量
+
+        Returns:
+            节点列表（含内容、metadata 等）
+        """
+        try:
+            from spatial_topology import get_spatial_graph
+            sg = get_spatial_graph()
+        except Exception:
+            return []
+
+        # 获取场景邻居
+        try:
+            neighbors = sg.get_scene_neighbors(scene_label, depth=max_distance)
+            scene_node = sg.get_scene(scene_label)
+        except Exception as e:
+            logger.warning(f"get_nearest_scene_nodes: spatial lookup failed: {e}")
+            return []
+
+        # 收集所有相关 label
+        related_labels = {scene_label}
+        if scene_node:
+            related_labels.add(scene_node.label)
+            for a in scene_node.aliases:
+                related_labels.add(a)
+        for n in neighbors:
+            related_labels.add(n.label)
+            for a in n.aliases:
+                related_labels.add(a)
+
+        # 从 DAG 中找包含这些 label 的节点
+        all_nodes = self.get_session_nodes(session_key, limit=limit * 5)
+        matched = []
+
+        for node in all_nodes:
+            content = node.content or ""
+            # 检查 content 是否提到相关场景
+            label_score = 0
+            for label in related_labels:
+                if label.lower() in content.lower():
+                    # label 越长匹配越精确
+                    label_score = max(label_score, len(label) / 20.0)
+
+            if label_score > 0:
+                matched.append({
+                    "node_id": node.node_id,
+                    "content": content[:500],
+                    "label_score": label_score,
+                    "score": node.importance_score * 0.5 + label_score * 0.5,
+                    "timestamp": node.timestamp,
+                    "keywords": node.keywords,
+                    "entities": node.entities,
+                    "scene_label": scene_label,
+                })
+
+        matched.sort(key=lambda x: -x["score"])
+        return matched[:limit]
+
+    def get_scene_tree(self, session_key: str) -> dict:
+        """
+        获取会话的场景树（层级结构）。
+
+        通过 spatial_topology 获取所有 scene 类型节点，
+        按 parent_id 组织为树形结构。
+
+        Returns:
+            {
+                "tree": [{label, type, children: [...], neighbors: [...]}],
+                "roots": [root scenes],
+                "flat": [all scenes flat],
+            }
+        """
+        try:
+            from spatial_topology import get_spatial_graph
+            sg = get_spatial_graph()
+        except Exception:
+            return {"tree": [], "roots": [], "flat": []}
+
+        try:
+            # 从 spatial_topology 获取所有 scene 节点
+            with sg._lock:
+                conn = sqlite3.connect(sg.db_path)
+                conn.row_factory = sqlite3.Row
+                cursor = conn.execute(
+                    "SELECT * FROM spatial_nodes WHERE node_type IN ('scene', 'context') ORDER BY label"
+                )
+                rows = [dict(r) for r in cursor.fetchall()]
+                conn.close()
+
+            # 构建树
+            nodes_map = {}
+            for r in rows:
+                nid = r["node_id"]
+                try:
+                    children_ids = json.loads(r["children_ids"]) if isinstance(r["children_ids"], str) else r["children_ids"]
+                except Exception:
+                    children_ids = []
+                try:
+                    aliases = json.loads(r["aliases"]) if isinstance(r["aliases"], str) else r["aliases"]
+                except Exception:
+                    aliases = []
+
+                # 获取邻居标签
+                neighbor_labels = []
+                try:
+                    nn = sg.get_scene_neighbors(r["label"], depth=1)
+                    neighbor_labels = [n.label for n in nn if n.label != r["label"]]
+                except Exception:
+                    pass
+
+                node = {
+                    "node_id": nid,
+                    "label": r["label"],
+                    "type": r["node_type"],
+                    "parent_id": r.get("parent_id"),
+                    "children": [],
+                    "children_labels": [],
+                    "aliases": aliases,
+                    "neighbors": neighbor_labels,
+                }
+                nodes_map[nid] = node
+
+                # 收集子节点 label
+                for cid in children_ids:
+                    if cid in nodes_map:
+                        node["children_labels"].append(nodes_map[cid]["label"])
+
+            # 构建 parent→children 关系
+            for nid, node in nodes_map.items():
+                if node["parent_id"] and node["parent_id"] in nodes_map:
+                    parent = nodes_map[node["parent_id"]]
+                    parent["children"].append(node)
+
+            # 根节点（无 parent 的 scene 节点）
+            roots = [n for n in nodes_map.values() if n["parent_id"] is None or n["parent_id"] not in nodes_map]
+
+            flat = [{"label": n["label"], "type": n["type"], "neighbors": n["neighbors"]}
+                    for n in nodes_map.values()]
+
+            return {
+                "tree": list(nodes_map.values()),
+                "roots": [{"label": r["label"], "type": r["type"], "children_labels": r["children_labels"]}
+                          for r in roots],
+                "flat": flat,
+            }
+
+        except Exception as e:
+            logger.warning(f"get_scene_tree failed: {e}")
+            return {"tree": [], "roots": [], "flat": []}
+
+    def get_session_navigation_history(self, session_key: str) -> list:
+        """
+        获取会话的导航历史。
+
+        从 spatial_topology 的 navigation_records 中读取
+        与当前会话相关的导航记录。
+
+        Returns:
+            导航记录列表
+        """
+        try:
+            from spatial_topology import get_spatial_graph
+            sg = get_spatial_graph()
+        except Exception:
+            return []
+
+        try:
+            with sg._lock:
+                conn = sqlite3.connect(sg.db_path)
+                conn.row_factory = sqlite3.Row
+                cursor = conn.execute(
+                    """SELECT nr.*, sn_from.label as from_label, sn_to.label as to_label
+                       FROM navigation_records nr
+                       LEFT JOIN spatial_nodes sn_from ON nr.from_node = sn_from.node_id
+                       LEFT JOIN spatial_nodes sn_to ON nr.to_node = sn_to.node_id
+                       ORDER BY nr.timestamp DESC
+                       LIMIT 20"""
+                )
+                rows = []
+                for r in cursor.fetchall():
+                    dr = dict(r)
+                    try:
+                        path = json.loads(dr["path"]) if isinstance(dr["path"], str) else dr["path"]
+                    except Exception:
+                        path = []
+                    rows.append({
+                        "record_id": dr["record_id"],
+                        "from_label": dr["from_label"],
+                        "to_label": dr["to_label"],
+                        "path": path,
+                        "context": dr.get("context", ""),
+                        "timestamp": dr["timestamp"],
+                    })
+                conn.close()
+
+            # 如果有 session 关键词过滤
+            if session_key:
+                # 尝试匹配 context 字段包含 session key 的记录
+                filtered = [r for r in rows if session_key in r.get("context", "")]
+                if filtered:
+                    return filtered
+
+            return rows[:10]
+
+        except Exception as e:
+            logger.warning(f"get_session_navigation_history failed: {e}")
+            return []
+
+    def add_message_with_scene(
         self,
-        forest_type: str,
+        session_key: str,
+        role: str,
         content: str,
+        scene_label: Optional[str] = None,
         tokens: int = 0,
-        source: str = "",
+        importance: float = 0.5,
+        emotion: float = 0.0,
+        priority: int = PriorityLevel.NORMAL,
+        keywords: Optional[List[str]] = None,
+        entities: Optional[List[str]] = None,
+        parent_ids: Optional[List[str]] = None,
         metadata: Optional[Dict] = None,
     ) -> str:
-        """写入 Cognition Forest 子树数据（_memory_phase 调用入口）"""
-        if forest_type not in CognitionForestType.ALL_TYPES:
-            logger.warning(f"未知子树类型: {forest_type}, 跳过")
-            return ""
+        """
+        添加消息节点并关联场景标签。
 
-        session_key = self._cog_subtree_key(forest_type)
-        node_id = f"cog_{forest_type}_{source}_{int(time.time()*1000)}_{hashlib.md5(content.encode()[:16]).hexdigest()[:8]}"
-
-        _meta = {"source": source, "forest_type": forest_type}
+        与 add_message 相同，但接受 scene_label 参数并存到 metadata。
+        """
+        _meta = {"role": role}
         if metadata:
             _meta.update(metadata)
+        if scene_label:
+            _meta["scene_label"] = scene_label
 
-        node = DAGNode(
-            node_id=node_id,
-            node_type=DAGNodeType.PERSONA,
+        return self.add_message(
             session_key=session_key,
+            role=role,
             content=content,
-            tokens=tokens or len(content) // 4,
-            priority=PriorityLevel.CRITICAL,
-            parent_ids=[],
-            importance_score=0.9 if forest_type in (CognitionForestType.USER, CognitionForestType.SELF) else 0.7,
-            timestamp=time.time(),
+            tokens=tokens,
+            importance=importance,
+            emotion=emotion,
+            priority=priority,
+            keywords=keywords,
+            entities=entities,
+            parent_ids=parent_ids,
             metadata=_meta,
         )
 
-        self.add_node(node)
-        return node_id
+    # ========================================================================
+    # LASAR Cognitive Map 集成
+    # ========================================================================
 
-    def get_all_session_keys(self) -> List[str]:
-        """获取 DAG 中所有活跃的 session_key"""
+    def _get_cognitive_map(self):
+        """懒加载 LASAR CognitiveMap"""
+        if not hasattr(self, '_cm') or self._cm is None:
+            try:
+                from cognitive_map import CognitiveMap
+                cm_db = os.path.join(os.path.dirname(self.db_path), 'cognitive_map.db')
+                self._cm = CognitiveMap(db_path=cm_db)
+            except Exception as e:
+                logger.warning(f"CognitiveMap 懒加载失败: {e}")
+                self._cm = None
+        return self._cm
+
+    def add_cognitive_anchor(self, node_id: str) -> Optional[str]:
+        """
+        为 DAG 节点创建认知锚点。
+
+        提取节点的 content, 用 CognitiveMap 生成锚点向量并持久化。
+
+        Args:
+            node_id: DAG 节点 ID
+
+        Returns:
+            锚点 ID, 失败返回 None
+        """
+        cm = self._get_cognitive_map()
+        if not cm:
+            return None
+
+        # 从数据库读取节点
         with self._lock:
-            conn = sqlite3.connect(self.db_path)
-            rows = conn.execute(
-                "SELECT DISTINCT session_key FROM dag_nodes ORDER BY session_key"
-            ).fetchall()
-            rows2 = conn.execute(
-                "SELECT DISTINCT session_key FROM rccam_nodes ORDER BY session_key"
-            ).fetchall()
-            conn.close()
-        keys = set(r[0] for r in rows if r[0])
-        keys.update(r[0] for r in rows2 if r[0])
-        keys.discard('_cog_subtree_user')
-        keys.discard('_cog_subtree_self')
-        return sorted(keys)
+            try:
+                conn = sqlite3.connect(self.db_path)
+                conn.row_factory = sqlite3.Row
+                cursor = conn.execute(
+                    "SELECT * FROM dag_nodes WHERE node_id = ?", (node_id,))
+                row = cursor.fetchone()
+                conn.close()
+            except Exception:
+                return None
+
+        if not row:
+            return None
+
+        node_data = dict(row)
+        content = node_data.get('content', '')
+        session_key = node_data.get('session_key', '')
+
+        if not content:
+            return None
+
+        return cm.add_anchor(node_id, content[:500], session_key)
+
+    def get_cognitive_context_for_session(self, session_key: str) -> Dict:
+        """
+        获取会话的认知地图上下文。
+
+        返回当前会话在认知空间的位置、密度、附近锚点等信息。
+
+        Args:
+            session_key: 会话 Key
+
+        Returns:
+            认知上下文 dict
+        """
+        cm = self._get_cognitive_map()
+        if not cm:
+            return {"has_cognitive_map": False}
+
+        # 获取该会话最近的节点
+        recent_nodes = self.get_session_nodes(session_key, limit=5)
+        if not recent_nodes:
+            return {"has_cognitive_map": True, "no_recent_nodes": True}
+
+        # 用最新内容的投影作为当前认知位置
+        latest_content = recent_nodes[0].content or ""
+        vec = cm.compute_anchor_vector(latest_content[:500])
+        density = cm.get_anchor_density(vec)
+        nearby = cm.get_nearby_anchors(vec, k=5)
+
+        # 执行三类认知 query
+        queries_result = cm.run_cognitive_queries(latest_content[:300], session_key)
+
+        return {
+            "has_cognitive_map": True,
+            "cognitive_density": round(density, 3),
+            "nearby_anchors": len(nearby),
+            "nearby_contexts": [a.context[:100] for a in nearby[:3]],
+            "retrospective": queries_result.get("retrospective", ""),
+            "introspective": queries_result.get("introspective", ""),
+            "prospective": queries_result.get("prospective", ""),
+            "landscape": cm.get_cognitive_landscape(region=vec),
+        }
+
+    def get_nearby_nodes_in_cognitive_space(self, node_id: str,
+                                             k: int = 5) -> List[Dict]:
+        """
+        在认知空间中找与指定节点最接近的 N 个节点。
+
+        不是语义相似，而是空间接近性（位置接近）。
+
+        Args:
+            node_id: 源节点 ID
+            k: 返回数量
+
+        Returns:
+            [{node_id, content, similarity, distance}, ...]
+        """
+        cm = self._get_cognitive_map()
+        if not cm:
+            return []
+
+        # 查该节点是否有锚点
+        # 简单方法: 计算该节点的内容向量
+        with self._lock:
+            try:
+                conn = sqlite3.connect(self.db_path)
+                conn.row_factory = sqlite3.Row
+                cursor = conn.execute(
+                    "SELECT content, session_key FROM dag_nodes WHERE node_id = ?",
+                    (node_id,))
+                row = cursor.fetchone()
+                conn.close()
+            except Exception:
+                return None
+
+        if not row:
+            return []
+
+        content = row['content']
+        session_key = row['session_key']
+        vec = cm.compute_anchor_vector(content[:500])
+
+        # 用认知 map 取附近锚点
+        nearby = cm.get_nearby_anchors(vec, k=k)
+
+        results = []
+        for anchor in nearby:
+            if anchor.node_id == node_id:
+                continue
+            sim = cm.spatial_similarity(vec, anchor.anchor_vector)
+            results.append({
+                "node_id": anchor.node_id,
+                "content": anchor.context[:200],
+                "similarity": round(sim, 4),
+                "anchor_id": anchor.anchor_id,
+            })
+
+        results.sort(key=lambda x: x["similarity"], reverse=True)
+        return results[:k]
 
     def close(self):
         """关闭资源"""
         pass
+
+    # ====================================================================
+    # MemGPT 风格分页 + 中断
+    # ====================================================================
+
+    def get_paging_stats(self) -> Dict:
+        """
+        获取活跃/归档分页统计
+
+        Returns:
+            {
+                "active_nodes": int,
+                "archived_nodes": int,
+                "total_nodes": int,
+                "paging_active": bool,
+                "page_size": int,
+            }
+        """
+        # 通过 PageManager 获取统计
+        pm = PageManager(self)
+        return pm.get_stats()
+
+    def compact_with_paging(self, force: bool = False) -> Dict:
+        """
+        先分页再压缩 — MemGPT 风格
+
+        1. 检查节点数是否触发了分页阈值
+        2. 如果触发，先执行 page_out 将旧节点换出
+        3. 再执行 auto_summarize 压缩
+
+        Args:
+            force: 是否强制分页+压缩（忽略阈值检查）
+
+        Returns:
+            {
+                "paged_out": int,
+                "summarized": int,
+                "active_nodes": int,
+                "archived_nodes": int,
+            }
+        """
+        pm = PageManager(self)
+        return pm.compact_with_paging(force=force)
+
+    def _interrupt_handler(self, session_key: str) -> Dict:
+        """
+        系统资源不足时的中断处理
+
+        触发条件（任一即可）：
+        - DAG 节点总数 > 500
+        - 内存占用 > 80%（通过系统资源估算）
+        - compact_with_paging 累计失败 3 次
+
+        中断流程：
+        1. 先做 page_out 把最旧的 30% 节点换出
+        2. 对剩余活跃节点做摘要合并
+        3. 返回恢复状态
+
+        Returns:
+            {"interrupted": bool, "reason": str, "details": Dict}
+        """
+        try:
+            pm = PageManager(self)
+
+            # 检查是否真的需要中断
+            all_nodes = self.get_session_nodes(session_key) if session_key else []
+            total_nodes = len(all_nodes)
+
+            # 估算内存压力（简单模型）
+            memory_pressure = False
+            import psutil
+            try:
+                mem = psutil.virtual_memory()
+                memory_pressure = mem.percent > 80.0
+            except (ImportError, AttributeError):
+                # psutil 可能不可用，用节点数估算
+                memory_pressure = total_nodes > 300
+
+            needs_interrupt = (total_nodes > 500 or memory_pressure)
+
+            if not needs_interrupt:
+                return {"interrupted": False, "reason": "资源充足，无需中断"}
+
+            # 1. 换出最旧的 30% 节点
+            all_sorted = sorted(all_nodes, key=lambda n: n.timestamp)
+            page_out_targets = all_sorted[:max(1, len(all_sorted) // 3)]
+            archived = pm._batch_page_out(
+                [n.node_id for n in page_out_targets],
+                session_key
+            )
+
+            # 2. 对活跃节点做摘要
+            result = self.auto_summarize(session_key, batch_size=20)
+
+            stats = pm.get_stats()
+
+            logger.info(
+                f"中断处理完成: "
+                f"archived={archived}, "
+                f"summarized={result.get('summarized', 0)}, "
+                f"active={stats['active_nodes']}"
+            )
+
+            return {
+                "interrupted": True,
+                "reason": f"节点数 {total_nodes} > 500 或内存压力",
+                "details": {
+                    "archived_nodes": archived,
+                    "summarized_batches": result.get('summarized', 0),
+                    "active_now": stats['active_nodes'],
+                    "archived_now": stats['archived_nodes'],
+                }
+            }
+
+        except Exception as e:
+            logger.error(f"中断处理失败: {e}")
+            return {
+                "interrupted": False,
+                "reason": f"中断处理异常: {e}",
+                "details": {}
+            }
+
+
+# ============================================================================
+# PageManager — MemGPT 风格分页管理
+# ============================================================================
+
+class PageManager:
+    """
+    MemGPT 风格分页管理器
+
+    在 DAG 上层添加分页层：
+    - 活跃页（active）：最近 N 个节点，直接参与上下文组装
+    - 换出页（archived）：归档节点，保留元数据和内容摘要
+    - 自动阈值触发：节点数 > page_threshold 时自动分页
+
+    不修改 DAG 数据库表结构，通过元数据标记分页状态。
+    原始节点内容在被 page_out 后替换为摘要，但完整内容
+    可通过 page_in 恢复（存在备份字段中）。
+    """
+
+    def __init__(
+        self,
+        dag_manager: 'DAGContextManager',
+        page_threshold: int = 300,
+        recent_keep_count: int = 50,
+        archive_summary_max_tokens: int = 200,
+    ):
+        """
+        Args:
+            dag_manager: DAGContextManager 实例
+            page_threshold: 触发分页的节点阈值
+            recent_keep_count: 保留为活跃的最近节点数
+            archive_summary_max_tokens: 归档摘要最大 token 数
+        """
+        self.dag = dag_manager
+        self.page_threshold = page_threshold
+        self.recent_keep_count = recent_keep_count
+        self.archive_summary_max_tokens = archive_summary_max_tokens
+
+        # 熔断计数器
+        self._consecutive_failures = 0
+        self._max_failures = 5
+        self._circuit_breaker_timestamp = 0.0
+        self._circuit_breaker_cooldown = 5.0  # 5 秒自动恢复
+
+    # ------------------------------------------------------------------
+    # 公开接口
+    # ------------------------------------------------------------------
+
+    def _should_page(self, count: int) -> bool:
+        """
+        判断是否需要分页
+
+        Args:
+            count: 当前节点数
+
+        Returns:
+            True 如果节点数超过阈值且未触发熔断
+        """
+        if time.time() < self._circuit_breaker_timestamp:
+            return False
+        return count > self.page_threshold
+
+    def _page_in(self, node_id: str) -> bool:
+        """
+        从归档恢复到活跃
+
+        将归档节点的原始内容从 metadata['_archived_content']
+        恢复到 content 字段。
+
+        Args:
+            node_id: 节点 ID
+
+        Returns:
+            True 如果恢复成功
+        """
+        try:
+            conn = sqlite3.connect(self.dag.db_path)
+            conn.row_factory = sqlite3.Row
+            cursor = conn.execute(
+                "SELECT content, metadata FROM dag_nodes WHERE node_id = ?",
+                (node_id,)
+            )
+            row = cursor.fetchone()
+            conn.close()
+
+            if not row:
+                return False
+
+            metadata = json.loads(row['metadata']) if isinstance(row['metadata'], str) else row['metadata']
+
+            # 检查是否有归档备份
+            archived_content = metadata.get('_archived_content')
+            if not archived_content:
+                return False  # 未被归档，无需恢复
+
+            # 恢复原始内容，清除归档标记
+            metadata.pop('_archived_content', None)
+            metadata['_archived'] = False
+
+            conn = sqlite3.connect(self.dag.db_path)
+            conn.execute(
+                "UPDATE dag_nodes SET content = ?, metadata = ? WHERE node_id = ?",
+                (archived_content, json.dumps(metadata), node_id)
+            )
+            conn.commit()
+            conn.close()
+
+            logger.info(f"Page in: {node_id}")
+            self._consecutive_failures = 0
+            return True
+
+        except Exception as e:
+            logger.warning(f"page_in 失败 ({node_id}): {e}")
+            self._consecutive_failures += 1
+            self._check_circuit_breaker()
+            return False
+
+    def _page_out(self, node_ids: List[str]) -> int:
+        """
+        把指定节点换出到归档
+
+        1. 提取内容摘要（保留关键信息）
+        2. 原始内容移到 metadata['_archived_content']
+        3. content 字段替换为摘要
+        4. metadata['_archived'] = True
+
+        Args:
+            node_ids: 要归档的节点 ID 列表
+
+        Returns:
+            成功归档的节点数
+        """
+        return self._batch_page_out(node_ids, None)
+
+    def _batch_page_out(self, node_ids: List[str], session_key: Optional[str]) -> int:
+        """
+        批量换出节点
+
+        Args:
+            node_ids: 节点 ID 列表
+            session_key: 会话 key（用于摘要上下文）
+
+        Returns:
+            成功归档的节点数
+        """
+        if not node_ids:
+            return 0
+
+        success_count = 0
+
+        with self.dag._lock:
+            conn = sqlite3.connect(self.dag.db_path)
+            conn.row_factory = sqlite3.Row
+
+            for node_id in node_ids:
+                try:
+                    cursor = conn.execute(
+                        "SELECT content, metadata, node_type, priority FROM dag_nodes WHERE node_id = ?",
+                        (node_id,)
+                    )
+                    row = cursor.fetchone()
+                    if not row:
+                        continue
+
+                    # 跳过已归档、已摘要、人格节点
+                    metadata = json.loads(row['metadata']) if isinstance(row['metadata'], str) else row['metadata']
+                    if metadata.get('_archived', False):
+                        continue
+                    if row['node_type'] == DAGNodeType.SUMMARY:
+                        continue
+                    if row['priority'] == PriorityLevel.CRITICAL:
+                        continue
+
+                    original_content = row['content']
+
+                    # 生成简单摘要
+                    summary = self._make_archive_summary(original_content)
+
+                    # 保存原始内容到 metadata
+                    metadata['_archived_content'] = original_content
+                    metadata['_archived'] = True
+                    metadata['_archived_at'] = time.time()
+
+                    # 用摘要替换内容
+                    conn.execute(
+                        "UPDATE dag_nodes SET content = ?, metadata = ? WHERE node_id = ?",
+                        (summary, json.dumps(metadata), node_id)
+                    )
+                    success_count += 1
+
+                except Exception as e:
+                    logger.warning(f"page_out 失败 ({node_id}): {e}")
+                    continue
+
+            conn.commit()
+            conn.close()
+
+        self._consecutive_failures = 0
+        logger.info(f"Batch page out: {success_count}/{len(node_ids)} nodes")
+        return success_count
+
+    def compact_with_paging(self, force: bool = False) -> Dict:
+        """
+        先分页再压缩 — 主入口
+
+        1. 获取所有会话的节点统计
+        2. 检查是否需要分页
+        3. 如果触发：page_out 最旧的一批 → 再 auto_summarize
+
+        Args:
+            force: 跳过阈值检查强制执行
+
+        Returns:
+            {
+                "paged_out": int,
+                "summarized": int,
+                "active_nodes": int,
+                "archived_nodes": int,
+            }
+        """
+        result = {"paged_out": 0, "summarized": 0, "active_nodes": 0, "archived_nodes": 0}
+
+        try:
+            # 获取所有会话的节点计数
+            conn = sqlite3.connect(self.dag.db_path)
+            cursor = conn.execute(
+                "SELECT session_key, COUNT(*) as cnt FROM dag_nodes GROUP BY session_key"
+            )
+            session_counts = {r[0]: r[1] for r in cursor.fetchall()}
+            conn.close()
+
+            total_nodes = sum(session_counts.values())
+
+            if not force and not self._should_page(total_nodes):
+                # 未触发分页阈值，但尝试常规压缩
+                for sk in session_counts:
+                    self.dag.auto_summarize(sk, batch_size=10)
+                return result
+
+            # 分页：对每个会话换出最旧的节点
+            total_paged = 0
+            total_summarized = 0
+
+            for session_key, count in session_counts.items():
+                if count <= self.recent_keep_count:
+                    continue
+
+                # 获取该会话的节点（时间升序 = 最旧在前）
+                all_nodes = self.dag.get_session_nodes(session_key)
+                all_nodes.sort(key=lambda n: n.timestamp)
+
+                # 保留最近 recent_keep_count 条，其余 page_out
+                if len(all_nodes) > self.recent_keep_count:
+                    to_archive = [
+                        n.node_id for n in all_nodes[:-self.recent_keep_count]
+                        if n.priority != PriorityLevel.CRITICAL
+                        and n.node_type != DAGNodeType.SUMMARY
+                    ]
+                    if to_archive:
+                        archived = self._batch_page_out(to_archive, session_key)
+                        total_paged += archived
+
+                # 压缩（摘要归档节点以外的消息）
+                need_compact, _ = self.dag.should_compact(session_key)
+                if need_compact or force:
+                    r = self.dag.auto_summarize(session_key, batch_size=15)
+                    total_summarized += r.get('summarized', 0)
+
+            stats = self.get_stats()
+            result.update({
+                "paged_out": total_paged,
+                "summarized": total_summarized,
+                "active_nodes": stats['active_nodes'],
+                "archived_nodes": stats['archived_nodes'],
+            })
+
+        except Exception as e:
+            logger.error(f"compact_with_paging 失败: {e}")
+            self._consecutive_failures += 1
+            self._check_circuit_breaker()
+
+        return result
+
+    def get_stats(self) -> Dict:
+        """获取活跃/归档分页统计"""
+        try:
+            conn = sqlite3.connect(self.dag.db_path)
+
+            # 活跃节点（未归档）
+            cursor = conn.execute(
+                """SELECT COUNT(*) FROM dag_nodes
+                   WHERE json_extract(metadata, '$._archived') IS NULL
+                      OR json_extract(metadata, '$._archived') = 0
+                      OR json_extract(metadata, '$._archived') = 'false'"""
+            )
+            active = cursor.fetchone()[0]
+
+            # 归档节点
+            cursor = conn.execute(
+                """SELECT COUNT(*) FROM dag_nodes
+                   WHERE json_extract(metadata, '$._archived') = 1
+                      OR json_extract(metadata, '$._archived') = 'true'"""
+            )
+            archived = cursor.fetchone()[0]
+
+            # 总节点
+            cursor = conn.execute("SELECT COUNT(*) FROM dag_nodes")
+            total = cursor.fetchone()[0]
+
+            conn.close()
+
+            return {
+                "active_nodes": active,
+                "archived_nodes": archived,
+                "total_nodes": total,
+                "paging_active": archived > 0,
+                "page_threshold": self.page_threshold,
+                "recent_keep_count": self.recent_keep_count,
+                "circuit_breaker_active": time.time() < self._circuit_breaker_timestamp,
+            }
+
+        except Exception as e:
+            logger.warning(f"PageManager get_stats 失败: {e}")
+            return {
+                "active_nodes": 0,
+                "archived_nodes": 0,
+                "total_nodes": 0,
+                "paging_active": False,
+                "error": str(e),
+            }
+
+    # ------------------------------------------------------------------
+    # 内部方法
+    # ------------------------------------------------------------------
+
+    def _make_archive_summary(self, content: str) -> str:
+        """
+        为归档内容生成简要摘要
+
+        保留前 100 字符作为摘要，标记为归档。
+        完整的原始内容通过 page_in 恢复。
+        """
+        if len(content) <= 150:
+            return content
+
+        lines = content.split('\n')
+        important_lines = [l for l in lines if len(l.strip()) > 20]
+
+        if not important_lines:
+            return content[:100] + "..."
+
+        # 取前几行
+        summary_lines = important_lines[:3]
+        summary = " | ".join(l.strip()[:50] for l in summary_lines)
+
+        if len(summary) > self.archive_summary_max_tokens * 4:
+            summary = summary[:self.archive_summary_max_tokens * 4 - 3] + "..."
+
+        return f"[归档] {summary}"
+
+    def _check_circuit_breaker(self):
+        """检查熔断器"""
+        if self._consecutive_failures >= self._max_failures:
+            self._circuit_breaker_timestamp = time.time() + self._circuit_breaker_cooldown
+            logger.warning(
+                f"PageManager 熔断 {self._circuit_breaker_cooldown}s "
+                f"({self._consecutive_failures} 次连续失败)"
+            )
+            self._consecutive_failures = 0
 
 
 # ============================================================================
@@ -1126,12 +2573,64 @@ def get_dag_manager(
     return instance
 
 
+# ============================================================================
+# Tree-of-Thought + MemGPT 集成入口
+# ============================================================================
+
+
+def multi_path_search(query: str, context: str = "", llm=None) -> Dict:
+    """
+    ToT + Memory Paging 统一调用
+
+    执行 Tree-of-Thought 搜索后，自动触发 DagContextManager
+    的 compact_with_paging 进行分页管理（如果节点超阈值）。
+
+    Args:
+        query: 搜索问题
+        context: 可选的背景上下文
+        llm: LLM Flash 客户端（可选，从 xiaoyi_claw_api 自动获取）
+
+    Returns:
+        {
+            "search_result": Dict,        # ToT 搜索结果
+            "paging_result": Dict,         # MemGPT 分页结果
+            "success": bool,
+        }
+    """
+    result = {"search_result": {}, "paging_result": {}, "success": False}
+
+    try:
+        # 1. Tree-of-Thought 搜索
+        from tree_of_thought import TreeOfThought
+
+        tot = TreeOfThought(llm_flash=llm)
+        search_result = tot.search(query, context)
+        result["search_result"] = search_result
+        result["success"] = True
+
+        # 2. MemGPT 分页（由 dag_context_manager 自动触发）
+        try:
+            dag = get_dag_manager()
+            paging_result = dag.compact_with_paging(force=False)
+            result["paging_result"] = paging_result
+        except Exception as pe:
+            logger.warning(f"multi_path_search paging 失败: {pe}")
+            result["paging_result"] = {"error": str(pe)}
+
+    except Exception as e:
+        logger.error(f"multi_path_search 失败: {e}")
+        result["search_result"] = {"error": str(e)}
+
+    return result
+
+
 __all__ = [
     'DAGContextManager',
     'DAGNode',
     'DAGNodeType',
     'PhaseNodeType',
     'PriorityLevel',
-    'CognitionForestType',
+    'PageManager',
     'get_dag_manager',
+    'multi_path_search',
 ]

@@ -7,7 +7,7 @@ DAGIntegration — 缺失的集成层
 import time
 import json
 import logging
-from typing import Optional, List
+from typing import Optional, List, Dict
 
 logger = logging.getLogger(__name__)
 
