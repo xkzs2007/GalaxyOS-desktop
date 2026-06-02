@@ -11,7 +11,7 @@
 
 | 能力 | 说明 |
 |------|------|
-| **记忆** | 三层记忆体系 + 记忆巩固引擎（CLS固化 + 离线重放 + 艾宾浩斯遗忘 + 干扰合并 + 预测编码冲突检测） |
+| **记忆** | 三层记忆体系 + 记忆巩固引擎（CLS固化 + 仿生睡眠5阶段 + 干扰合并 + KG图推理） |
 | **检索** | 向量检索 + 知识图谱 + Self-RAG + CRAG 混合检索 + bge-reranker-v2-m3 重排序 + GraphRAG + RAPTOR + Merge Gate 五路去重融合 |
 | **智能处理** | 查询改写（Pro）/ 结果总结（Flash）/ 语义过滤 / 图像理解（SmartProcessor 三模型通道：Flash/Pro/VLM）+ Visual RAG 自动 OCR2 触发 |
 | **认知循环（R-CCAM）** | 五阶段结构化认知循环：Retrieval→Cognition→Control→Action→Memory，元认知 5 种动态策略调节器 + 异步注入三层兜底 |
