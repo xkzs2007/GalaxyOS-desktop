@@ -10,6 +10,8 @@ GalaxyOS — 安装向导 + 配置向导
   python3 install_wizard.py --config         # 仅配置向导
   python3 install_wizard.py --report         # 输出 JSON 报告
   python3 install_wizard.py --fix            # 体检后自动修复（同步文件）
+  python3 install_wizard.py --sleep-test    # 仿生睡眠巩固引擎专项测试
+  python3 install_wizard.py --all            # 全量模式（体检 + 睡眠测试 + 修复）
 """
 
 import os
@@ -81,8 +83,9 @@ CONFIG_DIR = SKILL_DIR / "config"
 DIST_DIR = Path.home() / ".openclaw" / "extensions" / "claw-core" / "dist" / "scripts"
 VAR_DIR = Path.home() / ".openclaw" / "extensions" / "claw-core" / "var"
 
-# ── ANSI 颜色 ──
-
+# ── 仿生睡眠巩固引擎 ──
+SLEEP_CORE = CORE_DIR / "biorhythm_sleep_consolidation.py"
+SLEEP_LOG = Path.home() / ".openclaw" / "workspace" / "memory" / "dreaming" / "dream_log.jsonl"
 
 
 # ════════════════════════════════════════════════════════════════
@@ -697,6 +700,144 @@ def run_config_wizard(config_data: Dict[str, Any]):
 
 
 # ════════════════════════════════════════════════════════════════
+# Phase 6: 仿生睡眠巩固引擎专项测试
+# ════════════════════════════════════════════════════════════════
+
+def test_sleep_consolidation() -> Dict[str, Any]:
+    """测试仿生睡眠巩固引擎 — 5 阶段 + 空闲感知集成 + 梦境日志"""
+    heading("💤 阶段 6：仿生睡眠巩固引擎测试")
+
+    results = {
+        "stages": {},
+        "full_cycle": None,
+        "integration": None,
+        "dream_log": None,
+    }
+
+    # ── 前置检查 ──
+    if not SLEEP_CORE.exists():
+        err(f"睡眠模块不存在: {SLEEP_CORE}")
+        return results
+
+    # 动态导入（将上层目录加入 sys.path 后 import_module）
+    try:
+        sys.path.insert(0, str(SLEEP_CORE.parent))
+        mod = importlib.import_module(SLEEP_CORE.stem)
+    except Exception as e:
+        err(f"睡眠模块导入失败: {e}")
+        results["import_error"] = str(e)
+        return results
+
+    ws = str(WORKSPACE)
+    cons = mod.BioRhythmSleepConsolidator(ws)
+    ok(f"睡眠引擎实例化成功: {SLEEP_CORE.name}")
+
+    # ── 1) NREM-SWR ──
+    print(f"\n{C}┌─ {B}阶段 1/5: NREM-SWR 尖波涟漪压缩重放{N}")
+    r = cons._nrem_swr_replay()
+    replayed = r.get("swr_memories_replayed", 0)
+    gain = r.get("swr_weight_gain", 0)
+    bursts = r.get("swr_bursts", 0)
+    print(f"  {G if bursts > 0 or "error" not in r else Y} {'✅' if "error" not in r else '⚠️'} 重放 {replayed} 条, 增益 {gain:.3f}, 爆发 {bursts} 次{N}")
+    results["stages"]["nrem_swr"] = {"ok": "error" not in r, "replayed": replayed, "gain": gain, "bursts": bursts}
+
+    # ── 2) NREM-CASCADE ──
+    print(f"\n{C}┌─ {B}阶段 2/5: NREM-CASCADE 三级同步巩固{N}")
+    r = cons._nrem_cascade_consolidate()
+    longtail = r.get("so_longtail_saved", 0)
+    pruned = r.get("spindle_pruned", 0)
+    linked = r.get("ripple_linked", 0)
+    print(f"  {G if "error" not in r else Y} {'✅' if "error" not in r else '⚠️'} 长尾拯救 {longtail}, 修剪 {pruned}, 跨链接 {linked}{N}")
+    results["stages"]["nrem_cascade"] = {"ok": "error" not in r, "longtail": longtail, "pruned": pruned, "linked": linked}
+
+    # ── 3) REM-GENERATIVE ──
+    print(f"\n{C}┌─ {B}阶段 3/5: REM-GENERATIVE 生成式梦境{N}")
+    r = cons._rem_generative_dream()
+    fragments = r.get("dream_fragments", 0)
+    patterns = r.get("hidden_patterns_found", 0)
+    g_gain = r.get("generative_gain", 0)
+    skipped = r.get("skipped", None)
+    status_icon = "⏭️" if skipped else ("✅" if "error" not in r else "⚠️")
+    status_info = f"跳过: {skipped}" if skipped else f"梦境 {fragments} 个, 模式 {patterns} 个, 增益 {g_gain:.3f}"
+    print(f"  {status_icon} {status_info}")
+    results["stages"]["rem_generative"] = {"ok": "error" not in r and not skipped, "fragments": fragments, "patterns": patterns, "gain": g_gain, "skipped": skipped}
+
+    # ── 4) REM-EMOTION ──
+    print(f"\n{C}┌─ {B}阶段 4/5: REM-EMOTION 情感整合{N}")
+    r = cons._rem_emotion_integration()
+    scanned = r.get("emotion_memories_scanned", 0)
+    em_decay = r.get("emotion_intensity_decayed", 0)
+    em_linked = r.get("emotion_links_strengthened", 0)
+    print(f"  {G if "error" not in r else R} {'✅' if "error" not in r else '❌'} 扫描 {scanned}, 衰减 {em_decay:.3f}, 链接 {em_linked}{N}")
+    results["stages"]["rem_emotion"] = {"ok": "error" not in r, "scanned": scanned, "decay": em_decay, "linked": em_linked}
+
+    # ── 5) DEEP-SLEEP ──
+    print(f"\n{C}┌─ {B}阶段 5/5: DEEP-SLEEP 记忆迁移{N}")
+    r = cons._deep_sleep_migration()
+    migrated = r.get("migrated_count", 0)
+    promoted = r.get("promoted_count", 0)
+    print(f"  {G if "error" not in r else Y} {'✅' if "error" not in r else '⚠️'} 迁移 {migrated} 条, 升格 {promoted} 条{N}")
+    results["stages"]["deep_sleep"] = {"ok": "error" not in r, "migrated": migrated, "promoted": promoted}
+
+    # ── 完整周期 ──
+    print(f"\n{C}┌─ {B}完整睡眠周期{N}")
+    full = cons.run_full_sleep_cycle()
+    duration = full.get("duration_s", 0)
+    total_gain = full.get("total_consolidation_gain", 0)
+    cycle_num = full.get("cycle", 0)
+    print(f"  {G}✅ 耗时 {duration:.2f}s | 总增益 {total_gain:.3f} | 周期 #{cycle_num}{N}")
+    results["full_cycle"] = {"duration_s": duration, "gain": total_gain, "cycle": cycle_num}
+
+    # ── 梦境日志 ──
+    print(f"\n{C}┌─ {B}梦境日志{N}")
+    if SLEEP_LOG.exists():
+        log_size = SLEEP_LOG.stat().st_size
+        log_count = 0
+        try:
+            with open(SLEEP_LOG) as f:
+                log_count = sum(1 for _ in f)
+        except Exception:
+            pass
+        print(f"  {G}✅ {SLEEP_LOG} ({log_count} 条记录, {log_size} 字节){N}")
+        results["dream_log"] = {"exists": True, "count": log_count, "size": log_size}
+    else:
+        print(f"  {Y}⚠️ 梦境日志未创建（首次运行后自动生成）{N}")
+        results["dream_log"] = {"exists": False}
+
+    # ── 空闲感知集成测试 ──
+    print(f"\n{C}┌─ {B}ConsolidationEngine 空闲感知集成{N}")
+    try:
+        sys.path.insert(0, str(CORE_DIR))
+        from memory_consolidation import ConsolidationEngine
+        engine = ConsolidationEngine(ws)
+        engine._last_user_active = time.time() - 200
+        r = engine._try_sleep_consolidation()
+        if isinstance(r, dict) and "error" in r:
+            print(f"  {Y}⚠️ 集成错误: {r['error']}{N}")
+            results["integration"] = {"ok": False, "error": r["error"]}
+        elif isinstance(r, dict) and r.get("skipped"):
+            print(f"  {Y}⏭️ 跳过: {r['skipped']}{N}")
+            results["integration"] = {"ok": True, "skipped": r["skipped"]}
+        elif isinstance(r, dict):
+            print(f"  {G}✅ 周期 #{r.get('cycle', '?')}, 增益 {r.get('total_consolidation_gain', 0):.3f}{N}")
+            results["integration"] = {"ok": True, "cycle": r.get("cycle"), "gain": r.get("total_consolidation_gain", 0)}
+        else:
+            print(f"  {Y}⚠️ 集成结果异常: {r}{N}")
+            results["integration"] = {"ok": False, "error": str(r)[:100]}
+        engine.stop_background()
+    except Exception as e:
+        print(f"  {Y}⚠️ 集成测试跳过: {e}{N}")
+        results["integration"] = {"ok": False, "error": str(e)[:100]}
+
+    print()
+    total_stages = 5
+    ok_stages = sum(1 for s in results["stages"].values() if s.get("ok", False))
+    ok(f"仿生睡眠: {ok_stages}/{total_stages} 阶段通过")
+
+    return results
+
+
+# ════════════════════════════════════════════════════════════════
 # 修复功能
 # ════════════════════════════════════════════════════════════════
 
@@ -739,6 +880,27 @@ def auto_fix(sync_result: Dict[str, Any], import_result: Optional[Dict[str, Any]
                     err(f"同步 index.js 失败: {e}")
                 break
 
+    # ── 同步睡眠引擎模块（如不存在则复制） ──
+    sleep_dst_core = CORE_DIR / "biorhythm_sleep_consolidation.py"
+    if SLEEP_CORE.exists() and not sleep_dst_core.exists():
+        try:
+            shutil.copy2(str(SLEEP_CORE), str(sleep_dst_core))
+            fixed["synced"] += 1
+            ok(f"已同步: core/biorhythm_sleep_consolidation.py")
+            fixed["details"].append({"file": "biorhythm_sleep_consolidation.py", "action": "copied_to_core"})
+        except Exception as e:
+            err(f"同步 sleep 模块到 core/ 失败: {e}")
+
+    # GalaxyOS 仓库同步
+    galaxyos_repo = Path("/tmp/galaxyos-upload")
+    if galaxyos_repo.exists() and SLEEP_CORE.exists():
+        for dst_dir in [galaxyos_repo / "services", galaxyos_repo / "skills" / "llm-memory-integration" / "core"]:
+            dst_dir.mkdir(parents=True, exist_ok=True)
+            try:
+                shutil.copy2(str(SLEEP_CORE), dst_dir / "biorhythm_sleep_consolidation.py")
+            except Exception as e:
+                err(f"同步到 GalaxyOS {dst_dir} 失败: {e}")
+
     return fixed
 
 
@@ -767,6 +929,11 @@ def generate_report(all_results: Dict[str, Any]) -> Dict[str, Any]:
     brk = all_results.get("breakers", {})
     cfg = all_results.get("config", {})
 
+    sleep = all_results.get("sleep", {})
+    slp_stages = sleep.get("stages", {})
+    slp_ok = sum(1 for s in slp_stages.values() if s.get("ok", False))
+    slp_total = len(slp_stages) if slp_stages else 0
+
     report = {
         "generated": now,
         "hostname": os.uname().nodename,
@@ -781,6 +948,8 @@ def generate_report(all_results: Dict[str, Any]) -> Dict[str, Any]:
             "worker_alive": svc.get("worker", {}).get("ping", False),
             "config_issues": len(cfg.get("issues", [])),
             "supervisor_ok": svc.get("supervisor", {}).get("status") == "running",
+            "sleep_stages_ok": slp_ok,
+            "sleep_stages_total": slp_total,
         },
         "detail": all_results,
     }
@@ -826,6 +995,10 @@ def print_report(report: Dict[str, Any]):
     print(f"  {'G' if s.get('worker_alive', False) else R} Worker: {'在线' if s.get('worker_alive', False) else '离线'}{N}")
     print(f"  {'⚠️ ' if s.get('config_issues', 0) > 0 else '✅ '} 配置问题: {s.get('config_issues', 0)}")
     print(f"  {'G' if s.get('supervisor_ok', False) else R} Supervisor: {'运行中' if s.get('supervisor_ok', False) else '异常'}{N}")
+    slp_ok = s.get('sleep_stages_ok', 0)
+    slp_total = s.get('sleep_stages_total', 0)
+    if slp_total > 0:
+        print(f"  {G}💤{N} 仿生睡眠: {slp_ok}/{slp_total} 阶段通过")
 
 
 # ════════════════════════════════════════════════════════════════
@@ -839,6 +1012,8 @@ def main():
     parser.add_argument("--config", action="store_true", help="仅配置向导")
     parser.add_argument("--report", action="store_true", help="输出 JSON 报告到 stdout")
     parser.add_argument("--fix", action="store_true", help="体检后自动修复")
+    parser.add_argument("--sleep-test", action="store_true", help="仿生睡眠巩固引擎专项测试")
+    parser.add_argument("--all", action="store_true", help="全量模式（体检 + 睡眠测试 + 修复）")
     args = parser.parse_args()
 
     # ── --report 模式：所有 print 重定向到 stderr，stdout 只留最终 JSON ──
@@ -847,11 +1022,18 @@ def main():
         sys.stdout = sys.stderr
 
     all_results = {}
-    fix_needed = False
 
     if args.config:
-        # 仅配置向导
         check_and_wizard_config(interactive=True)
+        return
+
+    if args.sleep_test:
+        all_results["sleep"] = test_sleep_consolidation()
+        report = generate_report(all_results)
+        if args.report:
+            sys.stdout = _real_stdout
+            sys.stdout.write(json.dumps(report, indent=2, ensure_ascii=False) + "\n")
+            sys.stdout.flush()
         return
 
     # ── 执行各阶段 ──
@@ -862,10 +1044,13 @@ def main():
     all_results["breakers"] = scan_breakers()
     all_results["config"] = check_and_wizard_config(interactive=not args.check and not args.report and not args.fix)
 
+    # ── 睡眠测试（--all 或非 --check 模式下都跑） ──
+    if args.all or (not args.check and not args.report and not args.fix):
+        all_results["sleep"] = test_sleep_consolidation()
+
     # ── 修复 ──
-    if args.fix:
-        all_results["fixed"] = auto_fix(all_results["sync"])
-        # 修复后重检同步状态
+    if args.fix or args.all:
+        all_results["fixed"] = auto_fix(all_results.get("sync", {"files": []}))
         all_results["sync"] = check_file_sync()
 
     # ── 报告 ──
