@@ -1,15 +1,15 @@
 ---
 name: xiaoyi-claw-omega-final
-description: GalaxyOS v5.2 — KoRa v2 行为模式引擎 + DAG 上下文持久化修复
+description: GalaxyOS v5.3 — KG as Memory Backbone 4 阶段全链路 + KoRa v2 + DAG 持久化
 author: xkzs2007
 license: MIT-0
-tags: [architecture, memory, llm, rccam, dag, kora]
+tags: [architecture, memory, llm, rccam, dag, kora, knowledge-graph]
 ---
 
-# GalaxyOS v5.2
+# GalaxyOS v5.3
 
 > **定位**: OpenClaw 的核心底层能力引擎
-> **更新时间**: 2026-06-02 16:45
+> **更新时间**: 2026-06-02 18:45
 > **架构层数**: 16 层（含 Layer 0 安装向导）
 > **总能力项**: 440+ 项
 > **IPC 三通道**: UDS RPC（双向互通，动态注册表）+ ZMQ 事件推送（双向回复）+ mmap 结构化状态（4KB JSON段）
@@ -35,12 +35,12 @@ GalaxyOS是 OpenClaw 的**核心底层能力引擎**，提供：
 
 ---
 
-| **文档版本**: v5.0 | 2026-05-31 21:06 | GalaxyOS 品牌化 + Galaxy Kernel 重构 + 异步注入三层兜底 |
+| **文档版本**: v5.3 | 2026-06-02 18:45 | KG as Memory Backbone 4 阶段全链路 + KoRa v2 行为模式引擎 |
 
 ---
 
 *GalaxyOS — OpenClaw 的核心底层能力引擎*
-*文档版本: v5.1 | 最后更新: 2026-06-02 15:34*
+*文档版本: v5.3 | 最后更新: 2026-06-02 18:45 | 4 阶段: 实体持久化 + 图检索主通道 + Cognition 图推理 + 睡眠图维护*
 
 ---
 
@@ -770,6 +770,17 @@ claw.verify_image_claim("图片路径", "声明内容")
   - AutoPersonaUpdater（人格文件更新建议→展示待审批）
   - KnowledgeRefiner（知识库精简/合并/去重建议→展示待审批）
 - 📊 **统计数据更新**：总功能数 360+ → 375+ 项，新增15+项
+
+### v5.3 (2026-06-02) — KG as Memory Backbone 4 阶段全链路
+
+- ⭐ **Phase 1: 实体持久化** — `temporal_kg.ingest_text()`: R-CCAM 每轮对话自动提取实体+关系写入 KG，LLM 抽取 + 消歧 + 双向边
+- ⭐ **Phase 2: 图检索主通道** — `retrieval_hub._do_kg()`: 第 6 路检索，图遍历 depth 2-3，RRF 自动与向量检索竞争
+- ⭐ **Phase 3: Cognition 图推理** — `xiaoyi_claw_api._cognition_phase()`: 共享目标实体检测 + 时序频率分析，注入 thinking_skills_content
+- ⭐ **Phase 4: 睡眠图推理** — `biorhythm_sleep_consolidation._deep_sleep_kg_reasoning()`: 实体消歧 + 社区发现 + 30 天低置信度边清理
+- 📦 **检索通道升级**: 6 路并行 (kg + local + dag + synapse + paper + web)，KG 优先于向量检索
+- 📊 **统计数据更新**: temporal_kg.db 320 entities, 1941 edges
+- 📄 **文档更新**: SKILL.md/README.md 版本号 v5.3，新特性表
+
 
 ### v5.2 (2026-06-02) — KoRa v2 行为模式引擎 + DAG 上下文持久化修复
 

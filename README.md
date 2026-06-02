@@ -1,7 +1,7 @@
 # 🌌 GalaxyOS — 认知增强引擎
 
 > OpenClaw 的开源认知增强引擎，为 AI Assistant 提供记忆、检索、推理、验证、自进化等全套认知能力
-> 版本: v5.2 · KoRa v2 行为模式引擎升级 + DAG 上下文持久化修复
+> 版本: v5.3 · KG as Memory Backbone 4 阶段全链路 + KoRa v2 + DAG 持久化
 
 ## 总览
 
@@ -153,7 +153,8 @@ python3 -m services.xiaoyi_claw_api recall --query "查询"
 
 | 版本 | 文件 | 说明 |
 |------|------|------|
-| **v5.2 (最新)** | `docs/xiaoyi-claw-core-architecture-v5.0.md` | **KoRa v2 行为模式引擎** + DAG 上下文持久化修复 |
+| **v5.3 (最新)** | `docs/xiaoyi-claw-core-architecture-v5.0.md` | **KG as Memory Backbone 4 阶段** + 检索通道 + Cognition 图推理 + 睡眠图维护 |
+| **v5.2** | `docs/xiaoyi-claw-core-architecture-v5.0.md` | **KoRa v2 行为模式引擎** + DAG 上下文持久化修复 |
 | **v5.1** | `docs/xiaoyi-claw-core-architecture-v5.0.md` | **R-CCAM 延迟优化** + 四思考技能管道重架构 + DAG 上下文管理器升级 + 安装向导 |
 | v4.6 | `docs/xiaoyi-claw-core-architecture-v4.6.md` | SmartProcessor 统一路由 + 三通道透明互通 |
 | v4.5 | `docs/xiaoyi-claw-core-architecture-v4.5.md` | Galaxy 增强（DAG三维绑定/Cognition Forest/KoRa/Kernel） |
@@ -164,6 +165,17 @@ python3 -m services.xiaoyi_claw_api recall --query "查询"
 | v3.0.0 | `docs/xiaoyi-claw-core-architecture-v3.0.0.md` | 16 层架构、R-CCAM 认知循环 |
 
 **完整架构文档（含 15 层全景图、440+ 功能列表、更新日志）：** 👉 [📖 查看 Skills 文档栏](https://cnb.cool/llm-memory-integrat/GalaxyOS?tabValue=SKILLS-ov-file)
+
+### v5.3 新特性
+
+| 特性 | 说明 |
+|------|------|
+| **KG as Memory Backbone 4 阶段全链路** | 实体自动摄入 + 图检索主通道 + Cognition 图推理 + 睡眠图维护 |
+| **Phase 1 - 实体持久化** | R-CCAM 每轮对话自动提取实体写入 KG，LLM 抽取 + 消歧 + 双向边 |
+| **Phase 2 - 图检索主通道** | `_do_kg()` 第 6 路检索，图遍历 depth 2-3，RRF 自动与向量检索竞争 |
+| **Phase 3 - Cognition 图推理** | 共享目标实体检测 + 时序频率分析，注入 thinking_skills_content |
+| **Phase 4 - 睡眠图推理** | DEEP-SLEEP 阶段实体消歧 + 社区发现 + 30 天低置信度边清理 |
+| **检索通道升级** | 6 路并行（kg + local + dag + synapse + paper + web），KG 优先 |
 
 ### v5.2 新特性
 
