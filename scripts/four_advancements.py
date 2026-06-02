@@ -12,7 +12,7 @@ from typing import Optional, List, Dict, Any
 
 logger = logging.getLogger(__name__)
 
-WORKSPACE = os.environ.get('WORKSPACE', os.path.expanduser('~/.openclaw/workspace'))
+WORKSPACE = os.environ.get('WORKSPACE', '/home/sandbox/.openclaw/workspace')
 DAG_DB = os.path.expanduser("~/.openclaw/dag_context.db")
 
 # 全局 Flash 客户端（共享）
@@ -120,7 +120,7 @@ class GraphRAGEngine:
             from nlp_enhanced import EnhancedNLP
             self._nlp = EnhancedNLP()
             return True
-        except:
+        except Exception:
             return False
     
     def extract_from_dag(self) -> dict:
@@ -154,7 +154,7 @@ class GraphRAGEngine:
                             self._entities[name]['count'] += 1
                             if len(self._entities[name]['contexts']) < 3:
                                 self._entities[name]['contexts'].append(content[:200])
-                    except:
+                    except Exception:
                         continue
                 
                 communities = {}
@@ -255,13 +255,13 @@ class FourAdvancements:
                 r = self.raptor.build_tree()
                 if r.get('status') == 'ok':
                     logger.info(f"RAPTOR: {r.get('clusters', {})}")
-            except:
+            except Exception:
                 pass
             try:
                 g = self.graphrag.extract_from_dag()
                 if g.get('status') == 'ok':
                     logger.info(f"GraphRAG: {g.get('entities')} entities")
-            except:
+            except Exception:
                 pass
             try:
                 memories = []
@@ -275,7 +275,7 @@ class FourAdvancements:
                     ref = self.reflection.reflect(memories)
                     if ref.get('status') == 'ok':
                         logger.info(f"Reflection: {ref.get('reflection','')[:60]}")
-            except:
+            except Exception:
                 pass
             time.sleep(interval)
     

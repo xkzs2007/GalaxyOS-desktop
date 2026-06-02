@@ -1,15 +1,15 @@
 ---
 name: xiaoyi-claw-omega-final
-description: GalaxyOS v5.3 — KG as Memory Backbone 4 阶段全链路 + KoRa v2 + DAG 持久化
+description: GalaxyOS v5.4 — KG as Memory Backbone 4 阶段全链路 + KoRa v2 + DAG 持久化
 author: xkzs2007
 license: MIT-0
 tags: [architecture, memory, llm, rccam, dag, kora, knowledge-graph]
 ---
 
-# GalaxyOS v5.3
+# GalaxyOS v5.4
 
 > **定位**: OpenClaw 的核心底层能力引擎
-> **更新时间**: 2026-06-02 18:45
+> **更新时间**: 2026-06-02 21:00
 > **架构层数**: 16 层（含 Layer 0 安装向导）
 > **总能力项**: 440+ 项
 > **IPC 三通道**: UDS RPC（双向互通，动态注册表）+ ZMQ 事件推送（双向回复）+ mmap 结构化状态（4KB JSON段）
@@ -35,12 +35,12 @@ GalaxyOS是 OpenClaw 的**核心底层能力引擎**，提供：
 
 ---
 
-| **文档版本**: v5.3 | 2026-06-02 18:45 | KG as Memory Backbone 4 阶段全链路 + KoRa v2 行为模式引擎 |
+| **文档版本**: v5.4 | 2026-06-02 21:00 | KG as Memory Backbone 4 阶段全链路 + KoRa v2 + 检索修复 |
 
 ---
 
 *GalaxyOS — OpenClaw 的核心底层能力引擎*
-*文档版本: v5.3 | 最后更新: 2026-06-02 18:45 | 4 阶段: 实体持久化 + 图检索主通道 + Cognition 图推理 + 睡眠图维护*
+*文档版本: v5.4 | 最后更新: 2026-06-02 21:00 | 4 阶段: 实体持久化 + 图检索主通道 + Cognition 图推理 + 睡眠图维护*
 
 ---
 
@@ -667,6 +667,18 @@ claw.verify_image_claim("图片路径", "声明内容")
 | 思考内容截断 | **500→2000** | 2026-06-02 |
 | DAG 上下文排序 | **时间衰减权重重排序** | 2026-06-02 |
 | install_wizard.py | **6 阶段全自动自检 + `--kg-test` 专项测试** | 2026-06-02 |
+
+### v5.4 (2026-06-02) — 检索全面修复（JSON污染 + RRF分数压扁 + 多源交叉验证）
+
+- 🐛 **JSON 污染清洗** — `retrieval_hub`: cycle_summary 等节点存 JSON blob，embedding 字段名压扁语义；加 `_extract_plain()` 提取纯文本再索引
+- 🐛 **RRF 分数压扁修复** — `_rrf_merge` v3: 混合归一化排名 ×0.4 + 原始语义分 ×0.6，分数从 0.037 恢复到 0.80-0.86
+- 🐛 **实体提取全空** — GraphRAG `ent.get('mention')` 替代 `ent.get('text')`，实体不再为空
+- 🐛 **采样范围过窄** — 仅扫 200 条 dag_nodes（多为 JSON persona），扩至 300 条含 rccam_nodes
+- 🐛 **中文检索失效** — `_do_paper` 改用 `re.findall` 分词，替代 `.split()` 的中文整词问题
+- 🔄 **web 通道改为多源交叉验证** — web 不参与 RRF 排名，新增 `_verify_local_with_web()` 验证本地检索，修正 quality 置信度
+- 🔄 **web 默认关闭** — 五路本地检索（kg/local/dag/synapse/paper）默认全开，外部验证由调用方按需开启
+- 📄 **文档/版本更新**: SKILL.md/README.md v5.3→v5.4
+
 
 ### v5.3 (2026-06-02) — KG as Memory Backbone 4 阶段全链路
 

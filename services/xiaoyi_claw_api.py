@@ -1975,7 +1975,8 @@ class XiaoYiClawLLM:
 
         try:
             from retrieval_hub import retrieval_hub
-            hub_result = retrieval_hub(query, top_k=8)
+            _hub_session = getattr(state, 'session_key', 'xiaoyi-channel')
+            hub_result = retrieval_hub(query, top_k=8, session_id=_hub_session)
 
             memories = hub_result.get("results", [])
             stats = hub_result.get("stats", {})
@@ -3183,7 +3184,8 @@ class XiaoYiClawLLM:
                     # 优先从 retrieval_hub 统一入口获取五路融合结果
                     try:
                         from retrieval_hub import retrieval_hub
-                        hub_result = retrieval_hub(rewritten, top_k=12, include_web=False)
+                        _hub_session2 = getattr(state, 'session_key', 'xiaoyi-channel') if hasattr(state, 'session_key') else 'xiaoyi-channel'
+                        hub_result = retrieval_hub(rewritten, top_k=12, include_web=False, session_id=_hub_session2)
                         hub_results = hub_result.get("results", [])
                     except ImportError:
                         hub_results = results if results else []

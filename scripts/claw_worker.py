@@ -49,6 +49,44 @@ sys.path.insert(0, SCRIPTS_DIR)
 # 模块级缓存
 _worker_inst = None
 
+# ═══ MN-RU 增量索引桥接（2407.07871 / 2404.13556）═══
+_RETRIEVAL_HUB_IMPORTED = False
+def _ensure_retrieval_hub():
+    """懒加载 retrieval_hub 中的 MN-RU 单例"""
+    global _RETRIEVAL_HUB_IMPORTED
+    if _RETRIEVAL_HUB_IMPORTED:
+        return True
+    try:
+        sys.path.insert(0, os.path.expanduser("~/.openclaw/extensions/claw-core/dist/scripts"))
+        from retrieval_hub import _get_hnsw_mn, _update_session_history
+        global _MN_HNSW, _UPDATE_SESSION
+        _MN_HNSW = _get_hnsw_mn()
+        _UPDATE_SESSION = _update_session_history
+        _MN_HNSW.init_embedding()
+        _RETRIEVAL_HUB_IMPORTED = True
+        return True
+    except Exception as e:
+        _RETRIEVAL_HUB_IMPORTED = False
+        return False
+
+def _push_to_hnsw_mini(node: dict):
+    """向 MN-RU 小索引推送新节点（dag_ingest 阶段触发）"""
+    if not _ensure_retrieval_hub():
+        return
+    try:
+        _MN_HNSW.push_pending(node)
+    except Exception:
+        pass
+
+def _push_to_session_index(session_node: dict):
+    """向 Session 索引推送 cycle 会话上下文（rccam_compact_cycle 阶段触发）"""
+    if not _ensure_retrieval_hub():
+        return
+    try:
+        _MN_HNSW._pending_session.append(session_node)
+    except Exception:
+        pass
+
 # ========== 三通道路径 ==========
 UDS_PATH = os.path.join(
     os.path.expanduser("~/.openclaw/extensions/claw-core/var"),
@@ -968,6 +1006,18 @@ class ClawWorker:
             # ZMQ 推送 ingest 事件
             _zmq_pub_event("dag_ingest", {"session": session_id, "role": role})
 
+            # ── MN-RU 增量索引：异步推送新节点到小索引 ──
+            try:
+                _push_to_hnsw_mini({
+                    'content': content[:1000],
+                    'source': 'dag',
+                    'phase': role,
+                    'importance': 0.5,
+                    'timestamp': time.time(),
+                })
+            except Exception:
+                pass
+
             return {"ok": True, "session": session_id}
         except Exception as e:
             return {"_dag_degraded": True, "reason": f"ingest failed: {e}"}
@@ -1000,7 +1050,7 @@ class ClawWorker:
             return {"_dag_degraded": True, "reason": "missing sessionId"}
         try:
             dag = self._get_dag()
-            needs_compact, stats = dag.dag.should_compact(session_id, p.get("contextWindowTokens", 256000))
+            needs_compact, stats = dag.dag.should_compact(session_id)
             return {"needs_compact": needs_compact, "stats": stats}
         except Exception as e:
             return {"_dag_degraded": True, "reason": f"status failed: {e}"}
@@ -1108,7 +1158,7 @@ class ClawWorker:
             return {"needs": False, "error": str(e)}
 
     def rccam_compact_cycle(self, p: dict) -> dict:
-        """压缩一个指定的 R-CCAM cycle"""
+        """压缩一个指定的 R-CCAM cycle（压缩后触发 session 级索引更新）"""
         session_id = p.get("sessionId", "")
         cycle_id = p.get("cycleId", "")
         if not session_id or not cycle_id:
@@ -1118,6 +1168,31 @@ class ClawWorker:
             result = dag.dag.compact_rccam_cycle(session_id, cycle_id)
             if result:
                 _zmq_pub_event("rccam_compact", {"session": session_id, "cycle": cycle_id})
+                # ── Session 级索引：从压缩结果构建 session embedding ──
+                try:
+                    cycle_nodes = dag.dag.expand_rccam_cycle(session_id, cycle_id)
+                    if cycle_nodes:
+                        user_input = ""
+                        cognition = ""
+                        answer = ""
+                        for node in cycle_nodes:
+                            phase = node.get("phase_name", node.get("node_type", ""))
+                            content = node.get("content", "")
+                            if phase == "user_input":
+                                user_input = content[:500]
+                            elif phase in ("cognition", "control"):
+                                cognition += content[:300] + " "
+                            elif phase == "action":
+                                answer = content[:500]
+                        session_text = f"用户: {user_input}\n分析: {cognition.strip()}\n回答: {answer}"
+                        if len(session_text) > 100:
+                            _push_to_session_index({
+                                'session_text': session_text[:2000],
+                                'cycle_id': cycle_id,
+                                'timestamp': time.time(),
+                            })
+                except Exception:
+                    pass
             return {"ok": True, "result": result}
         except Exception as e:
             return {"error": str(e)}

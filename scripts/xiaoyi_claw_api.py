@@ -1712,7 +1712,7 @@ class XiaoYiClawLLM:
 
         # 构建 embedding 函数(无问芯穹 bge-m3)
         embed_config = self.config.get('embedding', {})
-        embed_api_key = embed_config.get('api_key', 'YOUR_EMBED_API_KEY')
+        embed_api_key = embed_config.get('api_key', 'sk-REDACTED_DEEPSEEK_OCR')
         embed_base_url = embed_config.get('base_url', 'https://cloud.infini-ai.com/maas/v1')
         embed_model = embed_config.get('model', 'bge-m3')
 
@@ -1741,7 +1741,7 @@ class XiaoYiClawLLM:
             generator = SmartHybridGenerator(
                 vector_store=self.vector_store,
                 embedding_fn=query_to_vector,
-                deepseek_api_key=self.config.get('deepseek_api_key', 'YOUR_DEEPSEEK_API_KEY'),
+                deepseek_api_key=self.config.get('deepseek_api_key', 'sk-ea4-REVOKED-REVOKED-REVOKED'),
             )
 
             # 设置 KV Cache 会话 ID(复用 X-Conversation-Id)
@@ -1797,6 +1797,7 @@ class XiaoYiClawLLM:
         def __init__(self, user_input: str):
             # 原始输入
             self.user_input = user_input
+            self._start_time = time.time()
             self.session_key = f"rccam_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:8]}"
 
             # 图片相关(Visual RAG)
@@ -1939,6 +1940,28 @@ class XiaoYiClawLLM:
             logger.info(f"问候快速通路: 直接回复 '{raw_query}'")
             return state
 
+        # ═══ KG as Memory Backbone: 实体提取 & 图写入 ═══
+        try:
+            sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+            from temporal_kg import get_temporal_kg
+            _tkg = get_temporal_kg()
+            _session = getattr(state, 'session_key', 'xiaoyi-channel')
+            _ingest = _tkg.ingest_text(raw_query, session_key=_session)
+            if _ingest['stats']['new_edges'] > 0:
+                state.analysis['kg_ingested'] = _ingest['stats']
+                logger.info(f"KG ingest: {_ingest['stats']}")
+            # 隐式关联检测（多轮对话中触发）
+            if state.cycle_count > 0:
+                try:
+                    _hidden = _tkg.find_hidden_relations(session_key=_session)
+                    if _hidden:
+                        state.analysis['kg_hidden_relations'] = _hidden[:5]
+                        logger.info(f"KG hidden relations: {len(_hidden)} found")
+                except Exception:
+                    pass
+        except Exception as e:
+            logger.debug(f"KG ingest skipped: {e}")
+
         # ═══ CRAG: 复杂查询自动分解检索（二合一分析已确认类型） ═══
         try:
             if _HAS_RETRIEVAL_HUB and state.analysis.get('adaptive_level') == 'complex' and len(raw_query) > 20:
@@ -1952,7 +1975,8 @@ class XiaoYiClawLLM:
 
         try:
             from retrieval_hub import retrieval_hub
-            hub_result = retrieval_hub(query, top_k=8)
+            _hub_session = getattr(state, 'session_key', 'xiaoyi-channel')
+            hub_result = retrieval_hub(query, top_k=8, session_id=_hub_session)
 
             memories = hub_result.get("results", [])
             stats = hub_result.get("stats", {})
@@ -2412,7 +2436,7 @@ class XiaoYiClawLLM:
                 ThinkingSkill.WORKFLOWS: "工作流",
                 ThinkingSkill.NONE: None,
             }
-            _ws_path = getattr(state, 'workspace_path', str(Path.home() / '.openclaw' / 'workspace'))
+            _ws_path = getattr(state, 'workspace_path', '/home/sandbox/.openclaw/workspace')
 
             for _skill in _skills_result.suggested_skills:
                 _cn_name = _skill_name_map.get(_skill, _skill.value if hasattr(_skill, 'value') else _skill)
@@ -2469,6 +2493,34 @@ class XiaoYiClawLLM:
         if any(kw in query.lower() for kw in realtime_keywords):
             state.needs_more_info = True
             logger.debug(f"实时信息查询,强制 needs_more_info=True")
+
+        # ═══ KG Graph Reasoning: 图推理注入 ═══
+        # 从 temporal_kg 获取隐式关联，注入 cognition 阶段供后续选择
+        try:
+            # 只在非 greeting/light 预算或已有图推理结果时执行
+            _kg_hidden = state.analysis.get('kg_hidden_relations', [])
+            if not _kg_hidden:
+                sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+                from temporal_kg import get_temporal_kg
+                _tkg = get_temporal_kg()
+                _session = getattr(state, 'session_key', 'xiaoyi-channel')
+                _kg_hidden = _tkg.find_hidden_relations(session_key=_session)
+            if _kg_hidden:
+                state.analysis['kg_hidden_relations'] = _kg_hidden[:8]
+                # 取置信度最高的 3 条注入 thinking context
+                _top = sorted(_kg_hidden, key=lambda x: x.get('strength', 0), reverse=True)[:3]
+                _ctx_lines = []
+                for h in _top:
+                    _rel = h.get('relation', '')
+                    _ev = h.get('evidence', '')
+                    _ctx_lines.append(f"  - {_rel} ({_ev})")
+                if _ctx_lines:
+                    _ctx = "\n".join(_ctx_lines)
+                    if hasattr(state, 'thinking_skills_content') and isinstance(state.thinking_skills_content, list):
+                        state.thinking_skills_content.append(f"【知识图谱关联】\n{_ctx}")
+                    logger.info(f"KG cognition: {len(_top)} hidden relations injected")
+        except Exception as _kge:
+            logger.debug(f"KG cognition skipped: {_kge}")
 
         # ═══ Causal Reasoning: 因果推理注入 ═══
         try:
@@ -2573,17 +2625,30 @@ class XiaoYiClawLLM:
         except Exception as e:
             logger.warning(f"L1 persona injection failed: {e}")
 
-        # ── KoRa 行为记录 ──
+        # ── KoRa 行为记录 + 参数推荐注入 ──
         try:
             if self._kora:
+                # 计算本次 response_time（近似值）
+                _elapsed_ms = int((time.time() - getattr(state, '_start_time', time.time())) * 1000) if hasattr(state, '_start_time') else 0
                 self._kora.record_request(
                     query_type=state.knowledge_type or 'info',
                     complexity=state.analysis.get('complexity', 'medium'),
                     strategy=state.strategy or 'unknown',
                     confidence=state.retrieval_confidence or 0.3,
+                    retrieval_count=getattr(state, 'retrieval_count', 0),
                     cycle_count=state.cycle_count,
                     has_image=getattr(state, 'has_image', False),
+                    response_time_ms=_elapsed_ms,
+                    cache_hit=getattr(state, 'cache_hit', False),
                 )
+                # KoRa cognition 注入：行为模式摘要 → skill_guide
+                kora_inj = self._kora.get_cognition_injection()
+                if kora_inj:
+                    existing = state.analysis.get('skill_guide', '')
+                    state.analysis['skill_guide'] = (
+                        f"\n\n{kora_inj}" + (existing if existing else '')
+                    )
+                    logger.info(f"KoRa 行为模式已注入 cognition ({len(kora_inj)} 字符)")
         except Exception:
             pass
 
@@ -2612,6 +2677,12 @@ class XiaoYiClawLLM:
                     context=_query[:200],
                     confidence=0.7
                 )
+                # 同步记录到 KoRa
+                if self._kora:
+                    try:
+                        self._kora.record_negative_feedback(session_id=getattr(state, 'session_key', ''))
+                    except Exception:
+                        pass
                 logger.info(f"Cognition 检测隐式负反馈: '{_query[:40]}'")
         except Exception as _ife:
             logger.debug(f"隐式反馈检测失败: {_ife}")
@@ -3113,7 +3184,8 @@ class XiaoYiClawLLM:
                     # 优先从 retrieval_hub 统一入口获取五路融合结果
                     try:
                         from retrieval_hub import retrieval_hub
-                        hub_result = retrieval_hub(rewritten, top_k=12, include_web=False)
+                        _hub_session2 = getattr(state, 'session_key', 'xiaoyi-channel') if hasattr(state, 'session_key') else 'xiaoyi-channel'
+                        hub_result = retrieval_hub(rewritten, top_k=12, include_web=False, session_id=_hub_session2)
                         hub_results = hub_result.get("results", [])
                     except ImportError:
                         hub_results = results if results else []
