@@ -1712,7 +1712,7 @@ class XiaoYiClawLLM:
 
         # 构建 embedding 函数(无问芯穹 bge-m3)
         embed_config = self.config.get('embedding', {})
-        embed_api_key = embed_config.get('api_key', 'sk-REDACTED_DEEPSEEK_OCR')
+        embed_api_key = embed_config.get('api_key', os.environ.get('EMBEDDING_API_KEY', ''))
         embed_base_url = embed_config.get('base_url', 'https://cloud.infini-ai.com/maas/v1')
         embed_model = embed_config.get('model', 'bge-m3')
 
@@ -1741,7 +1741,7 @@ class XiaoYiClawLLM:
             generator = SmartHybridGenerator(
                 vector_store=self.vector_store,
                 embedding_fn=query_to_vector,
-                deepseek_api_key=self.config.get('deepseek_api_key', 'sk-ea4-REVOKED-REVOKED-REVOKED'),
+                deepseek_api_key=self.config.get('deepseek_api_key', os.environ.get('DEEPSEEK_API_KEY', '')),
             )
 
             # 设置 KV Cache 会话 ID(复用 X-Conversation-Id)

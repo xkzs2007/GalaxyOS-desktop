@@ -1,7 +1,6 @@
 """
 独立重排序模块（bge-reranker-v2-m3，无问芯穹免费）
 
-从 yaoyao_bridge.py 中剥离，不依赖 yaoyao DB/DB 结构。
 
 用法:
     from reranker import rerank_results
@@ -10,8 +9,10 @@
 
 import os
 import sys
+import json
 import logging
 from typing import List, Dict
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -20,10 +21,29 @@ RERANKER_URL = os.environ.get(
     "YAOYAO_RERANKER_URL",
     "https://cloud.infini-ai.com/maas/v1/rerank",
 )
-RERANKER_API_KEY = os.environ.get(
-    "YAOYAO_RERANKER_KEY",
-    "sk-REDACTED_DEEPSEEK_OCR",
-)
+
+# 从 unified_config.json 读 embedding API key（与 embedding.py/llm_client.py 统一）
+def _load_embedding_key() -> str:
+    env_key = os.environ.get("YAOYAO_RERANKER_KEY", "")
+    if env_key:
+        return env_key
+    config_paths = [
+        Path(__file__).parent.parent / "skills" / "llm-memory-integration" / "config" / "unified_config.json",
+        Path(__file__).parent.parent.parent / "skills" / "llm-memory-integration" / "config" / "unified_config.json",
+        Path.home() / ".openclaw" / "workspace" / "skills" / "xiaoyi-claw-omega-final" / "skills" / "llm-memory-integration" / "config" / "unified_config.json",
+    ]
+    for cp in config_paths:
+        if cp.exists():
+            try:
+                cfg = json.loads(cp.read_text())
+                key = cfg.get("embedding", {}).get("api_key", "")
+                if key and key != "YOUR_EMBEDDING_API_KEY":
+                    return key
+            except Exception:
+                continue
+    return ""
+
+RERANKER_API_KEY = _load_embedding_key()
 RERANKER_MODEL = "bge-reranker-v2-m3"
 
 
