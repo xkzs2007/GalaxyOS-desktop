@@ -1,18 +1,17 @@
 ---
 name: xiaoyi-claw-omega-final
-description: GalaxyOS v5.1 — R-CCAM 延迟优化 + 四思考技能管道重架构 + DAG 上下文管理器升级
-version: 5.1.0
+description: GalaxyOS v5.2 — KoRa v2 行为模式引擎 + DAG 上下文持久化修复
 author: xkzs2007
 license: MIT-0
-tags: [architecture, memory, llm, rccam, dag, smart-processor]
+tags: [architecture, memory, llm, rccam, dag, kora]
 ---
 
-# GalaxyOS v5.1
+# GalaxyOS v5.2
 
 > **定位**: OpenClaw 的核心底层能力引擎
-> **更新时间**: 2026-06-02 15:20
+> **更新时间**: 2026-06-02 16:45
 > **架构层数**: 16 层（含 Layer 0 安装向导）
-> **总能力项**: 435+ 项
+> **总能力项**: 440+ 项
 > **IPC 三通道**: UDS RPC（双向互通，动态注册表）+ ZMQ 事件推送（双向回复）+ mmap 结构化状态（4KB JSON段）
 > **默认通信**: UDS RPC，HTTP :8765 二级降级，无 stdin/stdout，无 spawnSync
 > **IPC 演进**: stdin/stdout → UDS RPC（单 Worker 单例） → **Gateway-Worker 全透明互通（UDS注册表 + mmap 结构化 + ZMQ 双向）**
@@ -771,6 +770,25 @@ claw.verify_image_claim("图片路径", "声明内容")
   - AutoPersonaUpdater（人格文件更新建议→展示待审批）
   - KnowledgeRefiner（知识库精简/合并/去重建议→展示待审批）
 - 📊 **统计数据更新**：总功能数 360+ → 375+ 项，新增15+项
+
+### v5.2 (2026-06-02) — KoRa v2 行为模式引擎 + DAG 上下文持久化修复
+
+- ✨ **KoRa v2 — 行为模式引擎全面升级** — `scripts/kora_behavior.py`
+  - 从简单 SQLite 行为日志升级为**时序模式识别 + 自适应参数推荐**
+  - 新增 `analyze_patterns()` 四时隙统计（morning/afternoon/evening/night）
+  - 新增 `detect_temporal_cycle()` 日/周周期检测（自相关扫描 7 天数据）
+  - 新增 `get_strategy_recommendation()` 自适应策略推荐（基于 avg_complexity + negative_rate 调 R-CCAM 参数）
+  - 新增 `get_cognition_injection()` 行为模式摘要注入 cognition 阶段
+  - 新增 `run_pattern_discovery()` 自动模式发现（时隙-类型关联 + 情感漂移检测）
+  - 新增 `record_negative_feedback()` 情感追踪
+  - 模式持久化到 SQLite `patterns`/`cycle_cache` 表，重启不丢
+  - 保持 v1 接口兼容：`from kora_behavior import KoRaBehaviorEngine` 照常使用
+  - Cognition 阶段集成：KoRa 行为摘要自动注入 `skill_guide`，LLM 可见当前时段/策略/情感
+- ✨ **DAG 上下文持久化修复** — `scripts/dag_shim.py` + hooks/handler.js
+  - 修复 `dag_shim.py` 路径缺失：claw-bootstrap hook 因 `existsSync()` 检测不到文件而跳过全部 DAG 写入
+  - 修复 Worker `dag_status` 调用 `should_compact` 参数不匹配（传了 2 个参数但函数只接受 1 个）
+  - 当前对话消息（`xiaoyi-channel` session）已正常写入 DAG，持续积累上下文数据
+- 📊 **统计数据更新**：总能力项 440+，新增 KoRa v2 7 项能力
 
 ### 模块加载机制说明
 
