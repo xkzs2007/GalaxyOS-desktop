@@ -246,8 +246,6 @@ class EntityLinker:
             KnowledgeEntity("小艺Claw", aliases=["小艺 Claw", "小艺Claw系统", "claw系统"], type="system", description="基于OpenClaw框架的AI助手系统"),
             KnowledgeEntity("OpenClaw", aliases=["openclaw", "Claw框架"], type="framework", description="开源AI助手框架"),
             KnowledgeEntity("DeepSeek", aliases=["deepseek", "DeepSeek V4"], type="model", description="AI模型提供商"),
-            KnowledgeEntity("腾讯云记忆插件", aliases=["memory-tencentdb", "腾讯云插件", "tdai-memory"], type="plugin", description="腾讯云记忆存储插件"),
-            KnowledgeEntity("Yaoyao Memory", aliases=["yaoyao", "yaoyao-memory", "yaoyao插件"], type="plugin", description="本地记忆管理插件"),
             KnowledgeEntity("DAG上下文管理器", aliases=["DAG", "dag_context", "场景图"], type="module", description="DAG上下文管理模块"),
             KnowledgeEntity("R-CCAM", aliases=["rccam", "认知循环"], type="module", description="结构化认知循环：五阶段处理"),
             KnowledgeEntity("突触网络", aliases=["synapse", "synapse_network", "记忆突触"], type="module", description="神经网络模拟的记忆联结系统"),

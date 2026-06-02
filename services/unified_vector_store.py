@@ -2,7 +2,6 @@
 """
 统一向量存储接口
 
-整合 memory-tencentdb 和 llm-memory-integration 的向量检索能力。
 """
 
 import os
@@ -208,11 +207,8 @@ class HNSWLibBackend(VectorStoreBackend):
                         self._next_id = meta.get('next_id', 0)
                         for sid, rec_dict in meta.get('records', {}).items():
                             self.records[sid] = VectorRecord(**rec_dict)
-                        # 重建 id_map 和 rev_map
-                        id_map_raw = meta.get('id_map', {})
-                        for int_id_str, str_id in id_map_raw.items():
-                            self.id_map[int(int_id_str)] = str_id
-                            self.rev_map[str_id] = int(int_id_str)
+                            if sid in self.id_map_repr:
+                                pass  # rev_map 从 id_map 重建
                 return
             except Exception:
                 pass  # 无法加载，重建
@@ -228,7 +224,6 @@ class HNSWLibBackend(VectorStoreBackend):
         with open(meta_path, 'w') as f:
             json.dump({
                 'next_id': self._next_id,
-                'id_map': {str(k): v for k, v in self.id_map.items()},
                 'records': {sid: {
                     'id': r.id, 'vector': r.vector, 'metadata': r.metadata,
                     'content': r.content, 'source': r.source

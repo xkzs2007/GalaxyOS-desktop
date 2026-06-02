@@ -60,9 +60,9 @@ class QueryAnalysis:
     question_type: str          # 问题类型
     confusion_level: float      # 困惑程度 0-1
     suggested_skill: ThinkingSkill
+    suggested_skills: List[ThinkingSkill] = None  # top-3 技能推荐
     confidence: float           # 建议置信度
     reasoning: str              # 推理过程
-    suggested_skills: List[ThinkingSkill] = None  # top-3 技能推荐
 
 
 class IntelligentThinkingTrigger:

@@ -353,7 +353,6 @@ def _enable_sqlite_vec():
         alt_vecs = [
             pip_vec,
             os.path.expanduser("~/.openclaw/node_modules/sqlite-vec-linux-x64/vec0.so"),
-            os.path.expanduser("~/.openclaw/extensions/memory-tencentdb/node_modules/sqlite-vec-linux-x64/vec0.so"),
         ]
         
         conn = sqlite3.connect(":memory:")
