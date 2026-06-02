@@ -644,10 +644,16 @@ class XiaoyiMemoryV2:
         
         total = stats["hallucination_guard"]["total_memories"]
         # 数据量小（<50条）时"高置信度比例过低"无参考意义，跳过
+        # unverified 记忆未经过验证流程，不应视为低置信度
+        # 仅对已验证过的记忆检查高置信度比例
+        unverified_count = stats["hallucination_guard"]["verification_distribution"].get("unverified", 0)
+        verified_count = total - unverified_count
         if total >= 50:
             high_conf = stats["hallucination_guard"]["high_confidence_count"]
-            if high_conf / total < 0.1:
-                issues.append("高置信度记忆比例过低")
+            if verified_count > 0 and high_conf < verified_count * 0.1:
+                issues.append("已验证记忆高置信度比例过低")
+            elif verified_count == 0:
+                pass  # 全为 unverified，不报健康问题
         
         expired = stats["hallucination_guard"]["expired_count"]
         if expired > total * 0.5:

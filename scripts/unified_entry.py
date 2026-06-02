@@ -30,7 +30,7 @@ WORKSPACE_ROOT = SKILL_ROOT.parent  # skills/
 CORE_DIR = SKILL_ROOT / "skills/llm-memory-integration/core"
 ORCHESTRATION_DIR = SKILL_ROOT / "orchestration"
 CONFIG_DIR = SKILL_ROOT / "config"
-SCRIPTS_DIR = Path.home() / ".openclaw/workspace/scripts"
+SCRIPTS_DIR = SKILL_ROOT / "scripts"
 # 备用路径（src/privileged/ 下的模块）
 LLM_INTEGRATION_SRC = WORKSPACE_ROOT / "llm-memory-integration/src/privileged"
 
@@ -61,12 +61,9 @@ except ImportError as e:
     print(f"警告: xiaoyi_claw_api 导入失败: {e}", file=sys.stderr)
     XIAOYI_CLAW_AVAILABLE = False
 
-try:
-    from resilience_system import ResilienceSystem
-    RESILIENCE_AVAILABLE = True
-except ImportError as e:
-    print(f"警告: resilience_system 导入失败: {e}", file=sys.stderr)
-    RESILIENCE_AVAILABLE = False
+
+
+
 
 class UnifiedEntry:
     """统一入口 V2"""
@@ -151,7 +148,7 @@ class UnifiedEntry:
     
     @rail(scope=RailScope.USER, feature="memory_write")
     def store(self, content: str, source: str = "user") -> Dict[str, Any]:
-        """存储记忆（统一 API）"""
+        """存储记忆（统一写入 XiaoyiClawLLM + 降级 XiaoyiMemoryV2）"""
         result = {"memory_id": None, "source": None, "warnings": []}
 
         # 1. 优先走统一 API（XiaoYiClawLLM）
@@ -165,10 +162,10 @@ class UnifiedEntry:
                 print(warn)
                 result["warnings"].append(warn)
 
-        # 2. 降级走 XiaoyiMemoryV2（如果统一 API 失败了）
+        # 2. 降级走 XiaoyiMemoryV2（当统一 API 失败时）
         if not result.get("memory_id") and self.memory:
             try:
-                mem_result = {"memory_id": None, "source": None, "warnings": []}
+                mem_result = self.memory.store(content, source)
                 if isinstance(mem_result, dict):
                     result.update(mem_result)
                 else:
@@ -185,6 +182,7 @@ class UnifiedEntry:
     
     @rail(scope=RailScope.USER, feature="memory_read")
     def _rrf_fuse(self, list_a: List[Dict], list_b: List[Dict], k: int = 60) -> List[Dict]:
+        """RRF 融合两个检索结果列表"""
         scores = {}
         for rank, item in enumerate(list_a):
             item_id = item.get("id", str(rank))
@@ -204,7 +202,7 @@ class UnifiedEntry:
         return fused
 
     def recall(self, query: str, top_k: int = 10) -> List[Dict[str, Any]]:
-        """检索记忆（统一 API）"""
+        """检索记忆（统一 XiaoyiClawLLM.recall() + 降级 XiaoyiMemoryV2）"""
         main_results = []
         warnings = []
 
@@ -219,7 +217,8 @@ class UnifiedEntry:
                 print(warn)
                 warnings.append(warn)
 
-        # 3. 降级走 XiaoyiMemoryV2（如果主路失败了）
+        # 2. 降级走 XiaoyiMemoryV2（当主路失败时）
+        if not main_results and self.memory:
             try:
                 main_results = self.memory.recall(query, top_k=top_k)
                 if not isinstance(main_results, list):
@@ -229,9 +228,8 @@ class UnifiedEntry:
                 print(warn)
                 warnings.append(warn)
 
-        # 4. RRF 融合主路结果
-            results = fused[:top_k]
-        elif main_results:
+        # 3. 使用主路结果
+        if main_results:
             results = main_results[:top_k]
         else:
             return [{"error": "记忆系统不可用", "warnings": warnings}]
@@ -298,12 +296,12 @@ class UnifiedEntry:
             if scenario == "enhanced_recall":
                 query = input_data.get("query", "") if isinstance(input_data, dict) else str(input_data or "")
                 top_k = input_data.get("top_k", 10) if isinstance(input_data, dict) else 10
-                result = {"memory_id": None, "source": None, "warnings": []}
+                result = self.memory.enhanced_recall(query, top_k=top_k)
                 # 注入场景锚定（GRAVITY 思想）
                 try:
                     sys.path.insert(0, str(CORE_DIR))
                     from dag_context_manager import DAGContextManager, DAGIntegration
-                    dag_db = os.path.join(os.path.expanduser("~/.openclaw/workspace"), ".dag_context.db")
+                    dag_db = os.path.expanduser("~/.openclaw/dag_context.db")
                     dag = DAGContextManager(db_path=dag_db)
                     integration = DAGIntegration(dag)
                     results_list = result if isinstance(result, list) else result.get("basic_results", [])
@@ -368,7 +366,7 @@ class UnifiedEntry:
             # safe_generation: 走防幻觉 + answer
             elif scenario == "safe_generation":
                 query = input_data.get("query", "") if isinstance(input_data, dict) else str(input_data or "")
-                result = {"memory_id": None, "source": None, "warnings": []}
+                result = self.memory.answer(query)
                 return {
                     "workflow": "safe_generation",
                     "status": "completed",
@@ -382,7 +380,7 @@ class UnifiedEntry:
             # fast_generation: 投机解码 + 流式 + 模型路由
             elif scenario == "fast_generation":
                 query = input_data.get("query", "") if isinstance(input_data, dict) else str(input_data or "")
-                result = {"memory_id": None, "source": None, "warnings": []}
+                result = self.memory.answer(query)
                 return {
                     "workflow": "fast_generation",
                     "status": "completed",
@@ -396,7 +394,7 @@ class UnifiedEntry:
             # cached_recall: 走缓存优化
             elif scenario == "cached_recall":
                 query = input_data.get("query", "") if isinstance(input_data, dict) else str(input_data or "")
-                result = {"memory_id": None, "source": None, "warnings": []}
+                result = self.memory.recall(query, top_k=10)
                 return {
                     "workflow": "cached_recall",
                     "status": "completed",
@@ -414,7 +412,7 @@ class UnifiedEntry:
                 try:
                     from smart_processor import SmartProcessor
                     sp = SmartProcessor()
-                    result = {"memory_id": None, "source": None, "warnings": []}
+                    result = sp.process(query, top_k=top_k, rewrite=True, summarize=False)
                     return {
                         "workflow": "smart_recall",
                         "status": "completed",
@@ -428,7 +426,7 @@ class UnifiedEntry:
                     }
                 except Exception as e:
                     # 降级到 enhanced_recall
-                    result = {"memory_id": None, "source": None, "warnings": []}
+                    result = self.memory.enhanced_recall(query, top_k=top_k)
                     return {
                         "workflow": "smart_recall",
                         "status": "completed",
@@ -441,7 +439,7 @@ class UnifiedEntry:
             
             # health_check: 全系统健康检查
             elif scenario == "health_check":
-                result = {"memory_id": None, "source": None, "warnings": []}
+                result = self.memory.health_check()
                 return {
                     "workflow": "health_check",
                     "status": "completed",
@@ -585,7 +583,7 @@ class UnifiedEntry:
                 try:
                     from nlp_processor import NLPProcessor
                     nlp = NLPProcessor()
-                    result = {"memory_id": None, "source": None, "warnings": []}
+                    result = nlp.process(text)
                     return {
                         "workflow": scenario,
                         "status": "completed",
@@ -645,7 +643,7 @@ class UnifiedEntry:
                                  if hasattr(s, 'value') and s.value != 'healthy']
                     if unhealthy:
                         for name in unhealthy:
-                            result = {"memory_id": None, "source": None, "warnings": []}
+                            result = fo.failover(name)
                             if result:
                                 results["recovered"] = True
                     else:
@@ -729,7 +727,7 @@ class UnifiedEntry:
                     from context_compressor import ContextCompressor
                     cc = ContextCompressor()
                     compressed = cc.compress(results)
-                except:
+                except Exception:
                     compressed = results
                 return {
                     "workflow": scenario, "status": "completed",
@@ -742,7 +740,7 @@ class UnifiedEntry:
             # memgpt_archive: 归档记忆
             elif scenario == "memgpt_archive":
                 content = input_data.get("content", "") if isinstance(input_data, dict) else str(input_data or "")
-                result = {"memory_id": None, "source": None, "warnings": []}
+                result = self.memory.store(content, source="system_archive")
                 return {
                     "workflow": scenario, "status": "completed",
                     "steps_executed": 2, "steps_total": 2,
@@ -986,14 +984,16 @@ class UnifiedEntry:
                     "errors": []
                 }
             
-            # tencentdb_sync: 已废弃（数据已迁移至 UnifiedVectorStore）
             elif scenario == "tencentdb_sync":
+                # tencentdb 记忆插件已移除（功能被 UnifiedVectorStore + DAG 替代）
+                sync_results = {"synced_to_memory": 0, "errors": []}
                 return {
-                    "workflow": scenario, "status": "deprecated",
+                    "workflow": scenario, "status": "skipped",
+                    "reason": "tencentdb 记忆插件已移除，由 UnifiedVectorStore + DAG 替代",
                     "steps_executed": 0, "steps_total": 0,
-                    "duration_ms": 0,
-                    "results": {"message": "数据已迁移至 UnifiedVectorStore，此工作流已废弃"},
-                    "errors": []
+                    "duration_ms": int((_time.time() - start) * 1000),
+                    "results": sync_results,
+                    "errors": sync_results.get("errors", [])
                 }
             
             # full_recall: 全量检索
@@ -1037,9 +1037,9 @@ class UnifiedEntry:
                 try:
                     from heartbeat_executor import HeartbeatTaskExecutor
                     hbe = HeartbeatTaskExecutor()
-                    result = {"memory_id": None, "source": None, "warnings": []}
+                    result = hbe.execute_heartbeat()
                 except Exception:
-                    result = {"memory_id": None, "source": None, "warnings": []}
+                    result = {"heartbeat": "completed", "note": "basic heartbeat"}
                 return {
                     "workflow": scenario, "status": "completed",
                     "steps_executed": 2, "steps_total": 2,
@@ -1052,7 +1052,7 @@ class UnifiedEntry:
                 try:
                     from autonomous_integrator import AutonomousTasksIntegrator
                     integrator = AutonomousTasksIntegrator()
-                    result = {"memory_id": None, "source": None, "warnings": []}
+                    result = integrator.run_heartbeat_tasks()
                     return {
                         "workflow": scenario, "status": "completed",
                         "steps_executed": result.get("tasks_executed", 0),
@@ -1075,11 +1075,11 @@ class UnifiedEntry:
                     try:
                         from xiaoyi_claw_api import XiaoYiClawLLM
                         claw = XiaoYiClawLLM()
-                        result = {"memory_id": None, "source": None, "warnings": []}
+                        result = claw.understand_image(source)
                     except Exception:
-                        result = {"memory_id": None, "source": None, "warnings": []}
+                        result = {"note": "image understanding unavailable", "source": source}
                 else:
-                    result = {"memory_id": None, "source": None, "warnings": []}
+                    result = {"note": "no image source provided"}
                 return {
                     "workflow": scenario, "status": "completed",
                     "steps_executed": 1, "steps_total": 1,
@@ -1202,9 +1202,9 @@ class UnifiedEntry:
         
         try:
             if input_data is not None:
-                result = {"memory_id": None, "source": None, "warnings": []}
+                result = func(input_data)
             else:
-                result = {"memory_id": None, "source": None, "warnings": []}
+                result = func()
             
             return {
                 "success": True,
@@ -1349,7 +1349,7 @@ class UnifiedEntry:
                     "modules": len(coord_status),
                     "enabled": sum(1 for m in coord_status.values() if m.get('enabled', False))
                 }
-            except:
+            except Exception:
                 pass
         
         return status
@@ -1364,7 +1364,7 @@ class UnifiedEntry:
         """检索图像记忆"""
         # 尝试使用多模态检索
         if self.workflow_engine:
-            result = {"memory_id": None, "source": None, "warnings": []}
+            result = self.workflow_engine.execute_workflow("multimodal_recall", {"query": query})
             if result.status.value == "completed":
                 return result.results
         return []
@@ -1377,7 +1377,7 @@ class UnifiedEntry:
         """查询实体"""
         # 尝试使用知识图谱
         if self.workflow_engine:
-            result = {"memory_id": None, "source": None, "warnings": []}
+            result = self.workflow_engine.execute_workflow("kg_query", {"entity": name})
             if result.status.value == "completed":
                 return {"entity": name, "result": result.results}
         return {"error": "实体查询失败"}
@@ -1431,42 +1431,42 @@ def main():
         if not args.content:
             print("错误: 需要 --content")
             sys.exit(1)
-        result = {"memory_id": None, "source": None, "warnings": []}
+        result = entry.store(args.content, args.source)
     
     elif args.command == "recall":
         if not args.query:
             print("错误: 需要 --query")
             sys.exit(1)
-        result = {"memory_id": None, "source": None, "warnings": []}
+        result = entry.recall(args.query, top_k=args.top_k)
     
     elif args.command == "answer":
         if not args.query:
             print("错误: 需要 --query")
             sys.exit(1)
-        result = {"memory_id": None, "source": None, "warnings": []}
+        result = entry.answer(args.query, args.content)
     
     elif args.command == "forget":
         if not args.name:
             print("错误: 需要 --name")
             sys.exit(1)
-        result = {"memory_id": None, "source": None, "warnings": []}
+        result = entry.forget(args.name)
     
     elif args.command == "health":
-        result = {"memory_id": None, "source": None, "warnings": []}
+        result = entry.health_check()
     
     elif args.command == "status":
-        result = {"memory_id": None, "source": None, "warnings": []}
+        result = entry.get_status()
     
     elif args.command == "workflow":
         if not args.scenario:
             print("错误: 需要 --scenario")
             sys.exit(1)
-        result = {"memory_id": None, "source": None, "warnings": []}
+        result = entry.execute_workflow(args.scenario, args.input)
     
     elif args.command == "workflows":
         workflows = entry.list_workflows()
         if args.json:
-            result = {"memory_id": None, "source": None, "warnings": []}
+            result = {"workflows": workflows, "total": len(workflows)}
         else:
             print(f"可用工作流 ({len(workflows)} 个):")
             for wf in sorted(workflows):
@@ -1478,12 +1478,12 @@ def main():
         if not args.name:
             print("错误: 需要 --name")
             sys.exit(1)
-        result = {"memory_id": None, "source": None, "warnings": []}
+        result = entry.get_module_info(args.name)
     
     elif args.command == "modules":
         modules = entry.list_modules()
         if args.json:
-            result = {"memory_id": None, "source": None, "warnings": []}
+            result = {"modules": modules, "total": len(modules)}
         else:
             print(f"可用模块 ({len(modules)} 个):")
             for i, mod in enumerate(modules):
@@ -1497,7 +1497,7 @@ def main():
         if not args.module:
             print("错误: 需要 --module")
             sys.exit(1)
-        result = {"memory_id": None, "source": None, "warnings": []}
+        result = entry.call_module(args.module, args.action, args.input)
     
     elif args.command in ("process", "rccam"):
         # R-CCAM 认知循环（通过 CLI 降级路径）
@@ -1512,17 +1512,27 @@ def main():
                 has_image=input_data.get("has_image", False),
                 image_source=input_data.get("image_source", "")
             )
+            # 简化输出，只保留关键信息
+            output = {
+                "answer": result.get("answer", ""),
+                "strategy": result.get("strategy", ""),
+                "meta_strategy": result.get("meta_strategy", ""),
+                "cycle_count": result.get("cycle_count", 0),
+                "search_count": result.get("search_count", 0),
+                "session_key": result.get("session_key", ""),
+            }
+            result = output
         except Exception as e:
-            result = {"memory_id": None, "source": None, "warnings": []}
+            result = {"error": str(e)}
     
     elif args.command == "ocr":
-        result = {"memory_id": None, "source": None, "warnings": []}
+        result = entry.ocr_image(args.name)
     
     elif args.command == "understand":
-        result = {"memory_id": None, "source": None, "warnings": []}
+        result = entry.understand_image(args.name, args.query or "general")
     
     else:
-        result = {"memory_id": None, "source": None, "warnings": []}
+        result = {"error": f"未知命令: {args.command}"}
     
     # 输出结果
     if args.json or isinstance(result, dict):

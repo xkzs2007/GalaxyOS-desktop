@@ -816,7 +816,8 @@ class ClawWorker:
         session_key = p.get("sessionKey", "default")
         recent_days = p.get("recentDays", 3)
         try:
-            from dag_context_manager import DAGContextManager, DAGIntegration
+            from dag_context_manager import DAGContextManager
+            from DAGIntegration_addon import DAGIntegration
             import os
             dag_db = os.path.expanduser("~/.openclaw/dag_context.db")
             if not os.path.exists(dag_db):
@@ -864,13 +865,14 @@ class ClawWorker:
         统一 DB: 优先 workspace，再 fallback HOME。
         """
         if not hasattr(self, '_dag'):
-            from dag_context_manager import DAGContextManager, DAGIntegration
+            from dag_context_manager import DAGContextManager
+            from DAGIntegration_addon import DAGIntegration
             import os
             dag_db = os.path.expanduser("~/.openclaw/dag_context.db")
             if not os.path.exists(dag_db):
                 dag_db = os.path.expanduser("~/.openclaw/dag_context.db")
             raw = DAGContextManager(db_path=dag_db)
-            self._dag = DAGIntegration(dag_manager=raw)
+            self._dag = DAGIntegration(dag=raw)
         return self._dag
 
     def dag_summary(self, p: dict) -> dict:
@@ -1176,17 +1178,68 @@ class ClawWorker:
                     )
                 # DAG ingest
                 try:
-                    dag = self._get_dag()
+                    integration = self._get_dag()
+                    dag_dm = integration.dag if hasattr(integration, 'dag') else integration
+                    sk = session_key or "xiaoyi-claw-dag"
                     if user_input:
-                        dag.add_message(session_key or "xiaoyi-claw-dag", "user", user_input[:2000])
+                        dag_dm.add_message(sk, "user", user_input[:2000])
                     if answer:
-                        dag.add_message(session_key or "xiaoyi-claw-dag", "assistant", answer[:2000])
+                        dag_dm.add_message(sk, "assistant", answer[:2000])
                 except Exception:
                     pass
                 return {"saved": True, "session_key": session_key}
             return {"saved": False, "reason": "xiaoyi_claw not ready"}
         except Exception as e:
             return {"saved": False, "error": str(e)}
+
+    def dag_clear_session(self, p: dict) -> dict:
+        """清空指定 session 在 DAG 中的节点（新会话时调用）"""
+        session_id = p.get("sessionId", "")
+        if not session_id:
+            return {"cleared": False, "reason": "missing sessionId"}
+        try:
+            dag = self._get_dag()
+            if dag and dag.dag:
+                # 清空 dag_nodes 表中该 session 的全部节点
+                import sqlite3
+                conn = sqlite3.connect(dag.dag.db_path)
+                deleted = 0
+                try:
+                    c = conn.execute(
+                        "DELETE FROM dag_nodes WHERE session_key=?",
+                        (session_id,)
+                    )
+                    deleted += c.rowcount
+                except Exception:
+                    pass
+                try:
+                    c = conn.execute(
+                        "DELETE FROM rccam_nodes WHERE session_key=?",
+                        (session_id,)
+                    )
+                    deleted += c.rowcount
+                except Exception:
+                    pass
+                conn.commit()
+                conn.close()
+                return {"cleared": True, "deleted_nodes": deleted}
+            return {"cleared": False, "reason": "dag not ready"}
+        except Exception as e:
+            return {"cleared": False, "error": str(e)}
+
+    def mmap_cleanup(self, _p: dict) -> dict:
+        """清理 mmap 共享内存文件"""
+        results = {}
+        for path_key, path in [("mmap", MMAP_PATH), ("heartbeat", HB_PATH)]:
+            try:
+                if os.path.exists(path):
+                    os.unlink(path)
+                    results[path_key] = "deleted"
+                else:
+                    results[path_key] = "not_found"
+            except Exception as e:
+                results[path_key] = f"error: {e}"
+        return {"cleaned": True, "results": results}
 
     def shutdown(self, _p: dict) -> dict:
         return {"ok": True, "message": "shutting down"}
@@ -1212,6 +1265,8 @@ def _init_methods(worker):
         "dag_status": worker.dag_status,
         "dag_assemble": worker.dag_assemble,
         "dag_compact": worker.dag_compact,
+        "dag_clear_session": worker.dag_clear_session,
+        "mmap_cleanup": worker.mmap_cleanup,
         "dag_summary": worker.dag_summary,
         "build_system_prompt": worker.build_system_prompt,
         "verify_reply_style": worker.verify_reply_style,
@@ -1569,22 +1624,34 @@ def main():
             if confidence < 0.5 or not answer:
                 return
             try:
-                _ref_file = os.path.join(WORKSPACE, 'data', 'reflexions.json')
-                os.makedirs(os.path.dirname(_ref_file), exist_ok=True)
-                _refs = []
-                if os.path.exists(_ref_file):
-                    with open(_ref_file) as _f:
-                        try: _refs = json.load(_f)
-                        except: _refs = []
-                _refs.append({
-                    'question': query[:200], 'answer': answer[:300],
-                    'scores': {'faithfulness': confidence, 'relevance': confidence, 'completeness': confidence},
-                    'timestamp': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
+                _ref_dir = os.path.join(WORKSPACE, '.learnings')
+                os.makedirs(_ref_dir, exist_ok=True)
+                _ref_entry = {
+                    'id': f'RFX-{int(time.time())}-{os.urandom(4).hex()}',
                     'type': 'galaxy_kernel_record',
+                    'question': query[:200],
+                    'answer': answer[:300],
+                    'scores': {'faithfulness': confidence, 'relevance': confidence, 'completeness': confidence},
                     'priority': 'low' if confidence > 0.8 else 'medium',
-                })
-                with open(_ref_file, 'w') as _f:
-                    json.dump(_refs[-200:], _f, ensure_ascii=False, indent=2)
+                    'timestamp': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
+                }
+                # 写 jsonl（ThinkingEnhanced 读的格式）
+                with open(os.path.join(_ref_dir, 'reflexions.jsonl'), 'a', encoding='utf-8') as _f:
+                    _f.write(json.dumps(_ref_entry, ensure_ascii=False) + '\n')
+                # 兼容旧版：也写 data/reflexions.json
+                try:
+                    _old_file = os.path.join(WORKSPACE, 'data', 'reflexions.json')
+                    os.makedirs(os.path.dirname(_old_file), exist_ok=True)
+                    _old = []
+                    if os.path.exists(_old_file):
+                        with open(_old_file) as _f:
+                            try: _old = json.load(_f)
+                            except: _old = []
+                    _old.append(_ref_entry)
+                    with open(_old_file, 'w') as _f:
+                        json.dump(_old[-200:], _f, ensure_ascii=False, indent=2)
+                except Exception:
+                    pass
             except Exception:
                 pass
 

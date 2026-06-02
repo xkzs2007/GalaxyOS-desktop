@@ -49,10 +49,6 @@ sys.path.insert(0, SCRIPTS_DIR)
 # 模块级缓存
 _worker_inst = None
 
-def _get_worker():
-    """供后台线程获取 Worker 单例"""
-    return _worker_inst
-
 # ========== 三通道路径 ==========
 UDS_PATH = os.path.join(
     os.path.expanduser("~/.openclaw/extensions/claw-core/var"),
@@ -1004,7 +1000,7 @@ class ClawWorker:
             return {"_dag_degraded": True, "reason": "missing sessionId"}
         try:
             dag = self._get_dag()
-            needs_compact, stats = dag.dag.should_compact(session_id)
+            needs_compact, stats = dag.dag.should_compact(session_id, p.get("contextWindowTokens", 256000))
             return {"needs_compact": needs_compact, "stats": stats}
         except Exception as e:
             return {"_dag_degraded": True, "reason": f"status failed: {e}"}
@@ -1080,32 +1076,6 @@ class ClawWorker:
         except Exception as e:
             return {"summarized": 0, "error": str(e)}
 
-    def dag_clear_session(self, p: dict) -> dict:
-        """清除指定会话的 DAG 数据（新会话创建时 JS ContextEngine 调用）"""
-        session_id = p.get("sessionId", "")
-        if not session_id:
-            return {"ok": False, "error": "missing sessionId"}
-        try:
-            import sqlite3
-            dag_db = os.path.expanduser("~/.openclaw/dag_context.db")
-            conn = sqlite3.connect(dag_db)
-            conn.execute("DELETE FROM dag_nodes WHERE session_key=?", (session_id,))
-            conn.execute("DELETE FROM rccam_nodes WHERE session_key=?", (session_id,))
-            conn.commit()
-            conn.close()
-            return {"ok": True, "session": session_id}
-        except Exception as e:
-            return {"ok": False, "error": str(e)}
-
-    def mmap_cleanup(self, p: dict) -> dict:
-        """清理过期 mmap 条目（JS ContextEngine 定期调用）"""
-        try:
-            # 单槽 mmap 设计，直接重置为就绪信号
-            _mmap_write("worker_pid", {"pid": os.getpid(), "ready": True})
-            return {"ok": True}
-        except Exception as e:
-            return {"ok": False, "error": str(e)}
-
     # ========================================================================
     # R-CCAM DAG 新方法
     # ========================================================================
@@ -1166,28 +1136,22 @@ class ClawWorker:
             return {"error": str(e), "nodes": []}
 
     def cognitive_compress_dag(self, p: dict) -> dict:
-        """对 dag_nodes 旧消息执行认知压缩（委托 auto_summarize 分批执行）"""
+        """对 dag_nodes 旧消息执行认知压缩"""
         session_id = p.get("sessionId", "")
         max_to_compress = p.get("maxToCompress", 20)
         if not session_id:
             return {"error": "missing sessionId"}
         try:
             dag = self._get_dag()
-            total_summarized = 0
-            nodes_affected = []
-            # 分批调用 auto_summarize，直到达到 max_to_compress 或不需要压缩
-            for _ in range(max(max_to_compress // 10, 1)):
-                result = dag.dag.auto_summarize(session_id, batch_size=10)
-                if result.get("summarized", 0) > 0:
-                    total_summarized += result["summarized"]
-                    nodes_affected.append(result.get("summary_node_id", ""))
-                else:
-                    break
-            if total_summarized > 0:
+            result = dag.dag.cognitive_compress_dag_messages(
+                session_key=session_id,
+                max_to_compress=max_to_compress,
+            )
+            if result.get("summarized", 0) > 0:
                 _zmq_pub_event("dag_cognitive_compress", {
                     "session": session_id,
-                    "summarized": total_summarized,
-                    "nodes": nodes_affected,
+                    "summarized": result["summarized"],
+                    "nodes": result["nodes_affected"],
                 })
             return result
         except Exception as e:
@@ -1214,17 +1178,68 @@ class ClawWorker:
                     )
                 # DAG ingest
                 try:
-                    dag = self._get_dag()
+                    integration = self._get_dag()
+                    dag_dm = integration.dag if hasattr(integration, 'dag') else integration
+                    sk = session_key or "xiaoyi-claw-dag"
                     if user_input:
-                        dag.add_message_with_scene(session_key or "xiaoyi-claw-dag", "user", user_input[:2000])
+                        dag_dm.add_message(sk, "user", user_input[:2000])
                     if answer:
-                        dag.add_message_with_scene(session_key or "xiaoyi-claw-dag", "assistant", answer[:2000])
+                        dag_dm.add_message(sk, "assistant", answer[:2000])
                 except Exception:
                     pass
                 return {"saved": True, "session_key": session_key}
             return {"saved": False, "reason": "xiaoyi_claw not ready"}
         except Exception as e:
             return {"saved": False, "error": str(e)}
+
+    def dag_clear_session(self, p: dict) -> dict:
+        """清空指定 session 在 DAG 中的节点（新会话时调用）"""
+        session_id = p.get("sessionId", "")
+        if not session_id:
+            return {"cleared": False, "reason": "missing sessionId"}
+        try:
+            dag = self._get_dag()
+            if dag and dag.dag:
+                # 清空 dag_nodes 表中该 session 的全部节点
+                import sqlite3
+                conn = sqlite3.connect(dag.dag.db_path)
+                deleted = 0
+                try:
+                    c = conn.execute(
+                        "DELETE FROM dag_nodes WHERE session_key=?",
+                        (session_id,)
+                    )
+                    deleted += c.rowcount
+                except Exception:
+                    pass
+                try:
+                    c = conn.execute(
+                        "DELETE FROM rccam_nodes WHERE session_key=?",
+                        (session_id,)
+                    )
+                    deleted += c.rowcount
+                except Exception:
+                    pass
+                conn.commit()
+                conn.close()
+                return {"cleared": True, "deleted_nodes": deleted}
+            return {"cleared": False, "reason": "dag not ready"}
+        except Exception as e:
+            return {"cleared": False, "error": str(e)}
+
+    def mmap_cleanup(self, _p: dict) -> dict:
+        """清理 mmap 共享内存文件"""
+        results = {}
+        for path_key, path in [("mmap", MMAP_PATH), ("heartbeat", HB_PATH)]:
+            try:
+                if os.path.exists(path):
+                    os.unlink(path)
+                    results[path_key] = "deleted"
+                else:
+                    results[path_key] = "not_found"
+            except Exception as e:
+                results[path_key] = f"error: {e}"
+        return {"cleaned": True, "results": results}
 
     def shutdown(self, _p: dict) -> dict:
         return {"ok": True, "message": "shutting down"}
@@ -1251,8 +1266,8 @@ def _init_methods(worker):
         "dag_assemble": worker.dag_assemble,
         "dag_compact": worker.dag_compact,
         "dag_clear_session": worker.dag_clear_session,
-        "dag_summary": worker.dag_summary,
         "mmap_cleanup": worker.mmap_cleanup,
+        "dag_summary": worker.dag_summary,
         "build_system_prompt": worker.build_system_prompt,
         "verify_reply_style": worker.verify_reply_style,
         "understand_image": worker.understand_image,
@@ -1546,10 +1561,8 @@ def main():
     # SIGPIPE → SIG_IGN 而非 SIG_DFL：
     # supervisor 模式下 stdout 可能被关闭，写 stdout 触发 SIGPIPE 会立刻杀进程
     # SIG_IGN 让 write() 返回 EPIPE 错误，Worker 优雅处理而非被宰
-    global _worker_inst
     signal.signal(signal.SIGPIPE, signal.SIG_IGN)
     worker = ClawWorker()
-    _worker_inst = worker
     _init_methods(worker)
     
     # 启动记忆巩固后台
@@ -1611,22 +1624,34 @@ def main():
             if confidence < 0.5 or not answer:
                 return
             try:
-                _ref_file = os.path.join(WORKSPACE, 'data', 'reflexions.json')
-                os.makedirs(os.path.dirname(_ref_file), exist_ok=True)
-                _refs = []
-                if os.path.exists(_ref_file):
-                    with open(_ref_file) as _f:
-                        try: _refs = json.load(_f)
-                        except: _refs = []
-                _refs.append({
-                    'question': query[:200], 'answer': answer[:300],
-                    'scores': {'faithfulness': confidence, 'relevance': confidence, 'completeness': confidence},
-                    'timestamp': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
+                _ref_dir = os.path.join(WORKSPACE, '.learnings')
+                os.makedirs(_ref_dir, exist_ok=True)
+                _ref_entry = {
+                    'id': f'RFX-{int(time.time())}-{os.urandom(4).hex()}',
                     'type': 'galaxy_kernel_record',
+                    'question': query[:200],
+                    'answer': answer[:300],
+                    'scores': {'faithfulness': confidence, 'relevance': confidence, 'completeness': confidence},
                     'priority': 'low' if confidence > 0.8 else 'medium',
-                })
-                with open(_ref_file, 'w') as _f:
-                    json.dump(_refs[-200:], _f, ensure_ascii=False, indent=2)
+                    'timestamp': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
+                }
+                # 写 jsonl（ThinkingEnhanced 读的格式）
+                with open(os.path.join(_ref_dir, 'reflexions.jsonl'), 'a', encoding='utf-8') as _f:
+                    _f.write(json.dumps(_ref_entry, ensure_ascii=False) + '\n')
+                # 兼容旧版：也写 data/reflexions.json
+                try:
+                    _old_file = os.path.join(WORKSPACE, 'data', 'reflexions.json')
+                    os.makedirs(os.path.dirname(_old_file), exist_ok=True)
+                    _old = []
+                    if os.path.exists(_old_file):
+                        with open(_old_file) as _f:
+                            try: _old = json.load(_f)
+                            except: _old = []
+                    _old.append(_ref_entry)
+                    with open(_old_file, 'w') as _f:
+                        json.dump(_old[-200:], _f, ensure_ascii=False, indent=2)
+                except Exception:
+                    pass
             except Exception:
                 pass
 
@@ -1822,31 +1847,19 @@ def main():
                         _te = ThinkingEnhanced(_flash_client)
                         _result = _te.evolve()
                         if _result.get('success') and _result.get('patterns'):
-                            _w = _get_worker()
-                            if _w:
-                                _dag = _w._get_dag()
-                                if _dag:
-                                    for _p in _result['patterns']:
-                                        try:
-                                            _cap = json.dumps({
-                                                'name': str(_p.get('scenario',''))[:80],
-                                                'trigger': str(_p.get('pattern',''))[:120],
-                                                'suggestion': str(_p.get('suggestion',''))[:200],
-                                                'confidence': 0.8 if str(_p.get('confidence','')) == '高' else 0.5,
-                                                'source': 'galaxy_kernel', 'created_at': time.time(),
-                                            }, ensure_ascii=False)
-                                            _dag.dag.add_rccam_node(
-                                                session_key='xiaoyi-claw-dag',
-                                                cycle_id='evolved_capability',
-                                                cycle_index=0,
-                                                phase_name='evolved_capability',
-                                                content=_cap,
-                                                node_type='evolved_capability',
-                                                importance=0.6,
-                                                confidence=0.8 if str(_p.get('confidence','')) == '高' else 0.5,
-                                            )
-                                        except Exception:
-                                            pass
+                            _dag = _get_dag()
+                            if _dag:
+                                for _p in _result['patterns']:
+                                    try:
+                                        _dag.write_capability_node({
+                                            'name': str(_p.get('scenario',''))[:80],
+                                            'trigger': str(_p.get('pattern',''))[:120],
+                                            'suggestion': str(_p.get('suggestion',''))[:200],
+                                            'confidence': 0.8 if str(_p.get('confidence','')) == '高' else 0.5,
+                                            'source': 'galaxy_kernel', 'created_at': time.time(),
+                                        }, session_key='xiaoyi-claw-dag')
+                                    except Exception:
+                                        pass
                             sys.stderr.write(f'[galaxy-kernel] 自进化完成 (patterns={len(_result["patterns"])})\n')
                     except Exception:
                         pass

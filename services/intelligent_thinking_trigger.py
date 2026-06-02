@@ -60,6 +60,7 @@ class QueryAnalysis:
     question_type: str          # 问题类型
     confusion_level: float      # 困惑程度 0-1
     suggested_skill: ThinkingSkill
+    suggested_skills: List[ThinkingSkill] = None  # top-3 技能推荐
     confidence: float           # 建议置信度
     reasoning: str              # 推理过程
 
@@ -82,7 +83,7 @@ class IntelligentThinkingTrigger:
     # 复杂度指标
     COMPLEXITY_INDICATORS = {
         "high": ["根本", "本质", "原理", "架构", "设计", "fundamental", "essence", "principle"],
-        "medium": ["如何", "为什么", "怎么", "how", "why"],
+        "medium": ["如何", "为什么", "怎么", "how", "why", "差异", "对比", "比较", "不同", "区别"],
         "low": ["是什么", "什么是", "what is"]
     }
     
@@ -97,7 +98,7 @@ class IntelligentThinkingTrigger:
         # 通用问题类型
         "evaluation": [r'评估', r'评价', r'分析.*优缺', r'比较', r'evaluate', r'compare'],
         "explanation": [r'解释', r'说明', r'什么是', r'explain', r'what is'],
-        "procedure": [r'如何', r'怎么', r'步骤', r'方法', r'how to', r'steps'],
+        "procedure": [r'如何', r'怎么(?!样)', r'步骤', r'方法', r'how to', r'steps'],
         "decision": [r'选择', r'决定', r'应该.*还是', r'choose', r'decide', r'should'],
         "problem_solving": [r'解决', r'修复', r'处理', r'分析', r'solve', r'fix'],
         "creative": [r'创造', r'想象', r'create', r'imagine'],
@@ -276,7 +277,11 @@ class IntelligentThinkingTrigger:
     
     def analyze_complexity(self, query: str) -> float:
         """
-        分析查询复杂度
+        分析查询复杂度（增强版 v2）
+        
+        - 原关键词指标不变
+        - 新增问题类型复杂度加成
+        - 新增复合/比较问题检测
         
         Args:
             query: 用户查询
@@ -286,25 +291,52 @@ class IntelligentThinkingTrigger:
         """
         query_lower = query.lower()
         
-        # 计算各层级指标命中数
+        # 原指标：各层级关键词命中
         high_hits = sum(1 for ind in self.COMPLEXITY_INDICATORS["high"] if ind in query_lower)
         medium_hits = sum(1 for ind in self.COMPLEXITY_INDICATORS["medium"] if ind in query_lower)
         low_hits = sum(1 for ind in self.COMPLEXITY_INDICATORS["low"] if ind in query_lower)
         
-        # 句子长度因素
+        # 长度因素：中文无空格时用字符数（按20字符=1英文词折算）
         words = query.split()
-        length_factor = min(len(words) / 20, 1.0)  # 20词为满分
-        
-        # 嵌套结构因素（问号数量、从句等）
+        effective_word_count = len(words) if len(words) > 1 else max(1, len(query) // 4)
+        length_factor = min(effective_word_count / 20, 1.0)
         nesting_factor = min(query.count('?') + query.count('？'), 3) / 3
-        
+
+        # 新增1：问题类型复杂度加成（类型本身决定复杂度，不依赖命中关键词）
+        qtype = self.identify_question_type(query)
+        type_complexity_boost = {
+            "architecture": 0.15, "evaluation": 0.12,
+            "decision": 0.15, "debug": 0.10,
+            "code": 0.10, "review": 0.10,
+            "prototype": 0.10, "procedure": 0.05,
+            "explanation": 0.05, "general": 0.0,
+            "compare": 0.12, "reverse": 0.10,
+            "problem_solving": 0.10, "creative": 0.07,
+        }.get(qtype, 0.0)
+
+        # 新增2：多子句检测（和/与/、/对比/比较 → 复合问题）
+        multi_seps = ["和", "与", "、", ",", " vs ", " compared", "对比", "比较", "差异", "区别", "不同"]
+        multi_factor = min(sum(1 for sep in multi_seps if sep in query) * 0.08, 0.2)
+
+        # 比较/分析类问题 baseline：非简单问题至少 0.35（直通道阈值）
+        analysis_baseline = 0.0
+        if qtype in ("architecture", "compare", "evaluation", "decision", "problem_solving"):
+            analysis_baseline = 0.35
+        elif qtype in ("explanation", "debug"):
+            analysis_baseline = 0.35
+        elif qtype in ("procedure", "code", "review", "prototype"):
+            analysis_baseline = 0.35
+
         # 综合计算
-        complexity = (
+        complexity = max(
+            analysis_baseline,
             high_hits * 0.3 +
             medium_hits * 0.15 +
             low_hits * 0.05 +
-            length_factor * 0.3 +
-            nesting_factor * 0.2
+            length_factor * 0.25 +
+            nesting_factor * 0.1 +
+            type_complexity_boost * 0.25 +
+            multi_factor * 0.15
         )
         
         return min(complexity, 1.0)
@@ -330,7 +362,12 @@ class IntelligentThinkingTrigger:
     
     def estimate_confusion(self, query: str, context: Optional[Dict] = None) -> float:
         """
-        估计用户困惑程度
+        估计用户困惑程度（增强版 v2）
+        
+        - 原指标不变
+        - 新增：问题类型困惑基线（分析/决策类天然困惑度更高）
+        - 新增：长度困惑基线（长 query 天然困惑度更高）
+        - 权重重新分配，防止复杂问题 confusion=0
         
         Args:
             query: 用户查询
@@ -345,24 +382,42 @@ class IntelligentThinkingTrigger:
         direct_confusion = sum(1 for ind in self.CONFUSION_INDICATORS if ind in query_lower)
         direct_factor = min(direct_confusion / 2, 1.0)
         
-        # 2. 问号密度（问号多表示困惑）
+        # 2. 问号密度
         question_density = (query.count('?') + query.count('？')) / max(len(query.split()), 1)
         question_factor = min(question_density * 5, 1.0)
         
         # 3. 用户历史纠正率
         history_factor = self.user_context.get("correction_rate", 0)
         
-        # 4. 上下文困惑（如果提供了）
+        # 4. 上下文困惑
         context_factor = 0
         if context and "previous_confusion" in context:
             context_factor = context["previous_confusion"] * 0.3
         
-        # 综合计算
+        # 5. 新增：问题类型困惑基线（分析/决策类天然有困惑度）
+        query_type = self.identify_question_type(query)
+        type_confusion_baseline = {
+            "architecture": 0.15, "evaluation": 0.12,
+            "decision": 0.20, "debug": 0.10,
+            "code": 0.08, "review": 0.10,
+            "prototype": 0.10, "procedure": 0.05,
+            "explanation": 0.05, "general": 0.0,
+        }.get(query_type, 0.0)
+        
+        # 6. 新增：长度困惑基线（>15字长 query 有基础困惑）
+        # 中文无空格时用字符数折算
+        _words = query.split()
+        _eff_word_count = len(_words) if len(_words) > 1 else max(1, len(query) // 4)
+        length_confusion = min(max(0, _eff_word_count - 15) / 30 * 0.15, 0.15)
+        
+        # 综合计算（权重重新分配）
         confusion = (
-            direct_factor * 0.4 +
-            question_factor * 0.2 +
-            history_factor * 0.2 +
-            context_factor * 0.2
+            direct_factor * 0.25 +
+            question_factor * 0.15 +
+            history_factor * 0.15 +
+            context_factor * 0.15 +
+            type_confusion_baseline * 0.2 +
+            length_confusion * 0.1
         )
         
         return min(confusion, 1.0)
@@ -446,7 +501,71 @@ class IntelligentThinkingTrigger:
         })
         
         return analysis
-    
+
+    def detect_thinking_needs(
+        self,
+        query: str,
+        context: Optional[Dict] = None,
+        top_k: int = 3
+    ) -> QueryAnalysis:
+        """
+        检测 top-k 思考技能推荐（多技能推荐）
+
+        原 detect_thinking_need 只返回一个技能。此方法返回 top_k 个技能，
+        按优先级排序：主技能（最匹配）→ 副技能（互补）。
+
+        Args:
+            query: 用户查询
+            context: 对话上下文
+            top_k: 推荐技能数量（默认 3）
+
+        Returns:
+            QueryAnalysis 含 suggested_skills 列表
+        """
+        analysis = self.detect_thinking_need(query, context)
+        _main = analysis.suggested_skill
+
+        if _main == ThinkingSkill.NONE or top_k <= 1:
+            analysis.suggested_skills = [_main] if _main != ThinkingSkill.NONE else []
+            return analysis
+
+        # 按问题类型推荐互补技能
+        _complement_map = {
+            # (主类型, 副维度) → 技能
+            "problem_solving": [ThinkingSkill.FIRST_PRINCIPLES, ThinkingSkill.SYSTEMS_THINKING, ThinkingSkill.CRITICAL_THINKING],
+            "evaluation": [ThinkingSkill.CRITICAL_THINKING, ThinkingSkill.DECISION_ENGINE, ThinkingSkill.PRACTICE_COGNITION],
+            "decision": [ThinkingSkill.DECISION_ENGINE, ThinkingSkill.PROTRACTED_STRATEGY, ThinkingSkill.CONCENTRATE_FORCES],
+            "creative": [ThinkingSkill.SYSTEMS_THINKING, ThinkingSkill.PRODUCT_THINKING, ThinkingSkill.OVERALL_PLANNING],
+            "explanation": [ThinkingSkill.FEYNMAN_TECHNIQUE, ThinkingSkill.INVESTIGATION_FIRST, ThinkingSkill.CRITICAL_THINKING],
+            "debug": [ThinkingSkill.DIAGNOSE, ThinkingSkill.FIRST_PRINCIPLES, ThinkingSkill.CRITICAL_THINKING],
+            "architecture": [ThinkingSkill.ZOOM_OUT, ThinkingSkill.IMPROVE_ARCH, ThinkingSkill.SYSTEMS_THINKING],
+            "review": [ThinkingSkill.GRILL_WITH_DOCS, ThinkingSkill.GRILL_ME, ThinkingSkill.CRITICISM_SELF_CRITICISM],
+            "code": [ThinkingSkill.TDD, ThinkingSkill.IMPROVE_ARCH, ThinkingSkill.PRACTICE_COGNITION],
+            "prototype": [ThinkingSkill.PROTOTYPE, ThinkingSkill.CONCENTRATE_FORCES, ThinkingSkill.SPARK_PRAIRIE_FIRE],
+            "procedure": [ThinkingSkill.BACKWARD_THINKING, ThinkingSkill.OVERALL_PLANNING, ThinkingSkill.WORKFLOWS],
+            "investigation": [ThinkingSkill.INVESTIGATION_FIRST, ThinkingSkill.MASS_LINE, ThinkingSkill.CRITICAL_THINKING],
+            "conflict": [ThinkingSkill.CONTRADICTION_ANALYSIS, ThinkingSkill.CONCENTRATE_FORCES, ThinkingSkill.DECISION_ENGINE],
+            "practice": [ThinkingSkill.PRACTICE_COGNITION, ThinkingSkill.PROTOTYPE, ThinkingSkill.CRITICISM_SELF_CRITICISM],
+            "focus": [ThinkingSkill.CONCENTRATE_FORCES, ThinkingSkill.CONTRADICTION_ANALYSIS, ThinkingSkill.OVERALL_PLANNING],
+            "planning": [ThinkingSkill.OVERALL_PLANNING, ThinkingSkill.PROTRACTED_STRATEGY, ThinkingSkill.ZOOM_OUT],
+            "collect": [ThinkingSkill.MASS_LINE, ThinkingSkill.INVESTIGATION_FIRST, ThinkingSkill.CRITICAL_THINKING],
+            "improve": [ThinkingSkill.CRITICISM_SELF_CRITICISM, ThinkingSkill.PRACTICE_COGNITION, ThinkingSkill.INVESTIGATION_FIRST],
+            "seed": [ThinkingSkill.SPARK_PRAIRIE_FIRE, ThinkingSkill.PROTOTYPE, ThinkingSkill.CONCENTRATE_FORCES],
+            "strategy": [ThinkingSkill.PROTRACTED_STRATEGY, ThinkingSkill.OVERALL_PLANNING, ThinkingSkill.SYSTEMS_THINKING],
+            "automation": [ThinkingSkill.WORKFLOWS, ThinkingSkill.IMPROVE_ARCH, ThinkingSkill.PROTOTYPE],
+            "compare": [ThinkingSkill.ANALOGICAL_THINKING, ThinkingSkill.CRITICAL_THINKING, ThinkingSkill.DECISION_ENGINE],
+        }
+
+        _combo = _complement_map.get(analysis.question_type, [])
+        _skills = [_main]
+        for _s in _combo:
+            if _s != _main and _s not in _skills:
+                _skills.append(_s)
+                if len(_skills) >= top_k:
+                    break
+        analysis.suggested_skills = _skills[:top_k]
+        return analysis
+
     def get_analysis_stats(self) -> Dict[str, Any]:
         """获取分析统计"""
         if not self.analysis_log:

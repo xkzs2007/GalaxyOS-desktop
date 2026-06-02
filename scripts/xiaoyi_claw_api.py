@@ -57,11 +57,6 @@ try:
 except ImportError:
     _HAS_CAUSAL = False
 try:
-    from emotion_tracker import EmotionTracker
-    _HAS_EMOTION = True
-except ImportError:
-    _HAS_EMOTION = False
-try:
     from cognitive_load import CognitiveLoad
     _HAS_COGLOAD = True
 except ImportError:
@@ -77,63 +72,36 @@ try:
 except ImportError:
     _HAS_PLAN = False
 
-# ── 增强模块导入 ──
-from four_advancements import FourAdvancements as PaperEngines
-from dynamic_confidence import DynamicConfidence, get_dynamic_confidence
-from multi_agent_debate import DebateEngine, get_debate_engine
-from graph_of_thoughts import GraphOfThoughts, get_got_engine
-from memory_editor import MemoryEditor, get_memory_editor
-from hierarchical_context import ContextLayer, get_context_layer
-from fast_pil import FastPIL, get_fast_pil
+# ── 增强模块导入（降级导入：不可用时设为 None） ──
+try:
+    from four_advancements import FourAdvancements as PaperEngines
+except ImportError:
+    PaperEngines = None
+try:
+    from dynamic_confidence import DynamicConfidence, get_dynamic_confidence
+except ImportError:
+    DynamicConfidence = None; get_dynamic_confidence = lambda: None
+try:
+    from multi_agent_debate import DebateEngine, get_debate_engine
+except ImportError:
+    DebateEngine = None; get_debate_engine = lambda: None
+try:
+    from graph_of_thoughts import GraphOfThoughts, get_got_engine
+except ImportError:
+    GraphOfThoughts = None; get_got_engine = lambda: None
+try:
+    from memory_editor import MemoryEditor, get_memory_editor
+except ImportError:
+    MemoryEditor = None; get_memory_editor = lambda: None
+try:
+    from hierarchical_context import ContextLayer, get_context_layer
+except ImportError:
+    ContextLayer = None; get_context_layer = lambda: None
+try:
+    from fast_pil import FastPIL, get_fast_pil
+except ImportError:
+    FastPIL = None; get_fast_pil = lambda: None
 # ── 9个增强模块导入（统一API全集成） ──
-try:
-    from enhanced_hallucination_guard import EnhancedHallucinationGuard, MultiSourceCrossValidator
-    _HAS_HALLUCINATION_GUARD = True
-except ImportError:
-    _HAS_HALLUCINATION_GUARD = False
-try:
-    from memory_consolidation import ConsolidationEngine
-    _HAS_MEMORY_CONSOLIDATION = True
-except ImportError:
-    _HAS_MEMORY_CONSOLIDATION = False
-try:
-    from nlp_enhanced import EnhancedNLP
-    _HAS_NLP_ENHANCED = True
-except ImportError:
-    _HAS_NLP_ENHANCED = False
-try:
-    from self_evolution_engine import SelfEvolutionEngine
-    _HAS_SELF_EVOLUTION = True
-except ImportError:
-    _HAS_SELF_EVOLUTION = False
-try:
-    from smart_processor import SmartProcessor
-    _HAS_SMART_PROCESSOR = True
-except ImportError:
-    _HAS_SMART_PROCESSOR = False
-try:
-    from spatial_topology import SpatialTopologyGraph
-    _HAS_SPATIAL_TOPOLOGY = True
-except ImportError:
-    _HAS_SPATIAL_TOPOLOGY = False
-try:
-    from gateway_client import GatewayClient
-    _HAS_GATEWAY_CLIENT = True
-except ImportError:
-    _HAS_GATEWAY_CLIENT = False
-try:
-    from v4_services import (
-        TtlMmapCache, HardwareFallback, MemoryService,
-        RetrievalService, HardwareService
-    )
-    _HAS_V4_SERVICES = True
-except ImportError:
-    _HAS_V4_SERVICES = False
-try:
-    from DAGIntegration_addon import DAGIntegration
-    _HAS_DAG_INTEGRATION = True
-except ImportError:
-    _HAS_DAG_INTEGRATION = False
 
 # ── 核心模块路径(13层/44工作流/129模块) ──
 import sys as _sys2
@@ -863,6 +831,7 @@ class XiaoYiClawLLM:
                     for r in results:
                         r["score"] = 1.0
 
+        # 只使用 UnifiedVectorStore 单路（XiaoyiMemoryV2 的 yaoyao 数据已冗余）
         # 数据来源：191 条 memory-tdai + 46 条 system（1024维 bge-m3 向量）
 
         # 知识图谱增强
@@ -1486,6 +1455,26 @@ class XiaoYiClawLLM:
             }
         }
 
+    def _record_implicit_feedback(self, signal_text: str, context: str = "", confidence: float = 0.5):
+        """记录隐式反馈信号到 .learnings/implicit_preferences.jsonl"""
+        try:
+            learn_dir = os.path.join(WORKSPACE, ".learnings")
+            os.makedirs(learn_dir, exist_ok=True)
+            pref_path = os.path.join(learn_dir, "implicit_preferences.jsonl")
+            entry = {
+                "id": f"IP-{int(time.time())}-{os.urandom(4).hex()}",
+                "signal": signal_text[:500],
+                "context": context[:500],
+                "confidence": confidence,
+                "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                "source": "cognition_implicit",
+            }
+            with open(pref_path, "a", encoding="utf-8") as f:
+                f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+            logger.debug(f"隐式反馈已记录: {signal_text[:60]}")
+        except Exception as e:
+            logger.debug(f"记录隐式反馈失败: {e}")
+
     def correct(self,
                 original: str,
                 corrected: str) -> Dict[str, Any]:
@@ -1513,10 +1502,22 @@ class XiaoYiClawLLM:
 
         logger.info(f"用户纠正: {original} -> {corrected}")
 
+        # 同时写入隐式反馈
+        self._record_implicit_feedback(
+            signal_text=f"用户显式纠正: {original} -> {corrected}",
+            context=original[:200],
+            confidence=0.9
+        )
+
         return {
             "correction_id": correction_id,
             "message": "已记录纠正,原始信息已标记为需重新验证"
         }
+
+    def _get_thinking_skills_context(self, state: 'PhaseState') -> str:
+        """仅返回思考技能内容（独立字段，不受 skill_guide 污染）"""
+        _thinking_content = getattr(state, 'thinking_skills_content', None) or []
+        return "\n\n".join(_thinking_content) if _thinking_content else ""
 
     # ==================== 优化模块集成(从 optimization_integration 融合)====================
 
@@ -1561,7 +1562,7 @@ class XiaoYiClawLLM:
         memory_dir = Path(WORKSPACE) / "memory"
         if not memory_dir.exists():
             # 尝试备用路径
-            memory_dir = Path(WORKSPACE) / ".openclaw" / "workspace" / "memory"
+            memory_dir = Path(WORKSPACE) / "skills" / "yaoyao-memory-v2" / "memory"
             if not memory_dir.exists():
                 return results
 
@@ -1867,32 +1868,43 @@ class XiaoYiClawLLM:
         raw_query = custom_query or state.user_input
         query = raw_query
 
-        # Pro 查询改写前置:影响检索质量和 retrieval confidence
-        if self.llm_pro and len(raw_query) > 5:
+        # 优化1: 查询改写 + 分类二合一（一次 Flash 调完）
+        # 输出格式: [REWRITTEN]改写后查询[/REWRITTEN][TYPE]greeting|simple|complex[/TYPE]
+        if self.llm_flash and len(raw_query) > 3:
             try:
-                rewrite_system = "你是一个查询改写专家。请将用户查询改写为更利于信息检索的表述。规则:保留核心信息,去除冗余表达,明确实体名称。"
-                skill_guide = state.analysis.get('skill_guide', '')
-                extra_user = f"\n\n【方法论指导】\n{skill_guide[:300]}" if skill_guide else ""
-                rsp = self.llm_pro.chat.completions.create(
-                    model=self._llm_pro_model,
+                # 注入思考技能上下文
+                _tc = self._get_thinking_skills_context(state)
+                extra_user = f"\n\n{_tc[:500]}" if _tc else ""
+                rsp = self.llm_flash.chat.completions.create(
+                    model=self._llm_flash_model,
                     messages=[
-                        {"role": "system", "content": rewrite_system},
-                        {"role": "user", "content": f"原始查询:{raw_query}\n改写结果(直接输出改写后的查询,不要多余内容):{extra_user}"},
-                        {"role": "assistant", "content": "", "prefix": True}
+                        {"role": "system", "content": "你是一个查询分析器。输出格式:\n[REWRITTEN]改写后的查询\n[TYPE]问候/简单/复杂\n\n规则:1.改写保留核心去冗余;2.TYPE:问候=纯打招呼,简单=事实性问题可直接从搜索结果回答,复杂=需要多步推理"},
+                        {"role": "user", "content": f"原文:{raw_query}\n分析:{extra_user}"},
                     ],
                     max_tokens=256,
                     temperature=0.1,
-                    extra_body={"user_id": "xiaoyi-claw-pro-rewrite", "prefix": True, "thinking": {"type": "disabled"}},
                 )
-                rewritten = rsp.choices[0].message.content.strip()
-                if rewritten:
-                    query = rewritten[:300]
-                    logger.info(f"Pro 查询改写(前置): '{raw_query}' → '{query}'")
-                    state.analysis['rewritten_query'] = query
+                output = rsp.choices[0].message.content.strip()
+                for line in output.split('\n'):
+                    if line.startswith('[REWRITTEN]'):
+                        rewritten = line[11:].strip()
+                        if rewritten:
+                            query = rewritten[:300]
+                            state.analysis['rewritten_query'] = query
+                    elif line.startswith('[TYPE]'):
+                        qtype = line[6:].strip()
+                        if qtype in ('问候', '简单'):
+                            state.retrieval_confidence = 0.8
+                            state.needs_more_info = (qtype != '问候')
+                            state.analysis['adaptive_level'] = 'simple' if qtype == '简单' else 'greeting'
+                        elif qtype == '复杂':
+                            state.needs_more_info = True
+                            state.analysis['adaptive_level'] = 'complex'
+                logger.info(f"查询分析: '{raw_query}' → TYPE={qtype} REWRITE={query[:60]}")
             except Exception as e:
-                logger.warning(f"Pro 查询改写(前置)失败,使用原始查询: {e}")
+                logger.debug(f"查询分析跳过: {e}")
         else:
-            logger.debug(f"跳过 Pro 查询改写: llm_pro={self.llm_pro is not None}, len={len(raw_query)}")
+            logger.debug(f"跳过查询分析: len={len(raw_query)}")
         
         # ═══ 语义熵不确定性评估 ═══
         try:
@@ -1908,20 +1920,26 @@ class XiaoYiClawLLM:
         except Exception as _see:
             pass
         
-        # ═══ Adaptive-RAG: query 复杂度分类 ═══
-        try:
-            if _HAS_ADAPTIVE and getattr(self, '_paper_int', None):
-                _ac_result = self._paper_int.adaptive_classify(raw_query[:200])
-                state.analysis['adaptive_level'] = _ac_result.get('level', 'medium')
-                state.analysis['adaptive_confidence'] = _ac_result.get('confidence', 0.5)
-                if _ac_result.get('level') == 'simple':
-                    state.retrieval_confidence = max(state.retrieval_confidence, 0.7)
-                    state.needs_more_info = False
-                    logger.info(f"Adaptive-RAG: {_ac_result['level']} → 简单, 减少检索深度")
-        except Exception as _ae:
-            logger.debug(f"Adaptive-RAG classify: {_ae}")
+        # ═══ 问候快速通路（跳过检索 + control + action + memory） ═══
+        # 双保险：LLM 分析 + 关键词兜底
+        _greeting_kw = {"嗨", "哈喽", "你好", "hello", "hi", "在吗", "在不在", "hey", "早上好", "晚上好", "下午好"}
+        _is_greeting = state.analysis.get('adaptive_level') == 'greeting' or raw_query.strip().lower() in _greeting_kw
+        if _is_greeting and len(raw_query) <= 10:
+            state.retrieval_confidence = 0.95
+            state.needs_more_info = False
+            state.generated_answer = (
+                "嗨！我在呢，有啥想聊的？"
+            )
+            state.answer_confidence = 0.95
+            state.action_success = True
+            state.strategy = "greeting"
+            state.retrieved_memories = []
+            state.stop_reason = "greeting_fast_path"
+            state.should_stop = True
+            logger.info(f"问候快速通路: 直接回复 '{raw_query}'")
+            return state
 
-        # ═══ CRAG: 复杂查询自动分解检索 ═══
+        # ═══ CRAG: 复杂查询自动分解检索（二合一分析已确认类型） ═══
         try:
             if _HAS_RETRIEVAL_HUB and state.analysis.get('adaptive_level') == 'complex' and len(raw_query) > 20:
                 _crag_input = raw_query[:200]
@@ -1953,6 +1971,35 @@ class XiaoYiClawLLM:
                 ]
 
             state.needs_more_info = stats.get("confidence", 0) < 0.3
+
+            # ── 检索结果过滤: 去掉低质高频记忆和通用摘要 ──
+            _filtered = []
+            _low_quality_patterns = [
+                "6个增强引擎", "五个增强", "以下是", "如上所述",
+                "请查收", "根据小艺Claw官方", "技术白皮书",
+                "小艺Claw的6个",
+            ]
+            for _m in (state.retrieved_memories or []):
+                _c = _m.get("content", "")
+                _skip = any(p in _c for p in _low_quality_patterns) if _c else False
+                if _skip:
+                    logger.info(f"过滤低质记忆: {_c[:60]}...")
+                    continue
+                _filtered.append(_m)
+            state.retrieved_memories = _filtered
+
+            # ── 当前会话 DAG 上下文优先注入检索结果 ──
+            _dag_ctx = state.analysis.get('current_dag_context', '')
+            if _dag_ctx and len(_dag_ctx) > 50:
+                _dag_first = {
+                    "content": _dag_ctx[:2000],
+                    "source": "dag_session",
+                    "confidence": 0.95,
+                    "tags": ["current_session", "dag_context"],
+                }
+                state.retrieved_memories.insert(0, _dag_first)
+                state.retrieval_confidence = max(state.retrieval_confidence, 0.85)
+                logger.info(f"DAG 上下文注入检索: {len(_dag_ctx)} chars")
 
             logger.info(f"Retrieval phase: confidence={state.retrieval_confidence:.2f}, "
                        f"sources: local={stats.get('local',0)} dag={stats.get('dag',0)} "
@@ -2263,14 +2310,31 @@ class XiaoYiClawLLM:
         """
         R-CCAM 阶段 2: Cognition(认知阶段)
 
-        使用 IntelligentThinkingTrigger 替代手搓关键词分类。
-        支持认知预算路由(minimal/light/full)。
+        使用 IntelligentThinkingTrigger 进行 top-3 多技能推荐。
+        技能内容写独立的 thinking_skills_content 字段（不污染 skill_guide）。
+        支持认知预算路由(greeting/minimal/light/full)。
         """
-        query = state.user_input
-        _budget = state.analysis.get('cognitive_budget', 'full')
+        query = state.user_input or ""
+        _budget = state.analysis.get('cognitive_budget', None)
 
-        # minimal 预算：跳过 IntelligentThinkingTrigger，直接最轻量分类
-        if _budget == "minimal":
+        # 预算路由（仅在入口设一次）
+        if _budget is None:
+            _len = len(query)
+            _has_complex_kw = any(kw in query for kw in ["为什么", "如何", "对比", "设计", "架构", "原理", "本质"])
+            # 简短事实性问题（≤10 字、无复杂关键词、以疑问词结尾且非复杂推理型）→ light
+            # light：只推荐技能名，不读完整 SKILL.md，不跑完整 cognition
+            _factual_kw = ["是", "吗", "呢", "几", "哪", "谁", "什么", "多少", "何", "啥", "怎么样"]
+            _is_brief_factual = _len <= 12 and not _has_complex_kw and any(kw in query for kw in _factual_kw)
+            if _len <= 10 and not _has_complex_kw and not _is_brief_factual:
+                _budget = "light"
+            elif _is_brief_factual:
+                _budget = "light"
+            else:
+                _budget = "full"
+            state.analysis['cognitive_budget'] = _budget
+
+        # greeting/minimal 预算：跳过 IntelligentThinkingTrigger
+        if _budget in ("greeting", "minimal"):
             state.knowledge_type = "general"
             state.type_confidence = 0.9
             state.analysis = {
@@ -2303,15 +2367,20 @@ class XiaoYiClawLLM:
 
             state.knowledge_type = analysis.question_type
             state.type_confidence = analysis.confidence
-            state.analysis = {
+            state.analysis.update({
                 "complexity": analysis.complexity,
                 "confusion": analysis.confusion_level,
                 "reasoning": analysis.reasoning,
-            }
+            })
 
-            # 映射建议技能到中文名 + 读取 SKILL.md 上下文注入
-            skill_name_map = {
-                # 思考技能 (9)
+            # ═══ top-3 多技能推荐 + SKILL.md 注入 ═══
+            # 使用 detect_thinking_needs 获取 top-3 技能
+            # 技能内容写入 thinking_skills_content（独立字段，不污染 skill_guide）
+            _skills_result = trigger.detect_thinking_needs(query, top_k=3)
+            state.thinking_skills_content = []
+            state.thinking_skills_used = []
+            
+            _skill_name_map = {
                 ThinkingSkill.FIRST_PRINCIPLES: "第一性原理",
                 ThinkingSkill.SYSTEMS_THINKING: "系统思维",
                 ThinkingSkill.CRITICAL_THINKING: "批判性思维",
@@ -2320,7 +2389,6 @@ class XiaoYiClawLLM:
                 ThinkingSkill.FEYNMAN_TECHNIQUE: "费曼技巧",
                 ThinkingSkill.DECISION_ENGINE: "决策引擎",
                 ThinkingSkill.PRODUCT_THINKING: "产品思维",
-                # Matt Pocock 工程技能
                 ThinkingSkill.DIAGNOSE: "diagnose (调查研究)",
                 ThinkingSkill.GRILL_WITH_DOCS: "grill-with-docs (矛盾分析)",
                 ThinkingSkill.TDD: "tdd (批评与自我批评)",
@@ -2331,7 +2399,6 @@ class XiaoYiClawLLM:
                 ThinkingSkill.CAVEMAN: "caveman",
                 ThinkingSkill.HANDOFF: "handoff",
                 ThinkingSkill.WRITE_SKILL: "write-a-skill",
-                # 方法论 (qiushi 11)
                 ThinkingSkill.INVESTIGATION_FIRST: "调查研究",
                 ThinkingSkill.CONTRADICTION_ANALYSIS: "矛盾分析",
                 ThinkingSkill.PRACTICE_COGNITION: "实践认知",
@@ -2345,59 +2412,51 @@ class XiaoYiClawLLM:
                 ThinkingSkill.WORKFLOWS: "工作流",
                 ThinkingSkill.NONE: None,
             }
-            suggested = skill_name_map.get(analysis.suggested_skill)
-            state.thinking_skills_used = [suggested] if suggested else []
+            _ws_path = getattr(state, 'workspace_path', str(Path.home() / '.openclaw' / 'workspace'))
 
-            # light 预算：跳过 SKILL.md 读取和 Reflexion/MultiPath 等 heavy 步骤
-            if _budget == "light":
-                if suggested and analysis.suggested_skill != ThinkingSkill.NONE:
-                    state.analysis['skill_guide'] = f"【思考技能】{suggested}"
-                state.analysis['cognitive_budget'] = _budget
-            else:
-                # 读取 SKILL.md 注入到 analysis 上下文(所有已定义的技能都支持)
-                if suggested and analysis.suggested_skill != ThinkingSkill.NONE:
-                    skill_path = None
+            for _skill in _skills_result.suggested_skills:
+                _cn_name = _skill_name_map.get(_skill, _skill.value if hasattr(_skill, 'value') else _skill)
+                state.thinking_skills_used.append(_cn_name)
+
+                if _budget == "light":
+                    # light：只留技能名，不读 SKILL.md
+                    state.thinking_skills_content.append(f"【{_cn_name}】")
+                    continue
+
+                # full 预算：读取 SKILL.md 前 2000 字符
+                try:
+                    _sp = trigger.ALL_SKILL_PATHS.get(_skill)
+                except AttributeError:
+                    _sp = None
+                if _sp:
+                    _fp = f"{_ws_path}/skills/{_sp}"
                     try:
-                        # 优先从 ALL_SKILL_PATHS 查找
-                        skill_path = trigger.ALL_SKILL_PATHS.get(analysis.suggested_skill)
-                    except AttributeError:
-                        # 降级 MATT_POCOCK_SKILL_PATHS
-                        try:
-                            skill_path = trigger.MATT_POCOCK_SKILL_PATHS.get(analysis.suggested_skill)
-                        except AttributeError:
-                            pass
-                    if skill_path:
-                        ws_path = getattr(state, 'workspace_path', '/home/sandbox/.openclaw/workspace')
-                        full_path = f"{ws_path}/skills/{skill_path}"
-                        try:
-                            with open(full_path, 'r', encoding='utf-8') as f:
-                                skill_md = f.read()
-                                state.analysis['skill_guide'] = skill_md[:500]
-                        except Exception:
-                            pass
+                        with open(_fp, 'r', encoding='utf-8') as _f:
+                            _smd = _f.read(6000)[:2000]
+                        state.thinking_skills_content.append(
+                            f"【{_cn_name}】\n{_smd}"
+                        )
+                    except Exception:
+                        state.thinking_skills_content.append(f"【{_cn_name}】")
+                else:
+                    state.thinking_skills_content.append(f"【{_cn_name}】")
 
-            # ── 将重放缓冲区注入 skill_guide(与方法论技能并列)──
-            replay = state.analysis.get('replay_buffer', '')
-            if replay:
-                existing = state.analysis.get('skill_guide', '')
-                state.analysis['skill_guide'] = (
-                    (existing + '\n\n' if existing else '') +
-                    f'【已验证记忆参考】\n{replay}'
-                )
+            # light 预算：标记预算
+            if _budget == "light":
+                state.analysis['cognitive_budget'] = _budget
 
         except Exception as e:
             logger.warning(f"Cognition phase - IntelligentThinkingTrigger failed, fallback: {e}")
-            # 降级到简单关键词分类
+            state.thinking_skills_used = []
+            state.thinking_skills_content = []
             try:
                 classification = self.classify_knowledge(query)
                 state.knowledge_type = classification.get('type', 'info')
                 state.type_confidence = classification.get('confidence', 0.5)
             except Exception:
                 pass
-
-            # 降级意图分析
             state.thinking_skills_used = self._select_thinking_skills(
-                state.knowledge_type, state._analyze_intent(query)
+                state.knowledge_type, self._analyze_intent(query)
             )
 
         # 检测需要实时信息的查询(强制走联网搜索)
@@ -2527,6 +2586,35 @@ class XiaoYiClawLLM:
                 )
         except Exception:
             pass
+
+        # ═══ 隐式反馈信号检测（用户不满/纠正/沉默） ═══
+        try:
+            _query = (state.user_input or "").strip()
+            _is_negative = False
+            _signal = ""
+            # 关键词负面信号
+            _neg_kw = ["不对", "错了", "不是", "不对吧", "不是这样", "不对呀",
+                       "错了呀", "搞错了", "理解错了", "你错了", "你不对",
+                       "不是这个意思", "不是我要的", "没听懂", "听错了",
+                       "我什么时候说过", "我表达的不是", "你理解的不对"]
+            for kw in _neg_kw:
+                if kw in _query.lower():
+                    _is_negative = True
+                    _signal = f"用户负面反馈: 含关键词'{kw}'"
+                    break
+            # 单字否定（短回复，非问候）
+            if not _is_negative and len(_query) <= 4 and _query.lower() in {"不", "no", "不是"}:
+                _is_negative = True
+                _signal = "用户负面反馈: 短否定回复"
+            if _is_negative:
+                self._record_implicit_feedback(
+                    signal_text=_signal,
+                    context=_query[:200],
+                    confidence=0.7
+                )
+                logger.info(f"Cognition 检测隐式负反馈: '{_query[:40]}'")
+        except Exception as _ife:
+            logger.debug(f"隐式反馈检测失败: {_ife}")
 
         # ── DAG 当前会话上下文注入(紧接在人格之后)──
         try:
@@ -2928,10 +3016,10 @@ class XiaoYiClawLLM:
                 # 3. 搜索结果用 Flash 整合(快、便宜,简单总结)
                 if collected_info.strip():
                     # 注入思考技能指导
-                    skill_guide = state.analysis.get('skill_guide', '')
+                    _tc = self._get_thinking_skills_context(state)
                     system_prompt = "你是一个知识丰富的AI助手,请基于搜索结果回答用户问题。"
-                    if skill_guide:
-                        system_prompt += f"\n\n【方法论指导】\n{skill_guide}"
+                    if _tc:
+                        system_prompt += f"\n\n{_tc}"
                     summary_prompt = (
                         f"用户问题:{query}\n\n"
                         f"搜索结果:\n{collected_info[:2000]}\n\n"
@@ -2997,8 +3085,8 @@ class XiaoYiClawLLM:
         pro_kv_user_id = "xiaoyi-claw-pro-smart-processor"
         pro_kv_headers = {"X-Conversation-Id": f"pro-smart-{pro_kv_user_id}"}
 
-        # 注入思考技能指导
-        skill_guide = state.analysis.get('skill_guide', '')
+        # 注入思考技能指导（仅从 thinking_skills_content 独立字段读取）
+        _tc = self._get_thinking_skills_context(state)
 
         try:
             # 1. 使用 retrieval 阶段已改写好的查询(避免重复调 Pro)
@@ -3062,8 +3150,8 @@ class XiaoYiClawLLM:
 
                     # R-CCAM 是本系统内部的五阶段认知循环,不是网络协议
                     summary_prompt = "你是一个资深系统架构师。请严格基于参考信息回答用户问题。"
-                    if skill_guide:
-                        summary_prompt += f"\n\n【方法论指导】\n{skill_guide}"
+                    if _tc:
+                        summary_prompt += f"\n\n{_tc}"
                     summary_prompt += (
                         "\n规则:只基于提供的信息回答,不编造;如果信息不足请如实说明。\n\n"
                         f"用户问题:{rewritten}\n\n"
@@ -3301,12 +3389,27 @@ class XiaoYiClawLLM:
             except Exception as _fe:
                 logger.warning(f"Forest self/env/meta 写入失败: {_fe}")
 
-        # 4. 情感标记
-        if 'emotion_memory' in getattr(self, '__dict__', {}) and hasattr(self, 'memory_v2') and self.memory_v2:
-            try:
+        # 4. 情感标记 + 写回 DAG
+        try:
+            if self._dag_integration and self._dag_integration.dag:
+                _emotion_state = state.analysis.get('emotion_context', {})
+                if isinstance(_emotion_state, dict) and _emotion_state:
+                    self._dag_integration.add_message_with_scene(
+                        session_key=state.session_key,
+                        role="system",
+                        content=f"[emotion_snapshot] {json.dumps(_emotion_state, ensure_ascii=False)[:500]}"
+                    )
+                _synapse_state = getattr(state, 'synapse_updated', False)
+                if _synapse_state:
+                    self._dag_integration.add_message_with_scene(
+                        session_key=state.session_key,
+                        role="system",
+                        content="[synapse_snapshot] memory_synapse_updated"
+                    )
+            if 'emotion_memory' in getattr(self, '__dict__', {}) and hasattr(self, 'memory_v2') and self.memory_v2:
                 state.emotion_marked = True
-            except Exception:
-                pass
+        except Exception:
+            pass
 
         # 5. 自进化检查
         if state.cycle_count > 0 and state.action_success:
@@ -3424,11 +3527,13 @@ class XiaoYiClawLLM:
         # ═══ DAGIntegration: 跨会话记忆恢复（每轮） ═══
         try:
             if getattr(self, '_dag_integration', None) and state.cycle_count == 0:
-                self._dag_integration.cross_session_memory_restore(
+                _restored = self._dag_integration.cross_session_memory_restore(
                     getattr(state, 'session_key', 'xiaoyi-claw-dag'), recent_days=3)
-        except Exception:
-            pass
-
+                if _restored:
+                    state.analysis['cross_session_context'] = _restored
+                    logger.info(f"跨会话记忆恢复: {len(_restored)} chars")
+        except Exception as e:
+            logger.debug(f"cross_session_memory_restore failed: {e}")
 
         return state
 
@@ -3563,6 +3668,8 @@ class XiaoYiClawLLM:
             "intent": "unknown", "routing": "", "user_input": user_input[:500],
         }
 
+        _critic_context = None
+
         while state.cycle_count < state.max_cycles and not state.should_stop:
             state.cycle_count += 1
             try:
@@ -3582,21 +3689,23 @@ class XiaoYiClawLLM:
             else:
                 state = self._retrieval_phase(state)
             _write_rccam_phase("retrieval", state, state.user_input[:500])
+            if state.should_stop: break
 
             # 阶段 2: Cognition
             state = self._cognition_phase(state)
             _write_rccam_phase("cognition", state, state.user_input[:500])
+            if state.should_stop: break
 
             # 阶段 3: Control
             state = self._control_phase(state)
             _write_rccam_phase("control", state, state.strategy or "unknown")
+            if state.should_stop: break
 
             # 阶段 4: Action
             state = self._action_phase(state)
             _write_rccam_phase("action", state, state.generated_answer[:1000] if state.generated_answer else state.user_input[:500])
 
             # ── 多Agent批评者 ──
-            _critic_context = None
             if state.action_success and state.generated_answer and state.strategy == "answer":
                 _replay_ctx = state.analysis.get('replay_buffer', '')
                 _skill_ctx = state.analysis.get('skill_guide', '')
@@ -3610,6 +3719,118 @@ class XiaoYiClawLLM:
                     "answer": state.generated_answer[:1500],
                     "extra_context": _extra_ctx,
                 }
+
+            # ── FLARE: 异步 DynamicConfidence 自评分 + 并行 CRAG 冲突检测 ──
+            #   优化1: judge + detect_conflicts 并行
+            #   优化2: 冲突检测仅在多轮循环时（cycle>1）跑
+            #   优化3: judge 高分时跳过 crag_correction 冗余调用
+            _flare_judge = {}
+            if (state.action_success and state.generated_answer
+                and state.strategy == "answer" and self.dynamic_confidence
+                and state.cycle_count <= 1):
+                try:
+                    from concurrent.futures import ThreadPoolExecutor as _TPE, as_completed as _AS_C
+                    _flare_extra = state.analysis.get('reflexion_context', '') or ''
+                    _exec = _TPE(max_workers=3)
+                    _futs = {}
+
+                    # 任务1: judge（始终跑）
+                    _futs[_exec.submit(
+                        self.dynamic_confidence.judge,
+                        state.user_input, state.generated_answer,
+                        extra_context=_flare_extra
+                    )] = "judge"
+
+                    # 任务2: detect_conflicts（仅多轮循环）
+                    _conflicts_result = []
+                    if state.cycle_count > 1 and hasattr(self, 'memory_editor') and self.memory_editor:
+                        _crag_mems_fc = getattr(state, 'retrieved_memories', [])
+                        if _crag_mems_fc:
+                            _futs[_exec.submit(
+                                self.memory_editor.detect_conflicts, _crag_mems_fc
+                            )] = "conflict"
+
+                    _judge_result = None
+                    for _f in _AS_C(_futs, timeout=12.0):
+                        _tag = _futs[_f]
+                        try:
+                            _val = _f.result(timeout=0.5)
+                            if _tag == "judge":
+                                _judge_result = _val
+                            elif _tag == "conflict":
+                                _conflicts_result = _val or []
+                        except Exception:
+                            pass
+                    _exec.shutdown(wait=False, cancel_futures=True)
+
+                    # 拿 judge 结果
+                    if _judge_result:
+                        _flare_judge = _judge_result
+                        _ff = _flare_judge.get('faithfulness', 7)
+                        _fr = _flare_judge.get('relevance', 7)
+                        _fc = _flare_judge.get('completeness', 7)
+
+                        # 高置信度 → 存 verified_memories
+                        if _flare_judge.get('passed', False) and _ff >= 7 and _fr >= 7 and _fc >= 7:
+                            _vm_dir = os.path.join(WORKSPACE, ".learnings") if WORKSPACE else ""
+                            if _vm_dir:
+                                os.makedirs(_vm_dir, exist_ok=True)
+                                _vm_path = os.path.join(_vm_dir, "verified_memories.jsonl")
+                                try:
+                                    _vm_entry = {
+                                        "id": f"VM-AUTO-{datetime.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:8]}",
+                                        "content": f"Q: {state.user_input[:200]}\nA: {state.generated_answer[:500]}",
+                                        "source": "dc_judge",
+                                        "confidence": round((_ff + _fr + _fc) / 30, 2),
+                                        "created_at": datetime.utcnow().isoformat(),
+                                        "verification_status": "verified",
+                                        "verified_at": datetime.utcnow().isoformat(),
+                                        "verified_by": "dc_llm_judge",
+                                        "tags": ["auto_judged", state.strategy, "dc"],
+                                        "importance": 0.6,
+                                    }
+                                    with open(_vm_path, "a") as _f:
+                                        _f.write(json.dumps(_vm_entry, ensure_ascii=False) + "\n")
+                                except Exception:
+                                    pass
+
+                    # 冲突结果写入
+                    if _conflicts_result:
+                        _conflict_ctx = '\n'.join(f"[冲突] {c.get('details','')[:200]}" for c in _conflicts_result[:2])
+                        state.analysis['memory_conflicts'] = _conflict_ctx
+
+                    # FLARE 触发：低可信度时补检索重答（仅 judge 通过且触发标记）
+                    if _flare_judge.get('trigger_crag', False) and not _flare_judge.get('passed', False):
+                        _crag_mems = getattr(state, 'retrieved_memories', [])
+                        _crag_corrected = self.dynamic_confidence.crag_correction(
+                            state.user_input, state.generated_answer, _crag_mems
+                        )
+                        if _crag_corrected and len(_crag_corrected) > 20:
+                            state.generated_answer = _crag_corrected
+                            state.answer_confidence = min(state.answer_confidence + 0.15, 0.85)
+                            state.analysis['flare_rescue'] = True
+                            logger.info(f"FLARE 触发: faithful={_flare_judge.get('faithfulness',0):.1f}")
+                except Exception as _fe:
+                    logger.warning(f"FLARE 评分失败: {_fe}")
+
+            # ── RCI 异步批评（ThreadPool → mmap + ZMQ） ──
+            try:
+                if state.action_success and state.generated_answer:
+                    state.consistency_action = "rci_async"
+                    state.critic_scores = {
+                        "faithfulness": _flare_judge.get('faithfulness', 5),
+                        "relevance": _flare_judge.get('relevance', 5),
+                        "completeness": _flare_judge.get('completeness', 5),
+                        "avg": _flare_judge.get('avg', 5),
+                    }
+                    if self._rci_threadpool is not None:
+                        self._rci_threadpool.submit(
+                            _rci_async_criticism, self, state
+                        )
+            except Exception:
+                state.consistency_action = "rci_failed"
+            if not hasattr(state, 'consistency_action'):
+                state.consistency_action = ""
 
             # ── 阶段 5: Memory（后台线程，不阻塞） ──
             if store_memory:
@@ -3639,6 +3860,25 @@ class XiaoYiClawLLM:
             elif state.analysis.get('cognitive_budget') != "full":
                 state.should_stop = True; state.stop_reason = "cognitive_budget_met"
 
+        # ═══ 写入 performance_metrics（供 ThinkingEnhanced 消费） ═══
+        try:
+            _pm_dir = os.path.join(WORKSPACE, ".learnings")
+            os.makedirs(_pm_dir, exist_ok=True)
+            _pm_entry = {
+                "id": f"PM-{int(time.time())}-{os.urandom(4).hex()}",
+                "strategy": state.strategy,
+                "success": state.action_success,
+                "confidence": state.answer_confidence,
+                "knowledge_type": state.knowledge_type,
+                "cycle_count": state.cycle_count,
+                "retrieval_confidence": state.retrieval_confidence,
+                "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            }
+            with open(os.path.join(_pm_dir, "performance_metrics.jsonl"), "a", encoding="utf-8") as _f:
+                _f.write(json.dumps(_pm_entry, ensure_ascii=False) + "\n")
+        except Exception:
+            pass
+
         # ═══ 通知 Galaxy Kernel ═══
         try:
             if getattr(self, '_gateway', None) and state.action_success and state.generated_answer:
@@ -3661,6 +3901,7 @@ class XiaoYiClawLLM:
             "intent": state.intent,
             "cycle_count": state.cycle_count,
             "thinking_skills_used": state.thinking_skills_used,
+            "thinking_skills_content": [c[:2000] for c in getattr(state, 'thinking_skills_content', [])],
             "retrieval_confidence": state.retrieval_confidence,
             "memory_ids": state.memory_ids,
             "stop_reason": state.stop_reason,
