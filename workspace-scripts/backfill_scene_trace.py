@@ -15,8 +15,8 @@ if not getattr(sp.llm, 'api_key', None):
 
 BASE_URL = sp.llm.base_url.rstrip('/')
 API_KEY = sp.llm.api_key
-DB_PATH = '/home/sandbox/.openclaw/workspace/.dag_context.db'
-OLD_DB_PATH = '/home/sandbox/.openclaw/dag_context.db'
+DB_PATH = os.path.expanduser('~/.openclaw/workspace/.dag_context.db')
+OLD_DB_PATH = os.path.expanduser('~/.openclaw/dag_context.db')
 RATE_LIMIT_SLEEP = 1.0  # 每次请求后等 1 秒
 BATCH_SIZE = 5  # 并发批大小
 

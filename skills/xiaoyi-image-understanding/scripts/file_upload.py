@@ -78,7 +78,7 @@ def upload_file(file_path, object_type="TEMPORARY_MATERIAL_DOC", debug=False):
             return None
 
         # 读取并校验配置
-        xiaoyi_path = "/home/sandbox/.openclaw/.xiaoyienv"
+        xiaoyi_path = os.path.expanduser("~/.openclaw/.xiaoyienv")
         config = read_xiaoyienv(xiaoyi_path)
 
         required_keys = ['PERSONAL-API-KEY', 'PERSONAL-UID']

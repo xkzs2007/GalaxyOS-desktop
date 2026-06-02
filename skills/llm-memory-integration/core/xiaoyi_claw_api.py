@@ -1830,7 +1830,7 @@ class XiaoYiClawLLM:
                     except AttributeError:
                         pass
                 if skill_path:
-                    ws_path = getattr(state, 'workspace_path', '/home/sandbox/.openclaw/workspace')
+                    ws_path = getattr(state, 'workspace_path', os.path.expanduser('~/.openclaw/workspace'))
                     full_path = f"{ws_path}/skills/{skill_path}"
                     try:
                         with open(full_path, 'r', encoding='utf-8') as f:
@@ -2431,12 +2431,12 @@ class XiaoYiClawLLM:
                 try:
                     import subprocess
                     _search_query = f"{_user_loc} {query}" if _user_loc else query
-                    search_script = "/home/sandbox/.openclaw/workspace/skills/xiaoyi-web-search/scripts/search.js"
+                    search_script = os.path.expanduser("~/.openclaw/workspace/skills/xiaoyi-web-search/scripts/search.js")
                     if os.path.exists(search_script):
                         result = subprocess.run(
                             ["node", search_script, _search_query, "-n", "3"],
                             capture_output=True, text=True, timeout=15,
-                            cwd="/home/sandbox/.openclaw/workspace/skills/xiaoyi-web-search"
+                            cwd=os.path.expanduser("~/.openclaw/workspace/skills/xiaoyi-web-search")
                         )
                         if result.returncode == 0 and result.stdout.strip():
                             state.analysis['search_results'] = result.stdout.strip()[:3000]

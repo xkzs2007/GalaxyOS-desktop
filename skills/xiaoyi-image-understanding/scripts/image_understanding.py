@@ -70,7 +70,7 @@ def image_understanding(image_url, text="图中讲了什么", debug=False):
         api_url = "https://hag-drcn.op.dbankcloud.com/celia-claw/v1/sse-api/skill/execute"
 
         # 读取并校验配置
-        xiaoyi_path = "/home/sandbox/.openclaw/.xiaoyienv"
+        xiaoyi_path = os.path.expanduser("~/.openclaw/.xiaoyienv")
         config = read_xiaoyienv(xiaoyi_path)
 
         required_keys = ['PERSONAL-API-KEY', 'PERSONAL-UID']
