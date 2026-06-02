@@ -694,6 +694,259 @@ class TemporalKnowledgeGraph:
         scored.sort(key=lambda x: x['score'], reverse=True)
         return scored[:top_k]
 
+    # ============================================================
+    # KG as Memory Backbone: 核心管线
+    # ============================================================
+
+    def ingest_text(self, text: str, session_key: str = "") -> Dict[str, Any]:
+        """
+        将文本摄入 KG：实体提取 → 消歧 → 建边。
+        R-CCAM _retrieval_phase 中的每个用户输入都会经过此方法。
+
+        Returns:
+            {"entities": ["实体A", ...], "edges": [edge_id, ...],
+             "stats": {"new_entities": int, "new_edges": int}}
+        """
+        stats = {"new_entities": 0, "new_edges": 0}
+        entity_names: Set[str] = set()
+        added_edge_ids: List[str] = []
+
+        extracted = self.extract_entities_from_text(text)
+        if not extracted:
+            return {"entities": [], "edges": [], "stats": stats}
+
+        # 收集实体名，消歧后确保存在
+        for item in extracted:
+            name = item.get("entity", "")
+            etype = item.get("type", "其他")
+            if not name:
+                continue
+            eid = self.disambiguate_entity(name, text)
+            entity_names.add(name)
+            # 更新实体类型（如果之前是 unknown）
+            existing = self.get_entity(name, fuzzy=False)
+            if existing and existing.get('entity_type') == 'unknown' and etype != '其他':
+                with self._lock:
+                    conn = sqlite3.connect(self.db_path)
+                    conn.execute("UPDATE entities SET entity_type=? WHERE entity_id=?",
+                                 (etype, existing['entity_id']))
+                    conn.commit()
+                    conn.close()
+                stats["new_entities"] += 1
+
+        # 建边：先找 2 跳内已有关联，再建新边
+        for item in extracted:
+            src = item.get("entity", "")
+            rel = item.get("relation", "")
+            tgt = item.get("target", "")
+            if not src or not tgt or not rel:
+                continue
+            edge_id = self.add_temporal_edge(
+                src_entity=src,
+                dst_entity=tgt,
+                relation=rel,
+                content=text[:200],
+                session_key=session_key
+            )
+            added_edge_ids.append(edge_id)
+            stats["new_edges"] += 1
+
+            # 反向边
+            reverse_edges = {
+                "使用": "被", "涉及": "关联", "位于": "包含",
+                "版本为": "版本号", "属于": "包含",
+            }
+            rev_rel = reverse_edges.get(rel, f"{rel}_反向")
+            rev_id = self.add_temporal_edge(
+                src_entity=tgt,
+                dst_entity=src,
+                relation=rev_rel,
+                content=text[:200],
+                session_key=session_key
+            )
+            added_edge_ids.append(rev_id)
+            stats["new_edges"] += 1
+
+        logger.info(f"KG ingest: {len(extracted)} items, {stats['new_entities']} new entities, {stats['new_edges']} edges")
+        return {
+            "entities": list(entity_names),
+            "edges": added_edge_ids,
+            "stats": stats,
+        }
+
+    def retrieve_by_entities(self, query: str, top_k: int = 10,
+                              at_time: Optional[float] = None) -> List[dict]:
+        """
+        图检索主入口：
+        1. 从 query 中提取实体
+        2. 实体消歧找到 KG 中节点
+        3. depth 2-3 图遍历
+        4. 结果按置信度+时间衰减排序
+
+        返回: [{"content": str, "score": float, "source": "kg",
+                "entities": [str], "edges": [str], ...}, ...]
+        """
+        t = at_time or _now()
+        results: Dict[str, dict] = {}
+
+        # Step 1: 实体提取
+        extracted = self.extract_entities_from_text(query)
+        entity_names = [e["entity"] for e in extracted if e.get("entity")]
+
+        # Step 2: 关键词回退（如果 LLM 没抽到实体）
+        if not entity_names:
+            # 从 query 中简单提取长词
+            words = re.findall(r'[\w\u4e00-\u9fff]{2,}', query)
+            # 去停用词
+            stopwords = {"什么", "如何", "怎么", "为什么", "这个", "那个", "这些", "那些", "可以", "没有", "不是", "就是", "一个", "这样", "那样", "然后", "因为", "所以", "但是", "如果", "虽然", "而且", "或者", "所以", "之后", "之前", "现在", "今天", "明天", "昨天", "上午", "下午", "晚上", "时候", "我们", "你们", "他们", "大家", "自己"}
+            entity_names = [w for w in words if w not in stopwords and len(w) >= 2][:5]
+
+        # Step 3: 图遍历
+        t_visit: Set[str] = set()
+        for ename in entity_names:
+            if ename in t_visit:
+                continue
+            t_visit.add(ename)
+            neighbors = self.get_entity_neighbors(ename, depth=2, at_time=t)
+            for n in neighbors:
+                # 构造可读内容
+                n_name = n.get("entity", "")
+                relation = n.get("relation", "")
+                content = n.get("content", "")[:200]
+                edge_id = n.get("edge_id", "")
+                dist = n.get("distance", 0)
+
+                # 加权评分
+                base = 0.7 if dist == 1 else 0.5 if dist == 2 else 0.3
+                if content:
+                    kw = _keyword_score(content, query)
+                    base = max(base, kw * 0.8)
+                age = t - n.get("t_created", t)
+                time_w = max(0.3, 1.0 - age / (3600 * 24 * 365))
+                score = base * time_w
+
+                desc = f"{ename} -[{relation}]-> {n_name}"
+                if content:
+                    desc += f" | {content}"
+
+                rid = edge_id or f"{ename}->{n_name}"
+                if rid not in results or score > results[rid]["score"]:
+                    results[rid] = {
+                        "content": desc,
+                        "score": round(score, 4),
+                        "source": "kg",
+                        "entities": [ename, n_name],
+                        "edge_id": edge_id,
+                        "relation": relation,
+                        "distance": dist,
+                    }
+
+        sorted_results = sorted(results.values(), key=lambda x: x["score"], reverse=True)[:top_k]
+        logger.info(f"KG retrieve: query='{query[:40]}' → {len(entity_names)} entities → {len(sorted_results)} results")
+        return sorted_results
+
+    def find_hidden_relations(self, session_key: str = "",
+                               min_confidence: float = 0.3) -> List[Dict[str, Any]]:
+        """
+        图推理：发现隐式关联。
+
+        策略：
+        1. 桥接实体：A-[r1]->C, B-[r2]->C → A 和 B 共享关联
+        2. 时序模式：同一实体在一段时间内出现的行为模式
+        3. 社区建议：community 中高频实体的交集
+
+        Returns:
+            [{"relation": str, "entities": [str, str],
+              "strength": float, "evidence": str, "type": str}, ...]
+        """
+        hidden: List[Dict[str, Any]] = []
+
+        with self._lock:
+            conn = sqlite3.connect(self.db_path)
+            conn.row_factory = sqlite3.Row
+
+            if session_key:
+                edges = conn.execute(
+                    "SELECT * FROM temporal_edges WHERE session_key=? ORDER BY t_created ASC",
+                    (session_key,)
+                ).fetchall()
+            else:
+                edges = conn.execute(
+                    "SELECT * FROM temporal_edges WHERE t_invalid IS NULL ORDER BY t_created DESC LIMIT 500"
+                ).fetchall()
+
+            # 策略 1: 共享目标实体
+            target_map: Dict[str, List[dict]] = defaultdict(list)
+            for e in edges:
+                target_map[e["dst_entity"]].append(e)
+
+            for tgt, connected in target_map.items():
+                if len(connected) >= 2:
+                    pairs = set()
+                    for i in range(len(connected)):
+                        for j in range(i+1, len(connected)):
+                            a, b = connected[i]["src_entity"], connected[j]["src_entity"]
+                            if a == b:
+                                continue
+                            pair = (min(a, b), max(a, b))
+                            if pair not in pairs:
+                                pairs.add(pair)
+                                # 获取源实体名称
+                                a_ent = conn.execute(
+                                    "SELECT name FROM entities WHERE entity_id=?", (a,)
+                                ).fetchone()
+                                b_ent = conn.execute(
+                                    "SELECT name FROM entities WHERE entity_id=?", (b,)
+                                ).fetchone()
+                                a_name = a_ent["name"] if a_ent else a
+                                b_name = b_ent["name"] if b_ent else b
+
+                                # 获取目标名称
+                                t_ent = conn.execute(
+                                    "SELECT name FROM entities WHERE entity_id=?", (tgt,)
+                                ).fetchone()
+                                t_name = t_ent["name"] if t_ent else tgt
+
+                                strength = min(connected[i]["confidence"] * connected[j]["confidence"] * 0.8, 1.0)
+                                if strength >= min_confidence:
+                                    hidden.append({
+                                        "relation": f"{a_name} ↔ {b_name} (共享: {t_name})",
+                                        "entities": [a_name, b_name],
+                                        "strength": round(strength, 3),
+                                        "evidence": f"两者都与 {t_name} 有关联",
+                                        "type": "shared_target",
+                                    })
+
+            # 策略 2: 时序模式 — 同一实体在 session 中出现频繁
+            if session_key:
+                from collections import Counter
+                entity_counter: Counter = Counter()
+                for e in edges:
+                    entity_counter[e["src_entity"]] += 1
+                    entity_counter[e["dst_entity"]] += 1
+
+                top_entities = entity_counter.most_common(10)
+                for eid, count in top_entities:
+                    if count < 2:
+                        continue
+                    ent = conn.execute(
+                        "SELECT name, entity_type FROM entities WHERE entity_id=?", (eid,)
+                    ).fetchone()
+                    if ent:
+                        hidden.append({
+                            "relation": f"{ent['name']} 出现 {count} 次",
+                            "entities": [ent["name"]],
+                            "strength": round(min(count / 5, 1.0), 3),
+                            "evidence": f"在当前会话上下文中出现 {count} 次, 类型: {ent['entity_type']}",
+                            "type": "frequent_entity",
+                        })
+
+            conn.close()
+
+        hidden.sort(key=lambda x: x["strength"], reverse=True)
+        logger.info(f"KG graph inference: {len(hidden)} hidden relations found")
+        return hidden
+
     def get_entity_timeline(self, entity: str) -> List[dict]:
         """
         获取实体的完整时间线（按 t_created 排序）。

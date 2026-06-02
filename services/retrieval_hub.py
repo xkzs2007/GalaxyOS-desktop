@@ -119,7 +119,55 @@ def _rrf_merge(all_results: List[List[Dict]], k: int = 60) -> List[Dict]:
     return merged
 
 
-# ========== 5 路检索函数（可独立并行） ==========
+# ---------- Knowledge Graph 懒加载 ----------
+_KG_INSTANCE = None
+
+def _get_kg():
+    """懒加载 temporal_kg 单例"""
+    global _KG_INSTANCE
+    if _KG_INSTANCE is None:
+        try:
+            _paths = [
+                os.path.expanduser("~/.openclaw/workspace/skills/xiaoyi-claw-omega-final/skills/llm-memory-integration/core"),
+                os.path.dirname(os.path.abspath(__file__)),
+            ]
+            for p in _paths:
+                if p not in sys.path:
+                    sys.path.insert(0, p)
+            from temporal_kg import get_temporal_kg
+            _KG_INSTANCE = get_temporal_kg()
+        except Exception as e:
+            logger.warning(f"KG 懒加载失败: {e}")
+            _KG_INSTANCE = None
+    return _KG_INSTANCE
+
+# ========== 6 路检索函数（可独立并行） ==========
+
+
+def _do_kg(query: str, top_k: int) -> list:
+    """0. KG as Memory Backbone: 图结构检索主通道。优先于向量检索执行。"""
+    results = []
+    try:
+        kg = _get_kg()
+        if kg:
+            raw = kg.retrieve_by_entities(query, top_k=top_k)
+            for r in raw:
+                results.append({
+                    "content": r.get("content", ""),
+                    "score": r.get("score", 0.0),
+                    "confidence": r.get("score", 0.5),
+                    "source": "kg",
+                    "entities": r.get("entities", []),
+                    "relation": r.get("relation", ""),
+                    "distance": r.get("distance", 0),
+                    "edge_id": r.get("edge_id", ""),
+                })
+            logger.debug(f"_do_kg: {len(results)} results for '{query[:30]}'")
+        else:
+            logger.debug("_do_kg: KG 不可用, 跳过")
+    except Exception as e:
+        logger.warning(f"_do_kg failed: {e}")
+    return results
 
 def _do_local(query: str, top_k: int) -> list:
     """1. 本地检索（XiaoyiClawLLM.recall + dag_fallback 降级）"""
@@ -758,11 +806,13 @@ def retrieval_hub(
     elif complexity == "simple":
         q_class["level"] = "simple"
 
-    # simple/fast 模式减配：只跑 local+dag 两路
+    # simple/fast 模式减配
     is_fast = q_class.get("level") == "simple"
 
-    # 并行发射 (五路: local + dag + synapse + paper + web)
+    # ═══ 并行发射 (六路: kg + local + dag + synapse + paper + web) ═══
+    # KG 作为第 0 路插入，在 RRF 融合时自动与向量检索结果竞争
     future_map = {
+        "kg": pool.submit(_do_kg, effective_query, top_k),
         "local": pool.submit(_do_local, effective_query, top_k),
         "dag":   pool.submit(_do_dag, effective_query, top_k),
     }
@@ -770,11 +820,10 @@ def retrieval_hub(
         future_map["synapse"] = pool.submit(_do_synapse, effective_query)
         future_map["paper"] = pool.submit(_do_paper, effective_query, top_k)
 
-
     # 联网搜索
     should_web = include_web is True
     if include_web is None:
-        should_web = not is_fast  # simple 模式默认不联
+        should_web = not is_fast
     if should_web:
         future_map["web"] = pool.submit(_do_web, effective_query, max_web_results)
     else:
@@ -784,7 +833,7 @@ def retrieval_hub(
     all_source_results = []
     name_to_results = {}
 
-    for name in ["local", "dag", "synapse", "paper", "web"]:
+    for name in ["kg", "local", "dag", "synapse", "paper", "web"]:
         fut = future_map.get(name)
         if fut is None:
             name_to_results[name] = []
@@ -830,11 +879,14 @@ def retrieval_hub(
     # 置信度
     local_scores = [r.get('score', 0) for r in name_to_results.get('local', [])[:3]]
     dag_scores = [r.get('score', 0) for r in name_to_results.get('dag', [])[:3]]
-    max_local = max(local_scores + dag_scores) if (local_scores or dag_scores) else 0
+    kg_scores = [r.get('score', 0) for r in name_to_results.get('kg', [])[:3]]
+    all_max = local_scores + dag_scores + kg_scores
+    max_local = max(all_max) if all_max else 0
     current_max = max((r.get('rrf_score', r.get('score', 0)) for r in merged), default=0) if merged else 0
     confidence = max(min(current_max * 2, 1.0), max_local)
 
     stats = {
+        "kg": len(name_to_results.get('kg', [])),
         "local": len(name_to_results.get('local', [])),
         "dag": len(name_to_results.get('dag', [])),
         "synapse": len(name_to_results.get('synapse', [])),

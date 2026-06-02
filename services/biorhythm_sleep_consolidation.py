@@ -705,6 +705,116 @@ class BioRhythmSleepConsolidator:
             stats["error"] = str(e)
         
         return stats
+
+    def _deep_sleep_kg_reasoning(self) -> Dict[str, Any]:
+        """
+        深度睡眠 KG 图推理
+        
+        在 DEEP-SLEEP 阶段执行:
+        1. 实体消歧: 合并相似实体别名
+        2. 社区发现: 检测实体簇,生成社区摘要
+        3. 过期边清理: 低置信度 + 超过 30 天的边标记失效
+        
+        Returns:
+            统计字典
+        """
+        stats = {"disambiguated": 0, "communities": 0, "expired_edges": 0}
+
+        try:
+            sys.path.insert(0, str(Path(__file__).parent))
+            from temporal_kg import get_temporal_kg
+            kg = get_temporal_kg()
+            now = time.time()
+
+            # 1. 实体消歧: 找到名称相似且类型相同的实体合并
+            with kg._lock:
+                conn = sqlite3.connect(kg.db_path)
+                conn.row_factory = sqlite3.Row
+                entities = conn.execute(
+                    "SELECT entity_id, name, aliases, entity_type FROM entities"
+                ).fetchall()
+
+                # 按名称相似性分组
+                import re as _re
+                ent_groups: Dict[str, List[dict]] = {}
+                for e in entities:
+                    # 提取核心词
+                    core = _re.sub(r'[\s\-/_]', '', e["name"].lower())
+                    if len(core) < 2:
+                        continue
+                    # 取前 4 个字符作为分组 key
+                    key = core[:4]
+                    if key not in ent_groups:
+                        ent_groups[key] = []
+                    ent_groups[key].append(dict(e))
+
+                for key, group in ent_groups.items():
+                    if len(group) < 2:
+                        continue
+                    # 组内两两检查
+                    group.sort(key=lambda x: -x.get('t_last_seen', 0))
+                    primary = group[0]
+                    for other in group[1:]:
+                        if primary["entity_id"] == other["entity_id"]:
+                            continue
+                        p_name = primary["name"].lower()
+                        o_name = other["name"].lower()
+                        # 简单消歧: 一个包含另一个
+                        if o_name in p_name or p_name in o_name:
+                            # 合并别名
+                            p_aliases = set(json.loads(primary.get("aliases", "[]") or "[]"))
+                            o_aliases = set(json.loads(other.get("aliases", "[]") or "[]"))
+                            merged = p_aliases | o_aliases | {other["name"]}
+                            conn.execute(
+                                "UPDATE entities SET aliases=?, t_last_seen=? WHERE entity_id=?",
+                                (json.dumps(list(merged)), now, primary["entity_id"])
+                            )
+                            # 把其他实体的边转移到主实体
+                            conn.execute(
+                                "UPDATE temporal_edges SET src_entity=? WHERE src_entity=?",
+                                (primary["entity_id"], other["entity_id"])
+                            )
+                            conn.execute(
+                                "UPDATE temporal_edges SET dst_entity=? WHERE dst_entity=?",
+                                (primary["entity_id"], other["entity_id"])
+                            )
+                            # 删除旧实体
+                            conn.execute(
+                                "DELETE FROM entities WHERE entity_id=?", (other["entity_id"],)
+                            )
+                            stats["disambiguated"] += 1
+                            logger.info(f"KG Sleep: 合并实体 '{other['name']}' → '{primary['name']}'")
+
+                # 2. 社区发现: 用 temporal_kg 自带的 build_community
+                conn.close()
+
+            try:
+                communities = kg.build_community(min_edges=3)
+                stats["communities"] = len(communities)
+            except Exception:
+                pass
+
+            # 3. 过期边清理: 低置信度 + 旧边
+            with kg._lock:
+                conn = sqlite3.connect(kg.db_path)
+                # 置信度 < 0.3 且超过 30 天的边
+                expired = conn.execute(
+                    "SELECT edge_id FROM temporal_edges "
+                    "WHERE confidence < 0.3 AND t_ingested < ? AND t_invalid IS NULL",
+                    (now - 86400 * 30,)
+                ).fetchall()
+                for e in expired:
+                    kg.invalidate_edge(e["edge_id"], now)
+                    stats["expired_edges"] += 1
+                conn.close()
+
+        except Exception as e:
+            stats["error"] = str(e)
+            logger.warning(f"KG sleep reasoning failed: {e}")
+
+        logger.info(f"KG Sleep reasoning: disambiguated={stats['disambiguated']}, "
+                    f"communities={stats['communities']}, expired_edges={stats['expired_edges']}")
+        return stats
     
     # ════════════════════════════════════════════════════════
     # 完整的睡眠周期
@@ -750,7 +860,13 @@ class BioRhythmSleepConsolidator:
         
         # Phase 5: DEEP-SLEEP 记忆迁移
         logger.info(f"[SleepCycle#{cycle_num}] Phase 5/5: DEEP-SLEEP 记忆迁移")
-        results["phases"]["deep_sleep"] = self._deep_sleep_migration()
+        _deep_migration = self._deep_sleep_migration()
+        
+        # Phase 5b: DEEP-SLEEP KG 图推理（实体消歧 + 社区发现 + 过期边清理）
+        logger.info(f"[SleepCycle#{cycle_num}] Phase 5b/5: DEEP-SLEEP KG 图推理")
+        _kg_reasoning = self._deep_sleep_kg_reasoning()
+        _deep_migration["kg_reasoning"] = _kg_reasoning
+        results["phases"]["deep_sleep"] = _deep_migration
         
         duration = time.time() - start_time
         results["duration_s"] = round(duration, 2)
