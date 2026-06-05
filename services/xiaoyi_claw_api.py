@@ -713,6 +713,9 @@ class XiaoYiClawLLM:
             self.brain_sync.sync_memory_to_brain(memory_id, content, metadata)
 
         logger.info(f"存储记忆: {memory_id}")
+        self.log_event("remember", f"memory:{memory_id[:16]}",
+                       detail=content[:200] if content else "",
+                       metadata={"source": source, "memory_id": memory_id})
         return memory_id
 
     def _load_dag_summaries(self, top_k: int = 5) -> List[Dict]:
@@ -887,7 +890,11 @@ class XiaoYiClawLLM:
                 deduped.append(r)
 
         deduped.sort(key=lambda x: x.get("score", 0), reverse=True)
-        return deduped[:top_k]
+        result = deduped[:top_k]
+        self.log_event("recall", f"query:{query[:100]}",
+                       detail=f"top_k={top_k} hits={len(result)}",
+                       metadata={"top_k": top_k, "hits": len(result)})
+        return result
 
     def _rrf_fuse(self, list_a: List[Dict], list_b: List[Dict], k: int = 60) -> List[Dict]:
         """RRF 融合两个检索结果列表"""
@@ -990,6 +997,9 @@ class XiaoYiClawLLM:
                 except Exception:
                     pass
 
+        self.log_event("forget", f"count={count}",
+                       detail=f"memory_id={memory_id or 'batch'}",
+                       metadata={"count": count, "memory_id": memory_id})
         return count
 
     # ==================== 知识图谱 API ====================
@@ -4038,6 +4048,13 @@ class XiaoYiClawLLM:
             }
         }
 
+        self.log_event("process", f"input:{user_input[:80]}",
+                       detail=f"cycles={max_cycles} budget={_process_budget}s",
+                       session_key=session_key or "xiaoyi-claw-main",
+                       metadata={"answer_len": len(state.generated_answer or ""),
+                                "cycles": max_cycles, "strategy": getattr(state, 'strategy', '')})
+        return result
+
     def get_status(self) -> Dict[str, Any]:
         """
         获取系统状态
@@ -4130,7 +4147,71 @@ class XiaoYiClawLLM:
                     result['memory_v2_issues'] = v2_health["issues"]
             except Exception as e:
                 result['memory_v2_details'] = str(e)
+        self.log_event("health", f"modules={sum(1 for v in result.values() if v)}",
+                       detail=f"{len(result)} modules")
         return result
+
+    # ═══════════════════════════════════════════════
+    # 事件日志 (写入 TKG 时序知识图谱)
+    # ═══════════════════════════════════════════════
+
+    def log_event(self, operation: str, target: str, detail: str = "",
+                  session_key: str = "", metadata: Optional[Dict] = None):
+        """
+        将关键操作写入 TemporalKnowledgeGraph 时序事件日志。
+
+        以 TKG 边形式存储，src='event:{operation}' → relation='operated_on' → dst="{target}"，
+        四时间戳模型确保精确到秒级排序。
+
+        Args:
+            operation: 操作名，如 'store', 'recall', 'forget', 'tag', 'sync', 'health'
+            target: 操作目标，如 'memory:xxx', 'GalaxyOS:v5.5'
+            detail: 补充描述
+            session_key: 会话标识
+            metadata: 附加元数据
+        """
+        if not metadata:
+            metadata = {}
+        try:
+            # 直接用 sqlite3 写，不用 import/模块缓存
+            import os as _os
+            import sqlite3 as _sq
+            import time as _t
+            import hashlib as _hl, random as _rd
+
+            _db_path = _os.path.expanduser("~/.openclaw/workspace/temporal_kg.db")
+            _conn = _sq.connect(_db_path)
+
+            content = detail or f"{operation} on {target}"
+            _now = _t.time()
+            _src_name = f"event:{operation}"
+
+            # 确保实体存在
+            for _en in [_src_name, target]:
+                _existing = _conn.execute("SELECT entity_id FROM entities WHERE name=?", (_en,)).fetchone()
+                if not _existing:
+                    _eid = f"ent_{_hl.md5(f'{_en}_{_now}_{_rd.random()}'.encode()).hexdigest()[:12]}"
+                    _conn.execute(
+                        "INSERT INTO entities (entity_id, name, entity_type, embedding, aliases, t_created, t_last_seen, metadata) VALUES (?,?,?,?,?,?,?,?)",
+                        (_eid, _en, "event", "", "[]", _now, _now, "{}")
+                    )
+
+            # 查 entity_id
+            _src_id = _conn.execute("SELECT entity_id FROM entities WHERE name=?", (_src_name,)).fetchone()[0]
+            _dst_id = _conn.execute("SELECT entity_id FROM entities WHERE name=?", (target,)).fetchone()[0]
+
+            # 写边
+            _edge_id = f"evt_{_hl.md5(f'evt_{_now}_{_rd.random()}'.encode()).hexdigest()[:12]}"
+            _conn.execute(
+                "INSERT INTO temporal_edges (edge_id, src_entity, dst_entity, relation, content, t_created, t_ingested, t_valid, t_invalid, confidence, source, metadata, session_key) VALUES (?,?,?,?,?,?,?,?,NULL,1.0,'system','{}',?)",
+                (_edge_id, _src_id, _dst_id, "operated_on", content, _now, _now, _now, session_key or "xiaoyi-claw-main")
+            )
+            _conn.commit()
+            _conn.close()
+            logger.debug(f"事件日志: {operation} → {target}")
+        except Exception as _e:
+            logger.debug(f"事件日志写入失败 ({operation}): {_e}")
+        return
 
 
 # 全局实例

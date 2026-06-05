@@ -1400,12 +1400,26 @@ class UnifiedEntry:
         except Exception as e:
             return {"success": False, "error": str(e)}
 
+    def events(self, query: Optional[str] = None, limit: int = 20) -> Dict[str, Any]:
+        """查询事件日志"""
+        try:
+            from temporal_kg import get_temporal_kg
+            _tkg = get_temporal_kg()
+            if query:
+                _q = f"event:{query}"
+            else:
+                _q = "event:"
+            results = _tkg.hybrid_retrieve(_q, top_k=limit)
+            return {"events": results, "total": len(results)}
+        except Exception as e:
+            return {"error": str(e)}
+
 
 def main():
     """CLI 接口"""
     parser = argparse.ArgumentParser(description="小艺 Claw 统一入口 V2")
     parser.add_argument("command", choices=[
-        "store", "recall", "answer", "forget",
+        "store", "recall", "answer", "forget", "events",
         "health", "status",
         "workflow", "workflows",
         "module", "modules",
@@ -1450,6 +1464,9 @@ def main():
             print("错误: 需要 --name")
             sys.exit(1)
         result = entry.forget(args.name)
+    
+    elif args.command == "events":
+        result = entry.events(args.query, args.top_k or 20)
     
     elif args.command == "health":
         result = entry.health_check()
