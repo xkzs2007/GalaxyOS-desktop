@@ -56,7 +56,7 @@ class TtlMmapCache:
                 self._mm.write(struct.pack("!I", len(payload)))
                 self._mm.write(payload)
                 return True
-            except: return False
+            except Exception: return False
     
     def read(self, key_hint: str = None) -> Optional[dict]:
         """读取缓存，TTL 过期的返回 None"""
@@ -75,11 +75,11 @@ class TtlMmapCache:
             if key_hint and payload.get("key") != key_hint:
                 return None  # key 不匹配
             return payload
-        except: return None
+        except Exception: return None
     
     def stop(self):
         try: self._mm.close()
-        except: pass
+        except Exception: pass
 
 _mmap = TtlMmapCache()
 
@@ -120,9 +120,9 @@ class HardwareFallback:
                 lib = ctypes.CDLL("libmkl_rt.so.3")
                 status["mkl"] = True
                 status["fallback"] = False
-            except:
+            except Exception:
                 pass
-        except:
+        except Exception:
             pass
         
         # 检测 AVX-512
@@ -131,7 +131,7 @@ class HardwareFallback:
                 flags = f.read()
             if "avx512" in flags.lower():
                 status["avx512"] = True
-        except:
+        except Exception:
             pass
         
         self._mkl = status
@@ -149,7 +149,7 @@ class HardwareFallback:
                 import numpy as np
                 # 走 MKL 加速的 numpy
                 return None  # 交给调用方
-            except:
+            except Exception:
                 pass
         # 降级到标准库
         return None
@@ -203,7 +203,7 @@ class RetrievalService:  # L3 检索增强层
                 if keywords:
                     return self._entry.recall(" ".join(keywords), top_k // 2)
                 return []
-            except:
+            except Exception:
                 return []
         
         dense_future = self._pool.submit(_dense)
@@ -261,7 +261,7 @@ class SessionService:  # L9 会话管理层
             rows = [r[0] for r in cursor.fetchall()]
             conn.close()
             return {"context": "\n".join(rows) if rows else ""}
-        except:
+        except Exception:
             return {"context": ""}
 
 
@@ -280,7 +280,7 @@ class ThinkingService:  # L11 思考/NLP 层
             result["entities"] = analysis.get("entities", [])
             result["keywords"] = analysis.get("keywords", [])
             result["sentiment"] = analysis.get("sentiment", "neutral")
-        except:
+        except Exception:
             pass
         return result
     
@@ -289,7 +289,7 @@ class ThinkingService:  # L11 思考/NLP 层
         try:
             from four_advancements import get_advancements
             return get_advancements().route_tool(query)
-        except:
+        except Exception:
             return {"tool": "general", "reason": "no engine"}
 
 
@@ -368,7 +368,7 @@ class ParallelWorkflowEngine:
             draft_future = self._pool.submit(gen.generate_sync, query)
             results = cache_future.result()
             draft = draft_future.result()
-        except:
+        except Exception:
             results = cache_future.result()
             draft = None
         

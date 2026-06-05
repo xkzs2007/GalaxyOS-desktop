@@ -230,13 +230,35 @@ class CausalReasoning:
                 max_tokens=500, temperature=0.1,
             )
             raw = (resp.choices[0].message.content or "").strip()
-            # 尝试从 markdown 代码块中提取 JSON
-            jm = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', raw, re.DOTALL)
-            if jm:
-                raw = jm.group(1)
-            jm2 = re.search(r'\{.*?\}', raw, re.DOTALL)
-            if jm2:
-                data = json.loads(jm2.group())
+            # 先尝试整体 parse（最干净）
+            data = None
+            try:
+                data = json.loads(raw)
+            except Exception:
+                pass
+            if data is None:
+                # 尝试从 markdown 代码块中提取
+                jm = re.search(r'```(?:json)?\s*(\{.*\})\s*```', raw, re.DOTALL)
+                if jm:
+                    try:
+                        data = json.loads(jm.group(1))
+                    except Exception:
+                        pass
+            if data is None:
+                # 花括号平衡提取（兜底，处理嵌套 JSON 的懒匹配问题）
+                start = raw.find('{')
+                if start >= 0:
+                    depth = 0
+                    for i in range(start, len(raw)):
+                        if raw[i] == '{': depth += 1
+                        elif raw[i] == '}': depth -= 1
+                        if depth == 0:
+                            try:
+                                data = json.loads(raw[start:i+1])
+                            except Exception:
+                                pass
+                            break
+            if data:
                 pairs = data.get("causal_pairs", [])
                 confidence = data.get("confidence", 0.5)
 
