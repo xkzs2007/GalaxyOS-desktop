@@ -112,6 +112,16 @@ for _p in [_CORE_PATH, _SRC_PATH]:
         _sys2.path.insert(0, _p)
         logger.debug(f"核心模块路径已加入 sys.path: {_p}")
 
+# ── ncps 神经网络模块（可选导入） ──
+try:
+    from memory_synapse_network import (
+        MemorySynapseNetwork, SynapseNetwork, NeuronManager, SynapseManager
+    )
+    _HAS_NEURAL = True
+except ImportError as _ne:
+    _HAS_NEURAL = False
+    logger.debug(f"ncps 模块导入失败: {_ne}")
+
 
 
 def _async_memory_phase(claw_instance, state_snapshot: dict, session_key: str):
@@ -176,6 +186,8 @@ class XiaoYiClawLLM:
         self._init_kora()
         # ── 9个增强模块懒加载初始化 ──
         self._init_consolidation_engine()
+        # ── ncps 神经网络（对话→神经元/突触写入） ──
+        self._init_neural()
         self._init_self_evolution()
         self._init_spatial_topology()
         self._init_nlp_enhanced()
@@ -502,6 +514,19 @@ class XiaoYiClawLLM:
             self._consolidation_engine = None
             logger.debug("ConsolidationEngine: %s", e)
 
+    def _init_neural(self):
+        """初始化 ncps 突触网络（可选模块，降级不报错）"""
+        self._smn = None
+        if not _HAS_NEURAL:
+            logger.debug("ncps 神经网络模块不可用，跳过")
+            return
+        try:
+            self._smn = MemorySynapseNetwork()
+            logger.info("ncps 突触网络初始化成功")
+        except Exception as e:
+            self._smn = None
+            logger.debug("ncps 初始化失败: %s", e)
+
     def _init_self_evolution(self):
         try:
             from self_evolution_engine import SelfEvolutionEngine
@@ -713,6 +738,9 @@ class XiaoYiClawLLM:
             self.brain_sync.sync_memory_to_brain(memory_id, content, metadata)
 
         logger.info(f"存储记忆: {memory_id}")
+        self.log_event("remember", f"memory:{memory_id[:16]}",
+                       detail=content[:200] if content else "",
+                       metadata={"source": source, "memory_id": memory_id})
         return memory_id
 
     def _load_dag_summaries(self, top_k: int = 5) -> List[Dict]:
@@ -887,7 +915,11 @@ class XiaoYiClawLLM:
                 deduped.append(r)
 
         deduped.sort(key=lambda x: x.get("score", 0), reverse=True)
-        return deduped[:top_k]
+        result = deduped[:top_k]
+        self.log_event("recall", f"query:{query[:100]}",
+                       detail=f"top_k={top_k} hits={len(result)}",
+                       metadata={"top_k": top_k, "hits": len(result)})
+        return result
 
     def _rrf_fuse(self, list_a: List[Dict], list_b: List[Dict], k: int = 60) -> List[Dict]:
         """RRF 融合两个检索结果列表"""
@@ -990,6 +1022,9 @@ class XiaoYiClawLLM:
                 except Exception:
                     pass
 
+        self.log_event("forget", f"count={count}",
+                       detail=f"memory_id={memory_id or 'batch'}",
+                       metadata={"count": count, "memory_id": memory_id})
         return count
 
     # ==================== 知识图谱 API ====================
@@ -2494,6 +2529,46 @@ class XiaoYiClawLLM:
             state.needs_more_info = True
             logger.debug(f"实时信息查询,强制 needs_more_info=True")
 
+        # ═══ Time History Query: 时间感知事件日志 ═══
+        _time_kw = ["之前", "刚才", "早上", "下午", "晚上", "昨天", "前天",
+                     "什么时候", "几点", "几时", "时间", "时序", "先后", "顺序",
+                     "干了", "做了", "发生了什么", "什么事", "tag", "标签",
+                     "v5.5", "v5.", "发布", "推送", "更新", "commit", "deploy"]
+        _is_time_query = any(kw in query for kw in _time_kw)
+        if _is_time_query:
+            try:
+                import sqlite3 as _sq, os as _os
+                _db = _os.path.expanduser("~/.openclaw/workspace/temporal_kg.db")
+                if _os.path.exists(_db):
+                    _conn = _sq.connect(_db)
+                    _limit = 20
+                    import re as _re
+                    _num_match = _re.search(r'(\d+)', query)
+                    if _num_match:
+                        _n = int(_num_match.group(1))
+                        _limit = min(max(_n, 5), 100)
+                    _rows = _conn.execute("""
+                        SELECT e.name AS src, d.name AS dst, te.t_ingested, te.content
+                        FROM temporal_edges te
+                        JOIN entities e ON te.src_entity = e.entity_id
+                        JOIN entities d ON te.dst_entity = d.entity_id
+                        WHERE e.name LIKE 'event:%' AND te.relation='operated_on'
+                        ORDER BY te.t_ingested DESC LIMIT ?
+                    """, (_limit,)).fetchall()
+                    _conn.close()
+                    if _rows:
+                        import time as _tt
+                        _lines = []
+                        for _r in _rows:
+                            _ts_str = _tt.strftime("%m-%d %H:%M:%S", _tt.localtime(_r[2]))
+                            _lines.append(f"  [{_ts_str}] {_r[0]} -> {_r[1]} | {(_r[3] or '')[:60]}")
+                        _ctx = "【最近事件日志】\n" + "\n".join(_lines)
+                        if hasattr(state, 'thinking_skills_content') and isinstance(state.thinking_skills_content, list):
+                            state.thinking_skills_content.append(_ctx)
+                        logger.info(f"Time history: {len(_rows)} events injected")
+            except Exception as _te:
+                logger.debug(f"Time history query skipped: {_te}")
+
         # ═══ KG Graph Reasoning: 图推理注入 ═══
         # 从 temporal_kg 获取隐式关联，注入 cognition 阶段供后续选择
         try:
@@ -3325,6 +3400,27 @@ class XiaoYiClawLLM:
                     state.answer_confidence = min(state.answer_confidence, _vg['confidence'])
                     if _vg.get('alternative'):
                         state.generated_answer = _vg['alternative']
+                # ── 防幻觉结果回流神经网络 ──
+                if getattr(self, '_smn', None) and answer:
+                    try:
+                        _vg_conf = _vg.get('confidence', 1.0) if _vg else 1.0
+                        # 查找刚创建的回答神经元
+                        _ans_neuron = self._smn.neuron_manager.find_neuron_by_content(f"系统: {answer[:200]}")
+                        if _ans_neuron:
+                            # 低置信度 → 削弱突触权重
+                            if _vg_conf < 0.5:
+                                for _nid in list(self._smn.network._synapses_cache.keys()):
+                                    _s = self._smn.network._synapses_cache[_nid]
+                                    if _s.target_id == _ans_neuron.id:
+                                        self._smn.synapse_manager.ltd(_s, decay_rate=1.0 - _vg_conf)
+                            # 高置信度 → 强化突触
+                            elif _vg_conf > 0.8:
+                                for _nid in list(self._smn.network._synapses_cache.keys()):
+                                    _s = self._smn.network._synapses_cache[_nid]
+                                    if _s.target_id == _ans_neuron.id:
+                                        self._smn.synapse_manager.ltp(_s, strength=_vg_conf * 0.5)
+                    except Exception:
+                        pass
         except Exception:
             pass
 
@@ -3560,6 +3656,116 @@ class XiaoYiClawLLM:
                 state.analysis['consolidation_triggered'] = True
         except Exception:
             pass
+
+        # ═══ ncps 神经网络：对话→神经元/突触（含 NLP 语义特征） ═══
+        try:
+            if getattr(self, '_smn', None) and query:
+                # 从 state.analysis 收集增强NLP的分析结果
+                _nlp_meta = {}
+                _state_analysis = getattr(state, 'analysis', {}) or {}
+                if isinstance(_state_analysis, dict):
+                    for _k in ['nlp_entities', 'nlp_relations', 'nlp_comparisons',
+                               'nlp_coref', 'nlp_entity_types', 'nlp_dependencies']:
+                        _v = _state_analysis.get(_k)
+                        if _v:
+                            _nlp_meta[_k] = _v
+                _nlp_entity_texts = None
+                if 'nlp_entities' in _nlp_meta:
+                    _nlp_vals = _nlp_meta['nlp_entities']
+                    if isinstance(_nlp_vals, dict):
+                        _nlp_entity_texts = list(_nlp_vals.keys())
+                    elif isinstance(_nlp_vals, list):
+                        _nlp_entity_texts = [e.get('text', '') if isinstance(e, dict) else str(e) for e in _nlp_vals[:10]]
+                    if _nlp_entity_texts:
+                        _nlp_meta['_linked_entities'] = _nlp_entity_texts
+
+                # 用户输入神经元
+                user_neuron = self._smn.neuron_manager.find_neuron_by_content(f"用户: {query}")
+                if not user_neuron:
+                    user_neuron = self._smn.create_neuron(f"用户: {query}")
+
+                # 补充注入增强NLP metadata
+                if _nlp_meta:
+                    try:
+                        _existing_ent = json.loads(user_neuron.nlp_entities) if user_neuron.nlp_entities else {}
+                        if _nlp_entity_texts and not _existing_ent.get('LINKED'):
+                            _existing_ent['LINKED'] = _nlp_entity_texts
+                            user_neuron.nlp_entities = json.dumps(_existing_ent, ensure_ascii=False)
+                    except Exception:
+                        pass
+
+                # 系统回答神经元 + 突触
+                if answer:
+                    ans_neuron = self._smn.neuron_manager.find_neuron_by_content(f"系统: {answer[:200]}")
+                    if not ans_neuron:
+                        ans_neuron = self._smn.create_neuron(f"系统: {answer[:200]}")
+                    self._smn.create_synapse(
+                        user_neuron.id, ans_neuron.id,
+                        src_content=user_neuron.content,
+                        dst_content=ans_neuron.content
+                    )
+                    self._smn.activate(user_neuron.id)
+                    self._smn.activate(ans_neuron.id)
+                else:
+                    self._smn.activate(user_neuron.id)
+
+                # 实体关联
+                if _nlp_entity_texts and answer:
+                    for _ent_text in _nlp_entity_texts[:3]:
+                        _ent_neuron = self._smn.neuron_manager.find_neuron_by_content(f"实体: {_ent_text}")
+                        if not _ent_neuron:
+                            _ent_neuron = self._smn.create_neuron(f"实体: {_ent_text}")
+                        self._smn.create_synapse(
+                            user_neuron.id, _ent_neuron.id,
+                            src_content=user_neuron.content,
+                            dst_content=_ent_neuron.content
+                        )
+
+                # ── 防幻觉验证回流 ──
+                _vg_conf = state.answer_confidence
+                if _vg_conf < 0.5 and answer:
+                    # 低置信度 → LTD
+                    try:
+                        _a = self._smn.neuron_manager.find_neuron_by_content(f"系统: {answer[:200]}")
+                        if _a:
+                            for _nid in list(self._smn.network._synapses_cache.keys()):
+                                _s = self._smn.network._synapses_cache[_nid]
+                                if _s.target_id == _a.id:
+                                    self._smn.synapse_manager.ltd(_s, decay_rate=1.0 - _vg_conf)
+                    except Exception:
+                        pass
+                elif _vg_conf >= 0.8 and answer:
+                    # 高置信度 → LTP
+                    try:
+                        _a = self._smn.neuron_manager.find_neuron_by_content(f"系统: {answer[:200]}")
+                        if _a:
+                            for _nid in list(self._smn.network._synapses_cache.keys()):
+                                _s = self._smn.network._synapses_cache[_nid]
+                                if _s.target_id == _a.id:
+                                    self._smn.synapse_manager.ltp(_s, strength=_vg_conf * 0.5)
+                    except Exception:
+                        pass
+
+                # ── 高置信度回答持久化→ verify 来源 ──
+                try:
+                    if _vg_conf >= 0.5 and answer:
+                        _neural_data_dir = os.path.expanduser(
+                            "~/.openclaw/workspace/.learnings/synapse_network")
+                        _verified_path = os.path.join(
+                            os.path.dirname(_neural_data_dir), "verified_memories.jsonl")
+                        with open(_verified_path, "a", encoding="utf-8") as _vf:
+                            _entry = {
+                                "id": f"neural-{int(time.time()*1000)}",
+                                "content": f"Q: {query[:200]}\nA: {answer[:500]}",
+                                "confidence": round(_vg_conf, 3),
+                                "created_at": datetime.now(timezone.utc).isoformat(),
+                                "source": "neural_verified",
+                            }
+                            _vf.write(json.dumps(_entry, ensure_ascii=False) + "\n")
+                except Exception:
+                    pass
+        except Exception as _ne:
+            logger.debug(f"ncps 神经网络写入失败: {_ne}")
 
         # ═══ SelfEvolutionEngine: 进化追踪 ═══
         try:
@@ -4038,6 +4244,13 @@ class XiaoYiClawLLM:
             }
         }
 
+        self.log_event("process", f"input:{user_input[:80]}",
+                       detail=f"cycles={max_cycles} budget={_process_budget}s",
+                       session_key=session_key or "xiaoyi-claw-main",
+                       metadata={"answer_len": len(state.generated_answer or ""),
+                                "cycles": max_cycles, "strategy": getattr(state, 'strategy', '')})
+        return result
+
     def get_status(self) -> Dict[str, Any]:
         """
         获取系统状态
@@ -4130,7 +4343,71 @@ class XiaoYiClawLLM:
                     result['memory_v2_issues'] = v2_health["issues"]
             except Exception as e:
                 result['memory_v2_details'] = str(e)
+        self.log_event("health", f"modules={sum(1 for v in result.values() if v)}",
+                       detail=f"{len(result)} modules")
         return result
+
+    # ═══════════════════════════════════════════════
+    # 事件日志 (写入 TKG 时序知识图谱)
+    # ═══════════════════════════════════════════════
+
+    def log_event(self, operation: str, target: str, detail: str = "",
+                  session_key: str = "", metadata: Optional[Dict] = None):
+        """
+        将关键操作写入 TemporalKnowledgeGraph 时序事件日志。
+
+        以 TKG 边形式存储，src='event:{operation}' → relation='operated_on' → dst="{target}"，
+        四时间戳模型确保精确到秒级排序。
+
+        Args:
+            operation: 操作名，如 'store', 'recall', 'forget', 'tag', 'sync', 'health'
+            target: 操作目标，如 'memory:xxx', 'GalaxyOS:v5.5'
+            detail: 补充描述
+            session_key: 会话标识
+            metadata: 附加元数据
+        """
+        if not metadata:
+            metadata = {}
+        try:
+            # 直接用 sqlite3 写，不用 import/模块缓存
+            import os as _os
+            import sqlite3 as _sq
+            import time as _t
+            import hashlib as _hl, random as _rd
+
+            _db_path = _os.path.expanduser("~/.openclaw/workspace/temporal_kg.db")
+            _conn = _sq.connect(_db_path)
+
+            content = detail or f"{operation} on {target}"
+            _now = _t.time()
+            _src_name = f"event:{operation}"
+
+            # 确保实体存在
+            for _en in [_src_name, target]:
+                _existing = _conn.execute("SELECT entity_id FROM entities WHERE name=?", (_en,)).fetchone()
+                if not _existing:
+                    _eid = f"ent_{_hl.md5(f'{_en}_{_now}_{_rd.random()}'.encode()).hexdigest()[:12]}"
+                    _conn.execute(
+                        "INSERT INTO entities (entity_id, name, entity_type, embedding, aliases, t_created, t_last_seen, metadata) VALUES (?,?,?,?,?,?,?,?)",
+                        (_eid, _en, "event", "", "[]", _now, _now, "{}")
+                    )
+
+            # 查 entity_id
+            _src_id = _conn.execute("SELECT entity_id FROM entities WHERE name=?", (_src_name,)).fetchone()[0]
+            _dst_id = _conn.execute("SELECT entity_id FROM entities WHERE name=?", (target,)).fetchone()[0]
+
+            # 写边
+            _edge_id = f"evt_{_hl.md5(f'evt_{_now}_{_rd.random()}'.encode()).hexdigest()[:12]}"
+            _conn.execute(
+                "INSERT INTO temporal_edges (edge_id, src_entity, dst_entity, relation, content, t_created, t_ingested, t_valid, t_invalid, confidence, source, metadata, session_key) VALUES (?,?,?,?,?,?,?,?,NULL,1.0,'system','{}',?)",
+                (_edge_id, _src_id, _dst_id, "operated_on", content, _now, _now, _now, session_key or "xiaoyi-claw-main")
+            )
+            _conn.commit()
+            _conn.close()
+            logger.debug(f"事件日志: {operation} → {target}")
+        except Exception as _e:
+            logger.debug(f"事件日志写入失败 ({operation}): {_e}")
+        return
 
 
 # 全局实例

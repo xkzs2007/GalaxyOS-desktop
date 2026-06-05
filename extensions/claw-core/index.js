@@ -1253,6 +1253,65 @@ export default function register(api) {
     // ==========================================
     // Tool: claw_store - Store via workflow
     // ==========================================
+    // Tool: claw_events - TKG 事件日志查询
+    // ==========================================
+    api.registerTool({
+        name: "claw_events",
+        label: "Claw Events Query",
+        description: "查询事件日志（基于 TKG 时序知识图谱）。\n" +
+            "返回按时间倒序排列的操作事件，支持关键词和时间范围过滤。\n" +
+            "事件类型包括: remember, recall, forget, tag, health, process 等。\n" +
+            "每个事件带精确时间戳 t_ingested (Unix 浮点秒)。",
+        parameters: {
+            type: "object",
+            properties: {
+                query: {
+                    type: "string",
+                    description: "关键词过滤（按内容或目标搜索）",
+                },
+                limit: {
+                    type: "number",
+                    description: "最大返回条数 (默认 20, 最多 100)",
+                    default: 20,
+                },
+                since: {
+                    type: "number",
+                    description: "起始时间戳 (Unix 秒，可选)",
+                },
+                until: {
+                    type: "number",
+                    description: "截止时间戳 (Unix 秒，可选)",
+                },
+            },
+        },
+        async execute(_toolCallId, params) {
+            const query = String(params.query ?? "");
+            const limit = Math.min(Math.max(Number(params.limit) || 20, 1), 100);
+            const since = Number(params.since) || 0;
+            const until = Number(params.until) || 0;
+            const startMs = Date.now();
+            api.logger.debug?.(`${TAG} [tool] claw_events: query="${query.slice(0, 80)}", limit=${limit}`);
+            try {
+                const w = getWorker(ws);
+                const result = await w.call("events", { query, limit, since, until }, 10000);
+                const elapsedMs = Date.now() - startMs;
+                const events = result.events || [];
+                // 格式化为可读文本
+                let text = `📋 事件日志 (${events.length} 条):\n`;
+                for (const ev of events) {
+                    const ts = new Date(ev.t_ingested * 1000).toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" });
+                    text += `  [${ts}] ${ev.src_name} → ${ev.dst_name} | ${(ev.content || "").slice(0, 80)}\n`;
+                }
+                api.logger.debug?.(`${TAG} [tool] claw_events completed via Worker (${elapsedMs}ms)`);
+                return { content: [{ type: "text", text }], details: { count: events.length, elapsedMs, worker: true } };
+            }
+            catch (err) {
+                api.logger.warn?.(`${TAG} [tool] claw_events Worker failed: ${err.message}`);
+                return { content: [{ type: "text", text: `查询事件日志失败: ${err.message}` }], isError: true };
+            }
+        },
+    });
+    // ==========================================
     api.registerTool({
         name: "claw_store",
         label: "Claw Memory Store",

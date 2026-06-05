@@ -748,6 +748,15 @@ class ClawWorker:
         entry = self._ensure_entry()
         return entry.get_status()
 
+    def events(self, p: dict) -> dict:
+        """查询事件日志（TKG 时序事件）"""
+        query = p.get("query", "")
+        limit = p.get("limit", 20)
+        since = p.get("since", 0.0)  # 起始时间戳
+        until = p.get("until", 0.0)  # 截止时间戳
+        entry = self._ensure_entry()
+        return entry.events(query, limit, since, until)
+
     # ==================== 以上为 unified_entry 全接口迁移 ====================
 
     def rccam(self, p: dict) -> dict:
@@ -1373,6 +1382,7 @@ def _init_methods(worker):
         "get_status": worker.get_status,
         "smart_process": worker.smart_process,
         "save_memory": worker.save_memory,
+        "events": worker.events,
     }
 
 

@@ -1400,17 +1400,48 @@ class UnifiedEntry:
         except Exception as e:
             return {"success": False, "error": str(e)}
 
-    def events(self, query: Optional[str] = None, limit: int = 20) -> Dict[str, Any]:
-        """查询事件日志"""
+    def events(self, query: Optional[str] = None, limit: int = 20,
+                 since: float = 0.0, until: float = 0.0) -> Dict[str, Any]:
+        """查询事件日志（直接 sqlite3 按时间戳检索）"""
         try:
-            from temporal_kg import get_temporal_kg
-            _tkg = get_temporal_kg()
+            import sqlite3, os, json
+            _db = os.path.expanduser("~/.openclaw/workspace/temporal_kg.db")
+            if not os.path.exists(_db):
+                return {"error": "temporal_kg.db 不存在"}
+            _conn = sqlite3.connect(_db)
+            _conn.row_factory = sqlite3.Row
+
+            _where = ["e.name LIKE 'event:%'", "te.relation='operated_on'"]
+            _params = []
+
             if query:
-                _q = f"event:{query}"
-            else:
-                _q = "event:"
-            results = _tkg.hybrid_retrieve(_q, top_k=limit)
-            return {"events": results, "total": len(results)}
+                _where.append("(te.content LIKE ? OR d.name LIKE ? OR e.name LIKE ?)")
+                _params.extend([f"%{query}%", f"%{query}%", f"%{query}%"])
+            if since > 0:
+                _where.append("t_ingested >= ?")
+                _params.append(since)
+            if until > 0:
+                _where.append("t_ingested <= ?")
+                _params.append(until)
+
+            _sql = f"""
+                SELECT e.name AS src_name, d.name AS dst_name, te.relation,
+                       te.t_ingested, te.content, te.session_key
+                FROM temporal_edges te
+                JOIN entities e ON te.src_entity = e.entity_id
+                JOIN entities d ON te.dst_entity = d.entity_id
+                WHERE {' AND '.join(_where)}
+                ORDER BY te.t_ingested DESC
+                LIMIT ?
+            """
+            _params.append(limit)
+
+            _rows = _conn.execute(_sql, _params).fetchall()
+            _events = []
+            for r in _rows:
+                _events.append(dict(r))
+            _conn.close()
+            return {"events": _events, "total": len(_events)}
         except Exception as e:
             return {"error": str(e)}
 
@@ -1434,6 +1465,8 @@ def main():
     parser.add_argument("--module", "-m", help="模块名")
     parser.add_argument("--action", "-a", help="动作/函数名")
     parser.add_argument("--top-k", type=int, default=10, help="返回结果数量 (默认: 10)")
+    parser.add_argument("--since", type=float, help="起始时间戳")
+    parser.add_argument("--until", type=float, help="截止时间戳")
     parser.add_argument("--name", "-n", help="名称")
     parser.add_argument("--json", "-j", action="store_true", help="JSON 输出")
     
@@ -1466,7 +1499,7 @@ def main():
         result = entry.forget(args.name)
     
     elif args.command == "events":
-        result = entry.events(args.query, args.top_k or 20)
+        result = entry.events(args.query, args.top_k or 20, args.since or 0.0, args.until or 0.0)
     
     elif args.command == "health":
         result = entry.health_check()

@@ -1,22 +1,22 @@
 ---
 name: xiaoyi-claw-omega-final
-description: GalaxyOS v5.5 — IntelligentThinkingTrigger v2.0 三论文集成 (RCR-Router + Springdrift + A-ToM) + Cognition Forest 子树修正
+description: GalaxyOS v5.6 — ncps 神经电路策略集成 + NLP增强神经网络 + 防幻觉双向闭环 + TKG 事件日志
 author: xkzs2007
 license: MIT-0
-tags: [architecture, memory, llm, rccam, dag, kora, knowledge-graph]
+tags: [architecture, memory, llm, rccam, dag, kora, knowledge-graph, ncps, neural-synapse-network]
 ---
 
-# GalaxyOS v5.5
+# GalaxyOS v5.6
 
 > **定位**: OpenClaw 的核心底层能力引擎
-> **更新时间**: 2026-06-05 09:06
+> **更新时间**: 2026-06-06 07:18
 > **架构层数**: 16 层（含 Layer 0 安装向导）
-> **总能力项**: 440+ 项
+> **总能力项**: 450+ 项
 > **IPC 三通道**: UDS RPC（双向互通，动态注册表）+ ZMQ 事件推送（双向回复）+ mmap 结构化状态（4KB JSON段）
 > **默认通信**: UDS RPC，HTTP :8765 二级降级，无 stdin/stdout，无 spawnSync
 > **IPC 演进**: stdin/stdout → UDS RPC（单 Worker 单例） → **Gateway-Worker 全透明互通（UDS注册表 + mmap 结构化 + ZMQ 双向）**
 > **独立服务线程池**: 6 个（Memory/Retrieval/Session/Thinking/Hardware/HTTP-RPC）
-> **Galaxy 增强** ✅: DAG三维绑定 / Cognition Forest 子树复用 / KoRa 主动能力 / Kernel 持续元认知
+> **Galaxy 增强** ✅: DAG三维绑定 / Cognition Forest 子树复用 / KoRa 主动能力 / Kernel 持续元认知 / **ncps 神经突触网络 (LTC+CfC+遗忘曲线+NLP增强)**
 > **透明互通** ✅: Gateway `_gatewayMethods` 注册表（14 预注册 + 自动 tool.* 暴露）+ Worker `_GatewayProxy`（__getattr__ 透明 RPC）+ mmap 结构化状态（双向零拷贝 + heartbeat 5s）
 
 ---
@@ -25,22 +25,22 @@ tags: [architecture, memory, llm, rccam, dag, kora, knowledge-graph]
 
 GalaxyOS是 OpenClaw 的**核心底层能力引擎**，提供：
 
-1. **记忆能力** — 二层记忆体系（本地记忆系统 + DAG上下文管理）+ 记忆巩固引擎（CLS固化 + 仿生睡眠5阶段周期 + 艾宾浩斯遗忘曲线 + 干扰合并 + 预测编码冲突检测）+ **仿生睡眠巩固引擎（NREM-SWR/NREM-CASCADE/REM-GENERATIVE/REM-EMOTION/DEEP-SLEEP + KG睡眠图推理 + Dreaming Bridge双向同步）** + 隐式偏好学习
+1. **记忆能力** — 二层记忆体系（本地记忆系统 + DAG上下文管理）+ 记忆巩固引擎（CLS固化 + 仿生睡眠5阶段周期 + 艾宾浩斯遗忘曲线 + 干扰合并 + 预测编码冲突检测）+ **仿生睡眠巩固引擎（NREM-SWR/NREM-CASCADE/REM-GENERATIVE/REM-EMOTION/DEEP-SLEEP + KG睡眠图推理 + Dreaming Bridge双向同步）** + 隐式偏好学习 + **ncps 神经突触记忆网络（LTC+CfC+遗忘曲线+NLP增强）**
 2. **检索能力** — 向量检索 + 知识图谱 + Self-RAG + CRAG 混合检索 + CRAG 动态纠错 + 场景锚定注入（Drawing on Memory 双迹编码 + GRAVITY 结构锚定）+ bge-reranker-v2-m3 重排序 + 预测编码冲突检测 + GraphRAG社区检测 [MS 2024] + RAPTOR分层摘要树 [Sarthi 2024]
 3. **智能处理能力** — 查询改写（Pro）+ 结果总结（Flash）+ 语义过滤 + 图像理解（SmartProcessor 三模型通道：Flash/Pro/VLM）+ 自进化上下文注入 + Flash 开推理场景编码 + KV 缓存优化 + Flash NLP 路由 + **用户画像驱动内在元认知分析（Flash以用户视角分析体验数据→惰性激活下游模块）**
 4. **思考能力** — IntelligentThinkingTrigger v2.0 (RCR-Router动态评分 + Springdrift CBR记忆 + A-ToM认知推断) + 20方法论 + 10工程技能 + 决策引擎 + Reflexion 反思 [Shinn 2023] + Self-Refine 迭代精炼 [Madaan 2023] + Multi-Path 多路径并行探索 [Yao 2023] + Toolformer 工具路由 [Meta 2023] + GA 反思 [Park 2023]
 5. **执行能力** — 44 个工作流全 IPC 并行调度 + R-CCAM 结构化认知循环（统一深度管线）+ DAG 上下文中继 + Worker UDS 主通道（Plugin直连，无stdin/stdout）+ ZMQ 事件推送 + mmap 共享内存 + Worker 自动重启 + **Merge Gate** + 后台4论文引擎并行 + **Galaxy DAG 三维绑定（semantic_map/function_map/design_ref 全链路传递）**
 6. **多模态能力** — 图像理解（三引擎: xiaoyi + DeepSeek-OCR-2 + GLM-4.6V-Flash VLM）+ 图像生成（seedream）+ OCR2 深度整合 + VLM 第三通道 + Visual RAG（Cognition 阶段自动 OCR2/VLM 提取→上下文注入）
-7. **可靠性能力** — 防幻觉 10 重检测 + 自我修复 + 故障转移 + ACP 持久化通道 + 全局上下文窗口比例压缩 + 自进化决策执行层 + 系统消息噪声过滤 + **Rails 护栏增强版** + 隐式偏好学习 + Worker 自动重启 + Merge Gate 合入门禁 + **人格视觉** + **用户画像驱动内在元认知进化** + **Galaxy KoRa 主动能力（行为建模+模式识别）** + **Galaxy Kernel 持续元认知后台**
+7. **可靠性能力** — 防幻觉 10 重检测 + 自我修复 + 故障转移 + ACP 持久化通道 + 全局上下文窗口比例压缩 + 自进化决策执行层 + 系统消息噪声过滤 + **Rails 护栏增强版** + 隐式偏好学习 + Worker 自动重启 + Merge Gate 合入门禁 + **人格视觉** + **用户画像驱动内在元认知进化** + **Galaxy KoRa 主动能力（行为建模+模式识别）** + **Galaxy Kernel 持续元认知后台** + **防幻觉→神经网络双向闭环（LTP/LTD + verified_memories 持久化）**
 
 ---
 
-| **文档版本**: v5.5 | 2026-06-05 09:06 | IntelligentThinkingTrigger v2.0 三论文集成 + Cognition Forest 子树修正 |
+| **文档版本**: v5.6 | 2026-06-06 07:18 | ncps 神经电路策略集成 + NLP 增强神经网络 + 防幻觉双向闭环 + TKG 事件日志 |
 
 ---
 
 *GalaxyOS — OpenClaw 的核心底层能力引擎*
-*文档版本: v5.5 | 最后更新: 2026-06-05 09:06 | IntelligentThinkingTrigger v2.0 三论文集成 + Cognition Forest 子树修正*
+*文档版本: v5.6 | 最后更新: 2026-06-06 07:18 | ncps 神经电路策略集成 + NLP 增强神经网络 + 防幻觉双向闭环 + TKG 事件日志*
 
 ---
 
@@ -670,6 +670,19 @@ claw.verify_image_claim("图片路径", "声明内容")
 | 思考内容截断 | **500→2000** | 2026-06-02 |
 | DAG 上下文排序 | **时间衰减权重重排序** | 2026-06-02 |
 | install_wizard.py | **6 阶段全自动自检 + `--kg-test` 专项测试** | 2026-06-02 |
+
+### v5.6 (2026-06-06) — ncps 神经电路策略集成 + NLP 增强神经网络 + 防幻觉双向闭环 + TKG 事件日志
+
+- ⭐ **ncps 神经电路策略集成** — LTC (Liquid Time-Constant) 15参数神经元 + CfC (Closed-form Continuous-depth) 序列预测 + 遗忘曲线训练，每轮对话自动创建神经元/突触，非阻塞 try/except 并行侧效应
+- ⭐ **memory_synapse_network.py (573+行)** — 全新服务模块：MemoryNeuron（LTC 参数/15 键）/ NeuronManager（_nlp_extract + _nlp_semantic_similarity + content 去重）/ SynapseManager（LTP/LTD）/ CfCSynapseEngine（max_history=200）/ ForgettingCurveTrainer（10轮间隔）
+- ⭐ **NLP 增强神经网络** — MemoryNeuron 新增 4 字段 (nlp_keywords/entities/sentiment/importance)，create_neuron 自动 jieba 分词 + NER + 情感分析 + 重要度评分，去重支持 Jaccard 语义兜底（≥0.5），突触权重基于关键词/实体重叠动态计算 (0.3 + 0.4*kw_jaccard + 0.3*ent_jaccard), ltc_hidden 受 nlp_importance 调制 (0.5 + (imp-0.5)*0.3)
+- ⭐ **4 增强 NLP 模块全接入** — 依存句法分析（LightweightDependencyParser 6 关系类型）→ 实体链接（KnowledgeBaseLinker 内置+自定义实体库）→ 指代消解（CoreferenceResolver 人称/指示代词）→ 对比句检测（ComparisonDetector）结果写入神经元 metadata + 自动创建实体关联神经元
+- ⭐ **防幻觉双向闭环** — EnhancedHallucinationGuard 验证结果回流神经网络：置信度 < 0.5 → SynapseManager.ltd() 削弱突触，> 0.8 → ltp() 强化突触。高置信度问答持久化到 verified_memories.jsonl（search_internal_memory 自动读取）
+- ⭐ **biorhythm_sleep_consolidation LTCCell** — 仿生睡眠 REM 阶段可从神经元 ltc_cell_params 重建 LTCCell，梦境阶段调用 LTC 激活获取真实 hidden state，NLP 实体链约束碎片拼装
+- ⭐ **claw-core 扩展** — extensions/claw-core/index.js 新增 TKG 事件日志系统 (TKG-powered event logging)
+- ⭐ **services 目录更新** — `memory_synapse_network.py` 新增 (573+行)，`biorhythm_sleep_consolidation.py` 重构 (+290/-110 行)，`xiaoyi_claw_api.py` 新增 _init_neural + ncps 神经代码 (+279 行)，`claw_worker.py` 优化 Worker 逻辑
+- 📦 **ncps 依赖** — requirements.txt 新增 ncps>=1.0.0
+- 📦 **统计数据更新**：总能力项 450+，新增 10+ v5.6 指标
 
 ### v5.5 (2026-06-05) — IntelligentThinkingTrigger v2.0 三论文集成 + Cognition Forest 子树修正
 
