@@ -1,11 +1,11 @@
 # 🌌 GalaxyOS — 认知增强引擎
 
 > OpenClaw 的开源认知增强引擎，为 AI Assistant 提供记忆、检索、推理、验证、自进化等全套认知能力
-> 版本: v5.4 · KG as Memory Backbone 4 阶段全链路 + KoRa v2 + DAG 持久化
+> 版本: v5.5 · IntelligentThinkingTrigger v2.0 三论文集成 (RCR-Router + Springdrift + A-ToM) + Cognition Forest 子树修正
 
 ## 总览
 
-`GalaxyOS`（前身：小艺 Claw 系统）是 **OpenClaw 的底层认知增强引擎**。提供 **15 层架构、430+ 功能项、144+ 服务模块**，覆盖从记忆管理到认知推理的全链路。
+`GalaxyOS`（前身：小艺 Claw 系统）是 **OpenClaw 的底层认知增强引擎**。提供 **15 层架构、440+ 功能项、144+ 服务模块**，覆盖从记忆管理到认知推理的全链路。
 
 ### 核心能力
 
@@ -16,7 +16,7 @@
 | **智能处理** | 查询改写（Pro）/ 结果总结（Flash）/ 语义过滤 / 图像理解（SmartProcessor 三模型通道：Flash/Pro/VLM）+ Visual RAG 自动 OCR2 触发 |
 | **认知循环（R-CCAM）** | 五阶段结构化认知循环：Retrieval→Cognition→Control→Action→Memory，元认知 5 种动态策略调节器 + 异步注入三层兜底 |
 | **Galaxy Kernel** | 独立后台元认知线程（6s轮询），持 Reflexion 记录 + 自进化产出，不阻塞主推理。process() 精简 **70%**（863→254行） |
-| **思考方法论** | 20 个思考方法论技能 + Reflexion + Self-Refine + Multi-Path + Toolformer + 10 论文引擎全量集成 |
+| **思考方法论** | 20 个思考方法论技能 + **IntelligentThinkingTrigger v2.0**（RCR-Router 动态评分 + Springdrift CBR 记忆 + A-ToM 认知阶段推断） |
 | **防幻觉** | 10 重交叉验证 + 多源证据 + 矛盾检测 + CRAG 动态纠错 + Rails 护栏增强版 |
 | **自进化** | 隐式偏好学习 + Galaxy Kernel 自进化（~10分钟/次，4条/轮进化建议）+ 动态锚定（574 条触发词匹配） |
 | **IPC 通信** | UDS RPC（一级主通道注册表，14 预注册方法）+ ZMQ 事件推送（双向回复）+ mmap 共享内存（4KB JSON段，双向零拷贝 + heartbeat 5s）|
@@ -38,6 +38,9 @@ GalaxyOS/
 │   ├── spatial_topology.py       # 空间拓扑
 │   ├── self_evolution_engine.py  # 自进化引擎
 │   ├── thinking_enhanced.py      # 思考增强 (_extract_json_block)
+│   ├── intelligent_thinking_trigger.py  # v2.0 三论文集成引擎 (新增)
+│   ├── skill_scorer.py           # RCR-Router 动态评分引擎 (新增)
+│   ├── thinking_memory.py        # Springdrift CBR 记忆层 (新增)
 │   ├── ... (共 144+ 个模块)
 ├── extensions/        # OpenClaw 扩展插件
 │   ├── claw-core/     # 核心插件 (UDS+ZMQ+mmap 三通道 + ContextEngine + Hook)
@@ -153,7 +156,8 @@ python3 -m services.xiaoyi_claw_api recall --query "查询"
 
 | 版本 | 文件 | 说明 |
 |------|------|------|
-| **v5.4 (最新)** | `docs/xiaoyi-claw-core-architecture-v5.0.md` | **KG as Memory Backbone 4 阶段** + 检索通道 + Cognition 图推理 + 睡眠图维护 |
+| **v5.5 (最新)** | `docs/xiaoyi-claw-core-architecture-v5.0.md` | **IntelligentThinkingTrigger v2.0** 三论文集成 (RCR-Router + Springdrift + A-ToM) + Cognition Forest 子树修正 + core 子模块全面同步 |
+| **v5.4** | `docs/xiaoyi-claw-core-architecture-v5.0.md` | **KG as Memory Backbone 4 阶段** + 检索通道 + Cognition 图推理 + 睡眠图维护 |
 | **v5.2** | `docs/xiaoyi-claw-core-architecture-v5.0.md` | **KoRa v2 行为模式引擎** + DAG 上下文持久化修复 |
 | **v5.1** | `docs/xiaoyi-claw-core-architecture-v5.0.md` | **R-CCAM 延迟优化** + 四思考技能管道重架构 + DAG 上下文管理器升级 + 安装向导 |
 | v4.6 | `docs/xiaoyi-claw-core-architecture-v4.6.md` | SmartProcessor 统一路由 + 三通道透明互通 |
@@ -165,6 +169,17 @@ python3 -m services.xiaoyi_claw_api recall --query "查询"
 | v3.0.0 | `docs/xiaoyi-claw-core-architecture-v3.0.0.md` | 16 层架构、R-CCAM 认知循环 |
 
 **完整架构文档（含 15 层全景图、440+ 功能列表、更新日志）：** 👉 [📖 查看 Skills 文档栏](https://cnb.cool/llm-memory-integrat/GalaxyOS?tabValue=SKILLS-ov-file)
+
+### v5.5 新特性
+
+| 特性 | 说明 |
+|------|------|
+| **IntelligentThinkingTrigger v2.0** | 三论文集成：RCR-Router 动态评分 + Springdrift CBR 记忆 + A-ToM 认知阶段推断，替换静态关键词匹配 |
+| **skill_scorer.py (28KB) — RCR-Router 引擎** | 30 个 SkillDescriptor 元数据，四维评分 (semantic 0.40 / role 0.20 / stage 0.15 / history 0.10)，贪心路由 top-3 |
+| **thinking_memory.py (14KB) — Springdrift CBR 层** | ThinkingCase 结构 + Sensorium 持续自感知 + 持久化 JSON，支持相似 case 召回 |
+| **A-ToM 认知阶段推断** | 6 阶段 (explore/analyze/verify/breakdown/plan/decide)，pattern 重构：`为什么`→verify, debug 关键词补全 |
+| **Cognition Forest 子树内容修正** | user←用户画像 (IDENTITY/SOUL/USER), self←系统能力 (92技能列表), env/meta 不变，注入逻辑修正在 xiaoyi_claw_api.py |
+| **core/ 子模块全面同步** | 80 个核心子模块 (api/integration/memory/privileged) 补齐，omega-final 与 GalaxyOS 仓库一致 |
 
 ### v5.4 新特性
 
@@ -234,7 +249,7 @@ Galaxy Kernel（后台，6s 轮询）
 | L5 | 知识图谱层 | 实体链接 + 关系抽取 + 三元组 + 时序KG (Graphiti) |
 | L6 | 智能处理层 | SmartProcessor (Flash/Pro/VLM) + Visual RAG |
 | L7 | 缓存优化层 | KV Cache 硬件磁盘复用 + 语义缓存 + ACP 持久化 |
-| L8 | 思考技能层 | 20 方法论 + Reflexion + Self-Refine + 10 论文引擎 |
+| L8 | 思考技能层 | **IntelligentThinkingTrigger v2.0** (RCR-Router + Springdrift + A-ToM) + 20方法论 + Reflexion + 10论文引擎 |
 | L9 | 认知循环层 (R-CCAM) | 五阶段循环 + Galaxy Kernel 异步 + 三层兜底注入 |
 | L10 | Persona 层 | 人格七重防线 + 自进化上下文注入 |
 | L11 | Agent 层 | 9 思考技能 + 11 方法论技能 + 技能协调器 |

@@ -1,15 +1,15 @@
 ---
 name: xiaoyi-claw-omega-final
-description: GalaxyOS v5.4 — KG as Memory Backbone 4 阶段全链路 + KoRa v2 + DAG 持久化
+description: GalaxyOS v5.5 — IntelligentThinkingTrigger v2.0 三论文集成 (RCR-Router + Springdrift + A-ToM) + Cognition Forest 子树修正
 author: xkzs2007
 license: MIT-0
 tags: [architecture, memory, llm, rccam, dag, kora, knowledge-graph]
 ---
 
-# GalaxyOS v5.4
+# GalaxyOS v5.5
 
 > **定位**: OpenClaw 的核心底层能力引擎
-> **更新时间**: 2026-06-02 21:00
+> **更新时间**: 2026-06-05 09:06
 > **架构层数**: 16 层（含 Layer 0 安装向导）
 > **总能力项**: 440+ 项
 > **IPC 三通道**: UDS RPC（双向互通，动态注册表）+ ZMQ 事件推送（双向回复）+ mmap 结构化状态（4KB JSON段）
@@ -28,19 +28,19 @@ GalaxyOS是 OpenClaw 的**核心底层能力引擎**，提供：
 1. **记忆能力** — 二层记忆体系（本地记忆系统 + DAG上下文管理）+ 记忆巩固引擎（CLS固化 + 仿生睡眠5阶段周期 + 艾宾浩斯遗忘曲线 + 干扰合并 + 预测编码冲突检测）+ **仿生睡眠巩固引擎（NREM-SWR/NREM-CASCADE/REM-GENERATIVE/REM-EMOTION/DEEP-SLEEP + KG睡眠图推理 + Dreaming Bridge双向同步）** + 隐式偏好学习
 2. **检索能力** — 向量检索 + 知识图谱 + Self-RAG + CRAG 混合检索 + CRAG 动态纠错 + 场景锚定注入（Drawing on Memory 双迹编码 + GRAVITY 结构锚定）+ bge-reranker-v2-m3 重排序 + 预测编码冲突检测 + GraphRAG社区检测 [MS 2024] + RAPTOR分层摘要树 [Sarthi 2024]
 3. **智能处理能力** — 查询改写（Pro）+ 结果总结（Flash）+ 语义过滤 + 图像理解（SmartProcessor 三模型通道：Flash/Pro/VLM）+ 自进化上下文注入 + Flash 开推理场景编码 + KV 缓存优化 + Flash NLP 路由 + **用户画像驱动内在元认知分析（Flash以用户视角分析体验数据→惰性激活下游模块）**
-4. **思考能力** — 9 个思考技能 + 11 个方法论技能 + 10 个 Matt Pocock 工程技能 + 决策引擎 + 多智能体协作 + 全部 29 技能 SKILL.md 上下文注入 + Reflexion 反思 [Shinn 2023] + Self-Refine 迭代精炼 [Madaan 2023] + Multi-Path 多路径并行探索 [Yao 2023] + Toolformer 工具路由 [Meta 2023] + GA 反思 [Park 2023]
+4. **思考能力** — IntelligentThinkingTrigger v2.0 (RCR-Router动态评分 + Springdrift CBR记忆 + A-ToM认知推断) + 20方法论 + 10工程技能 + 决策引擎 + Reflexion 反思 [Shinn 2023] + Self-Refine 迭代精炼 [Madaan 2023] + Multi-Path 多路径并行探索 [Yao 2023] + Toolformer 工具路由 [Meta 2023] + GA 反思 [Park 2023]
 5. **执行能力** — 44 个工作流全 IPC 并行调度 + R-CCAM 结构化认知循环（统一深度管线）+ DAG 上下文中继 + Worker UDS 主通道（Plugin直连，无stdin/stdout）+ ZMQ 事件推送 + mmap 共享内存 + Worker 自动重启 + **Merge Gate** + 后台4论文引擎并行 + **Galaxy DAG 三维绑定（semantic_map/function_map/design_ref 全链路传递）**
 6. **多模态能力** — 图像理解（三引擎: xiaoyi + DeepSeek-OCR-2 + GLM-4.6V-Flash VLM）+ 图像生成（seedream）+ OCR2 深度整合 + VLM 第三通道 + Visual RAG（Cognition 阶段自动 OCR2/VLM 提取→上下文注入）
 7. **可靠性能力** — 防幻觉 10 重检测 + 自我修复 + 故障转移 + ACP 持久化通道 + 全局上下文窗口比例压缩 + 自进化决策执行层 + 系统消息噪声过滤 + **Rails 护栏增强版** + 隐式偏好学习 + Worker 自动重启 + Merge Gate 合入门禁 + **人格视觉** + **用户画像驱动内在元认知进化** + **Galaxy KoRa 主动能力（行为建模+模式识别）** + **Galaxy Kernel 持续元认知后台**
 
 ---
 
-| **文档版本**: v5.4 | 2026-06-02 21:00 | KG as Memory Backbone 4 阶段全链路 + KoRa v2 + 检索修复 |
+| **文档版本**: v5.5 | 2026-06-05 09:06 | IntelligentThinkingTrigger v2.0 三论文集成 + Cognition Forest 子树修正 |
 
 ---
 
 *GalaxyOS — OpenClaw 的核心底层能力引擎*
-*文档版本: v5.4 | 最后更新: 2026-06-02 21:00 | 4 阶段: 实体持久化 + 图检索主通道 + Cognition 图推理 + 睡眠图维护*
+*文档版本: v5.5 | 最后更新: 2026-06-05 09:06 | IntelligentThinkingTrigger v2.0 三论文集成 + Cognition Forest 子树修正*
 
 ---
 
@@ -316,8 +316,8 @@ GalaxyOS是 OpenClaw 的**核心底层能力引擎**，提供：
 │  └─────────────────────────────────────────────────────────────────────┘   │
 │                                    │                                        │
 │  ┌─────────────────────────────────────────────────────────────────────┐   │
-│  │                    Layer 12: 思考技能层                             │   │
-│  │  9 个思考技能:                                                       │   │
+│  │                    Layer 12: 思考技能层 (IntelligentThinkingTrigger v2.0)    │   │
+│  │  IntelligentThinkingTrigger v2.0 三论文集成 (RCR-Router + Springdrift + A-ToM):                                                       │   │
 │  │  第一性原理 | 系统思维 | 批判性思维 | 逆向思维 | 类比思维           │   │
 │  │  费曼技巧 | 多智能体协作 | 决策引擎 | 产品思维                      │   │
 │  │                                                                      │   │
@@ -616,7 +616,7 @@ claw.verify_image_claim("图片路径", "声明内容")
 | 弹性系统加载组件 | **57 个** | 2026-04-27 |
 | 技能数 | **93 个** | 2026-05-12 |
 | 工作流 | **44 个** | 2026-05-05 |
-| 思考技能 | **20 个** | 2026-05-12 |
+| 思考技能 | **20 个** (IntelligentThinkingTrigger v2.0) | 2026-06-05 |
 | 工程与效率技能 (Matt Pocock) | **10 个** | 2026-05-12 |
 | 插件数 | **2 个** | 2026-05-12 |
 | Core Skills | **5 个** | 2026-05-05 |
@@ -661,12 +661,26 @@ claw.verify_image_claim("图片路径", "声明内容")
 | 时空认知论文 | **3 篇** (Graphiti/AriGraph/LASAR) | 2026-05-27 |
 | 10论文验证 | **8 编译通过** | 2026-05-27 |
 | 自进化首轮产出 | **4 条进化建议** | 2026-05-28 |
+| IntelligentThinkingTrigger v2.0三论文集成 | **3 模块** (skill_scorer/thinking_memory/trigger) | 2026-06-05 |
+| Cognition Forest 修正 | **4 子树** (user/self/env/meta) | 2026-06-05 |
+| core/ 子模块全面同步 | **80 模块** (api/integration/memory/privileged) | 2026-06-05 |
 | 问候快速通路 | **~24s→0.1s (240×)** | 2026-06-02 |
 | R-CCAM 全链路 | **优化后 10-15s 目标** | 2026-06-02 |
 | thinking_skills_content | **分离 skill_guide 独立字段** | 2026-06-02 |
 | 思考内容截断 | **500→2000** | 2026-06-02 |
 | DAG 上下文排序 | **时间衰减权重重排序** | 2026-06-02 |
 | install_wizard.py | **6 阶段全自动自检 + `--kg-test` 专项测试** | 2026-06-02 |
+
+### v5.5 (2026-06-05) — IntelligentThinkingTrigger v2.0 三论文集成 + Cognition Forest 子树修正
+
+- ⭐ **IntelligentThinkingTrigger v2.0** — 三论文集成：RCR-Router（北大等8机构）动态评分引擎 `skill_scorer.py` (28KB, 30 SkillDescriptor) + Springdrift (arXiv 2604.04660) CBR 记忆层 `thinking_memory.py` (14KB) + A-ToM（AAAI 2026, 西北工业大学）认知阶段6推断
+- ⭐ **RCR-Router 动态评分** — 四维评分: semantic(0.40)/role(0.20)/stage(0.15)/history(0.10)，贪心路由 top-3 非重复互补
+- ⭐ **Springdrift CBR** — ThinkingCase 结构 + Sensorium 持续自感知 + 持久化到 JSON，支持相似 case 召回
+- ⭐ **A-ToM 认知阶段推断** — 6阶段 (explore/analyze/verify/breakdown/plan/decide)，pattern 重构：`为什么`→verify, debug 关键词补全
+- ⭐ **Cognition Forest 子树内容修正** — user←用户画像 (IDENTITY/SOUL/USER), self←系统能力 (92技能列表), env/meta 不变。运行时 `xiaoyi_claw_api.py` 注入逻辑修复
+- ⭐ **core/ 子模块全面同步** — 80 个核心子模块 (api/integration/memory/privileged) 补齐，omega-final 与 GalaxyOS 仓库一致
+- 📦 **统计数据更新**：新增 6 项 v5.5 指标
+
 
 ### v5.4 (2026-06-02) — 检索全面修复（JSON污染 + RRF分数压扁 + 多源交叉验证）
 
