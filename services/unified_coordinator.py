@@ -53,7 +53,6 @@ class ModuleType(Enum):
     # Layer 1.6: 集成与管理模块
     RULES_MANAGER = "rules_manager"
     AUTONOMOUS_INTEGRATOR = "autonomous_integrator"
-
     FULL_INTEGRATION = "full_integration"
     XIAOYI_MEMORY_V2 = "xiaoyi_memory_v2"
     OPTIMIZATION_INTEGRATION = "optimization_integration"
@@ -270,7 +269,6 @@ MODULE_REGISTRY: Dict[str, ModuleInfo] = {
         layer=1,
         dependencies=["proactive_tasks", "brain", "today_task"]
     ),
-
     "full_integration": ModuleInfo(
         name="full_integration",
         module_type=ModuleType.FULL_INTEGRATION,
@@ -1546,8 +1544,6 @@ class UnifiedCoordinator:
                 ("heartbeat_task_executor", "记录执行结果"),
             ],
             
-
-            
             # 完整集成流程
             "full_integrated_recall": [
                 ("full_integration", "CRAG 纠错检索"),
@@ -2087,7 +2083,6 @@ class UnifiedCoordinator:
             "rule_management": "规则管理：加载/验证/摘要",
             "rule_sync": "规则同步：检测变更/同步/更新触发词",
             "autonomous_execution": "自主任务执行：检查/执行/更新/记录",
-
             "full_integrated_recall": "完整集成检索：CRAG/混合/思考/自主/向量",
             "smart_recall_flow": "智能召回流程：统一入口/完整集成/三级内存/验证",
             "smart_answer_flow": "智能回答流程：统一入口/检索决策/知识检索/多源验证",
@@ -2861,7 +2856,6 @@ INTEGRATED_WORKFLOWS = {
         ("synapse_network", "创建关联"),
         ("emotion_memory", "计算重要性")
     ],
-
     "full_recall": [
         ("full_integration", "完整集成入口"),
         ("crag_pipeline", "CRAG纠错"),

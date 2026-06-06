@@ -990,18 +990,6 @@ class UnifiedEntry:
                     "errors": []
                 }
             
-            elif scenario == "tencentdb_sync":
-                # tencentdb 记忆插件已移除（功能被 UnifiedVectorStore + DAG 替代）
-                sync_results = {"synced_to_memory": 0, "errors": []}
-                return {
-                    "workflow": scenario, "status": "skipped",
-                    "reason": "tencentdb 记忆插件已移除，由 UnifiedVectorStore + DAG 替代",
-                    "steps_executed": 0, "steps_total": 0,
-                    "duration_ms": int((_time.time() - start) * 1000),
-                    "results": sync_results,
-                    "errors": sync_results.get("errors", [])
-                }
-            
             # full_recall: 全量检索
             elif scenario == "full_recall":
                 query = input_data.get("query", "") if isinstance(input_data, dict) else str(input_data or "")
