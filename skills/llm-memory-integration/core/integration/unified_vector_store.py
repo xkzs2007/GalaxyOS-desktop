@@ -55,7 +55,7 @@ class VectorStoreBackend(ABC):
 class SQLiteVecBackend(VectorStoreBackend):
     """sqlite-vec 后端"""
     
-    def __init__(self, db_path: str, dim: int = 4096):
+    def __init__(self, db_path: str, dim: int = 1024):
         self.db_path = db_path
         self.dim = dim
         self._init_db()
@@ -91,7 +91,15 @@ class SQLiteVecBackend(VectorStoreBackend):
         count = 0
         for record in records:
             try:
-                vector_bytes = np.array(record.vector, dtype=np.float32).tobytes()
+                vec = np.array(record.vector, dtype=np.float32)
+                # 自动补齐到目标维度（不足的补零，超出截断）
+                if len(vec) < self.dim:
+                    padded = np.zeros(self.dim, dtype=np.float32)
+                    padded[:len(vec)] = vec
+                    vec = padded
+                elif len(vec) > self.dim:
+                    vec = vec[:self.dim]
+                vector_bytes = vec.tobytes()
                 cursor.execute('''
                     INSERT OR REPLACE INTO vectors (id, content, metadata, source, embedding)
                     VALUES (?, ?, ?, ?, ?)
@@ -125,8 +133,12 @@ class SQLiteVecBackend(VectorStoreBackend):
         rows = cursor.fetchall()
         conn.close()
         
-        # 计算相似度
+        # 如果查询向量维度小于存储维度，补零对齐
         query_vec = np.array(query_vector, dtype=np.float32)
+        if len(query_vec) < self.dim:
+            padded = np.zeros(self.dim, dtype=np.float32)
+            padded[:len(query_vec)] = query_vec
+            query_vec = padded
         query_norm = np.linalg.norm(query_vec)
         
         results = []
@@ -134,7 +146,7 @@ class SQLiteVecBackend(VectorStoreBackend):
             id_, content, metadata, source, embedding_bytes = row
             vec = np.frombuffer(embedding_bytes, dtype=np.float32) if (embedding_bytes and len(embedding_bytes) > 0) else None
             
-            if vec is None or len(vec) != len(query_vector):
+            if vec is None or len(vec) != self.dim:
                 continue
             
             vec_norm = np.linalg.norm(vec)
@@ -179,10 +191,147 @@ class SQLiteVecBackend(VectorStoreBackend):
         return count
 
 
+class HNSWLibBackend(VectorStoreBackend):
+    """HNSWLib 后端 — 基于 hnswlib"""
+
+    def __init__(self, index_path: str, dim: int = 1024, ef_construction: int = 200, M: int = 16):
+        self.index_path = index_path
+        self.dim = dim
+        self.ef_construction = ef_construction
+        self.M = M
+        self.index = None
+        self.id_map: Dict[int, str] = {}   # hnsw internal_id -> str_id
+        self.rev_map: Dict[str, int] = {}  # str_id -> hnsw internal_id
+        self.records: Dict[str, VectorRecord] = {}
+        self._next_id = 0
+        self._init_index()
+
+    def _init_index(self):
+        import hnswlib
+        if os.path.exists(self.index_path):
+            try:
+                self.index = hnswlib.Index(space='ip', dim=self.dim)
+                self.index.load_index(self.index_path)
+                # 加载元数据
+                meta_path = self.index_path + '.meta'
+                if os.path.exists(meta_path):
+                    with open(meta_path, 'r') as f:
+                        meta = json.load(f)
+                        self._next_id = meta.get('next_id', 0)
+                        for sid, rec_dict in meta.get('records', {}).items():
+                            self.records[sid] = VectorRecord(**rec_dict)
+                        # 重建 id_map 和 rev_map
+                        id_map_raw = meta.get('id_map', {})
+                        for int_id_str, str_id in id_map_raw.items():
+                            self.id_map[int(int_id_str)] = str_id
+                            self.rev_map[str_id] = int(int_id_str)
+                return
+            except Exception:
+                pass  # 无法加载，重建
+
+        self.index = hnswlib.Index(space='ip', dim=self.dim)
+        self.index.init_index(max_elements=10000, ef_construction=self.ef_construction, M=self.M)
+
+    def _save_index(self):
+        import hnswlib
+        os.makedirs(os.path.dirname(self.index_path), exist_ok=True)
+        self.index.save_index(self.index_path)
+        meta_path = self.index_path + '.meta'
+        with open(meta_path, 'w') as f:
+            json.dump({
+                'next_id': self._next_id,
+                'id_map': {str(k): v for k, v in self.id_map.items()},
+                'records': {sid: {
+                    'id': r.id, 'vector': r.vector, 'metadata': r.metadata,
+                    'content': r.content, 'source': r.source
+                } for sid, r in self.records.items()}
+            }, f)
+
+    def add(self, records: List[VectorRecord]) -> int:
+        import numpy as np
+        old_count = self.index.element_count
+        need = len(records)
+        if old_count + need > self.index.max_elements:
+            self.index.resize_index(old_count + need + 10000)
+
+        for record in records:
+            vec = np.array(record.vector, dtype=np.float32).reshape(1, -1)
+            internal_id = self._next_id
+            self.index.add_items(vec, [internal_id])
+            self.id_map[internal_id] = record.id
+            self.rev_map[record.id] = internal_id
+            self.records[record.id] = record
+            self._next_id += 1
+
+        self._save_index()
+        return len(records)
+
+    def search(self, query_vector: List[float], top_k: int = 10,
+               filters: Optional[Dict] = None) -> List[Tuple[VectorRecord, float]]:
+        import numpy as np
+        if self.index.element_count == 0:
+            return []
+
+        q = np.array(query_vector, dtype=np.float32)
+        # 自动补齐到索引维度
+        if len(q) < self.dim:
+            padded = np.zeros(self.dim, dtype=np.float32)
+            padded[:len(q)] = q
+            q = padded
+        q = q.reshape(1, -1)
+
+        k = min(top_k, self.index.element_count)
+        labels, distances = self.index.knn_query(q, k=k)
+
+        results = []
+        for i in range(len(labels[0])):
+            internal_id = labels[0][i]
+            sid = self.id_map.get(internal_id)
+            if sid is None:
+                continue
+            record = self.records.get(sid)
+            if record is None:
+                continue
+            if filters and 'source' in filters:
+                if record.source != filters['source']:
+                    continue
+            results.append((record, float(distances[0][i])))
+
+        return results
+
+    def delete(self, ids: List[str]) -> int:
+        """HNSWLib 不支持直接删除，标记删除后重建"""
+        count = 0
+        to_keep = []
+        for sid, rec in self.records.items():
+            if sid in ids:
+                count += 1
+            else:
+                to_keep.append(rec)
+
+        if count == 0:
+            return 0
+
+        import hnswlib
+        self.index = hnswlib.Index(space='ip', dim=self.dim)
+        self.index.init_index(max_elements=max(10000, len(to_keep) + 1000),
+                              ef_construction=self.ef_construction, M=self.M)
+        self.id_map.clear()
+        self.rev_map.clear()
+        self.records.clear()
+        self._next_id = 0
+        if to_keep:
+            self.add(to_keep)
+        return count
+
+    def count(self) -> int:
+        return self.index.element_count if self.index else 0
+
+
 class FAISSBackend(VectorStoreBackend):
     """FAISS 后端"""
     
-    def __init__(self, index_path: str, dim: int = 4096):
+    def __init__(self, index_path: str, dim: int = 1024):
         self.index_path = index_path
         self.dim = dim
         self.index = None
@@ -298,10 +447,10 @@ class UnifiedVectorStore:
     """
     
     def __init__(self, 
-                 backend: str = 'sqlite',
+                 backend: str = 'hnswlib',
                  db_path: Optional[str] = None,
                  index_path: Optional[str] = None,
-                 dim: int = 4096):
+                 dim: int = 1024):
         """
         初始化统一向量存储
         
@@ -321,8 +470,16 @@ class UnifiedVectorStore:
             index_path = str(Path(openclaw_home) / 'memory-tdai' / 'unified_vectors.faiss')
         
         # 初始化后端
-        if backend == 'faiss':
+        if backend == 'hnswlib':
             try:
+                import hnswlib
+                self.backend = HNSWLibBackend(index_path, dim)
+            except ImportError:
+                logger.warning("HNSWLib 不可用，回退到 SQLite")
+                self.backend = SQLiteVecBackend(db_path, dim)
+        elif backend == 'faiss':
+            try:
+                import faiss
                 self.backend = FAISSBackend(index_path, dim)
             except ImportError:
                 logger.warning("FAISS 不可用，回退到 SQLite")

@@ -200,13 +200,13 @@ class XiaoYiClawLLM:
         logger.info("小艺 Claw 大模型初始化完成")
 
     def _init_vector_store(self):
-        """初始化向量存储(优先 hnswlib,降级 sqlite)"""
+        """初始化向量存储(sqllite, 128维, 与 text-embedding-v1.0 一致)"""
         try:
             from unified_vector_store import UnifiedVectorStore
-            backend = self.config.get('vector_backend', 'hnswlib')
+            # 数据已迁移为 128 维 text-embedding-v1.0，使用 SQLite 后端
             self.vector_store = UnifiedVectorStore(
-                backend=backend,
-                dim=self.config.get('vector_dim', 1024)
+                backend='sqlite',
+                dim=128
             )
         except Exception as e:
             logger.warning(f"向量存储初始化失败: {e}")
@@ -420,24 +420,38 @@ class XiaoYiClawLLM:
             logger.info(f"LLM 客户端初始化: flash={self.llm_flash is not None}, pro={self.llm_pro is not None}")
 
             # ===== 嵌入客户端(用于 recall 自动生成查询向量) =====
+            # 使用 OpenClaw 内置 text-embedding-v1.0（128d），与 memory_core_import 数据维度一致
             self.embedding = None
-            self.embedding_model = "bge-m3"
-            self.embedding_dim = 1024
+            self.embedding_model = ""
+            self.embedding_dim = 128
             try:
-                if config_path.exists():
-                    import json as _j2
-                    with open(config_path, "r", encoding="utf-8") as f:
-                        llm_cfg = _j2.load(f)
-                    emb_cfg = llm_cfg.get("embedding", {})
-                    if emb_cfg.get("api_key"):
+                import json as _j2
+                oc_cfg_path = os.path.expanduser("~/.openclaw/openclaw.json")
+                if os.path.exists(oc_cfg_path):
+                    with open(oc_cfg_path, "r", encoding="utf-8") as f:
+                        _oc = _j2.load(f)
+                    _ms = _oc.get("agents",{}).get("defaults",{}).get("memorySearch",{})
+                    _remote = _ms.get("remote",{})
+                    _base = _remote.get("baseUrl","").rstrip("/")
+                    _headers = dict(_remote.get("headers",{}))
+                    if _base and _headers.get("x-api-key"):
+                        # 使用兼容 OpenAI 的 client，把 headers 作为 default headers
                         from openai import OpenAI as _O
-                        self.embedding = _O(
-                            api_key=emb_cfg["api_key"],
-                            base_url=emb_cfg.get("base_url", "https://cloud.infini-ai.com/maas/v1"),
+                        import httpx as _httpx
+                        _client_kw = dict(
+                            api_key=_headers.get("x-api-key",""),
+                            base_url=_base,
                         )
-                        self.embedding_model = emb_cfg.get("model", "bge-m3")
-                        self.embedding_dim = emb_cfg.get("dimensions", 1024)
-                        logger.info(f"嵌入客户端初始化: model={self.embedding_model}, dim={self.embedding_dim}")
+                        # 额外 headers 通过 httpx client 传入
+                        _custom_headers = {k:v for k,v in _headers.items() 
+                                          if k.lower() not in ("content-type",)}
+                        if _custom_headers:
+                            _http_client = _httpx.Client(headers=_custom_headers)
+                            _client_kw["http_client"] = _http_client
+                        self.embedding = _O(**_client_kw)
+                        self.embedding_model = _ms.get("model", "xiaoyiprovider/text-embedding-v1.0")
+                        self.embedding_dim = 128
+                        logger.info(f"嵌入客户端初始化: model={self.embedding_model}, dim=128, base={_base[:40]}...")
             except Exception as e:
                 logger.warning(f"嵌入客户端初始化失败: {e}")
 

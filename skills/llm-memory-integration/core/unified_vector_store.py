@@ -55,7 +55,7 @@ class VectorStoreBackend(ABC):
 class SQLiteVecBackend(VectorStoreBackend):
     """sqlite-vec 后端"""
     
-    def __init__(self, db_path: str, dim: int = 4096):
+    def __init__(self, db_path: str, dim: int = 1024):
         self.db_path = db_path
         self.dim = dim
         self._init_db()
@@ -91,7 +91,15 @@ class SQLiteVecBackend(VectorStoreBackend):
         count = 0
         for record in records:
             try:
-                vector_bytes = np.array(record.vector, dtype=np.float32).tobytes()
+                vec = np.array(record.vector, dtype=np.float32)
+                # 自动补齐到目标维度（不足的补零，超出截断）
+                if len(vec) < self.dim:
+                    padded = np.zeros(self.dim, dtype=np.float32)
+                    padded[:len(vec)] = vec
+                    vec = padded
+                elif len(vec) > self.dim:
+                    vec = vec[:self.dim]
+                vector_bytes = vec.tobytes()
                 cursor.execute('''
                     INSERT OR REPLACE INTO vectors (id, content, metadata, source, embedding)
                     VALUES (?, ?, ?, ?, ?)
@@ -125,8 +133,12 @@ class SQLiteVecBackend(VectorStoreBackend):
         rows = cursor.fetchall()
         conn.close()
         
-        # 计算相似度
+        # 如果查询向量维度小于存储维度，补零对齐
         query_vec = np.array(query_vector, dtype=np.float32)
+        if len(query_vec) < self.dim:
+            padded = np.zeros(self.dim, dtype=np.float32)
+            padded[:len(query_vec)] = query_vec
+            query_vec = padded
         query_norm = np.linalg.norm(query_vec)
         
         results = []
@@ -134,7 +146,7 @@ class SQLiteVecBackend(VectorStoreBackend):
             id_, content, metadata, source, embedding_bytes = row
             vec = np.frombuffer(embedding_bytes, dtype=np.float32) if (embedding_bytes and len(embedding_bytes) > 0) else None
             
-            if vec is None or len(vec) != len(query_vector):
+            if vec is None or len(vec) != self.dim:
                 continue
             
             vec_norm = np.linalg.norm(vec)
@@ -182,7 +194,7 @@ class SQLiteVecBackend(VectorStoreBackend):
 class HNSWLibBackend(VectorStoreBackend):
     """HNSWLib 后端 — 基于 hnswlib"""
 
-    def __init__(self, index_path: str, dim: int = 4096, ef_construction: int = 200, M: int = 16):
+    def __init__(self, index_path: str, dim: int = 1024, ef_construction: int = 200, M: int = 16):
         self.index_path = index_path
         self.dim = dim
         self.ef_construction = ef_construction
@@ -260,7 +272,14 @@ class HNSWLibBackend(VectorStoreBackend):
         if self.index.element_count == 0:
             return []
 
-        q = np.array([query_vector], dtype=np.float32)
+        q = np.array(query_vector, dtype=np.float32)
+        # 自动补齐到索引维度
+        if len(q) < self.dim:
+            padded = np.zeros(self.dim, dtype=np.float32)
+            padded[:len(q)] = q
+            q = padded
+        q = q.reshape(1, -1)
+
         k = min(top_k, self.index.element_count)
         labels, distances = self.index.knn_query(q, k=k)
 
@@ -312,7 +331,7 @@ class HNSWLibBackend(VectorStoreBackend):
 class FAISSBackend(VectorStoreBackend):
     """FAISS 后端"""
     
-    def __init__(self, index_path: str, dim: int = 4096):
+    def __init__(self, index_path: str, dim: int = 1024):
         self.index_path = index_path
         self.dim = dim
         self.index = None
@@ -428,10 +447,10 @@ class UnifiedVectorStore:
     """
     
     def __init__(self, 
-                 backend: str = 'sqlite',
+                 backend: str = 'hnswlib',
                  db_path: Optional[str] = None,
                  index_path: Optional[str] = None,
-                 dim: int = 4096):
+                 dim: int = 1024):
         """
         初始化统一向量存储
         
