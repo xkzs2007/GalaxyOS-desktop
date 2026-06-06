@@ -49,7 +49,7 @@ logger = logging.getLogger(__name__)
 # ============================================================================
 
 INFINI_API_URL = "https://cloud.infini-ai.com/maas/v1/chat/completions"
-INFINI_API_KEY = "os.environ.get("INFINI_API_KEY", "")"
+INFINI_API_KEY = os.environ.get("INFINI_API_KEY", "")
 DEFAULT_MODEL = "deepseek-ocr-2"
 DEFAULT_TIMEOUT = 120
 
