@@ -12,8 +12,8 @@ from setuptools import setup, find_packages
 
 setup(
     name="galaxyos",
-    version="4.2.0",
-    description="小艺 Claw 系统 — OpenClaw 核心底层能力引擎",
+    version="6.0.0",
+    description="小艺 Claw 系统 — OpenClaw 核心认知增强引擎",
     long_description=open("README.md", encoding="utf-8").read(),
     long_description_content_type="text/markdown",
     author="xiaoyi-claw",
@@ -56,8 +56,10 @@ setup(
         "torch>=2.0.0",
         # 系统
         "psutil>=5.9.0",
-        # LLM
+        # LLM API 调用
         "openai>=1.0.0",
+        # 神经电路策略 (NCPs)
+        "ncps>=1.0.0",
         # 数据校验
         "pydantic>=2.0.0",
         # 图神经网络
