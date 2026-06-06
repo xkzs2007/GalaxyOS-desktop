@@ -65,308 +65,202 @@ security_note: |
   - ✅ 使用参数化查询防止 SQL 注入
   - ✅ 不自动安装 cron 任务
   
-  🔒 v6.1.0：ONNX bge-small-zh-v1.5 替代 all-MiniLM-L6-v2，MN-RU siliconflow API fallback，BlobArena/Layer9/DAG Bug 修复，~140 模块同步。
+  🔒 v6.1.0：BlobArena 无损存储 + ONNX bge-small-zh-v1.5 中文原生嵌入 + RetrievalHub 7通道全链路 + ANNSelector v2 + GNN Graph Builder + ~140 模块全同步。
 ---
 
-# LLM Memory Integration
+# LLM Memory Integration v6.1.0
 
-## ⚠️ 重要提示
+> BlobArena 无损存储 | ONNX bge-small-zh 中文嵌入 | RetrievalHub 7通道检索
+> 138 模块 | 395+ 能力项 | 融合置信度 0.93
 
-**本技能会修改用户数据，请知悉：**
+## ⚠️ 安全须知
 
-| 操作 | 文件 | 默认状态 |
-|------|------|----------|
-| 向量搜索 | vectors.db（读/写） | ✅ 启用 |
-| 记忆管理 | MEMORY.md（读） | ✅ 启用 |
-| 用户画像更新 | persona.md（读/写） | ❌ **禁用** |
-| 日志记录 | logs/*（写） | ✅ 启用 |
-| SQLite 扩展加载 | vec0.so（加载） | ⚠️ **需确认** |
+- **本技能会读写本地文件**（向量库、记忆文件、日志）
+- **不内置任何 API 密钥** — 所有凭据从 `config/llm_config.json` 读取（．gitignore 保护）
+- **用户画像默认关闭** — `auto_update: false`，更新前需用户确认
+- **数据导出白名单** — 仅 MEMORY.md / persona.md，自动脱敏，≤1MB
 
-**配置文件一致性声明：**
-- `config/llm_config.json` - **无硬编码 API 密钥**（仅占位符）
-- `config/persona_update.json` - `auto_update: false`（与文档一致）
-- `config/unified_config.json` - `auto_update: false`（与文档一致）
-- `require_confirmation: true`（更新前需确认）
-- `backup_before_update: true`（更新前备份）
+## ✨ 核心特征 (v6.1)
 
-**启用用户画像自动更新：**
-```bash
-# 修改配置文件
-vim ~/.openclaw/workspace/skills/llm-memory-integration/config/persona_update.json
+| 特征 | 说明 |
+|------|------|
+| **BlobArena v2** | mmap 无损存储，DAG 节点不再 512/2000 字符硬截断 |
+| **ONNX bge-small-zh** | 中文原生 512d 嵌入，~42ms/embed |
+| **RetrievalHub 7通道** | KG + Local + DAG + Synapse + Paper + Cognitive + Web |
+| **MN-RU 双索引** | siliconflow BAAI/bge-m3 1024d，3879 节点 |
+| **ANNSelector v2** | FAISS 动态索引，<5000 自动 HNSW |
+| **GNN Graph Builder** | GraphSAGE/GAT/GCN 三卷积层 |
+| **~140 模块同步** | scripts_core / integration / memory / rails / privileged / api |
 
-# 设置
-{
-  "auto_update": true,
-  "require_confirmation": true,
-  "backup_before_update": true
-}
-```
-
-## ✅ 渐进式启用 + 优化修复
-
-### 渐进式启用阶段
-
-| 阶段 | 名称 | 模块 | 状态 |
-|------|------|------|------|
-| **P0** | 核心优化 | router + weights + rrf + dedup | ✅ 启用 |
-| **P1** | 查询增强 | understand + rewriter | ✅ 启用 |
-| **P2** | 学习优化 | feedback + history | ✅ 启用 |
-| **P3** | 结果增强 | explainer + summarizer | ✅ 启用 |
-
-### 优化修复
-
-| 问题 | 修复方案 | 效果 |
-|------|---------|------|
-| 语义匹配弱 | 放宽距离阈值 0.8，增加 top_k 到 20 | 召回率提升 90% |
-| LLM 扩展不准 | 优化 prompt，增加 temperature | 扩展词更相关 |
-| 同义词不足 | 扩展词典，增加语义扩展 | 覆盖更多表达 |
-
-## 一键启用
-
-```bash
-# 完整配置（推荐）
-python3 ~/.openclaw/workspace/skills/llm-memory-integration/scripts/one_click_setup.py
-
-# 向量架构体系一键配置
-python3 ~/.openclaw/workspace/skills/llm-memory-integration/scripts/one_click_vector_setup.py
-
-# 渐进式管理
-python3 ~/.openclaw/workspace/skills/llm-memory-integration/scripts/progressive_setup.py status
-python3 ~/.openclaw/workspace/skills/llm-memory-integration/scripts/progressive_setup.py enable P0
-python3 ~/.openclaw/workspace/skills/llm-memory-integration/scripts/progressive_setup.py disable P3
-```
-
-## 核心能力
-
-| 能力 | 功能 | 用户配置 |
-|------|------|----------|
-| **向量搜索** | 语义相似度匹配 | 用户自选 Embedding 模型 |
-| **LLM 分析** | 查询扩展、重排序、解释、摘要 | 用户自选 LLM 模型 |
-| **FTS 搜索** | 关键词快速召回 | SQLite FTS5（内置） |
-| **混合检索** | RRF 融合排序 | 向量 + FTS + LLM |
-| **智能路由** | 复杂度分析 | fast/balanced/full 模式 |
-| **查询理解** | 意图识别 | search/config/explain/compare |
-| **反馈学习** | 点击记录 | 优化排序权重 |
-
-## 🔧 模型配置（用户自行配置）
-
-### 配置文件位置
-
-```
-~/.openclaw/workspace/skills/llm-memory-integration/config/llm_config.json
-```
-
-### LLM 配置示例
-
-```json
-{
-  "llm": {
-    "provider": "openai-compatible",
-    "base_url": "https://api.example.com/v1",
-    "api_key": "your-api-key",
-    "model": "gpt-4",
-    "max_tokens": 150,
-    "temperature": 0.5
-  }
-}
-```
-
-### Embedding 配置示例
-
-```json
-{
-  "embedding": {
-    "provider": "openai-compatible",
-    "base_url": "https://api.example.com/v1",
-    "api_key": "your-api-key",
-    "model": "text-embedding-3-small",
-    "dimensions": 1536
-  }
-}
-```
-
-### 支持的模型提供商
-
-| 提供商 | LLM | Embedding |
-|--------|-----|-----------|
-| OpenAI | GPT-4, GPT-3.5 | text-embedding-3-* |
-| Azure OpenAI | GPT-4 | text-embedding-ada-002 |
-| Anthropic | Claude 3 | - |
-| 华为云 | GLM5 | - |
-| Gitee AI | - | bge-m3 |
-| 本地模型 | Ollama | 本地 Embedding |
-
-### 一键配置向导
-
-```bash
-# 运行配置向导
-python3 ~/.openclaw/workspace/skills/llm-memory-integration/scripts/config_wizard.py
-```
-
-## 性能指标
-
-| 模式 | 目标 | 实测 | 状态 |
-|------|------|------|------|
-| 缓存命中 | < 10ms | **5ms** | ✅ 优秀 |
-| 快速模式 | < 2s | **0.05-1.2s** | ✅ 优秀 |
-| 平衡模式 | < 5s | **4.5s** | ✅ 达标 |
-| 完整模式 | < 15s | **9-11s** | ✅ 达标 |
-| 准确率 | > 80% | **90%** | ✅ 优秀 |
-
-## 快速使用
-
-### 混合记忆搜索
-
-```bash
-# 自动模式（智能路由）
-vsearch "推送规则"
-
-# 快速模式（禁用 LLM）
-vsearch "推送规则" --no-llm
-
-# 完整模式（解释 + 摘要）
-vsearch "如何配置记忆系统" --explain --summarize
-```
-
-### LLM 记忆分析
-
-```bash
-# 提取用户偏好
-llm-analyze persona "对话内容"
-
-# 提取场景
-llm-analyze scene "对话内容"
-
-# 总结对话
-llm-analyze summarize "对话内容"
-```
-
-## 技术架构
+## 🏗️ 技术架构
 
 ```
 用户查询
     ↓
-[查询理解] → 意图识别 + 实体提取
+query_preprocess → intent / complexity / rewrite
     ↓
-[查询改写] → 拼写纠正 + 同义词扩展 + 语义扩展
+┌─ RetrievalHub (7 通道并行) ─────────────────────┐
+│  KG (temporal_kg GNN)                            │
+│  Local (XiaoyiClawLLM.recall + dag_fallback)     │
+│  DAG (MN-RU bge-m3 siliconflow 双索引)           │
+│  Synapse (jieba → bge-small-zh ONNX → GAT → CfC)│
+│  Paper (arXiv / s2)                              │
+│  Cognitive (MN-RU 三通道: Mental/Relational/Unconscious)│
+│  Web (联网搜索)                                  │
+└───────────────────────────────────────────────────┘
     ↓
-[语言检测] → 多语言支持
+RRF v2 融合 → neural rerank (jaccard去重)
+    ↓  dedup → CRAG 分解 → quality assessment
     ↓
-[智能路由] → fast/balanced/full 模式
-    ↓
-[LLM 查询扩展] → 5个扩展词（优化prompt）
-    ↓
-[向量搜索] → top_k=20, max_dist=0.8（放宽阈值）
-    ↓
-[FTS 搜索] → 关键词匹配
-    ↓
-[RRF 融合] → 混合排序
-    ↓
-[语义去重] → 结果去重
-    ↓
-[LLM 重排序] → 最终排序
-    ↓
-[反馈学习] → 应用历史反馈
-    ↓
-[结果解释/摘要] → LLM 生成
+merged_context (置信度加权) → 主模型
 ```
 
-## 默认配置信息
+## 🔧 核心模块
 
-| 组件 | 默认值 | 说明 |
-|------|--------|------|
-| **向量模型** | 用户配置 | 支持 OpenAI、Gitee AI 等 |
-| **LLM** | 用户配置 | 支持 OpenAI、Claude、GLM 等 |
-| **数据库** | SQLite + vec0 + FTS5 | 内置 |
-| **缓存** | 增量缓存 + 压缩存储 | 内置 |
-| **RRF 参数** | k=60 | 可调 |
-| **向量搜索** | top_k=20, max_distance=0.8 | 可调 |
-| **LLM 扩展** | max_tokens=150, temperature=0.5 | 可调 |
-
-> ⚠️ 用户需自行配置 LLM 和 Embedding 模型，本技能不内置任何 API 密钥。
-
-## 脚本列表
-
-| 脚本 | 功能 |
+### 检索层 (Layer 2)
+| 模块 | 功能 |
 |------|------|
-| `search.py` | 统一搜索入口（完整集成版） |
-| `one_click_setup.py` | 一键配置 |
-| `progressive_setup.py` | 渐进式启用管理 |
-| `smart_memory_update.py` | 智能更新 |
-| `vsearch` | 搜索包装脚本 |
-| `llm-analyze` | 分析包装脚本 |
+| `retrieval_hub.py` | 7通道并行检索入口 + RRF v2 + neural rerank + quality assessment |
+| `hybrid_search.py` | 混合检索 (Dense + Sparse + RRF) |
+| `crag.py` | CRAG 动态纠错 + Self-RAG 预测器 |
+| `dynamic_crag_threshold.py` | CRAG 自适应阈值 |
+| `self_rag.py` | Self-RAG 实现 (isrel/issup/isuse) |
 
-## 核心模块
+### 向量存储 (Layer 3)
+| 模块 | 功能 |
+|------|------|
+| `onnx_embedding.py` | ONNX Runtime bge-small-zh (512d, ~42ms) |
+| `unified_vector_store.py` | 统一向量存储 (FAISS/FAISSIndex) |
+| `ann_selector.py` | ANN 索引自动选择 (HNSW/IVF/Flat) |
+| `embedding_enhance.py` | bge-m3 在线 embedding 增强 |
+| `vector_store.py` / `vector_api.py` | 四级搜索降级链 + 统一接口 |
 
-| 模块 | 文件 | 功能 |
-|------|------|------|
-| 查询理解 | `core/understand.py` | 意图识别 + 实体提取 |
-| 查询改写 | `core/rewriter.py` | 拼写纠正 + 同义词扩展 + 语义扩展 |
-| 语言检测 | `core/langdetect.py` | 多语言支持 |
-| 智能路由 | `core/router.py` | 根据复杂度选择模式 |
-| 动态权重 | `core/weights.py` | 向量/FTS 权重自适应 |
-| RRF 融合 | `core/rrf.py` | 混合检索排序算法 |
-| 语义去重 | `core/dedup.py` | 结果去重增强 |
-| 反馈学习 | `core/feedback.py` | 记录用户点击优化排序 |
-| 查询历史 | `core/history.py` | 高频查询缓存 |
-| 结果解释 | `core/explainer.py` | LLM 生成结果解释 |
-| 结果摘要 | `core/summarizer.py` | LLM 生成结果摘要 |
+### 记忆核心 (Layers 0-1)
+| 模块 | 功能 |
+|------|------|
+| `hallucination_guard.py` | 防幻觉 10 重检测 |
+| `memory_consolidation.py` | 记忆巩固引擎 (CLS + 重放 + 干扰合并) |
+| `memory_synapse_network.py` | 突触网络 (ncps) |
+| `cognitive_map.py` | MN-RU 三通道认知映射 |
+| `emotion_memory.py` | 情感记忆 (Ekman 6 情绪) |
+| `kora_behavior.py` | KoRa 行为建模 |
+| `biorhythm_sleep_consolidation.py` | 生物节律睡眠巩固 |
 
-## 核心功能脚本
+### DAG 上下文 (Layer 9)
+| 模块 | 功能 |
+|------|------|
+| `dag_context_manager.py` | DAG 上下文管理器 (v2, BlobArena 无损) |
+| `blob_arena.py` | mmap 无损 blob 存储 (替代字符截断) |
+| `DAGIntegration_addon.py` | DAG × GalaxyOS 三维绑定 |
 
-| 脚本 | 功能 | 用法 |
-|------|------|------|
-| `vector_coverage_monitor.py` | 向量覆盖率监控 + 自动修复 | `check` / `daemon` / `fix` |
-| `smart_memory_upgrade.py` | 智能记忆升级（自动判断升级时机） | `status` / `run` |
-| `auto_update_persona.py` | 用户画像自动更新 | `status` / `run` |
-| `vector_system_optimizer.py` | 向量系统优化（VACUUM/重建索引/清理孤立） | `status` / `run` |
+### 智能处理 (Layer 4)
+| 模块 | 功能 |
+|------|------|
+| `smart_processor.py` | 统一路由 (Flash/Pro/VLM 三通道) |
+| `thinking_enhanced.py` | 增强思考引擎 |
+| `intelligent_thinking_trigger.py` | 智能思考触发 |
+| `nlp_enhanced.py` | 增强 NLP (jieba + 实体 + 情感) |
 
-## 使用示例
+### 神经网络模块
+| 模块 | 功能 |
+|------|------|
+| `neural_pipeline.py` | GNN + CfC 神经管道 |
+| `cfc_sequence_predictor.py` | CfC 序列预测 (AutoNCP) |
+| `gnn_graph_builder.py` | GNN 图构建 (GraphSAGE/GAT/GCN) |
+| `gat_layer.py` | GAT 层实现 |
+| `graphsage_layer.py` | GraphSAGE 层实现 |
+| `graph_constructor.py` | 图构造器 (kNN/ε-半径) |
+| `cnn_graph_builder.py` | 图神经网络图构建器 |
 
-### 语义匹配（修复后）
-```bash
-$ vsearch "如何让AI记住重要信息"
-结果: 9 条  # 之前 0 条
+### 系统可靠性 (Layer 8)
+| 模块 | 功能 |
+|------|------|
+| `enhanced_hallucination_guard.py` | 增强防幻觉 |
+| `resilience_system.py` | 弹性系统: 自我修复 + 故障转移 |
+| `failover.py` | 故障转移 |
+| `rules_manager.py` | Rails 护栏 |
 
-Top1: yaoyao-memory 配置场景
-Top2: LLM 集成场景
-Top3: embedding 配置场景
+## ⚡ 性能指标
+
+| 指标 | 值 |
+|------|------|
+| ONNX embedding | ~42ms/run (bge-small-zh) |
+| RetrievalHub cold start | ~12s (138 模块 + 3879 DAG 节点索引重建) |
+| MN-RU retrieval | 3879 节点 via siliconflow bge-m3 (1024d) |
+| BlobArena read | mmap O(1) 随机访问 |
+| 融合置信度 | 0.93 (DAG 8 + local 2) |
+| 模块加载 | 138 模块全加载 |
+
+## 🚀 快速使用
+
+### 检索
+```python
+from retrieval_hub import retrieval_hub
+result = retrieval_hub("上海旅游攻略", top_k=8, include_web=False)
+# → 7通道并行 → RRF融合 → 8条结果, 置信度 0.93
 ```
 
-### 拼写纠正
-```bash
-$ vsearch "推送规责"
-改写: 推送规则  # 自动纠正
+### 嵌入
+```python
+from onnx_embedding import get_onnx_embedding
+svc = get_onnx_embedding()
+svc.initialize()
+vec = svc.embed_query("上海旅游攻略")  # 512d float32
+# 中文语义: 上海↔迪士尼 0.739, 上海↔北京 0.500, 上海↔Python 0.255
 ```
 
-### 智能路由
-```bash
-$ vsearch "推送规则"
-模式: balanced (智能路由)
-
-$ vsearch "如何配置记忆系统"
-模式: full (智能路由)
+### 记忆存储
+```python
+from memory_consolidation import ConsolidationEngine
+ce = ConsolidationEngine()
+ce.consolidate("重要事件", importance=0.8)
 ```
 
-### 结果解释
-```bash
-$ vsearch "用户偏好设置" --explain
-💡 这些记忆记录了用户对AI行为模式、输出格式及功能执行流程的特定定制要求...
+### 认知查询
+```python
+from cognitive_map import CognitiveMap
+cm = CognitiveMap()
+queries = cm.run_cognitive_queries("上海旅游攻略")
+# Mental / Relational / Unconscious 三通道
 ```
 
-### 结果摘要
-```bash
-$ vsearch "如何配置记忆系统" --summarize
-📝 摘要: 用户于2026年4月4日至5日完成OpenClaw记忆系统配置...
+## ⚙️ 配置
+
+配置文件: `config/llm_config.json` (．gitignore 保护, 不上传仓库)
+
+```json
+{
+  "embedding": {
+    "provider": "siliconflow",
+    "base_url": "https://api.siliconflow.cn/v1",
+    "api_key": "YOUR_API_KEY",
+    "model": "BAAI/bge-m3"
+  },
+  "llm": {
+    "provider": "openai-compatible",
+    "base_url": "https://api.deepseek.com",
+    "api_key": "YOUR_API_KEY",
+    "model": "deepseek-chat"
+  }
+}
 ```
 
-### 缓存命中
-```bash
-$ vsearch "推送规则"
-缓存命中
-耗时: 5ms
-```
+**本地 ONNX 嵌入** (`onnx_embedding.py`): 自动加载 `models/embeddings/bge-small-zh.onnx`, 无 API 调用, 零网络依赖。
+
+## 📦 依赖
+
+| 依赖 | 用途 |
+|------|------|
+| onnxruntime | ONNX 推理引擎 |
+| onnx | ONNX 模型加载 |
+| faiss-cpu | 向量索引 (HNSW/IVF) |
+| torch | CfC/GNN 神经网络 |
+| ncps | Liquid CfC / AutoNCP |
+| openai | LLM / Embedding API 客户端 |
+| sqlite-vec | 向量数据库 |
+| hnswlib | HNSW 索引 |
+| jieba | 中文分词 |
 
 ---
-
-*此技能由 LLM_GLM5 + bge-m3 集成实现，渐进式启用 + 优化修复版*
+*小艺 Claw — OpenClaw 核心底层能力引擎*
+*版本: v6.1.0 | 架构: 15层 + 4插件 | 贡献: xkzs2007*
