@@ -398,7 +398,7 @@ GalaxyOS是 OpenClaw 的**核心底层能力引擎**，提供：
 │  └─────────────────────────────────────────────────────────────────────┘   │
 │                                    │                                        │
 │  ┌─────────────────────────────────────────────────────────────────────┐   │
-│  │                    Layer 14: 工作流引擎 + R-CCAM 循环               │   │
+│  │                    Layer 14: 工作流引擎 + R-CCAM 循环 + Galaxy Kernel 后台        │   │
 │  │  44 个预定义工作流:                                                  │   │
 │  │  enhanced_recall | fast_generation | safe_generation | health_check  │   │
 │  │  heartbeat_execute | self_rag_query | kg_query | deep_research | ...│   │
@@ -451,15 +451,26 @@ GalaxyOS是 OpenClaw 的**核心底层能力引擎**，提供：
 │  │  │  - 【LLM-as-Judge 自评分】: Flash 三维评分(faithfulness/relevance/    │   │
 │  │  │    completeness)，高分自动存 verified_memories.jsonl            │   │
 │  │  │                                                                  │   │
-│  │  └─ Memory（记忆阶段 — 含内在元认知）:                             │   │
+│  │  └─ Memory（记忆阶段 — 含内在元认知 + Galaxy Kernel 后台）:        │   │
 │  │     - 持久化: 存储到向量库 + DAG 节点 + 情感标记                    │   │
 │  │     - 突触反馈: LTP 增强 + 摘要节点更新                            │   │
-│  │     - 自进化检测                                                    │   │
+│  │     - 触发 Galaxy Kernel 后台线程: post_response 事件入队          │   │
 │  │     - **__memory_phase: 每10轮触发内在元认知分析** ★v4.4            │   │
 │  │       Flash以用户视角分析近期体验数据 → 产生进化建议               │   │
 │  │     - **__activate_callback**: 根据进化建议类型惰性加载下游模块 ★v4.4 │   │
 │  │     - 【隐式偏好收集】: Worker implicit_feedback handler           │   │
 │  │       分析用户后续行为信号(纠错/感兴趣/跳话题)→存 .learnings/      │   │
+│  │                                                                      │   │
+│  │  Galaxy Kernel 后台 (★v5.0, 6s 轮询):                              │   │
+│  │  ├─ Reflexion 记录: 低分回答 → 分析失败原因 → 持久化反思三元组     │   │
+│  │  ├─ 自进化: ~50轮 ≈ 10 分钟一次元认知进化建议                       │   │
+│  │  └─ post_response_insights: 分析 dialog(query+answer) 输出:        │   │
+│  │     ├─ emotion_context: 用户情感强度/类型                            │   │
+│  │     ├─ causal_context: 因果链分析                                   │   │
+│  │     ├─ spatial_scene: 空间上下文                                    │   │
+│  │     ├─ cove_contradictions/consistency: 一致性评分                  │   │
+│  │     ├─ ncps_ltc_boost/ncps_prop_boost: 神经网络状态                 │   │
+│  │     └─ 写入 data/galaxy_kernel_insights.json → 下一轮 assemble 注入  │   │
 │  │                                                                      │   │
 │  │  【重放缓冲区】：R-CCAM 循环前从 verified_memories 采样 top-3      │   │
 │  │  置信度≥0.7 按关键词匹配排序，注入 Cognition 阶段的 skill_guide     │   │
@@ -526,6 +537,9 @@ GalaxyOS是 OpenClaw 的**核心底层能力引擎**，提供：
 │  │  │                                                                  │   │
 │  │  ├─ SelfEvolutionEngine：质量自评 + 模式发现 + 进化追踪              │   │
 │  │  ├─ ActiveEvolutionScheduler：10分钟周期，趋势分析+自动改进+决策执行  │   │
+│  │  ├─ **★v6.0 Galaxy Kernel post_response_insights 自进化源**:        │   │
+│  │  │  └─ insights.json 中的 emotion/causal/spatial/CoVe 数据自动流入  │   │
+│  │  │     SelfEvolutionEngine 作为用户体验特征输入                    │   │
 │  │  │                                                                  │   │
 │  │  ├─ **★v4.4 内在元认知进化——用户画像驱动**:                       │   │
 │  │  │  ├─ 触发: __memory_phase 每10轮 + ActiveEvolutionScheduler       │   │
@@ -786,9 +800,9 @@ claw.verify_image_claim("图片路径", "声明内容")
 - ✨ **时空认知 3 论文研究** — Graphiti(时序KG三层子图)、AriGraph(情景记忆KG世界模型)、LASAR(潜在认知地图时空推理)深度研究，论文引用已集成
 - ✨ **GalaxyOS 管线结构** —
 ```
-用户输入 → before_agent_reply(fire-and-forget R-CCAM) → assemble() 注入
+用户输入 → before_agent_reply(fire-and-forget R-CCAM) → assemble()[smartRetrieval UDS注入 + Galaxy Kernel insights注入(60s TTL)]
 → before_prompt_build(动态锚定) → LLM推理 → agent_end(兜底)
-→ Galaxy Kernel 后台(6s轮询: Reflexion+自进化)
+→ Galaxy Kernel 后台(6s轮询: Reflexion+自进化+post_response_insights→assemble)
 ```
 - ❌ **移除腾讯云记忆插件** — extensions/memory-tencentdb/ 全量删、tencentdb_integration.py 全量删、retrieval_hub._do_tencentdb 删、full_integration._load_tencentdb/search_tencentdb 删、所有 config 引用清空
 - ❌ **移除 Yaoyao Memory 插件** — extensions/yaoyao-memory/ 全量删、yaoyao_bridge.py 全量删、unified_entry store/recall yaoyao 分支移除、配置清空
