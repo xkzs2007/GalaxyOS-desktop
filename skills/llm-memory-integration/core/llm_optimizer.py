@@ -33,11 +33,11 @@ logger = logging.getLogger(__name__)
 # ============================================================================
 
 # NVIDIA NIM API
-NVIDIA_API_KEY = "YOUR_NVIDIA_API_KEY"
+NVIDIA_API_KEY = os.environ.get("NVIDIA_API_KEY", "")
 NVIDIA_BASE_URL = "https://integrate.api.nvidia.com/v1"
 
 # 小艺 GLM5 API
-XIAOYI_API_KEY = "YOUR_XIAOYI_API_KEY"
+XIAOYI_API_KEY = os.environ.get("XIAOYI_API_KEY", "")
 XIAOYI_BASE_URL = "https://celia-claw-drcn.ai.dbankcloud.cn/celia-claw/v1/sse-api"
 XIAOYI_UID = "YOUR_XIAOYI_UID"
 
