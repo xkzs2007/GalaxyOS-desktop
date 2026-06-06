@@ -554,9 +554,7 @@ class XiaoYiClawLLM:
                 _nlp_entity_texts = [e.get('text', '') if isinstance(e, dict) else str(e) for e in _nlp_vals[:10]]
             if _nlp_entity_texts:
                 _nlp_meta['_linked_entities'] = _nlp_entity_texts
-        user_neuron = self._smn.neuron_manager.find_neuron_by_content(f"用户: {query}")
-        if not user_neuron:
-            user_neuron = self._smn.create_neuron(f"用户: {query}")
+        user_neuron = self._smn.find_or_create_neuron(query, prefix="用户:", similarity_threshold=0.4)
         if _nlp_meta:
             try:
                 _existing_ent = json.loads(user_neuron.nlp_entities) if user_neuron.nlp_entities else {}
@@ -566,9 +564,7 @@ class XiaoYiClawLLM:
             except Exception:
                 pass
         if answer:
-            ans_neuron = self._smn.neuron_manager.find_neuron_by_content(f"系统: {answer[:200]}")
-            if not ans_neuron:
-                ans_neuron = self._smn.create_neuron(f"系统: {answer[:200]}")
+            ans_neuron = self._smn.find_or_create_neuron(answer[:200], prefix="系统:", similarity_threshold=0.4)
             self._smn.create_synapse(
                 user_neuron.id, ans_neuron.id,
                 src_content=user_neuron.content,
@@ -4121,11 +4117,20 @@ class XiaoYiClawLLM:
                     pass
             _write_rccam_phase("memory", state, state.generated_answer[:500] if state.generated_answer else "")
 
-            # ── ncps 神经网络写入（同步执行，确保每次对话都写入） ──
+            # ── ncps 神经网络写入 + 全局 LTC 衰减 ──
             # 不放在异步 _memory_phase 里，daemon 线程可能没跑完就结束
             try:
                 if getattr(self, '_smn', None) and state.user_input:
                     self._sync_ncps_neurons(state.user_input, state.generated_answer, state)
+                # 全局 LTC 衰减：所有神经元 evaluate_state 触发 ODE 衰减
+                if getattr(self, '_smn', None) and hasattr(self._smn.network, '_neurons_cache'):
+                    self._smn.network._load()
+                    decayed = 0
+                    for n in self._smn.network._neurons_cache.values():
+                        n.evaluate_state()
+                        decayed += 1
+                    if decayed > 0:
+                        logger.debug(f"全局 LTC 衰减: {decayed} 神经元评估完成")
             except Exception:
                 pass
 

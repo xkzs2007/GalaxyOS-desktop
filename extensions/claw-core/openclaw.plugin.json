@@ -90,5 +90,6 @@
       }
     }
   },
-  "main": "dist/index.js"
+  "main": "dist/index.js",
+  "kind": "context-engine"
 }

@@ -958,6 +958,9 @@ class TemporalKnowledgeGraph:
         def add(e, t, r, target=""):
             key = e.lower()
             if key not in seen and 2 <= len(e) <= 40:
+                # 过滤疑问句式误匹配
+                if any(qw in e for qw in ('什么', '如何', '怎样', '怎么', '为什么', '哪些', '哪个', '那些', '这些', '谁', '何时', '安不')):
+                    return
                 seen.add(key)
                 entities.append({"entity": e, "type": t, "relation": r, "target": target})
 
@@ -982,7 +985,9 @@ class TemporalKnowledgeGraph:
                 add(name, etype, rel)
 
         # 大写缩写/项目名 (R-CCAM, CognitiveMap, TemporalKG 等)
-        for m in re.finditer(r'\b([A-Z][a-zA-Z0-9]*(?:[-_][A-Z][a-zA-Z0-9]+)+|[A-Z]{3,8})\b', clean):
+        # 注意：Python3 re \b 包含 Unicode 词符（中文），所以英文+中文间识别不到 \b
+        # 改用 [^a-zA-Z0-9] 作为英文字符边界
+        for m in re.finditer(r'(?:^|[^a-zA-Z0-9])([A-Z][a-zA-Z0-9]*(?:[-_][A-Z][a-zA-Z0-9]+)+|[A-Z]{3,8})(?=$|[^a-zA-Z0-9])', clean):
             name = m.group(1)
             skip = {'OK','AI','DB','KG','API','CPU','GPU','RAM','URL','PDF','JSON','HTML','CSS',
                     'HTTP','SDK','IDE','IOT','NLP','UI','UX'}
@@ -990,7 +995,7 @@ class TemporalKnowledgeGraph:
                 add(name, '概念', '涉及')
 
         # 驼峰项目名
-        for m in re.finditer(r'\b([A-Z][a-z]+[A-Z][a-zA-Z0-9]{2,30})\b', clean):
+        for m in re.finditer(r'(?:^|[^a-zA-Z0-9])([A-Z][a-z]+[A-Z][a-zA-Z0-9]{2,30})(?=$|[^a-zA-Z0-9])', clean):
             name = m.group(1)
             if name not in ('OpenAI','GitHub','TypeScript','PostgreSQL','MongoDB','FastAPI','NodeJs'):
                 add(name, '概念', '涉及')
@@ -1007,9 +1012,13 @@ class TemporalKnowledgeGraph:
             if loc and 2 <= len(loc) <= 5:
                 add(loc, '地点', '位于')
 
-        # 中文模块/概念
+        # 中文模块/概念（需要边界条件：不匹配疑问句、不包含'的'等连接词）
         for m in re.finditer(r'([\u4e00-\u9fff]{2,10}(?:模块|系统|平台|框架|组件|工具|项目|方案|报告|文档|架构|技能|能力|算法|模型|数据库|引擎|入口|接口|协议))', clean):
-            add(m.group(1), '概念', '涉及')
+            txt = m.group(1)
+            # 跳过包含疑问词或连接词的自然语言片段
+            if any(qw in txt for qw in ('什么', '如何', '怎样', '怎么', '为什么', '哪些', '哪个', '那些', '这些', '的', '了', '吧', '吗', '呀', '呢')):
+                continue
+            add(txt, '概念', '涉及')
 
         return entities
 

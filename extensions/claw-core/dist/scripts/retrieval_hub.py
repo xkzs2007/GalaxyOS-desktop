@@ -1135,6 +1135,9 @@ def _do_synapse(query: str) -> list:
                 early = sorted(neurons[:3000], key=lambda n: -getattr(n, 'activation_count', 0))
                 scan_set = scan_set + early[:1000]
             
+            # LTC 过滤：跳过长期未激活（低兴奋度）的噪音
+            LTC_THRESHOLD = 0.35
+            
             # 通道 A：关键词重叠直接匹配
             scored = []
             dedup_seen = set()
@@ -1145,6 +1148,10 @@ def _do_synapse(query: str) -> list:
                 if dedup_key in dedup_seen:
                     continue
                 dedup_seen.add(dedup_key)
+                # LTC 兴奋度过低 → 噪音（测试数据/长期不用的记忆）
+                h_t = n.evaluate_state()
+                if h_t < LTC_THRESHOLD:
+                    continue
                 try:
                     n_words = set(jieba.lcut(n.content.lower()))
                 except ImportError:
@@ -1152,6 +1159,8 @@ def _do_synapse(query: str) -> list:
                 overlap = len(q_words & n_words)
                 if overlap >= 1:  # 至少 1 个词重叠
                     score = overlap / max(len(q_words | n_words), 1)
+                    # LTC 提权：h_t 高 → 分数上浮
+                    score = score * (0.5 + h_t * 0.5)
                     scored.append((n, score))
             
             scored.sort(key=lambda x: -x[1])
