@@ -1,23 +1,24 @@
 ---
 name: xiaoyi-claw-omega-final
-description: GalaxyOS v5.6 — ncps 神经电路策略集成 + NLP增强神经网络 + 防幻觉双向闭环 + TKG 事件日志
+description: GalaxyOS v6.0 — 神经检索全链路集成 + ContextEngine neural_rerank + Galaxy Kernel assemble 注入 + _content_type 上下文排序
 author: xkzs2007
 license: MIT-0
-tags: [architecture, memory, llm, rccam, dag, kora, knowledge-graph, ncps, neural-synapse-network]
+tags: [architecture, memory, llm, rccam, dag, kora, knowledge-graph, ncps, neural-synapse-network, context-engine, neural-rerank]
 ---
 
-# GalaxyOS v5.6
+# GalaxyOS v6.0
 
 > **定位**: OpenClaw 的核心底层能力引擎
-> **更新时间**: 2026-06-06 07:18
+> **更新时间**: 2026-06-06 12:19
 > **架构层数**: 16 层（含 Layer 0 安装向导）
-> **总能力项**: 450+ 项
+> **总能力项**: 455+ 项
 > **IPC 三通道**: UDS RPC（双向互通，动态注册表）+ ZMQ 事件推送（双向回复）+ mmap 结构化状态（4KB JSON段）
 > **默认通信**: UDS RPC，HTTP :8765 二级降级，无 stdin/stdout，无 spawnSync
 > **IPC 演进**: stdin/stdout → UDS RPC（单 Worker 单例） → **Gateway-Worker 全透明互通（UDS注册表 + mmap 结构化 + ZMQ 双向）**
 > **独立服务线程池**: 6 个（Memory/Retrieval/Session/Thinking/Hardware/HTTP-RPC）
 > **Galaxy 增强** ✅: DAG三维绑定 / Cognition Forest 子树复用 / KoRa 主动能力 / Kernel 持续元认知 / **ncps 神经突触网络 (LTC+CfC+遗忘曲线+NLP增强)**
 > **透明互通** ✅: Gateway `_gatewayMethods` 注册表（14 预注册 + 自动 tool.* 暴露）+ Worker `_GatewayProxy`（__getattr__ 透明 RPC）+ mmap 结构化状态（双向零拷贝 + heartbeat 5s）
+> **神经检索全链路** ✅: retrieval_hub 五路并行 → neural_rerank_dedup (LTC h_t 门控 + Content Fingerprint 去重) → smart_retrieval UDS → ContextEngine assemble 注入
 
 ---
 
@@ -35,12 +36,12 @@ GalaxyOS是 OpenClaw 的**核心底层能力引擎**，提供：
 
 ---
 
-| **文档版本**: v5.6 | 2026-06-06 07:18 | ncps 神经电路策略集成 + NLP 增强神经网络 + 防幻觉双向闭环 + TKG 事件日志 |
+| **文档版本**: v6.0 | 2026-06-06 12:19 | 神经检索全链路集成: neural_rerank → ContextEngine assemble + Galaxy Kernel 认知注入 + _content_type 上下文排序 |
 
 ---
 
 *GalaxyOS — OpenClaw 的核心底层能力引擎*
-*文档版本: v5.6 | 最后更新: 2026-06-06 07:18 | ncps 神经电路策略集成 + NLP 增强神经网络 + 防幻觉双向闭环 + TKG 事件日志*
+*文档版本: v6.0 | 最后更新: 2026-06-06 12:19 | 神经检索全链路集成: neural_rerank → ContextEngine assemble + Galaxy Kernel 认知注入 + _content_type 上下文排序*
 
 ---
 
@@ -249,7 +250,8 @@ GalaxyOS是 OpenClaw 的**核心底层能力引擎**，提供：
 │  │  │  · ownsCompaction=true：禁用 OpenClaw 默认压缩，DAG 自管          │   │
 │  │  │  ├─ ingest（每轮对话后）：smartStore + DAG 节点存储              │   │
 │  │  │  ├─ assemble（模型调用前）：预算计算→最近消息→dag_summary        │   │
-│  │  │  │  摘要恢复→精简历史(最近4条)+检索注入                          │   │
+│  │  │  │  smartRetrieval(五路+neural_rerank_dedup)→_content_type排序    │   │
+│  │  │  │  → Galaxy Kernel insights(60s TTL) → 合成summaryInjection       │   │
 │  │  │  ├─ compact（触发压缩）：dag_status 检查→assemble 摘要提取       │   │
 │  │  │  │  → _sessionSummaries 缓存→dag_compact 创建摘要节点            │   │
 │  │  │  └─ afterTurn（维护）：L1 每5轮/L2 每20轮/L3 每50轮              │   │
@@ -670,6 +672,15 @@ claw.verify_image_claim("图片路径", "声明内容")
 | 思考内容截断 | **500→2000** | 2026-06-02 |
 | DAG 上下文排序 | **时间衰减权重重排序** | 2026-06-02 |
 | install_wizard.py | **6 阶段全自动自检 + `--kg-test` 专项测试** | 2026-06-02 |
+
+### v6.0 (2026-06-06) — 神经检索全链路集成: neural_rerank → ContextEngine assemble + Galaxy Kernel 认知注入 + _content_type 上下文排序
+
+- ⭐ **五路神经检索 → ContextEngine 全链路集成** — `retrieval_hub` 五路并行（KG/Local/DAG/Synapse/Paper）→ `neural_rerank_dedup`（LTC h_t 门控 + 激活传播提权 + Content Fingerprint 200字去重 + `_content_type` 标记）→ `smart_retrieval` UDS → `smartRecall` 排序 → ContextEngine `assemble` 注入系统提示
+- ⭐ **smart_retrieval Worker RPC 方法** — 新增 UDS 方法走完整 `retrieval_hub()` 管道，15 秒超时降级到旧 `recall` → `recallFallback`。五路管道含 session_id 传递 Context-Denoised 上下文
+- ⭐ **_content_type 注入排序** — 每条检索结果自动标记 conversation / summary / metadata，`smartRecall` 按 conversation > summary > metadata 重排序，确保 top-3 注入的全部是对话历史而非 DAG 元节点
+- ⭐ **Galaxy Kernel 认知注入 ContextEngine assemble** — `assemble()` 末尾读 `data/galaxy_kernel_insights.json`（60s 新鲜期），自动提取 emotion_context/causal_context/spatial_scene/cove_contradictions，与 R-CCAM 同类数据去重后追加到 `summaryInjection`
+- ⭐ **Galaxy Kernel 产出优化** — `_run_paper_post_response` 所有子调用从仅传 query 改为传完整对话对（query+answer）：情感分析用完整文本、因果分析双传 query+answer、空间场景从 answer 提取、实体抽取双倍信息、CoVe 记录一致性分数
+- 📊 **统计数据更新**：总能力项 455+，新增 v6.0 8 项指标
 
 ### v5.6 (2026-06-06) — ncps 神经电路策略集成 + NLP 增强神经网络 + 防幻觉双向闭环 + TKG 事件日志
 

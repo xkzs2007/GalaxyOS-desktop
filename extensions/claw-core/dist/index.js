@@ -1486,7 +1486,25 @@ export default function register(api) {
     }
 
     // --- 辅助函数:智能检索(Worker 优先,降级 spawnSync) ---
-    async function smartRecall(query, topK = 3) {
+    async function smartRecall(query, topK = 3, sessionId = "") {
+        try {
+            const w = getWorker(ws);
+            if (w.ready) {
+                const result = await w.call("smart_retrieval", { query, top_k: topK, session_id: sessionId }, 15000);
+                let items = [];
+                if (result?.results) items = Array.isArray(result.results) ? result.results : [];
+                else if (Array.isArray(result)) items = result;
+                // 按内容类型优先级重排序: conversation > summary > metadata
+                const typeWeight = { conversation: 0, summary: 1, metadata: 2 };
+                items.sort((a, b) => {
+                    const wa = typeWeight[a._content_type] ?? 2;
+                    const wb = typeWeight[b._content_type] ?? 2;
+                    return wa - wb;
+                });
+                return items;
+            }
+        } catch (e) { /* fall through */ }
+        // 降级到旧 recall
         try {
             const w = getWorker(ws);
             if (w.ready) {
@@ -2061,7 +2079,7 @@ export default function register(api) {
                             if (lastUserMsg) {
                                 const query = extractText(lastUserMsg);
                                 if (query && query.trim().length >= 5) {
-                                    const items = await smartRecall(query, 3);
+                                    const items = await smartRecall(query, 3, sessionId);
                                     if (items.length > 0) {
                                         systemPromptAddition = items
                                             .slice(0, 3)
@@ -2373,8 +2391,52 @@ export default function register(api) {
                                 }
                             }
 
-                    // 6c) dag_assemble 兜底
-                    // 6c) dag_assemble 兜底
+                    // 7) Galaxy Kernel insights 注入（离线认知产出：emotion/causal/spatial/CoVe）
+                    // 接入 Worker 后台 _galaxy_kernel_loop 的 `data/galaxy_kernel_insights.json`
+                    // 仅在文件新鲜（60s 内更新）且 R-CCAM 未注入完整认知数据时才打
+                    const GALAXY_KERNEL_TTL = 60000; // 60 秒新鲜期
+                    try {
+                        const { readFileSync: _readFs, existsSync: _existsFs, statSync: _statFs } = await import("fs");
+                        const _gkiPath = path.join(ws, "data", "galaxy_kernel_insights.json");
+                        if (_existsFs(_gkiPath)) {
+                            const _stat = _statFs(_gkiPath);
+                            const _age = Date.now() - _stat.mtimeMs;
+                            if (_age < GALAXY_KERNEL_TTL) {
+                                const _gkiContent = _readFs(_gkiPath, "utf-8");
+                                const _gki = JSON.parse(_gkiContent);
+                                let _kernelBlock = "";
+
+                                // 只在 R-CCAM 没提供同类数据时补充（避免重复）
+                                const _rccamHasSpatial = summaryInjection.includes("spatial_scene");
+                                const _rccamHasCausal = summaryInjection.includes("causal_context");
+
+                                if (_gki.emotion_context && !summaryInjection.includes("情绪")) {
+                                    _kernelBlock += "[情感认知] " + String(_gki.emotion_context).slice(0, 200) + "\n";
+                                }
+                                if (_gki.spatial_scene && !_rccamHasSpatial) {
+                                    _kernelBlock += "[空间场景] " + String(_gki.spatial_scene).slice(0, 100) + "\n";
+                                }
+                                if (_gki.causal_context && !_rccamHasCausal) {
+                                    _kernelBlock += "[因果关联] " + String(_gki.causal_context).slice(0, 200) + "\n";
+                                }
+                                if (_gki.cove_contradictions && _gki.cove_contradictions > 0) {
+                                    _kernelBlock += "[CoVe验证] 上一轮回答发现 " + _gki.cove_contradictions + " 处矛盾，请注意修正\n";
+                                }
+
+                                if (_kernelBlock) {
+                                    _kernelBlock = "[Galaxy Kernel 认知分析]\n" + _kernelBlock + "\n";
+                                    // 追加到 summaryInjection 末尾（R-CCAM 块后面）
+                                    summaryInjection = summaryInjection
+                                        ? summaryInjection + "\n" + _kernelBlock
+                                        : _kernelBlock;
+                                }
+                            }
+                        }
+                    } catch (_gke) {
+                        api.logger.debug?.(`${TAG} [context-engine] galaxy_kernel_insights skip: ${_gke.message}`);
+                    }
+
+                    // 8) dag_assemble 兜底
                     if (!summaryInjection) {
                         const dagCtx = await dagCall("dag_assemble", { sessionId, freshCycles: 2, maxTokens: tokenBudget || 240000 });
                         if (dagCtx?.text && dagCtx?.stats?.total_cycles > 0) {

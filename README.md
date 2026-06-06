@@ -1,7 +1,7 @@
 # 🌌 GalaxyOS — 认知增强引擎
 
 > OpenClaw 的开源认知增强引擎，为 AI Assistant 提供记忆、检索、推理、验证、自进化等全套认知能力
-> 版本: v5.6 · ncps 神经电路策略集成 + NLP增强神经网络 + 防幻觉双向闭环
+> 版本: v6.0 · 神经检索全链路集成 + ContextEngine neural_rerank + Galaxy Kernel assemble 注入 + 上下文内容类型排序
 
 ## 总览
 
@@ -158,7 +158,7 @@ python3 -m services.xiaoyi_claw_api recall --query "查询"
 
 | 版本 | 文件 | 说明 |
 |------|------|------|
-| **v5.6 (最新)** | `docs/xiaoyi-claw-core-architecture-v5.0.md` | **ncps 神经电路策略 + NLP 增强神经网络 + 防幻觉双向闭环 + TKG 事件日志** |
+| **v6.0 (最新)** | — | **神经检索全链路集成: neural_rerank → ContextEngine assemble + Galaxy Kernel 认知注入 + _content_type 上下文排序** |
 | **v5.5** | `docs/xiaoyi-claw-core-architecture-v5.0.md` | **IntelligentThinkingTrigger v2.0** 三论文集成 + Cognition Forest 子树修正 |
 | **v5.4** | `docs/xiaoyi-claw-core-architecture-v5.0.md` | **KG as Memory Backbone 4 阶段** + 检索通道 + Cognition 图推理 + 睡眠图维护 |
 | **v5.2** | `docs/xiaoyi-claw-core-architecture-v5.0.md` | **KoRa v2 行为模式引擎** + DAG 上下文持久化修复 |
@@ -173,10 +173,15 @@ python3 -m services.xiaoyi_claw_api recall --query "查询"
 
 **完整架构文档（含 15 层全景图、440+ 功能列表、更新日志）：** 👉 [📖 查看 Skills 文档栏](https://cnb.cool/llm-memory-integrat/GalaxyOS?tabValue=SKILLS-ov-file)
 
-### v5.6 新特性
+### v6.0 新特性
 
 | 特性 | 说明 |
 |------|------|
+| **五路神经检索 → ContextEngine 全链路** | `retrieval_hub` 五路并行（KG/Local/DAG/Synapse/Paper）→ neural_rerank_dedup（LTC h_t 门控 + 激活传播提权 + Content Fingerprint 去重）→ ContextEngine assemble 注入 |
+| **smart_retrieval UDS 方法** | 新增 Worker RPC 方法，走完整 `retrieval_hub()` 管道，15s 超时 + 自动降级到旧 recall |
+| **Galaxy Kernel 认知注入 assemble** | 60s 新鲜期内 `galaxy_kernel_insights.json`（情感/因果/空间/CoVe）自动注入 assemble 上下文，与 R-CCAM 去重 |
+| **_content_type 上下文排序** | 每条检索结果标记 `conversation` / `summary` / `metadata`，ContextEngine smartRecall 按类型重排序，对话历史优先 |
+| **Galaxy Kernel 产出优化** | `_run_paper_post_response` 输入从仅 query 改为完整对话对（query+answer），使情感/因果/空间分析有足够文本上下文 |
 | **ncps 神经电路策略集成** | LTC (Liquid Time-Constant) + CfC (Closed-form Continuous-depth) + 遗忘曲线，每轮对话自动创建神经元/突触，非阻塞 try/except 并行侧效应 |
 | **memory_synapse_network.py** | 全新服务模块：MemoryNeuron（含 LTC 15 参数）/ NeuronManager（去重+激活）/ SynapseManager（LTP/LTD）/ CfCSynapseEngine / ForgettingCurveTrainer |
 | **NLP 增强神经网络** | MemoryNeuron 新增 4 字段 (nlp_keywords/entities/sentiment/importance)，create_neuron 自动 NLP 特征提取，去重支持 Jaccard 语义兜底，突触权重基于关键词/实体重叠动态计算 (0.3+0.4*kw+0.3*ent) |

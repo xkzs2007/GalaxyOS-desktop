@@ -1643,6 +1643,19 @@ def _neural_rerank_dedup(
         # 无神经网络时按 RRF 排序
         _deduped.sort(key=lambda x: -x.get('rrf_score', x.get('score', 0)))
 
+    # ── Step 4: 内容类型标记（ContextEngine 场景过滤用） ──
+    for _item in _deduped:
+        _content = _item.get('content', '')
+        _source = _item.get('source', '')
+        # JSON 元节点（DAG 压缩产物）
+        if _content.strip().startswith('{') and '"name"' in _content and '"trigger"' in _content:
+            _item['_content_type'] = 'metadata'
+        # 纯对话历史
+        elif _source in ('user', 'ai', 'dag_msg') or '用户:' in _content or '系统:' in _content or '助手:' in _content:
+            _item['_content_type'] = 'conversation'
+        else:
+            _item['_content_type'] = 'summary'
+
     logger.info(f"neural rerank/dedup: {len(merged)} → {len(_deduped)} (dedup={len(merged)-len(_deduped)})")
     return _deduped[:top_k]
 
