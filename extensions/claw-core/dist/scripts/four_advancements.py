@@ -75,13 +75,7 @@ class RAPTOREngine:
             try:
                 conn = sqlite3.connect(DAG_DB)
                 cursor = conn.cursor()
-                cursor.execute(
-                        "SELECT node_id, content, importance_score FROM ("
-                        "SELECT node_id, content, importance_score, timestamp FROM rccam_nodes WHERE node_type != 'rccam_cycle_summary' "
-                        "UNION ALL "
-                        "SELECT node_id, content, importance_score, timestamp FROM dag_nodes WHERE node_type = 'MESSAGE'"
-                        ") ORDER BY timestamp DESC LIMIT 300"
-                    )
+                cursor.execute("SELECT node_id, content, importance_score FROM dag_nodes ORDER BY timestamp DESC LIMIT 200")
                 rows = cursor.fetchall()
                 conn.close()
                 
@@ -141,13 +135,7 @@ class GraphRAGEngine:
             try:
                 conn = sqlite3.connect(DAG_DB)
                 cursor = conn.cursor()
-                cursor.execute(
-                        "SELECT content FROM ("
-                        "SELECT content, timestamp FROM rccam_nodes WHERE node_type != 'rccam_cycle_summary' "
-                        "UNION ALL "
-                        "SELECT content, timestamp FROM dag_nodes WHERE node_type = 'MESSAGE'"
-                        ") ORDER BY timestamp DESC LIMIT 200"
-                    )
+                cursor.execute("SELECT content FROM dag_nodes ORDER BY timestamp DESC LIMIT 100")
                 rows = cursor.fetchall()
                 conn.close()
                 
@@ -158,7 +146,7 @@ class GraphRAGEngine:
                         result = self._nlp.analyze(content[:1000])
                         entities = result.get('entities', [])
                         for ent in entities:
-                            name = ent.get('mention', ent.get('text', ent.get('name', ''))) if isinstance(ent, dict) else str(ent)
+                            name = ent.get('text', '') if isinstance(ent, dict) else str(ent)
                             if not name or len(name) < 2:
                                 continue
                             if name not in self._entities:

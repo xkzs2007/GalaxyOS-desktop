@@ -2,7 +2,62 @@
 
 All notable changes to this project will be documented in this file.
 
-## [2.1.1] - 2026-04-07
+## [6.1.0] - 2026-06-06
+
+### ✨ 核心特征
+- **BlobArena v2 — DAG 无损存储** (新增 `blob_arena.py`):
+  mmap-backed append-only blob storage，替代 DAG 节点 512/2000 字符硬截断。
+  节点只存 memo + blob_id，完整原文存到 mmap arena。O(1) 随机访问 + generational GC。
+  DAG Context Manager 全面集成: add_message / add_summary / load_context 均走 BlobArena 路径。
+  摘要节点也走 BlobArena: summary 入 arena，节点存 [摘要] memo + blob_id。
+  降级链: Flash/Pro 摘要 → memo 截断 (200c) → rule_truncate。
+
+- **ONNX bge-small-zh-v1.5 (中文原生嵌入)**:
+  替换 all-MiniLM-L6-v2 (384d 英文仅) → BAAI/bge-small-zh-v1.5 (512d, 92MB)。
+  手动 matmul attention 重写绕过 torch MHA 静态导出限制，self-contained ONNX。
+  中文语义: 上海→迪士尼 0.739, 上海→北京 0.500, 上海→Python 0.255。
+
+- **RetrievalHub 7通道全链路** (`retrieval_hub.py v2.1`):
+  KG → Local(dense向量) → DAG(MN-RU bge-m3 siliconflow) → Synapse(GNN+CfC) → Paper → Cognitive(MN-RU三通道) → Web
+  RRF v2 → neural rerank (jaccard去重) → dedup → CRAG分解 → quality assessment
+  并行调度: ThreadPoolExecutor 并发 6 通道，单个 timeout 25s
+  dag_fallback / synapse_fallback 降级机制
+  CognitiveMap MN-RU 三通道集成 (mental/relational/unconscious)
+
+- **ANNSelector v2 + FAISS 动态索引** (`ann_selector.py`):
+  v2 重写: <5000 → HNSWFlat (最大精度), 延迟初始化, logger 替代 print。
+  FAISSIndex (`unified_vector_store.py`): 延迟 add() 时根据数量选择索引算法，
+  ANNSelector 直接集成进 FAISSIndex，统一统一向量存储。
+
+- **GNN Graph Builder** (新增 `gnn_graph_builder.py`, 465 行):
+  图神经网络图构建器，支持 GraphSAGE / GAT / GCN 三种卷积层。
+  为突触网络图推理提供底图层构建能力。
+
+- **~140 模块全同步**: memory_ontology_bridge / brain_memory_sync / scripts_core/* /
+  integration/* / memory/* / rails/* / privileged/* / api/* 全部从 GalaxyOS 同步到
+dist × 2 处，138 模块全加载 (之前 3 缺失)。
+
+- **neural_pipeline 重构**: __slots__ + __init__ 结构化，新增 predicted_ids 字段。
+  CfC 序列预测器集成: AutoNCP wiring, input=1, hidden=64, output=1。
+
+### 🐛 修复
+- **BlobArena Invalid magic**: `self._mmap[0:4]` 只读 4 字节 vs MAGIC `b"BLOBA"` 5 字节 → `[0:5]`
+- **DAG get_blob_arena 缺失导入**: 加 `from blob_arena import BlobArena, get_blob_arena`，移除未定义 `_HAS_BLOB_ARENA`
+- **MN-RU _do_dag query 400**: 直调 API 传 dimensions → `mn.embed()` 统一入口 (自带 fallback)
+- **BlobArena v2 与旧文件格式不兼容**: 清理 stale arena 文件强制重建
+- **RetrievalHub 全通道归零**: DAG 初始化失败级联到所有 fallback
+- **Siliconflow BAAI/bge-m3 不支持 dimensions**: 配置移除 + 代码自动无参重试 fallback
+
+### ⚡ 性能
+- ONNX bge-small-zh: ~42ms/embed (单), 2s/50 batch — 2× 慢于 22MB all-MiniLM，但原生中文
+- RetrievalHub cold start: ~12s (138 模块 + 3879 DAG 节点 MN-RU 索引重建)
+- MN-RU siliconflow: 1024d, 3879 节点, 单次 API embedding
+- BlobArena: mmap O(1) 读, append-only 写, generational GC
+
+### 🗑️ 移除
+- `services/llm_optimizer.py` (废弃 NIM 投机解码路径)
+- `all-MiniLM-L6-v2` (22MB) → bge-small-zh (92MB)
+- `config/llm_config.json` embedding.dimensions (siliconflow 不支持)
 
 ### Security
 - Metadata sync confirmation: all config files consistent

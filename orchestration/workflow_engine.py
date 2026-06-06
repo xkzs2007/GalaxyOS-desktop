@@ -192,13 +192,8 @@ class WorkflowEngine:
             
             # ==================== LLM 优化工作流 ====================
 
-            "llm_optimize": [
-                WorkflowStep("llm_optimizer", "get_stats", "LLM统计"),
+            "speculative_generate": [
                 WorkflowStep("speculative_hybrid", "generate", "投机解码"),
-            ],
-            "smart_llm_call": [
-                WorkflowStep("llm_optimizer", "generate", "调用LLM"),
-                WorkflowStep("semantic_cache", "get_stats", "缓存统计"),
             ],
             
             # ==================== 缓存工作流 ====================

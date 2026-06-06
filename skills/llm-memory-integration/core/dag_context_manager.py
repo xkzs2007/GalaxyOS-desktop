@@ -30,6 +30,7 @@ from typing import Dict, List, Optional, Any, Tuple
 from dataclasses import dataclass, field, asdict
 from collections import defaultdict, Counter
 from pathlib import Path
+from blob_arena import BlobArena, get_blob_arena
 
 logger = logging.getLogger(__name__)
 
@@ -112,9 +113,14 @@ class DAGNode:
     entities: List[str] = field(default_factory=list)       # 实体
     timestamp: float = 0.0           # 时间戳
     metadata: Dict[str, Any] = field(default_factory=dict)  # 额外元数据
+    blob_id: str = ""                # v2: BlobArena 引用（完整原文）
 
     def to_dict(self) -> dict:
-        return asdict(self)
+        d = asdict(self)
+        # 保持向后兼容
+        if 'blob_id' not in d:
+            d['blob_id'] = ''
+        return d
 
     @classmethod
     def from_dict(cls, data: dict) -> "DAGNode":
@@ -145,6 +151,7 @@ class DAGContextManager:
         leaf_chunk_tokens: int = 8000,
         summary_target_tokens: int = 500,
         context_threshold: float = 0.75,
+        use_blob_arena: bool = True,
     ):
         self.db_path = db_path or str(DAG_DB_PATH)
         self.max_context_tokens = max_context_tokens
@@ -152,6 +159,10 @@ class DAGContextManager:
         self.leaf_chunk_tokens = leaf_chunk_tokens
         self.summary_target_tokens = summary_target_tokens
         self.context_threshold = context_threshold
+        self.use_blob_arena = use_blob_arena
+
+        # BlobArena 实例（v2: 无损存储）
+        self._blob_arena = get_blob_arena() if self.use_blob_arena else None
 
         # SQLite 锁（线程安全）
         self._lock = threading.Lock()
@@ -165,8 +176,24 @@ class DAGContextManager:
         # SpatialTopologyGraph 懒加载（AriGraph 空间拓扑）
         self._sg = None
 
-        logger.info(f"DAG Context Manager 初始化: db={self.db_path}, "
-                    f"max_tokens={max_context_tokens}, threshold={context_threshold}")
+        # ── v2: Meta 参数自适应（参考 ALMA） ──
+        self._meta = {
+            'leaf_chunk_tokens': leaf_chunk_tokens,
+            'context_threshold': context_threshold,
+            'summary_target_tokens': summary_target_tokens,
+            'fresh_tail_count': fresh_tail_count,
+            # 自适应跟踪统计
+            'compact_history': [],      # 最近 10 次压缩的统计
+            'context_full_count': 0,    # context 填满次数
+            'compact_skip_count': 0,    # 触发压缩但实际没必要的次数
+            'adjust_count': 0,          # 参数调整次数
+            'last_compact_tokens': 0,
+            'last_context_ratio': 0.0,
+        }
+
+        logger.info(f"DAG Context Manager v2 初始化: db={self.db_path}, "
+                    f"max_tokens={max_context_tokens}, threshold={context_threshold}, "
+                    f"blob_arena={self.use_blob_arena}")
 
     def _init_db(self):
         """初始化 SQLite 数据库"""
@@ -238,6 +265,13 @@ class DAGContextManager:
             except Exception:
                 logger.warning("FTS5 不可用，跳过全文搜索索引")
 
+            # v2: blob_id 列（无损存储兼容迁移）
+            for tbl in ('dag_nodes', 'rccam_nodes'):
+                try:
+                    conn.execute(f"ALTER TABLE {tbl} ADD COLUMN blob_id TEXT DEFAULT ''")
+                except Exception:
+                    pass
+
             conn.commit()
             conn.close()
 
@@ -251,19 +285,32 @@ class DAGContextManager:
         if isinstance(data.get('metadata'), dict):
             data['metadata'] = json.dumps(data['metadata'])
 
+        # v2: 如果有原文且 blob_arena 可用，备份原文到 BlobArena
+        if self._blob_arena and data.get('content') and len(data['content']) > 200:
+            try:
+                # memo 替换全文，原文存 blob
+                _orig = data['content']
+                _blob_id = self._blob_arena.append_text(_orig)
+                _memo = generate_memo(_orig) if generate_memo else _orig[:200]
+                data['content'] = f"[memo] {_memo}"
+                data['blob_id'] = _blob_id
+            except Exception:
+                pass  # blob 失败不阻塞
+
         with self._lock:
             try:
                 conn = sqlite3.connect(self.db_path)
+                _blob_id_val = data.get('blob_id', '')
                 conn.execute("""
                     INSERT OR REPLACE INTO dag_nodes
-                    (node_id, node_type, session_key, content, tokens, priority,
+                    (node_id, node_type, session_key, content, blob_id, tokens, priority,
                      parent_ids, children_ids, is_summary, summary_of_ids,
                      importance_score, emotion_score, keywords, entities,
                      timestamp, metadata)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     data['node_id'], data['node_type'], data['session_key'],
-                    data['content'], data['tokens'], data['priority'],
+                    data['content'], _blob_id_val, data['tokens'], data['priority'],
                     data['parent_ids'], data['children_ids'],
                     1 if data['is_summary'] else 0,
                     data['summary_of_ids'],
@@ -475,8 +522,10 @@ class DAGContextManager:
             result_parts.append(("high", node))
             used_tokens += node.tokens
 
-        # 组装最终文本
-        assembled_text = "\n\n".join([node.content for _, node in result_parts])
+        # 组装最终文本（v2: 有 blob_id 的还原完整原文）
+        assembled_text = "\n\n".join([
+            self.restore_full_content(node) for _, node in result_parts
+        ])
 
         stats = {
             "total_tokens": used_tokens,
@@ -516,8 +565,62 @@ class DAGContextManager:
 
         return assembled_text, stats
 
+    def _adjust_meta_params(self, stats: Dict):
+        """
+        [v2] Meta 参数自适应调整（参考 ALMA）。
+
+        观察最近压缩行为，调整以下参数：
+        - leaf_chunk_tokens：触发压缩的原始 token 数阈值
+        - context_threshold：上下文使用率阈值
+        - summary_target_tokens：摘要目标 token 数
+
+        自适应规则（基于最近 10 次历史）：
+        1. context 频繁填满（>80%）→ leaf_chunk_tokens 下调 10%
+        2. context 使用率持续低（<40%）→ leaf_chunk_tokens 上调 15%
+        3. 频繁触发压缩但没什么好压的 → context_threshold 上调 0.05
+        4. 摘要 token 数波动大 → 调小 summary_target_tokens
+        """
+        _h = self._meta['compact_history']
+        if len(_h) < 3:
+            return
+
+        _recent = _h[-5:]  # 最近 5 次
+
+        # 1. context 频繁满
+        _full_count = sum(1 for s in _recent if s.get('context_usage_ratio', 0) > 0.8)
+        if _full_count >= 3 and self._meta['leaf_chunk_tokens'] > 1000:
+            self._meta['leaf_chunk_tokens'] = max(
+                1000, int(self._meta['leaf_chunk_tokens'] * 0.9)
+            )
+            self.leaf_chunk_tokens = self._meta['leaf_chunk_tokens']
+            self._meta['adjust_count'] += 1
+            logger.info(f"Meta: context 满 {_full_count}/{len(_recent)}, "
+                        f"leaf_chunk_tokens ↓ {self._meta['leaf_chunk_tokens']}")
+
+        # 2. context 使用率持续低
+        _low_count = sum(1 for s in _recent if s.get('context_usage_ratio', 1) < 0.4)
+        if _low_count >= 4:
+            self._meta['leaf_chunk_tokens'] = min(
+                64000, int(self._meta['leaf_chunk_tokens'] * 1.15)
+            )
+            self.leaf_chunk_tokens = self._meta['leaf_chunk_tokens']
+            self._meta['adjust_count'] += 1
+            logger.info(f"Meta: context 低 {_low_count}/{len(_recent)}, "
+                        f"leaf_chunk_tokens ↑ {self._meta['leaf_chunk_tokens']}")
+
+        # 3. 频繁触发但无效压缩
+        _skip_count = self._meta['compact_skip_count']
+        if _skip_count >= 3 and len(_h) >= 5:
+            self._meta['context_threshold'] = min(0.95,
+                self._meta['context_threshold'] + 0.05)
+            self.context_threshold = self._meta['context_threshold']
+            self._meta['compact_skip_count'] = 0
+            self._meta['adjust_count'] += 1
+            logger.info(f"Meta: 无效压缩 {_skip_count} 次, "
+                        f"context_threshold ↑ {self._meta['context_threshold']:.2f}")
+
     def should_compact(self, session_key: str) -> Tuple[bool, Dict]:
-        """检查是否需要触发增量压缩
+        """检查是否需要触发增量压缩 [v2: Meta 自适应阈值]
 
         额外检查时序 KG 的社区摘要是否可用。
         如果 TKG 社区摘要内容丰富，可适当降低压缩阈值（用社区摘要替代部分原始消息）
@@ -527,8 +630,10 @@ class DAGContextManager:
         raw_nodes = [n for n in all_nodes if not n.is_summary and n.priority >= PriorityLevel.NORMAL]
         raw_tokens = sum(n.tokens for n in raw_nodes)
 
-        threshold_tokens = int(self.max_context_tokens * self.context_threshold)
-        needs_compact = raw_tokens > self.leaf_chunk_tokens
+        _adjusted_leaf = self._meta['leaf_chunk_tokens']
+        _adjusted_threshold = self._meta['context_threshold']
+        threshold_tokens = int(self.max_context_tokens * _adjusted_threshold)
+        needs_compact = raw_tokens > _adjusted_leaf
 
         # 检查 TKG 社区摘要是否可用
         community_summary_available = False
@@ -541,20 +646,46 @@ class DAGContextManager:
         except Exception:
             pass
 
-        # 如果社区摘要可用，可提前触发压缩（减少原始消息保存压力）
-        if community_summary_available and raw_tokens > self.leaf_chunk_tokens * 0.7:
+        # 如果社区摘要可用，可提前触发压缩
+        if community_summary_available and raw_tokens > _adjusted_leaf * 0.7:
             needs_compact = True
+
+        context_usage_ratio = raw_tokens / self.max_context_tokens if self.max_context_tokens else 0
 
         stats = {
             "raw_nodes": len(raw_nodes),
             "raw_tokens": raw_tokens,
             "summary_nodes": len([n for n in all_nodes if n.is_summary]),
             "threshold_tokens": threshold_tokens,
-            "leaf_chunk_tokens": self.leaf_chunk_tokens,
+            "leaf_chunk_tokens": _adjusted_leaf,
+            "context_threshold": _adjusted_threshold,
             "needs_compact": needs_compact,
-            "context_usage_ratio": raw_tokens / self.max_context_tokens if self.max_context_tokens else 0,
+            "context_usage_ratio": context_usage_ratio,
             "community_summary_available": community_summary_available,
+            "meta": {
+                "compact_history_len": len(self._meta['compact_history']),
+                "adjust_count": self._meta['adjust_count'],
+                "leaf_chunk_tokens_meta": self._meta['leaf_chunk_tokens'],
+                "context_threshold_meta": self._meta['context_threshold'],
+            },
         }
+
+        # 记录压缩历史
+        if needs_compact:
+            self._meta['compact_history'].append({
+                'context_usage_ratio': context_usage_ratio,
+                'raw_tokens': raw_tokens,
+                'ts': time.time(),
+            })
+            # 只保留最近 10 次
+            if len(self._meta['compact_history']) > 10:
+                self._meta['compact_history'] = self._meta['compact_history'][-10:]
+
+            self._meta['last_compact_tokens'] = raw_tokens
+            self._meta['last_context_ratio'] = context_usage_ratio
+
+        # Meta 自适应
+        self._adjust_meta_params(stats)
 
         return needs_compact, stats
 
@@ -590,39 +721,47 @@ class DAGContextManager:
         if not to_summarize:
             return {"summarized": 0, "reason": "没有可摘要的节点"}
 
-        # Flash 闪电摘要（优先）
-        if not summary_text:
+        # v2: 先将原文存到 BlobArena（无损保留），节点只存 memo
+        if self._blob_arena:
             combined_text = "\n".join([n.content for n in to_summarize])
-            try:
-                from xiaoyi_claw_api import get_global_xiaoyi_claw
-                _xc = get_global_xiaoyi_claw()
-                if _xc and _xc.llm_flash:
-                    _flash_resp = _xc.llm_flash.chat.completions.create(
-                        model=_xc._llm_flash_model,
-                        messages=[{"role": "user",
-                            "content": f"请用中文为以下对话内容生成简洁的摘要，保留核心信息和关键结论：\n\n{combined_text[:3000]}\n\n摘要："}],
-                        max_tokens=256, temperature=0.1,
-                    )
-                    summary_text = _flash_resp.choices[0].message.content.strip()[:800]
-                    _method = "flash"
-            except Exception:
-                pass
+            _blob_id = self._blob_arena.append_text(combined_text)
+            # memo = 轻量检索索引，不做价值判断
+            memo_text = generate_memo(combined_text) if generate_memo else combined_text[:200]
+            keywords = _extract_keywords(combined_text)
+            _method = "blob_arena"
+        else:
+            # 降级到旧版 Flash/截断
+            combined_text = "\n".join([n.content for n in to_summarize])
+            _blob_id = ""
+            if not summary_text:
+                try:
+                    from xiaoyi_claw_api import get_global_xiaoyi_claw
+                    _xc = get_global_xiaoyi_claw()
+                    if _xc and _xc.llm_flash:
+                        _flash_resp = _xc.llm_flash.chat.completions.create(
+                            model=_xc._llm_flash_model,
+                            messages=[{"role": "user",
+                                "content": f"请用中文为以下对话内容生成简洁的摘要，保留核心信息和关键结论：\n\n{combined_text[:3000]}\n\n摘要："}],
+                            max_tokens=256, temperature=0.1,
+                        )
+                        summary_text = _flash_resp.choices[0].message.content.strip()[:800]
+                        _method = "flash"
+                except Exception:
+                    pass
+            if not summary_text:
+                summary_text = combined_text[:500] + "..." if len(combined_text) > 500 else combined_text
+                _method = "rule_truncate"
+            memo_text = summary_text
+            keywords = _extract_keywords(summary_text)
 
-        if not summary_text:
-            summary_text = combined_text[:500] + "..." if len(combined_text) > 500 else combined_text
-            _method = "rule_truncate"
-
-        # 提取关键词
-        keywords = _extract_keywords(summary_text)
-
-        # 存储摘要节点
-        summary_node_id = f"summ_{session_key}_{int(time.time())}_{hashlib.md5(summary_text.encode()[:16]).hexdigest()[:8]}"
+        summary_node_id = f"summ_{session_key}_{int(time.time())}_{hashlib.md5((memo_text or combined_text).encode()[:16]).hexdigest()[:8]}"
         summary_node = DAGNode(
             node_id=summary_node_id,
             node_type=DAGNodeType.SUMMARY,
             session_key=session_key,
-            content=f"[摘要] {summary_text}",
-            tokens=len(summary_text) // 4,
+            content=f"[摘要] {memo_text}",
+            blob_id=_blob_id if _blob_id else getattr(summary_node, 'blob_id', ''),
+            tokens=len(memo_text) // 4,
             priority=PriorityLevel.NORMAL,
             is_summary=True,
             summary_of_ids=[n.node_id for n in to_summarize],
@@ -634,8 +773,9 @@ class DAGContextManager:
         return {
             "summarized": len(to_summarize),
             "summary_node_id": summary_node_id,
-            "summary_length": len(summary_text),
+            "summary_length": len(memo_text),
             "method": _method,
+            "blob_id": _blob_id,
         }
 
     def expand_summary(self, summary_node_id: str) -> List[DAGNode]:
@@ -668,6 +808,44 @@ class DAGContextManager:
         nodes = [self._row_to_node(dict(r)) for r in rows]
         nodes.sort(key=lambda n: n.timestamp)
         return nodes
+
+    # ── v2: BlobArena 无损恢复 ──
+
+    def restore_full_content(self, node: DAGNode) -> str:
+        """
+        从 BlobArena 恢复节点的完整原文".
+
+        如果节点有 blob_id，从 BlobArena 读取全量原文。
+        如果没有（旧数据），返回节点自身的 content。
+
+        Args:
+            node: DAGNode 或 dict（含 blob_id 字段）
+
+        Returns:
+            str: 完整原文
+        """
+        if not self._blob_arena:
+            return node.content if hasattr(node, 'content') else node.get('content', '')
+
+        blob_id = getattr(node, 'blob_id', '') if hasattr(node, 'blob_id') else node.get('blob_id', '')
+        if blob_id:
+            try:
+                full_text = self._blob_arena.read_text(blob_id)
+                if full_text:
+                    return full_text
+            except Exception:
+                pass
+        # 降级：返回节点自身的 content
+        return node.content if hasattr(node, 'content') else node.get('content', '')
+
+    def restore_batch_content(self, nodes: List[DAGNode]) -> List[Dict]:
+        """批量恢复节点原文"""
+        result = []
+        for n in nodes:
+            doc = n.to_dict() if hasattr(n, 'to_dict') else dict(n)
+            doc['full_content'] = self.restore_full_content(n)
+            result.append(doc)
+        return result
 
     def get_node_count(self) -> Dict[str, Dict[str, int]]:
         """获取节点统计"""
@@ -829,8 +1007,11 @@ class DAGContextManager:
                         content, strategy="", confidence=0.5, validation="unknown",
                         importance=0.5, parent_ids=None, priority=2,
                         node_type=None, metadata=None,
-                        previous_cycle_id=""):
-        """写入一个 R-CCAM 阶段节点到 rccam_nodes 表"""
+                        previous_cycle_id="", blob_id=""):
+        """写入一个 R-CCAM 阶段节点到 rccam_nodes 表
+
+        v2: 增加 blob_id 参数，支持 BlobArena 无损存储
+        """
         node_type = node_type or f"rccam_{phase_name}"
         node_id = f"rccam_{phase_name}_{session_key}_{cycle_index}_{int(time.time()*1000)}"
 
@@ -859,14 +1040,14 @@ class DAGContextManager:
             conn = sqlite3.connect(self.db_path)
             conn.execute("""
                 INSERT OR REPLACE INTO rccam_nodes
-                (node_id, node_type, session_key, content, tokens,
+                (node_id, node_type, session_key, content, blob_id, tokens,
                  parent_ids, cycle_id, previous_cycle_id, phase_name, cycle_index,
                  priority, is_summary, is_compressed,
                  importance_score, confidence, validation,
                  keywords, strategy, timestamp, metadata)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
-                node_id, node_type, session_key, str(content), tokens,
+                node_id, node_type, session_key, str(content), blob_id, tokens,
                 json.dumps(parent_ids), cycle_id, previous_cycle_id, phase_name, cycle_index,
                 priority, 0, 0,
                 importance, confidence, validation,
@@ -1196,13 +1377,14 @@ class DAGContextManager:
         return needs_soft, needs_hard, compressible_cycles, stats
 
     def compact_rccam_cycle(self, session_key, cycle_id, expandable=False):
-        """对一个旧 cycle 执行压缩（LCM 三级升级协议）
+        """
+        [v2] 压缩 R-CCAM cycle — BlobArena 无损存储 + Memo 检索索引
 
-        Level 1: 完整结构化摘要 — 保留所有阶段内容（最适合 QA）
-        Level 2: 要点式压缩 — 只留关键发现 + 结论（节省 ~50% tokens）
-        Level 3: 确定性 512 字符硬截断 — 绝对不溢出窗口
-
-        三级协议保证：摘要质量随压缩强度梯度降级，但永远不会爆窗口。
+        废除 LCM 三级压缩协议（不再丢弃任何原始内容）。
+        改为：
+        - 保存完整的原始阶段节点到 BlobArena（无损）
+        - summary 节点只存 ~50 词 memo + blob_id（检索索引用）
+        - assemble 时自动从 BlobArena 还原完整原文
 
         Args:
             session_key: 会话 key
@@ -1214,68 +1396,94 @@ class DAGContextManager:
         if not nodes:
             return {"summarized": 0, "reason": "no nodes"}
 
-        # 处理重复 phase 场景：同一个 cycle 内有多轮五阶段
-        # 按 PHASE_ORDER 顺序检测完整轮次，每 5~6 个节点为一轮
-        # 如果不能完美切分，就按时间分块（每块最多 50 个节点）
-        phase_names = [n["phase_name"] for n in nodes]
-        unique_phases = set(phase_names)
-        multiple_rounds = len(phase_names) > len(unique_phases) * 1.5
+        # 构建完整内容用于 BlobArena 存储
+        full_text = ""
+        phase_names_raw = [n["phase_name"] for n in nodes]
+        unique_phases = set(phase_names_raw)
+        multiple_rounds = len(phase_names_raw) > len(unique_phases) * 1.5
+
+        # 标记要压缩的节点
+        marked_ids = []
+        for n in nodes:
+            marked_ids.append(n["node_id"])
+            # 构建完整原文
+            full_text += f"[{n['phase_name']}]\n{n['content']}\n\n"
+
+        # 生成 memo（检索索引用，不丢信息因为 BlobArena 存了全文）
+        if self._blob_arena:
+            # 全文存到 BlobArena
+            _blob_id = self._blob_arena.append_text(full_text)
+            # 生成轻量 memo
+            _memo_text = generate_memo(full_text) if generate_memo else full_text[:200]
+            _method = "blob_arena_memo"
+            _confidence = 0.5
+            _validation = "blob_arena_preserved"
+        else:
+            # 降级到旧版 Flash 摘要（仍保留部分信息）
+            _blob_id = ""
+            try:
+                from xiaoyi_claw_api import get_global_xiaoyi_claw
+                _xc = get_global_xiaoyi_claw()
+                if _xc and _xc.llm_flash:
+                    _flash_resp = _xc.llm_flash.chat.completions.create(
+                        model=_xc._llm_flash_model,
+                        messages=[{"role": "user",
+                            "content": f"请为以下 R-CCAM 认知循环生成简洁摘要（保留核心结论和关键发现）：\n\n{full_text[:3000]}\n\n摘要："}],
+                        max_tokens=256, temperature=0.1,
+                    )
+                    _memo_text = _flash_resp.choices[0].message.content.strip()[:500]
+                    _method = "flash"
+                else:
+                    _memo_text = full_text[:300] + "..."
+                    _method = "rule_truncate"
+            except Exception:
+                _memo_text = full_text[:300] + "..."
+                _method = "rule_truncate"
+            _confidence = 0.3
+            _validation = _method
+
+        # 标记原始节点已压缩
+        with self._lock:
+            conn = sqlite3.connect(self.db_path)
+            conn.execute(
+                "UPDATE rccam_nodes SET is_compressed=1 WHERE node_id IN (" +
+                ",".join(["?"] * len(marked_ids)) + ")",
+                marked_ids
+            )
+            conn.commit()
+            conn.close()
 
         if multiple_rounds:
-            # 多轮场景：按时间切块（每块代表 ~10 轮对话）
+            # 多轮场景：多个 chunk，每个独立 memo
             chunk_size = 50
-            total = len(nodes)
             results = []
-            marked_ids = []
+            total = len(nodes)
             target_table = "dag_nodes" if expandable else "rccam_nodes"
             for start in range(0, total, chunk_size):
                 chunk = nodes[start:start + chunk_size]
                 if not chunk:
                     continue
-                # 从 chunk 中抽取 user_input（第一个）和 action/memory（最后一个）
-                chunk_phase_map = {}
-                for n in chunk:
-                    chunk_phase_map[n["phase_name"]] = n["content"]
-
-                user_intent = chunk_phase_map.get("user_input") or ""
-                conclusions = chunk_phase_map.get("action") or chunk_phase_map.get("control") or ""
-
-                # 收集关键发现 — 从各阶段取前 200 字符去重
-                candidate_findings = []
-                seen_findings = set()
-                for p in self.PHASE_ORDER:
-                    c = chunk_phase_map.get(p, "")
-                    if c and c[:80] not in seen_findings:
-                        candidate_findings.append(c[:200])
-                        seen_findings.add(c[:80])
-
-                chunk_content = json.dumps({
-                    "chunk": start // chunk_size,
-                    "user_intent": user_intent[:200],
-                    "key_findings": [f[:120] for f in candidate_findings[:3]],
-                    "conclusion": conclusions[:200],
-                    "compression_level": 1,
-                }, ensure_ascii=False)
-
-                if len(chunk_content) > 512:
-                    chunk_content = json.dumps({
-                        "chunk": start // chunk_size,
-                        "user_intent": user_intent[:100],
-                        "conclusion": conclusions[:150],
-                        "compression_level": 2,
-                    }, ensure_ascii=False)
-                    if len(chunk_content) > 512:
-                        chunk_content = (user_intent[:60] + " → " + conclusions[:100])[:512]
-
-                # 创建 summary 节点
                 chunk_ids = [n["node_id"] for n in chunk]
+                chunk_full = ""
+                for n in chunk:
+                    chunk_full += f"[{n['phase_name']}]\n{n['content']}\n\n"
+
+                # chunk 级别 blob
+                _chunk_blob_id = ""
+                if self._blob_arena:
+                    _chunk_blob_id = self._blob_arena.append_text(chunk_full)
+                _chunk_memo = generate_memo(chunk_full) if (generate_memo and self._blob_arena) else chunk_full[:200]
+
                 if target_table == "rccam_nodes":
+                    # 用 add_rccam_node 但通过 blob 方式
                     summary_node_id = self.add_rccam_node(
                         session_key=session_key, cycle_id=cycle_id,
                         cycle_index=chunk[0].get("cycle_index", 1),
                         phase_name="cycle_summary",
-                        content=chunk_content, strategy="cycle_summary",
-                        confidence=0.4, validation="compressed",
+                        content=f"[memo] {_chunk_memo}",
+                        blob_id=_chunk_blob_id,
+                        strategy="cycle_summary",
+                        confidence=0.4, validation="blob_arena",
                         importance=0.5, node_type="rccam_cycle_summary",
                     )
                 else:
@@ -1284,117 +1492,59 @@ class DAGContextManager:
                         node_id=summary_node_id,
                         node_type="cognitive_summary",
                         session_key=session_key,
-                        content=f"[认知摘要] {chunk_content}",
-                        tokens=len(chunk_content) // 4 or 1,
+                        content=f"[memo] {_chunk_memo}",
+                        blob_id=_chunk_blob_id,
+                        tokens=len(_chunk_memo) // 4 or 1,
                         priority=PriorityLevel.NORMAL,
                         is_summary=True,
                         summary_of_ids=chunk_ids,
                         timestamp=chunk[-1]["timestamp"],
                     )
                     self.add_node(summary_node)
-
                 results.append(summary_node_id)
-                marked_ids.extend(chunk_ids)
+            return {"summarized": len(results), "nodes_affected": len(marked_ids), "method": _method}
 
-            # 标记原始节点已压缩
-            with self._lock:
-                conn = sqlite3.connect(self.db_path)
-                conn.execute(
-                    "UPDATE rccam_nodes SET is_compressed=1 WHERE node_id IN (" +
-                    ",".join(["?"] * len(marked_ids)) + ")",
-                    marked_ids
-                )
-                conn.commit()
-                conn.close()
-
-            return {"summarized": len(results), "nodes_affected": len(marked_ids)}
-
-        # ── 单轮场景（原始逻辑） ──
+        # ── 单轮场景 ──
         cycle_index = nodes[0]["cycle_index"]
         phase_map = {n["phase_name"]: n["content"] for n in nodes}
 
-        user_intent = phase_map.get("user_input") or ""
-        conclusions = phase_map.get("action") or phase_map.get("control") or ""
+        # 构建 memo 内容
+        user_intent = phase_map.get("user_input", "")[:200]
+        conclusions = phase_map.get("action") or phase_map.get("control", "")[:200]
 
-        # 按 PHASE_ORDER 顺序收集各阶段前 200 字符
-        candidate_findings = []
-        source_phases = {}
-        for p in self.PHASE_ORDER:
-            c = phase_map.get(p, "")
-            if c:
-                candidate_findings.append(c[:200])
-                source_phases[p] = c[:100]
+        # memo 用 generate_memo（只做检索索引，不做价值判断）
+        memo_for_index = _memo_text if self._blob_arena else full_text[:300]
 
-        # ── Level 1: 完整结构化摘要 ──
-        l1_content = json.dumps({
-            "cycle": cycle_index,
-            "user_intent": user_intent[:200],
-            "key_findings": [f[:120] for f in candidate_findings[:5]],
-            "conclusion": conclusions[:200],
-            "compression_level": 1,
-        }, ensure_ascii=False)
-
-        L3_HARD_LIMIT = 512  # Level 3 绝对上限
+        previous_cycle_id = cycle_id.replace(f"_{cycle_index}", f"_{cycle_index - 1}") if cycle_index and cycle_index > 1 else ""
 
         target_table = "dag_nodes" if expandable else "rccam_nodes"
-
-        if len(l1_content) > L3_HARD_LIMIT:
-            # ── Level 2: 要点式压缩（删阶段细节，只留关键发现 + 结论） ──
-            l2_content = json.dumps({
-                "cycle": cycle_index,
-                "key_findings": [f[:80] for f in candidate_findings[:3]],
-                "conclusion": conclusions[:150],
-                "compression_level": 2,
-            }, ensure_ascii=False)
-
-            if len(l2_content) > L3_HARD_LIMIT:
-                # ── Level 3: 确定性硬截断 ──
-                with self._lock:
-                    conn = sqlite3.connect(self.db_path)
-                    conn.execute(
-                        "UPDATE rccam_nodes SET is_compressed=1 WHERE session_key=? AND cycle_id=? AND node_type != 'rccam_cycle_summary'",
-                        (session_key, cycle_id)
-                    )
-                    conn.commit()
-                    conn.close()
-
-                l3_text = json.dumps({
-                    "cycle": cycle_index,
-                    "user_intent": user_intent[:60],
-                    "conclusion": conclusions[:100],
-                    "compression_level": 3,
-                }, ensure_ascii=False)
-                if len(l3_text) > L3_HARD_LIMIT:
-                    l3_text = l3_text[:L3_HARD_LIMIT]
-
-                previous_cycle_id = cycle_id.replace(f"_{cycle_index}", f"_{cycle_index - 1}") if cycle_index and cycle_index > 1 else ""
-
-                return self.add_rccam_node(
-                    session_key=session_key, cycle_id=cycle_id,
-                    cycle_index=cycle_index, phase_name="cycle_summary",
-                    content=l3_text, strategy="cycle_summary",
-                    confidence=0.2, validation="truncated",
-                    importance=0.3, node_type="rccam_cycle_summary",
-                    previous_cycle_id=previous_cycle_id,
-                )
-
-            # Level 2: 要点式
-            return self.write_cycle_summary(
+        if target_table == "rccam_nodes":
+            return self.add_rccam_node(
                 session_key=session_key, cycle_id=cycle_id,
-                cycle_index=cycle_index, user_intent=user_intent[:80],
-                key_findings=[f[:80] for f in candidate_findings[:3]],
-                conclusion=conclusions[:150], confidence=0.4,
-                source_phases={},
+                cycle_index=cycle_index, phase_name="cycle_summary",
+                content=f"[memo] {memo_for_index}",
+                blob_id=_blob_id,
+                strategy="cycle_summary",
+                confidence=_confidence, validation=_validation,
+                importance=0.7, node_type="rccam_cycle_summary",
+                previous_cycle_id=previous_cycle_id,
             )
-
-        # Level 1: 完整结构
-        return self.write_cycle_summary(
-            session_key=session_key, cycle_id=cycle_id,
-            cycle_index=cycle_index, user_intent=user_intent[:200],
-            key_findings=[f[:120] for f in candidate_findings[:5]],
-            conclusion=conclusions[:200], confidence=0.5,
-            source_phases=source_phases,
-        )
+        else:
+            summary_node_id = "cog_summ_" + nodes[0]["node_id"][:30]
+            summary_node = DAGNode(
+                node_id=summary_node_id,
+                node_type="cognitive_summary",
+                session_key=session_key,
+                content=f"[memo] {memo_for_index}",
+                blob_id=_blob_id,
+                tokens=len(memo_for_index) // 4 or 1,
+                priority=PriorityLevel.NORMAL,
+                is_summary=True,
+                summary_of_ids=[n["node_id"] for n in nodes],
+                timestamp=nodes[-1]["timestamp"],
+            )
+            self.add_node(summary_node)
+            return {"summarized": 1, "node_id": summary_node_id, "method": _method}
 
     def cognitive_compress_dag_messages(self, session_key,
                                           max_to_compress=20,

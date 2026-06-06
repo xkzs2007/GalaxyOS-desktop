@@ -1,7 +1,7 @@
 ---
 name: llm-memory-integration
-description: LLM + 向量模型集成方案。支持任意 LLM + Embedding 模型，用户自行配置。支持混合检索、智能路由、渐进式启用、用户画像自动更新。
-version: 2.1.4
+description: LLM + 向量模型集成方案。支持任意 LLM + Embedding 模型，用户自行配置。支持混合检索、智能路由、渐进式启用、用户画像自动更新。v6.1: ONNX bge-small-zh-v1.5 中文原生嵌入 + MN-RU siliconflow BAAI/bge-m3 + 7通道检索 Hub。
+version: 6.1.0
 license: MIT-0
 author: xkzs2007
 homepage: https://clawhub.ai/skill/llm-memory-integration
@@ -65,7 +65,7 @@ security_note: |
   - ✅ 使用参数化查询防止 SQL 注入
   - ✅ 不自动安装 cron 任务
   
-  🔒 v2.1.4：修复 enable_all_recommendations.py，改用 sqlite3 直接连接。
+  🔒 v6.1.0：ONNX bge-small-zh-v1.5 替代 all-MiniLM-L6-v2，MN-RU siliconflow API fallback，BlobArena/Layer9/DAG Bug 修复，~140 模块同步。
 ---
 
 # LLM Memory Integration

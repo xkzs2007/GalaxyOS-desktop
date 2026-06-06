@@ -62,15 +62,34 @@ def _import_deps():
 @dataclass
 class PipelineResult:
     """管道输出的结果"""
-    activated_neurons: List[Tuple[str, float]]  # [(neuron_id, strength), ...]
-    neuron_labels: Dict[str, str]               # {neuron_id: content}
-    pipeline_time_ms: float                     # 总耗时 (ms)
-    gnn_time_ms: float                          # GNN 编码耗时
-    cfc_time_ms: float                          # CfC 推理耗时
-    num_neurons: int                            # 图中节点数
-    num_synapses: int                           # 图中边数
-    embedding_dim: int                          # GNN 输出维度
-    gnn_model: str                              # 使用的 GNN 模型
+    __slots__ = (
+        "activated_neurons", "neuron_labels", "pipeline_time_ms",
+        "gnn_time_ms", "cfc_time_ms", "num_neurons", "num_synapses",
+        "embedding_dim", "gnn_model", "predicted_ids",
+    )
+    def __init__(
+        self,
+        activated_neurons=None,
+        neuron_labels=None,
+        pipeline_time_ms: float = 0.0,
+        gnn_time_ms: float = 0.0,
+        cfc_time_ms: float = 0.0,
+        num_neurons: int = 0,
+        num_synapses: int = 0,
+        embedding_dim: int = 0,
+        gnn_model: str = "",
+        predicted_ids=None,
+    ):
+        self.activated_neurons = activated_neurons or []
+        self.neuron_labels = neuron_labels or {}
+        self.pipeline_time_ms = pipeline_time_ms
+        self.gnn_time_ms = gnn_time_ms
+        self.cfc_time_ms = cfc_time_ms
+        self.num_neurons = num_neurons
+        self.num_synapses = num_synapses
+        self.embedding_dim = embedding_dim
+        self.gnn_model = gnn_model
+        self.predicted_ids = predicted_ids or []
 
 
 class NeuralMemoryPipeline:
@@ -173,9 +192,10 @@ class NeuralMemoryPipeline:
                     weights = self.graph.edge_attr.tolist() if self.graph.edge_attr is not None else [0.5]*len(src)
                     for i in range(len(src)):
                         self._cached_synapses.append({
-                            "source_id": self.graph.node_ids[src[i]],
-                            "target_id": self.graph.node_ids[dst[i]],
-                            "weight": weights[i] if isinstance(weights, list) else weights,
+                            'id': f'SYN-IMP-{i}',
+                            'source_id': self.graph.node_ids[src[i]],
+                            'target_id': self.graph.node_ids[dst[i]],
+                            'weight': weights[i] if isinstance(weights, list) else weights,
                         })
         else:
             self._cached_neurons = self.graph_builder._load_neurons()
@@ -242,12 +262,31 @@ class NeuralMemoryPipeline:
             hidden_size=self.cfc_hidden_size,
             backbone_units=0,
             use_embedding_proj=True,
+            use_wired_cfc=False,  # 大图用简单 CfCCell，避免 WiredCfCCell 的维度对齐问题
         )
         self.cfc_engine.to(self.device)
         self.cfc_engine.eval()
         self.cfc_engine.set_topology(self.topo)
         self.cfc_engine.load_synapses(self._cached_synapses)
         logger.info("CfC 引擎初始化完成")
+
+        # ── 6a. 初始化 CfC 序列预测器 ──
+        if not self.sequence_predictor:
+            try:
+                from cfc_sequence_predictor import CfCSequencePredictor
+                self.sequence_predictor = CfCSequencePredictor(
+                    input_dim=self.cfc_hidden_size,
+                    hidden_dim=self.cfc_hidden_size * 2,
+                    seq_len=5,
+                    use_autoncp=True,
+                    autoncp_sparsity=0.5,
+                    device=str(self.device),
+                )
+                self.sequence_predictor.eval()
+                self.sequence_predictor.to(self.device)
+                logger.info("CfC 序列预测器初始化完成")
+            except Exception as e:
+                logger.debug(f"序列预测器初始化跳过: {e}")
 
         # 6. 运行 GNN 获取 embedding
         self._run_gnn_embedding()
@@ -279,7 +318,7 @@ class NeuralMemoryPipeline:
         activation_strength: float = 0.2,
     ) -> PipelineResult:
         """
-        激活传播（主入口）
+        激活传播（主入口，含 CfC 序列预测）
 
         Args:
             neuron_id: 起始神经元 ID
@@ -288,7 +327,7 @@ class NeuralMemoryPipeline:
             activation_strength: 激活强度阈值
 
         Returns:
-            PipelineResult
+            PipelineResult (含 predicted_ids 字段)
         """
         import time
 
@@ -326,6 +365,42 @@ class NeuralMemoryPipeline:
         )
         t2 = time.time()
 
+        # ── CfC 序列预测器：记录激活事件 + 预测下一个 ──
+        predicted_ids = []
+        if self.sequence_predictor is not None:
+            try:
+                # 从当前 neuron embedding 记录激活事件
+                _idx = self.graph.id_to_idx.get(neuron_id)
+                if _idx is not None and self._neuron_embeddings is not None:
+                    _emb = self._neuron_embeddings[_idx].tolist()
+                    self.sequence_predictor.history.record(
+                        memory_id=neuron_id,
+                        embedding=_emb,
+                        strength=1.0,
+                    )
+                    # 记录关联结果（较弱强度）
+                    for _aid, _st in results:
+                        _aidx = self.graph.id_to_idx.get(_aid)
+                        if _aidx is not None and self._neuron_embeddings is not None:
+                            _aemb = self._neuron_embeddings[_aidx].tolist()
+                            self.sequence_predictor.history.record(
+                                memory_id=_aid,
+                                embedding=_aemb,
+                                strength=_st,
+                            )
+                # 运行序列预测
+                _pred = self.sequence_predictor.predict_next(
+                    seq_len=min(5, 2 if len(results) < 2 else 5)
+                )
+                if _pred and len(_pred) > 1 and _pred[1]:
+                    for _pid in _pred[1]:
+                        if _pid not in predicted_ids:
+                            predicted_ids.append(_pid)
+            except Exception as e:
+                logger.debug(f"sequence predict skipped: {e}")
+
+        t3 = time.time()
+
         # 构造标签映射
         labels = {}
         for n in self._cached_neurons:
@@ -337,13 +412,14 @@ class NeuralMemoryPipeline:
         return PipelineResult(
             activated_neurons=results,
             neuron_labels=labels,
-            pipeline_time_ms=(t2 - t0) * 1000,
+            pipeline_time_ms=(t3 - t0) * 1000,
             gnn_time_ms=(t1 - t0) * 1000,
             cfc_time_ms=(t2 - t1) * 1000,
             num_neurons=self.graph.num_nodes,
             num_synapses=self.graph.num_edges,
             embedding_dim=self.cfc_hidden_size,
             gnn_model=self.gnn_type,
+            predicted_ids=predicted_ids,
         )
 
     def _update_reinforcement(self, seed_id: str, activated_ids: List[str]):

@@ -989,15 +989,7 @@ MODULE_REGISTRY: Dict[str, ModuleInfo] = {
         layer=1
     ),
     
-    # LLM 优化
-    "llm_optimizer": ModuleInfo(
-        name="llm_optimizer",
-        module_type=ModuleType.MODEL_ROUTER,
-        description="LLM 优化器 - 多 API 智能调度",
-        triggers=["LLM优化", "API调度"],
-        script_path=str(CORE_DIR / "llm_optimizer.py"),
-        layer=4
-    ),
+
     
     # 记忆核心
     "memory_bank": ModuleInfo(
@@ -1829,7 +1821,7 @@ class UnifiedCoordinator:
             "hybrid_memory_search_flow": [
                 ("hybrid_memory_search", "混合记忆检索"),
                 ("proposition_retriever", "命题检索"),
-                ("llm_optimizer", "LLM 优化"),
+
             ],
 
             # 大页内存管理
@@ -2753,7 +2745,7 @@ INTEGRATED_WORKFLOWS = {
     ],
     "llm_optimize": [
         ("model_router", "模型路由"),
-        ("llm_optimizer", "API优化"),
+
         ("speculative_decoder", "投机解码"),
         ("streaming_llm", "流式生成")
     ],

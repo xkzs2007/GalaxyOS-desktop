@@ -183,6 +183,18 @@ class HNSW_MN_Index:
             )
             return [d.embedding for d in resp.data]
         except Exception as e:
+            err_str = str(e)
+            if "400" in err_str and self._emb_dim:
+                try:
+                    resp = self._emb_client.embeddings.create(
+                        model=self._emb_model, input=texts,
+                    )
+                    self._emb_dim = len(resp.data[0].embedding)
+                    logger.info(f"MN-RU fallback OK (no dimensions), dim={self._emb_dim}")
+                    return [d.embedding for d in resp.data]
+                except Exception as e2:
+                    logger.warning(f"MN-RU fallback 也失败: {e2}")
+                    return []
             logger.warning(f"MN-RU embedding 失败: {e}")
             return []
     
@@ -1011,13 +1023,12 @@ def _do_dag(query: str, top_k: int, session_id: str = "") -> list:
         else:
             merged_query = query
         
-        # 1 次 embedding API 调用
-        q_resp = mn._emb_client.embeddings.create(
-            model=mn._emb_model,
-            input=[merged_query],
-            dimensions=mn._emb_dim,
-        )
-        q_vec = q_resp.data[0].embedding
+        # 1 次 embedding API 调用（使用 mn.embed 的 fallback 逻辑）
+        _emb_result = mn.embed([merged_query])
+        if not _emb_result:
+            logger.warning("  dag(mn-ru) embed 失败，降级到 fallback")
+            return _do_dag_fallback(query, top_k)
+        q_vec = _emb_result[0]
         
         # 三通道搜索
         all_results = mn.search(q_vec, top_k=top_k * 2)  # 多取一些确保 mini/session 能排上来
@@ -1108,7 +1119,135 @@ def _do_dag_fallback(query: str, top_k: int) -> list:
 
 
 def _do_synapse(query: str) -> list:
-    """3. 突触神经网络检索（关键词匹配 + 激活传播，双通道）"""
+    """3. 突触神经网络检索（ONNX embedding + GAT 种子 + CfC 激活传播）
+
+    流程：
+      1. jieba 粗筛 200 个候选人 → ONNX 精排（余弦相似度）
+      2. GAT→CfC 激活传播（NCP 拓扑约束）
+      3. CfC 序列预测器预取后续可能激活的记忆
+    """
+    _r = []
+    try:
+        _ws = os.path.expanduser("~/.openclaw/workspace")
+        _core_dir = os.path.join(_ws, "GalaxyOS/extensions/claw-core/dist/scripts")
+        if _core_dir not in sys.path:
+            sys.path.insert(0, _core_dir)
+
+        from onnx_embedding import get_onnx_embedding
+        _onnx = get_onnx_embedding()
+        _onnx.initialize()
+
+        from neural_pipeline import NeuralMemoryPipeline
+        _pipe = NeuralMemoryPipeline(
+            feature_dim=64, hidden_dim=64, gnn_heads=4,
+            gnn_layers=2, cfc_hidden_size=64,
+        )
+        _pipe.initialize()
+
+        _neurons = []
+        if hasattr(_pipe, '_cached_neurons') and _pipe._cached_neurons:
+            _neurons = _pipe._cached_neurons
+        elif hasattr(_pipe, 'graph') and _pipe.graph is not None:
+            nids = getattr(_pipe.graph, 'node_ids', []) or []
+            lbls = getattr(_pipe.graph, 'node_labels', []) or []
+            _neurons = [{'id': n, 'content': l} for n, l in zip(nids, lbls)]
+
+        if not _neurons:
+            return _r
+
+        # ── ① jieba 粗筛 200 个候选人 ──
+        try:
+            import jieba
+            _q_words = set(jieba.lcut(query.lower()))
+        except ImportError:
+            _q_words = set(re.findall(r'[\w\u4e00-\u9fff]+', query.lower()))
+
+        _candidates = []
+        _seen = set()
+        for n in _neurons:
+            _c = n.get('content', '') or ''
+            if not _c or _c[:60] in _seen:
+                continue
+            _seen.add(_c[:60])
+            try:
+                _nw = set(jieba.lcut(_c.lower()))
+            except ImportError:
+                _nw = set(re.findall(r'[\w\u4e00-\u9fff]+', _c.lower()))
+            if len(_q_words & _nw) >= 1:
+                _score = len(_q_words & _nw) / max(len(_q_words | _nw), 1)
+                _candidates.append((n['id'], _score, _c[:1000]))
+
+        # 只取 top-200 候选人
+        _candidates.sort(key=lambda x: -x[1])
+        _candidates = _candidates[:200]
+
+        if not _candidates:
+            return _r
+
+        # ── ② ONNX 精排（余弦相似度） ──
+        _seeds = _onnx.find_seeds(
+            query, top_k=5, min_score=0.15,
+            candidates=[(nid, c) for nid, _, c in _candidates],
+        )
+
+        # ── ③ GAT→CfC 激活传播 ──
+        _activated = {}
+        _predicted = []
+        for _sid, _sc, _content in _seeds[:3]:
+            try:
+                _result = _pipe.activate(
+                    _sid, top_k=8, max_depth=2, activation_strength=0.05,
+                )
+                for _aid, _st in _result.activated_neurons:
+                    if _aid == _sid:
+                        continue
+                    _activated[_aid] = max(_activated.get(_aid, 0), _st)
+                if hasattr(_result, 'predicted_ids') and _result.predicted_ids:
+                    for _pid in _result.predicted_ids:
+                        if _pid != _sid and _pid not in _predicted:
+                            _predicted.append(_pid)
+            except Exception:
+                pass
+
+        # ── ④ 组装结果 ──
+        _label_map = {n['id']: n.get('content', '') for n in _neurons}
+        _seen_out = set()
+
+        # ONNX 种子
+        for _sid, _sc, _content in _seeds:
+            if not _content or _content[:60] in _seen_out:
+                continue
+            _seen_out.add(_content[:60])
+            _r.append({'content': _content, 'score': round(_sc, 3), 'source': 'synapse_seed'})
+
+        # CfC 扩散
+        for _aid, _st in sorted(_activated.items(), key=lambda x: -x[1]):
+            _c = _label_map.get(_aid, '')
+            if not _c or _c[:60] in _seen_out:
+                continue
+            _seen_out.add(_c[:60])
+            _r.append({'content': _c[:1000], 'score': round(_st, 3), 'source': 'synapse_cfc'})
+            if len(_r) >= 10:
+                break
+
+        # 序列预测
+        for _pid in _predicted[:3]:
+            _c = _label_map.get(_pid, '')
+            if not _c or _c[:60] in _seen_out:
+                continue
+            _seen_out.add(_c[:60])
+            _r.append({'content': _c[:1000], 'score': 0.4, 'source': 'synapse_pred'})
+
+        logger.info(f"  synapse (ONNX+GAT+CfC): {len(_r)} results")
+    except Exception as e:
+        logger.debug(f"  synapse skipped: {e}")
+        if not _r:
+            _r = _do_synapse_fallback(query)
+    return _r
+
+
+def _do_synapse_fallback(query: str) -> list:
+    """synapse 回退：旧 jieba 关键词匹配"""
     _r = []
     try:
         _ws = os.path.expanduser("~/.openclaw/workspace")
@@ -1126,19 +1265,11 @@ def _do_synapse(query: str) -> list:
                 q_words = set(jieba.lcut(query.lower()))
             except ImportError:
                 q_words = set(re.findall(r'[\w\u4e00-\u9fff]+', query.lower()))
-            
             neurons = syn_network.neuron_manager.get_all_neurons()
-            # 分批扫描：先扫最后 8000（最新数据 + 足够回溯深度），再扫前 3000 高频节点
             scan_set = neurons[-8000:]
             if len(neurons) > 8000:
-                # 补前 3000 个（含高频神经元）
                 early = sorted(neurons[:3000], key=lambda n: -getattr(n, 'activation_count', 0))
                 scan_set = scan_set + early[:1000]
-            
-            # LTC 过滤：跳过长期未激活（低兴奋度）的噪音
-            LTC_THRESHOLD = 0.35
-            
-            # 通道 A：关键词重叠直接匹配
             scored = []
             dedup_seen = set()
             for n in scan_set:
@@ -1148,59 +1279,28 @@ def _do_synapse(query: str) -> list:
                 if dedup_key in dedup_seen:
                     continue
                 dedup_seen.add(dedup_key)
-                # LTC 兴奋度过低 → 噪音（测试数据/长期不用的记忆）
-                h_t = n.evaluate_state()
-                if h_t < LTC_THRESHOLD:
-                    continue
                 try:
                     n_words = set(jieba.lcut(n.content.lower()))
                 except ImportError:
                     n_words = set(re.findall(r'[\w\u4e00-\u9fff]+', n.content.lower()))
                 overlap = len(q_words & n_words)
-                if overlap >= 1:  # 至少 1 个词重叠
+                if overlap >= 1:
                     score = overlap / max(len(q_words | n_words), 1)
-                    # LTC 提权：h_t 高 → 分数上浮
-                    score = score * (0.5 + h_t * 0.5)
                     scored.append((n, score))
-            
             scored.sort(key=lambda x: -x[1])
-            
-            # 通道 B：top-1 激活传播
-            if scored and scored[0][1] > 0.05:
-                best_nid = scored[0][0].id
-                try:
-                    associated = syn_network.activation_spreader.spread_activation(
-                        best_nid, threshold=0.05, max_depth=2
-                    )
-                    seen_act = set(r['content'][:60] for r in _r if r.get('content'))
-                    for n, s in associated:
-                        if n.id == best_nid or not n.content or n.content[:60] in seen_act:
-                            continue
-                        seen_act.add(n.content[:60])
-                        _r.append({
-                            'content': n.content[:1000],
-                            'score': round(float(s) * 0.7, 3),
-                            'source': 'synapse_assoc',
-                        })
-                except Exception:
-                    pass
-            
-            # 通道 A 结果加入（去重）
-            seen2 = set(r['content'][:60] for r in _r if r.get('content'))
-            for n, s in scored[:6]:
+            seen2 = set()
+            for n, s in scored[:5]:
                 if not n.content or n.content[:60] in seen2:
                     continue
                 seen2.add(n.content[:60])
                 _r.append({
                     'content': n.content[:1000],
                     'score': round(s, 3),
-                    'source': 'synapse',
+                    'source': 'synapse_fb',
                 })
-                if len(_r) >= 5:
-                    break
-        logger.info(f"  synapse: {len(_r)} results")
-    except Exception as e:
-        logger.debug(f"  synapse skipped: {e}")
+        logger.info(f"  synapse_fallback: {len(_r)} results")
+    except Exception:
+        pass
     return _r
 
 
@@ -1271,6 +1371,40 @@ def _do_paper(query: str, top_k: int) -> list:
         logger.info(f"  paper engines: {len(_r)} results")
     except Exception as e:
         logger.debug(f"  paper engines skipped: {e}")
+    return _r
+
+
+def _do_cognitive(query: str, top_k: int, session_id: str = "") -> list:
+    """7. 认知地图检索（LASAR 三类认知 query + 空间接近性）"""
+    _r = []
+    try:
+        _ws = os.path.expanduser("~/.openclaw/workspace")
+        _core_dir = os.path.join(_ws, "GalaxyOS/extensions/claw-core/dist/scripts")
+        if _core_dir not in sys.path:
+            sys.path.insert(0, _core_dir)
+        from cognitive_map import CognitiveMap
+        _cm = CognitiveMap()
+        _queries = _cm.run_cognitive_queries(query, session_key=session_id)
+        for _key in ('retrospective', 'introspective', 'prospective'):
+            _val = _queries.get(_key, '')
+            if _val and len(str(_val)) > 5:
+                _r.append({
+                    'content': f"[认知 {_key}] {str(_val)[:500]}",
+                    'score': 0.55,
+                    'source': f'cognitive_{_key}',
+                })
+        _spatial = _cm.proximity_retrieve(query, top_k=top_k)
+        for _item in _spatial:
+            _ctx = _item.get('context', '') or ''
+            if _ctx:
+                _r.append({
+                    'content': _ctx[:500],
+                    'score': round(float(_item.get('similarity', 0.4)), 3),
+                    'source': 'cognitive_prox',
+                })
+        logger.info(f"  cognitive: {len(_r)} results")
+    except Exception as e:
+        logger.debug(f"  cognitive skipped: {e}")
     return _r
 
 
@@ -1765,6 +1899,9 @@ def retrieval_hub(
     if not is_fast:
         future_map["synapse"] = pool.submit(_do_synapse, effective_query)
         future_map["paper"] = pool.submit(_do_paper, effective_query, top_k)
+        future_map["cognitive"] = pool.submit(_do_cognitive, effective_query, top_k, session_id)
+    else:
+        future_map["cognitive"] = None
 
     # web 默认关闭：本地记忆（五路）即可满足大部分查询，web 由调用方按需开启
     should_web = False if include_web is None else include_web
@@ -1776,7 +1913,7 @@ def retrieval_hub(
     all_source_results = []
     name_to_results = {}
 
-    for name in ["kg", "local", "dag", "synapse", "paper", "web"]:
+    for name in ["kg", "local", "dag", "synapse", "paper", "cognitive", "web"]:
         fut = future_map.get(name)
         if fut is None:
             name_to_results[name] = []
@@ -1844,6 +1981,7 @@ def retrieval_hub(
         "dag": len(name_to_results.get('dag', [])),
         "synapse": len(name_to_results.get('synapse', [])),
         "paper": len(name_to_results.get('paper', [])),
+        "cognitive": len(name_to_results.get('cognitive', [])),
         "web": len(name_to_results.get('web', [])),
         "total": sum(len(r) for r in all_source_results),
         "merged": len(merged),

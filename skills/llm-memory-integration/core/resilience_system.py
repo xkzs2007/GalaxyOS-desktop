@@ -277,16 +277,7 @@ COMPONENT_REGISTRY: Dict[str, ComponentInfo] = {
         dependencies=[],
         fallback_component="basic_reasoning"
     ),
-    "llm_optimizer": ComponentInfo(
-        id="llm_optimizer",
-        name="LLM优化器",
-        tier=ComponentTier.ENHANCED,
-        module_path="llm_optimizer",
-        class_name="LLMOptimizer",
-        description="L4多API优化层",
-        dependencies=[],
-        fallback_component="single_api"
-    ),
+
     "visual_generation": ComponentInfo(
         id="visual_generation",
         name="视觉生成模块",

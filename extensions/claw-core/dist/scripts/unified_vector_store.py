@@ -237,14 +237,17 @@ class HNSWLibBackend(VectorStoreBackend):
         os.makedirs(os.path.dirname(self.index_path), exist_ok=True)
         self.index.save_index(self.index_path)
         meta_path = self.index_path + '.meta'
+        _records_meta = {}
+        for sid, r in self.records.items():
+            _records_meta[sid] = {
+                'id': r.id, 'vector': r.vector,
+                'metadata': r.metadata, 'content': r.content, 'source': r.source
+            }
         with open(meta_path, 'w') as f:
             json.dump({
                 'next_id': self._next_id,
                 'id_map': {str(k): v for k, v in self.id_map.items()},
-                'records': {sid: {
-                    'id': r.id, 'vector': r.vector, 'metadata': r.metadata,
-                    'content': r.content, 'source': r.source
-                } for sid, r in self.records.items()}
+                'records': _records_meta,
             }, f)
 
     def add(self, records: List[VectorRecord]) -> int:
@@ -329,113 +332,194 @@ class HNSWLibBackend(VectorStoreBackend):
 
 
 class FAISSBackend(VectorStoreBackend):
-    """FAISS 后端"""
-    
-    def __init__(self, index_path: str, dim: int = 1024):
+    """
+    FAISS 后端 [v2: ANNSelector 自动选择索引+量化策略]
+
+    根据向量数量自动选择:
+    - < 5000:  HNSWFlat（最大精度）
+    - < 50K:   IVFScalarQuantizer（INT8 标量量化, 4x 压缩）
+    - < 500K:  IVFPQ（乘积量化, 8x 压缩）
+    - > 500K:  IVFPQ 高压缩（16x 压缩）
+    """
+
+    def __init__(self, index_path: str, dim: int = 1024,
+                 precision: str = 'balanced'):
         self.index_path = index_path
         self.dim = dim
-        self.index = None
+        self.precision = precision
+        self.selector = None  # ANNSelector 实例
         self.id_map = {}  # id -> index
         self.records = []  # 存储记录元数据
+        self._loaded_from_disk = False
         self._init_index()
-    
+
     def _init_index(self):
-        """初始化 FAISS 索引"""
+        """初始化 FAISS 索引（延迟：到 add 时根据数量选择）"""
         try:
             import faiss
-            
-            if Path(self.index_path).exists():
-                self.index = faiss.read_index(self.index_path)
-                # 加载 id_map 和 records
+
+            if Path(self.index_path).exists() and os.path.getsize(self.index_path) > 0:
+                self.selector = ANNSelector.__new__(ANNSelector)
+                self.selector.dim = self.dim
+                self.selector.precision = self.precision
+                self.selector.faiss_index = faiss.read_index(self.index_path)
+                self.selector.algorithm = self._detect_algo(self.selector.faiss_index)
+                self.selector.n_vectors = self.selector.faiss_index.ntotal
+                self.selector.vectors = None
+
                 meta_path = self.index_path + '.meta'
                 if Path(meta_path).exists():
                     with open(meta_path, 'r') as f:
                         meta = json.load(f)
                         self.id_map = meta.get('id_map', {})
                         self.records = [VectorRecord(**r) for r in meta.get('records', [])]
-            else:
-                self.index = faiss.IndexFlatIP(self.dim)
+                self._loaded_from_disk = True
         except ImportError:
-            logger.warning("FAISS 未安装，使用 SQLite 后端")
+            logger.warning("FAISS 未安装")
             raise
-    
+
+    def _detect_algo(self, idx) -> str:
+        """从 FAISS 索引类型推断算法名"""
+        t = idx.__class__.__name__
+        if 'PQ' in t:
+            return 'ivfpq'
+        if 'SQ' in t or 'Scalar' in t:
+            return 'ivf_sq'
+        if 'HNSW' in t:
+            return 'hnsw'
+        if 'IVF' in t:
+            return 'ivf'
+        return 'flat'
+
+    def _ensure_selector(self, n: int):
+        """确保 selector 已初始化（按当前向量数量自动选择索引策略）"""
+        if self.selector is not None and self._loaded_from_disk:
+            return
+        if self.selector is not None:
+            # 数量变化超过阈值时重建
+            _delta = abs(self.selector.n_vectors - (len(self.records) + n))
+            if _delta < 5000:
+                return
+
+        n_total = len(self.records) + n
+        from ann_selector import ANNSelector
+
+        try:
+            import faiss
+            sel = ANNSelector(
+                n_total, self.dim, metric='cosine',
+                precision=self.precision,
+                index_path=self.index_path
+            )
+            if self.records:
+                import numpy as np
+                vecs = np.array([r.vector for r in self.records], dtype=np.float32)
+                sel.build_index(vecs)
+            self.selector = sel
+        except Exception as e:
+            logger.warning(f"ANNSelector init failed, fallback to FlatIP: {e}")
+            self.selector = ANNSelector.__new__(ANNSelector)
+            self.selector.dim = self.dim
+            self.selector.n_vectors = len(self.records) + n
+            self.selector.faiss_index = faiss.IndexFlatIP(self.dim)
+            if self.records:
+                import numpy as np
+                self.selector.faiss_index.add(
+                    np.array([r.vector for r in self.records], dtype=np.float32))
+            self.selector.algorithm = 'flat'
+
     def add(self, records: List[VectorRecord]) -> int:
         """添加向量记录"""
         import numpy as np
-        
+
+        self._ensure_selector(len(records))
+
         vectors = []
         for record in records:
             vec = np.array(record.vector, dtype=np.float32)
             vectors.append(vec)
             self.id_map[record.id] = len(self.records)
             self.records.append(record)
-        
+
         if vectors:
             vectors_np = np.vstack(vectors)
-            self.index.add(vectors_np)
+            if self.selector.faiss_index:
+                if self.selector.algorithm in ('ivfpq', 'ivfpq_high', 'ivf_sq'):
+                    # IVF 系列不支持增量 add（需要 train），走 selector.add
+                    self.selector.add(vectors_np)
+                else:
+                    self.selector.faiss_index.add(vectors_np)
+            self.selector.n_vectors = len(self.records)
             self._save_index()
-        
+
         return len(records)
-    
+
     def search(self, query_vector: List[float], top_k: int = 10,
                filters: Optional[Dict] = None) -> List[Tuple[VectorRecord, float]]:
-        """搜索相似向量"""
         import numpy as np
-        
+
+        if self.selector is None or self.selector.faiss_index is None:
+            self._ensure_selector(0)
+        if self.selector is None or self.selector.faiss_index is None:
+            return []
+
         query_vec = np.array([query_vector], dtype=np.float32)
-        distances, indices = self.index.search(query_vec, min(top_k, len(self.records)))
-        
+        k = min(top_k, len(self.records) or 1)
+        if k <= 0:
+            return []
+
+        indices_arr, distances_arr = self.selector.search(query_vec, k)
+
         results = []
-        for i, idx in enumerate(indices[0]):
-            if idx < len(self.records):
-                record = self.records[idx]
-                # 应用过滤器
-                if filters and 'source' in filters:
-                    if record.source != filters['source']:
-                        continue
-                results.append((record, float(distances[0][i])))
-        
+        for i in range(len(indices_arr)):
+            idx = int(indices_arr[i])
+            if idx < 0 or idx >= len(self.records):
+                continue
+            record = self.records[idx]
+            if filters and 'source' in filters:
+                if record.source != filters['source']:
+                    continue
+            results.append((record, float(distances_arr[i])))
+
         return results
-    
+
     def delete(self, ids: List[str]) -> int:
         """删除向量记录（FAISS 不支持直接删除，需要重建索引）"""
-        # 标记删除
         to_delete = set(ids)
         new_records = [r for r in self.records if r.id not in to_delete]
-        
+
         if len(new_records) < len(self.records):
-            # 重建索引
             import faiss
-            import numpy as np
-            
-            self.index = faiss.IndexFlatIP(self.dim)
+
+            self.selector = None
             self.id_map = {}
             self.records = []
-            
-            for record in new_records:
-                self.add([record])
-            
+
+            if new_records:
+                self.add(new_records)
+
             return len(to_delete)
         return 0
-    
+
     def _save_index(self):
         """保存索引"""
-        import faiss
-        
-        Path(self.index_path).parent.mkdir(parents=True, exist_ok=True)
-        faiss.write_index(self.index, self.index_path)
-        
-        # 保存元数据
-        meta_path = self.index_path + '.meta'
-        with open(meta_path, 'w') as f:
-            json.dump({
-                'id_map': self.id_map,
-                'records': [{'id': r.id, 'vector': r.vector, 'metadata': r.metadata, 
-                            'content': r.content, 'source': r.source} for r in self.records]
-            }, f)
-    
+        if self.selector and self.selector.faiss_index:
+            try:
+                import faiss
+                Path(self.index_path).parent.mkdir(parents=True, exist_ok=True)
+                faiss.write_index(self.selector.faiss_index, self.index_path)
+
+                meta_path = self.index_path + '.meta'
+                with open(meta_path, 'w') as f:
+                    json.dump({
+                        'id_map': self.id_map,
+                        'records': [{'id': r.id, 'vector': r.vector, 'metadata': r.metadata,
+                                    'content': r.content, 'source': r.source} for r in self.records]
+                    }, f)
+            except Exception as e:
+                logger.warning(f"FAISS save failed: {e}")
+
     def count(self) -> int:
-        """获取记录总数"""
         return len(self.records)
 
 
