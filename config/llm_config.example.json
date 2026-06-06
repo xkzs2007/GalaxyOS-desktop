@@ -1,0 +1,78 @@
+{
+    "version": "3.5.0",
+    "status": "production_ready",
+    "initialized": true,
+    "last_updated": "2026-06-05T06:16:00+08:00",
+    "description": "模型路由配置 - DeepSeek + 硅基流动双通道",
+    "llm": {
+        "provider": "openai-compatible",
+        "base_url": "https://api.deepseek.com",
+        "api_key": "YOUR_API_KEY",
+        "model": "deepseek-v4-flash",
+        "max_tokens": 8000,
+        "temperature": 0.5,
+        "timeout": 120,
+        "safety_filter": true
+    },
+    "llm_pro": {
+        "provider": "deepseek",
+        "base_url": "https://api.deepseek.com",
+        "api_key": "YOUR_API_KEY",
+        "model": "deepseek-v4-pro",
+        "temperature": 0.7,
+        "timeout": 180
+    },
+    "embedding": {
+        "provider": "siliconflow",
+        "base_url": "https://api.siliconflow.cn/v1",
+        "api_key": "YOUR_API_KEY",
+        "model": "BAAI/bge-m3",
+        "dimensions": 1024
+    },
+    "rerank": {
+        "provider": "siliconflow",
+        "base_url": "https://api.siliconflow.cn/v1",
+        "api_key": "YOUR_API_KEY",
+        "model": "BAAI/bge-reranker-v2-m3"
+    },
+    "vlm": {
+        "provider": "siliconflow",
+        "base_url": "https://api.siliconflow.cn/v1",
+        "api_key": "YOUR_API_KEY",
+        "model": "nex-agi/Nex-N2-Pro",
+        "max_tokens": 8000
+    },
+    "search": {
+        "top_k": 20,
+        "max_distance": 0.8,
+        "rrf_k": 60
+    },
+    "cache": {
+        "ttl": 3600,
+        "compression": true,
+        "enabled": true,
+        "max_size": 1000
+    },
+    "vector_search": {
+        "top_k": 20,
+        "max_distance": 0.8,
+        "score_threshold": 0.2
+    },
+    "_comment": {
+        "llm": "DeepSeek v4-flash - 对话和核心推理",
+        "llm_pro": "DeepSeek v4-pro - 并行任务/批量处理",
+        "embedding": "硅基流动 BAAI/bge-m3 (1024维)",
+        "rerank": "硅基流动 BAAI/bge-reranker-v2-m3",
+        "vlm": "硅基流动 nex-agi/Nex-N2-Pro",
+        "search": "混合检索参数",
+        "cache": "语义缓存配置",
+        "vector_search": "向量搜索配置"
+    },
+    "llm_xiaoyi": {
+        "provider": "xiaoyi-custom",
+        "base_url": "https://celia-claw-drcn.ai.dbankcloud.cn/celia-claw/v1/sse-api",
+        "model": "LLM_DeepSeekV4_Thinking",
+        "max_tokens": 6000,
+        "description": "小艺通道 DeepSeek V4（备用，需自定义 auth）"
+    }
+}
