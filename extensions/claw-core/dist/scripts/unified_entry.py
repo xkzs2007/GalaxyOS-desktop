@@ -984,6 +984,8 @@ class UnifiedEntry:
                     "errors": []
                 }
             
+
+            
             # full_recall: 全量检索
             elif scenario == "full_recall":
                 query = input_data.get("query", "") if isinstance(input_data, dict) else str(input_data or "")
