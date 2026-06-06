@@ -75,12 +75,20 @@ def heading(title):
     _print(f"{C}{'='*60}{N}")
 
 # ── 路径定义 ──
+# GalaxyOS 根目录（仓库根路径）
+GALAXY_ROOT = Path(__file__).parent.parent.resolve()
+# OpenClaw 工作区
 WORKSPACE = Path(os.environ.get("OPENCLAW_WORKSPACE", str(Path.home() / ".openclaw" / "workspace")))
-SKILL_DIR = WORKSPACE / "skills" / "xiaoyi-claw-omega-final"
-SCRIPTS_DIR = SKILL_DIR / "scripts"
-CORE_DIR = SKILL_DIR / "skills" / "llm-memory-integration" / "core"
-SRC_DIR = WORKSPACE / "skills" / "llm-memory-integration" / "src"
-CONFIG_DIR = SKILL_DIR / "config"
+
+# GalaxyOS 核心目录
+SERVICES_DIR = GALAXY_ROOT / "services"                # pip 可安装包 (144+ 模块)
+SCRIPTS_DIR = GALAXY_ROOT / "scripts"                  # 辅助脚本
+CORE_DIR = GALAXY_ROOT / "skills" / "llm-memory-integration" / "core"   # 核心引擎 (158 模块)
+SRC_DIR = GALAXY_ROOT / "skills" / "llm-memory-integration" / "src"     # 源模块
+CONFIG_DIR = GALAXY_ROOT / "config"                     # 配置文件
+EXT_DIR = GALAXY_ROOT / "extensions"                    # 扩展插件
+
+# 部署目标路径（Worker 实际加载位置）
 DIST_DIR = Path.home() / ".openclaw" / "extensions" / "claw-core" / "dist" / "scripts"
 VAR_DIR = Path.home() / ".openclaw" / "extensions" / "claw-core" / "var"
 
@@ -90,7 +98,9 @@ SLEEP_LOG = Path.home() / ".openclaw" / "workspace" / "memory" / "dreaming" / "d
 
 # ── KG as Memory Backbone ──
 KG_DB = Path.home() / ".openclaw" / "workspace" / "temporal_kg.db"
+# 旧兼容路径（Worker 运行时可能仍从此路径加载）
 DIST2_DIR = Path.home() / ".openclaw" / "dist" / "scripts" / "skills" / "llm-memory-integration" / "core"
+DIST2_GALAXY = Path.home() / ".openclaw" / "dist" / "scripts" / "GalaxyOS" / "skills" / "llm-memory-integration" / "core"
 
 
 # ════════════════════════════════════════════════════════════════
@@ -163,7 +173,7 @@ def test_all_modules() -> Dict[str, Any]:
     results = {"total": 0, "ok": 0, "fail": 0, "details": []}
 
     # ── 确保路径 ──
-    for p in [str(SCRIPTS_DIR), str(CORE_DIR), str(SRC_DIR), str(SRC_DIR / "integration"), str(SRC_DIR / "memory")]:
+    for p in [str(SCRIPTS_DIR), str(CORE_DIR), str(CORE_DIR / "integration")]:
         if os.path.isdir(p):
             sys.path.insert(0, p)
 
@@ -185,13 +195,7 @@ def test_all_modules() -> Dict[str, Any]:
 
     # ── 2) 扫描 src/ 各子目录 ──
     src_py_files = {}
-    if SRC_DIR.exists():
-        for root, dirs, files in os.walk(SRC_DIR):
-            for fn in files:
-                if fn.endswith(".py") and fn != "__init__.py":
-                    rel = os.path.relpath(os.path.join(root, fn), SRC_DIR).replace("/", ".")[:-3]
-                    src_py_files[rel] = os.path.join(root, fn)
-        info(f"src/ 目录发现 {len(src_py_files)} 个模块文件", indent=1)
+    # src/ 目录仅有模型权重（.pt），无 Python 模块
 
     # ── 3) 扫描 scripts/（入口/协调/辅助） ──
     script_py_files = {}
@@ -1082,8 +1086,8 @@ def auto_fix(sync_result: Dict[str, Any], import_result: Optional[Dict[str, Any]
                 break
 
     # ── 同步睡眠引擎模块（如不存在则复制） ──
-    sleep_dst_core = CORE_DIR / "biorhythm_sleep_consolidation.py"
-    if SLEEP_CORE.exists() and not sleep_dst_core.exists():
+    # SLEEP_CORE 已在 CORE_DIR（GalaxyOS 结构），无需额外同步
+    if SLEEP_CORE.exists():
         try:
             shutil.copy2(str(SLEEP_CORE), str(sleep_dst_core))
             fixed["synced"] += 1
@@ -1092,15 +1096,7 @@ def auto_fix(sync_result: Dict[str, Any], import_result: Optional[Dict[str, Any]
         except Exception as e:
             err(f"同步 sleep 模块到 core/ 失败: {e}")
 
-    # GalaxyOS 仓库同步
-    galaxyos_repo = Path("/tmp/galaxyos-upload")
-    if galaxyos_repo.exists() and SLEEP_CORE.exists():
-        for dst_dir in [galaxyos_repo / "services", galaxyos_repo / "skills" / "llm-memory-integration" / "core"]:
-            dst_dir.mkdir(parents=True, exist_ok=True)
-            try:
-                shutil.copy2(str(SLEEP_CORE), dst_dir / "biorhythm_sleep_consolidation.py")
-            except Exception as e:
-                err(f"同步到 GalaxyOS {dst_dir} 失败: {e}")
+    # GalaxyOS 仓库同步（已内联到 GalaxyOS/ 仓库，无需外部复制）
 
     return fixed
 
