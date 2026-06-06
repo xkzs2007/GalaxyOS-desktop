@@ -1,7 +1,7 @@
 # 🌌 GalaxyOS — 认知增强引擎
 
 > OpenClaw 的开源认知增强引擎，为 AI Assistant 提供记忆、检索、推理、验证、自进化等全套认知能力
-> 版本: v6.0 · 神经检索全链路集成 + ContextEngine neural_rerank + Galaxy Kernel assemble 注入 + 上下文内容类型排序
+> 版本: v6.1 · BlobArena无损存储 + ONNX bge-small-zh + 7通道检索Hub + ContextEngine neural_rerank + Galaxy Kernel assemble 注入 + 上下文内容类型排序
 
 ## 总览
 
@@ -11,8 +11,8 @@
 
 | 能力 | 说明 |
 |------|------|
-| **记忆** | 三层记忆体系 + 记忆巩固引擎（CLS固化 + 仿生睡眠5阶段 + 干扰合并 + KG图推理）+ **神经突触记忆网络（ncps LTC+CfC+遗忘曲线+NLP增强）** |
-| **检索** | 向量检索 + 知识图谱 + Self-RAG + CRAG 混合检索 + bge-reranker-v2-m3 重排序 + GraphRAG + RAPTOR + Merge Gate 五路去重融合 |
+| **记忆** | 三层记忆体系 + 记忆巩固引擎（CLS固化 + 仿生睡眠5阶段 + 干扰合并 + KG图推理）+ **神经突触记忆网络（ncps LTC+CfC+遗忘曲线+NLP增强）** + **BlobArena v2 mmap 无损存储** |
+| **检索** | 向量检索 + 知识图谱 + Self-RAG + CRAG 混合检索 + bge-reranker-v2-m3 重排序 + GraphRAG + RAPTOR + **RetrievalHub 7通道 (KG/Local/DAG/MN-RU/Synapse/Paper/Cognitive/Web)** + **ANNSelector v2 动态索引** |
 | **智能处理** | 查询改写（Pro）/ 结果总结（Flash）/ 语义过滤 / 图像理解（SmartProcessor 三模型通道：Flash/Pro/VLM）+ Visual RAG 自动 OCR2 触发 |
 | **认知循环（R-CCAM）** | 五阶段结构化认知循环：Retrieval→Cognition→Control→Action→Memory，元认知 5 种动态策略调节器 + 异步注入三层兜底 |
 | **Galaxy Kernel** | 独立后台元认知线程（6s轮询），持 Reflexion 记录 + 自进化产出，不阻塞主推理。process() 精简 **70%**（863→254行） |
@@ -158,7 +158,8 @@ python3 -m services.xiaoyi_claw_api recall --query "查询"
 
 | 版本 | 文件 | 说明 |
 |------|------|------|
-| **v6.0 (最新)** | — | **神经检索全链路集成: neural_rerank → ContextEngine assemble + Galaxy Kernel 认知注入 + _content_type 上下文排序** |
+| **v6.1 (最新)** | — | **BlobArena无损存储 + ONNX bge-small-zh-v1.5 中文嵌入 + RetrievalHub 7通道全链路** |
+| **v6.0** | — | **神经检索全链路集成: neural_rerank → ContextEngine assemble + Galaxy Kernel 认知注入 + _content_type 上下文排序** |
 | **v5.5** | `docs/xiaoyi-claw-core-architecture-v5.0.md` | **IntelligentThinkingTrigger v2.0** 三论文集成 + Cognition Forest 子树修正 |
 | **v5.4** | `docs/xiaoyi-claw-core-architecture-v5.0.md` | **KG as Memory Backbone 4 阶段** + 检索通道 + Cognition 图推理 + 睡眠图维护 |
 | **v5.2** | `docs/xiaoyi-claw-core-architecture-v5.0.md` | **KoRa v2 行为模式引擎** + DAG 上下文持久化修复 |
@@ -173,7 +174,21 @@ python3 -m services.xiaoyi_claw_api recall --query "查询"
 
 **完整架构文档（含 15 层全景图、440+ 功能列表、更新日志）：** 👉 [📖 查看 Skills 文档栏](https://cnb.cool/llm-memory-integrat/GalaxyOS?tabValue=SKILLS-ov-file)
 
+### v6.1 新特性
+
+| 特性 | 说明 |
+|------|------|
+| **BlobArena v2 — DAG 无损存储** | mmap-backed append-only blob storage，替代 DAG 节点 512/2000 字符硬截断。O(1) 随机访问 + generational GC |
+| **ONNX bge-small-zh-v1.5 中文嵌入** | 替换 all-MiniLM-L6-v2 (384d 英文) → BAAI/bge-small-zh-v1.5 (512d, 92MB)。ONNX Runtime ~42ms/embed |
+| **RetrievalHub 7通道全链路** | KG + Local + DAG(MN-RU) + Synapse(GNN+CfC) + Paper + Cognitive(MN-RU三通道) + Web。RRF v2 → neural rerank → quality assessment。融合置信度 0.93 |
+| **MN-RU siliconflow fallback** | BAAI/bge-m3 的 dimensions 参数 siliconflow 不支持 → 自动无参重试 fallback，3879 节点 |
+| **ANNSelector v2 + FAISS 动态索引** | <5000 自动 HNSWFlat，延迟选择，unified_vector_store 集成 |
+| **GNN Graph Builder** | GraphSAGE/GAT/GCN 三卷积层，突触网络图推理底层构建 |
+| **~140 模块全同步** | scripts_core / integration / memory / rails / privileged / api → 138 模块全加载 |
+
 ### v6.0 新特性
+
+| 特性 | 说明 |
 
 | 特性 | 说明 |
 |------|------|

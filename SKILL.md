@@ -1,17 +1,18 @@
 ---
 name: xiaoyi-claw-omega-final
-description: GalaxyOS v6.0 — 神经检索全链路集成 + ContextEngine neural_rerank + Galaxy Kernel assemble 注入 + _content_type 上下文排序
+description: GalaxyOS v6.1 — BlobArena无损存储 + ONNX bge-small-zh中文嵌入 + RetrievalHub 7通道全链路 + ContextEngine neural_rerank + Galaxy Kernel
 author: xkzs2007
 license: MIT-0
 tags: [architecture, memory, llm, rccam, dag, kora, knowledge-graph, ncps, neural-synapse-network, context-engine, neural-rerank]
 ---
 
-# GalaxyOS v6.0
+# GalaxyOS v6.1
 
 > **定位**: OpenClaw 的核心底层能力引擎
-> **更新时间**: 2026-06-06 12:19
+> **更新时间**: 2026-06-06 23:19
 > **架构层数**: 16 层（含 Layer 0 安装向导）
-> **总能力项**: 460+ 项
+> **总能力项**: 470+ 项
+> **模型更新**: ONNX bge-small-zh-v1.5 (512d, 92MB) + BAAI/bge-m3 (1024d via siliconflow)
 > **IPC 三通道**: UDS RPC（双向互通，动态注册表）+ ZMQ 事件推送（双向回复）+ mmap 结构化状态（4KB JSON段）
 > **默认通信**: UDS RPC，HTTP :8765 二级降级，无 stdin/stdout，无 spawnSync
 > **IPC 演进**: stdin/stdout → UDS RPC（单 Worker 单例） → **Gateway-Worker 全透明互通（UDS注册表 + mmap 结构化 + ZMQ 双向）**
@@ -27,7 +28,7 @@ tags: [architecture, memory, llm, rccam, dag, kora, knowledge-graph, ncps, neura
 GalaxyOS是 OpenClaw 的**核心底层能力引擎**，提供：
 
 1. **记忆能力** — 二层记忆体系（本地记忆系统 + DAG上下文管理）+ 记忆巩固引擎（CLS固化 + 仿生睡眠5阶段周期 + 艾宾浩斯遗忘曲线 + 干扰合并 + 预测编码冲突检测）+ **仿生睡眠巩固引擎（NREM-SWR/NREM-CASCADE/REM-GENERATIVE/REM-EMOTION/DEEP-SLEEP + KG睡眠图推理 + Dreaming Bridge双向同步）** + 隐式偏好学习 + **ncps 神经突触记忆网络（LTC+CfC+遗忘曲线+NLP增强）**
-2. **检索能力** — 向量检索 + 知识图谱 + Self-RAG + CRAG 混合检索 + CRAG 动态纠错 + 场景锚定注入（Drawing on Memory 双迹编码 + GRAVITY 结构锚定）+ bge-reranker-v2-m3 重排序 + 预测编码冲突检测 + GraphRAG社区检测 [MS 2024] + RAPTOR分层摘要树 [Sarthi 2024]
+2. **检索能力** — RetrievalHub 7通道（KG + Local + DAG/MN-RU + Synapse/GNN+CfC + Paper + Cognitive/MN-RU三通道 + Web）+ 向量检索 + 知识图谱 + Self-RAG + CRAG 混合检索 + CRAG 动态纠错 + 场景锚定注入 + bge-reranker-v2-m3 重排序 + 预测编码冲突检测 + GraphRAG [MS 2024] + RAPTOR [Sarthi 2024] + **BlobArena v2 无损存储（mmap）** + **ONNX bge-small-zh-v1.5（512d, ~42ms）** + **MN-RU siliconflow BAAI/bge-m3（1024d）**
 3. **智能处理能力** — 查询改写（Pro）+ 结果总结（Flash）+ 语义过滤 + 图像理解（SmartProcessor 三模型通道：Flash/Pro/VLM）+ 自进化上下文注入 + Flash 开推理场景编码 + KV 缓存优化 + Flash NLP 路由 + **用户画像驱动内在元认知分析（Flash以用户视角分析体验数据→惰性激活下游模块）**
 4. **思考能力** — IntelligentThinkingTrigger v2.0 (RCR-Router动态评分 + Springdrift CBR记忆 + A-ToM认知推断) + 20方法论 + 10工程技能 + 决策引擎 + Reflexion 反思 [Shinn 2023] + Self-Refine 迭代精炼 [Madaan 2023] + Multi-Path 多路径并行探索 [Yao 2023] + Toolformer 工具路由 [Meta 2023] + GA 反思 [Park 2023]
 5. **执行能力** — 44 个工作流全 IPC 并行调度 + R-CCAM 结构化认知循环（统一深度管线）+ DAG 上下文中继 + Worker UDS 主通道（Plugin直连，无stdin/stdout）+ ZMQ 事件推送 + mmap 共享内存 + Worker 自动重启 + **Merge Gate** + 后台4论文引擎并行 + **Galaxy DAG 三维绑定（semantic_map/function_map/design_ref 全链路传递）**
@@ -36,12 +37,12 @@ GalaxyOS是 OpenClaw 的**核心底层能力引擎**，提供：
 
 ---
 
-| **文档版本**: v6.0 | 2026-06-06 12:19 | 神经检索全链路集成: neural_rerank → ContextEngine assemble + Galaxy Kernel 认知注入 + _content_type 上下文排序 |
+| **文档版本**: v6.1 | 2026-06-06 23:19 | BlobArena无损存储 + ONNX bge-small-zh-v1.5 中文嵌入 + RetrievalHub 7通道全链路 |
 
 ---
 
 *GalaxyOS — OpenClaw 的核心底层能力引擎*
-*文档版本: v6.0 | 最后更新: 2026-06-06 12:19 | 神经检索全链路集成: neural_rerank → ContextEngine assemble + Galaxy Kernel 认知注入 + _content_type 上下文排序*
+*文档版本: v6.1 | 最后更新: 2026-06-06 23:19 | BlobArena无损存储 + ONNX bge-small-zh-v1.5 中文嵌入 + RetrievalHub 7通道全链路*
 
 ---
 
