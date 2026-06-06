@@ -55,8 +55,8 @@ GalaxyOS是 OpenClaw 的**核心底层能力引擎**，提供：
                                     │
                                     ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                      GalaxyOS v5.0 — Galaxy Kernel 重构 + 异步注入三层兜底        │
-│                         (核心底层能力引擎 · 15层)                            │
+│                      GalaxyOS v6.0 — 神经检索全链路: retrieval_hub → neural_rerank → ContextEngine assemble        │
+│                         (核心底层能力引擎 · 16层)                            │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
 │  ┌─────────────────────────────────────────────────────────────────────┐   │
@@ -405,9 +405,10 @@ GalaxyOS是 OpenClaw 的**核心底层能力引擎**，提供：
 │  │                                                                      │   │
 │  │  R-CCAM 结构化认知循环 (XiaoYiClawLLM.process):                     │   │
 │  │  ├─ Retrieval（检索阶段）:                                           │   │
-│  │  │  - 调 recall() 统一入口 → 向量检索 + KG + DAG 摘要 + RRF 融合   │   │
-│  │  │  - **Merge Gate**（v4.4）: 五路检索(向量/BM25/KG/DAG场景/联网)  │   │
-│  │  │    去重合并→merged_context输出，元认知参数微调                    │   │
+│  │  │  - 调 retrieval_hub() 五路并行: KG / Local / DAG / Synapse(ncps) / Paper │   │
+│  │  │  → neural_rerank_dedup (LTC h_t 门控 + 激活传播提权 + Content Fingerprint 去重)  │   │
+│  │  │  → RRF 融合 → ContextEngine smartRetrieval (UDS) → assemble 注入  │   │
+│  │  │  - 降级链: smart_retrieval → recall → recallFallback                │   │
 │  │  │  - 判 needs_more_info: 检索置信度<0.3 且无 DAG 摘要 = 需要联网   │   │
 │  │  │                                                                  │   │
 │  │  ├─ Cognition（认知阶段 — 元认知三维评估）:                          │   │
@@ -846,6 +847,14 @@ claw.verify_image_claim("图片路径", "声明内容")
   - 排序: RRF融合分 + 来源信誉权重
   - 输出: merged_context — 统一上下文块供主模型
   - 元认知参数微调: 检索量高→knowledge_density升 / 来源多样→familiarity降
+│  │                                                                      │
+│  │  neural_rerank_dedup (★v6.0) — retrieval_hub 集成:                 │
+│  │  ├─ LTC h_t 门控: 神经元兴奋度 ≥0.7 提权 1.2×, ≤0.3 压权 0.6×     │
+│  │  ├─ 激活传播提权: SpreadingActivation 路径匹配 → 结果分 ×1.5     │
+│  │  ├─ Content Fingerprint: [channel:source:key:] 200字前缀 → 通道去重 │
+│  │  ├─ _content_type 标记: conversation/summary/metadata 三类          │
+│  │  ├─ _dedup_sources 记录: 跨通道合并时记录原始来源列表              │
+│  │  └─ 集成在 retrieval_hub() dispatch_parallel → RRF 融合之间        │
 - ✨ **Rails 护栏增强版** — Layer 15 统一入口层 _rails.py
   - 检索结果扫描器: 敏感凭据(API Key/Token)/系统路径/私密数据
   - 认知分析扫描器: 违规建议检测(越狱/有害指令/社会工程)
