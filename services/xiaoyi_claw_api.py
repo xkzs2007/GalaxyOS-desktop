@@ -527,6 +527,108 @@ class XiaoYiClawLLM:
             self._smn = None
             logger.debug("ncps 初始化失败: %s", e)
 
+    def _sync_ncps_neurons(self, query: str, answer: str, state=None):
+        """同步写入 ncps 神经网络（在 process() 主线程执行，确保每次对话写入）"""
+        if not getattr(self, '_smn', None) or not query:
+            return
+        _state_analysis = {}
+        if state is not None:
+            try:
+                _sa = getattr(state, 'analysis', {}) or {}
+                if isinstance(_sa, dict):
+                    _state_analysis = _sa
+            except Exception:
+                pass
+        _nlp_meta = {}
+        for _k in ['nlp_entities', 'nlp_relations', 'nlp_comparisons',
+                   'nlp_coref', 'nlp_entity_types', 'nlp_dependencies']:
+            _v = _state_analysis.get(_k)
+            if _v:
+                _nlp_meta[_k] = _v
+        _nlp_entity_texts = None
+        if 'nlp_entities' in _nlp_meta:
+            _nlp_vals = _nlp_meta['nlp_entities']
+            if isinstance(_nlp_vals, dict):
+                _nlp_entity_texts = list(_nlp_vals.keys())
+            elif isinstance(_nlp_vals, list):
+                _nlp_entity_texts = [e.get('text', '') if isinstance(e, dict) else str(e) for e in _nlp_vals[:10]]
+            if _nlp_entity_texts:
+                _nlp_meta['_linked_entities'] = _nlp_entity_texts
+        user_neuron = self._smn.neuron_manager.find_neuron_by_content(f"用户: {query}")
+        if not user_neuron:
+            user_neuron = self._smn.create_neuron(f"用户: {query}")
+        if _nlp_meta:
+            try:
+                _existing_ent = json.loads(user_neuron.nlp_entities) if user_neuron.nlp_entities else {}
+                if _nlp_entity_texts and not _existing_ent.get('LINKED'):
+                    _existing_ent['LINKED'] = _nlp_entity_texts
+                    user_neuron.nlp_entities = json.dumps(_existing_ent, ensure_ascii=False)
+            except Exception:
+                pass
+        if answer:
+            ans_neuron = self._smn.neuron_manager.find_neuron_by_content(f"系统: {answer[:200]}")
+            if not ans_neuron:
+                ans_neuron = self._smn.create_neuron(f"系统: {answer[:200]}")
+            self._smn.create_synapse(
+                user_neuron.id, ans_neuron.id,
+                src_content=user_neuron.content,
+                dst_content=ans_neuron.content
+            )
+            self._smn.activate(user_neuron.id)
+            self._smn.activate(ans_neuron.id)
+        else:
+            self._smn.activate(user_neuron.id)
+        if _nlp_entity_texts and answer:
+            for _ent_text in _nlp_entity_texts[:3]:
+                _ent_neuron = self._smn.neuron_manager.find_neuron_by_content(f"实体: {_ent_text}")
+                if not _ent_neuron:
+                    _ent_neuron = self._smn.create_neuron(f"实体: {_ent_text}")
+                self._smn.create_synapse(
+                    user_neuron.id, _ent_neuron.id,
+                    src_content=user_neuron.content,
+                    dst_content=_ent_neuron.content
+                )
+        # 防幻觉回流
+        _vg_conf = None
+        if state is not None:
+            try:
+                _vg_conf = getattr(state, 'answer_confidence', None)
+            except Exception:
+                pass
+        if _vg_conf is not None and answer:
+            try:
+                _a = self._smn.neuron_manager.find_neuron_by_content(f"系统: {answer[:200]}")
+                if _a and hasattr(self._smn, 'synapse_manager') and self._smn.synapse_manager:
+                    _synapses_cache = getattr(self._smn.network, '_synapses_cache', {}) or {}
+                    for _nid in list(_synapses_cache.keys()):
+                        _s = _synapses_cache[_nid]
+                        if getattr(_s, 'target_id', None) == _a.id:
+                            if _vg_conf < 0.5:
+                                self._smn.synapse_manager.ltd(_s, decay_rate=max(0.0, 1.0 - _vg_conf))
+                            elif _vg_conf >= 0.8:
+                                self._smn.synapse_manager.ltp(_s, strength=_vg_conf * 0.5)
+            except Exception:
+                pass
+        # 高置信度持久化
+        if _vg_conf is not None and _vg_conf >= 0.5 and answer:
+            try:
+                _neural_data_dir = os.path.expanduser(
+                    "~/.openclaw/workspace/.learnings/synapse_network")
+                _verified_path = os.path.join(
+                    os.path.dirname(_neural_data_dir), "verified_memories.jsonl")
+                os.makedirs(os.path.dirname(_verified_path), exist_ok=True)
+                with open(_verified_path, "a", encoding="utf-8") as _vf:
+                    _entry = {
+                        "id": f"neural-{int(time.time()*1000)}",
+                        "content": f"Q: {query[:200]}\nA: {answer[:500]}",
+                        "confidence": round(_vg_conf, 3),
+                        "created_at": datetime.now(timezone.utc).isoformat(),
+                        "source": "neural_verified",
+                    }
+                    _vf.write(json.dumps(_entry, ensure_ascii=False) + "\n")
+            except Exception:
+                pass
+
     def _init_self_evolution(self):
         try:
             from self_evolution_engine import SelfEvolutionEngine
@@ -3657,115 +3759,8 @@ class XiaoYiClawLLM:
         except Exception:
             pass
 
-        # ═══ ncps 神经网络：对话→神经元/突触（含 NLP 语义特征） ═══
-        try:
-            if getattr(self, '_smn', None) and query:
-                # 从 state.analysis 收集增强NLP的分析结果
-                _nlp_meta = {}
-                _state_analysis = getattr(state, 'analysis', {}) or {}
-                if isinstance(_state_analysis, dict):
-                    for _k in ['nlp_entities', 'nlp_relations', 'nlp_comparisons',
-                               'nlp_coref', 'nlp_entity_types', 'nlp_dependencies']:
-                        _v = _state_analysis.get(_k)
-                        if _v:
-                            _nlp_meta[_k] = _v
-                _nlp_entity_texts = None
-                if 'nlp_entities' in _nlp_meta:
-                    _nlp_vals = _nlp_meta['nlp_entities']
-                    if isinstance(_nlp_vals, dict):
-                        _nlp_entity_texts = list(_nlp_vals.keys())
-                    elif isinstance(_nlp_vals, list):
-                        _nlp_entity_texts = [e.get('text', '') if isinstance(e, dict) else str(e) for e in _nlp_vals[:10]]
-                    if _nlp_entity_texts:
-                        _nlp_meta['_linked_entities'] = _nlp_entity_texts
-
-                # 用户输入神经元
-                user_neuron = self._smn.neuron_manager.find_neuron_by_content(f"用户: {query}")
-                if not user_neuron:
-                    user_neuron = self._smn.create_neuron(f"用户: {query}")
-
-                # 补充注入增强NLP metadata
-                if _nlp_meta:
-                    try:
-                        _existing_ent = json.loads(user_neuron.nlp_entities) if user_neuron.nlp_entities else {}
-                        if _nlp_entity_texts and not _existing_ent.get('LINKED'):
-                            _existing_ent['LINKED'] = _nlp_entity_texts
-                            user_neuron.nlp_entities = json.dumps(_existing_ent, ensure_ascii=False)
-                    except Exception:
-                        pass
-
-                # 系统回答神经元 + 突触
-                if answer:
-                    ans_neuron = self._smn.neuron_manager.find_neuron_by_content(f"系统: {answer[:200]}")
-                    if not ans_neuron:
-                        ans_neuron = self._smn.create_neuron(f"系统: {answer[:200]}")
-                    self._smn.create_synapse(
-                        user_neuron.id, ans_neuron.id,
-                        src_content=user_neuron.content,
-                        dst_content=ans_neuron.content
-                    )
-                    self._smn.activate(user_neuron.id)
-                    self._smn.activate(ans_neuron.id)
-                else:
-                    self._smn.activate(user_neuron.id)
-
-                # 实体关联
-                if _nlp_entity_texts and answer:
-                    for _ent_text in _nlp_entity_texts[:3]:
-                        _ent_neuron = self._smn.neuron_manager.find_neuron_by_content(f"实体: {_ent_text}")
-                        if not _ent_neuron:
-                            _ent_neuron = self._smn.create_neuron(f"实体: {_ent_text}")
-                        self._smn.create_synapse(
-                            user_neuron.id, _ent_neuron.id,
-                            src_content=user_neuron.content,
-                            dst_content=_ent_neuron.content
-                        )
-
-                # ── 防幻觉验证回流 ──
-                _vg_conf = state.answer_confidence
-                if _vg_conf < 0.5 and answer:
-                    # 低置信度 → LTD
-                    try:
-                        _a = self._smn.neuron_manager.find_neuron_by_content(f"系统: {answer[:200]}")
-                        if _a:
-                            for _nid in list(self._smn.network._synapses_cache.keys()):
-                                _s = self._smn.network._synapses_cache[_nid]
-                                if _s.target_id == _a.id:
-                                    self._smn.synapse_manager.ltd(_s, decay_rate=1.0 - _vg_conf)
-                    except Exception:
-                        pass
-                elif _vg_conf >= 0.8 and answer:
-                    # 高置信度 → LTP
-                    try:
-                        _a = self._smn.neuron_manager.find_neuron_by_content(f"系统: {answer[:200]}")
-                        if _a:
-                            for _nid in list(self._smn.network._synapses_cache.keys()):
-                                _s = self._smn.network._synapses_cache[_nid]
-                                if _s.target_id == _a.id:
-                                    self._smn.synapse_manager.ltp(_s, strength=_vg_conf * 0.5)
-                    except Exception:
-                        pass
-
-                # ── 高置信度回答持久化→ verify 来源 ──
-                try:
-                    if _vg_conf >= 0.5 and answer:
-                        _neural_data_dir = os.path.expanduser(
-                            "~/.openclaw/workspace/.learnings/synapse_network")
-                        _verified_path = os.path.join(
-                            os.path.dirname(_neural_data_dir), "verified_memories.jsonl")
-                        with open(_verified_path, "a", encoding="utf-8") as _vf:
-                            _entry = {
-                                "id": f"neural-{int(time.time()*1000)}",
-                                "content": f"Q: {query[:200]}\nA: {answer[:500]}",
-                                "confidence": round(_vg_conf, 3),
-                                "created_at": datetime.now(timezone.utc).isoformat(),
-                                "source": "neural_verified",
-                            }
-                            _vf.write(json.dumps(_entry, ensure_ascii=False) + "\n")
-                except Exception:
-                    pass
-        except Exception as _ne:
-            logger.debug(f"ncps 神经网络写入失败: {_ne}")
+        # ═══ ncps 神经网络已移至 process() 同步执行，此处不再重复写入 ═══
+        pass
 
         # ═══ SelfEvolutionEngine: 进化追踪 ═══
         try:
@@ -4125,6 +4120,14 @@ class XiaoYiClawLLM:
                 except Exception:
                     pass
             _write_rccam_phase("memory", state, state.generated_answer[:500] if state.generated_answer else "")
+
+            # ── ncps 神经网络写入（同步执行，确保每次对话都写入） ──
+            # 不放在异步 _memory_phase 里，daemon 线程可能没跑完就结束
+            try:
+                if getattr(self, '_smn', None) and state.user_input:
+                    self._sync_ncps_neurons(state.user_input, state.generated_answer, state)
+            except Exception:
+                pass
 
             # 停止判断
             if state.strategy == "boundary_violation":
