@@ -1492,6 +1492,161 @@ def _decompose_query(query: str) -> List[str]:
     return result
 
 
+# ── 神经网络重排序 + 跨通道去重 ──
+_CONTENT_FINGERPRINT_LEN = 200
+
+
+def _content_fingerprint(text: str) -> str:
+    """取前 _CONTENT_FINGERPRINT_LEN 字符作为指纹，忽略空白差异"""
+    if not text:
+        return ""
+    return re.sub(r'\s+', ' ', text.strip())[:_CONTENT_FINGERPRINT_LEN]
+
+
+def _neural_rerank_dedup(
+    merged: List[Dict],
+    query: str,
+    session_id: str,
+    top_k: int,
+) -> List[Dict]:
+    """
+    神经网络重排序 + 跨通道去重（双核）
+
+    核心逻辑：
+    1. 跨通道去重：按内容指纹归组，同组只保留最高 RRF 分数项
+    2. LTC h_t 门控：匹配的神经元 h_t 越低 → 膜电位越低 → 降权惩罚
+    3. 激活传播提权：结果能传播到当前会话上下文节点的 → 加分
+    """
+    if not merged:
+        return merged
+
+    _ws = os.path.expanduser("~/.openclaw/workspace")
+    _core_dir = os.path.join(_ws, "GalaxyOS/skills/llm-memory-integration/core")
+    sys.path.insert(0, _core_dir)
+    sys.path.insert(0, os.path.join(_ws,
+        "skills/xiaoyi-claw-omega-final/skills/llm-memory-integration/core"))
+
+    from memory_consolidation import ConsolidationEngine
+    from memory_synapse_network import MemoryNeuron
+
+    ce = ConsolidationEngine(_ws)
+    syn_network = ce._get_synapse_network() if hasattr(ce, '_get_synapse_network') else None
+
+    # 加载当前会话的 DAG 节点内容（用于激活传播参照）
+    _session_neuron_texts = set()
+    try:
+        _dag_db_path = os.path.expanduser("~/.openclaw/dag_context.db")
+        if os.path.exists(_dag_db_path):
+            import sqlite3
+            _conn = sqlite3.connect(_dag_db_path)
+            _c = _conn.cursor()
+            _sid = session_id if session_id else ''
+            for _row in _c.execute(
+                "SELECT content FROM nodes WHERE session_id=? ORDER BY created_at DESC LIMIT 50",
+                (_sid,)
+            ):
+                _txt = _row[0] or ''
+                if _txt:
+                    _session_neuron_texts.add(_content_fingerprint(_txt))
+            _conn.close()
+    except Exception:
+        pass
+
+    # ── Step 1: 跨通道去重（内容指纹归组） ──
+    _fp_groups: Dict[str, List[Dict]] = {}
+    _fp_order: List[str] = []
+    for _item in merged:
+        _content = _item.get('content', _item.get('session_text', ''))[:800]
+        _fp = _content_fingerprint(_content)
+        if _fp not in _fp_groups:
+            _fp_groups[_fp] = []
+            _fp_order.append(_fp)
+        _fp_groups[_fp].append(_item)
+
+    _deduped = []
+    for _fp in _fp_order:
+        _group = _fp_groups[_fp]
+        # 同组选 rrf_score 或 score 最大的，来源标签合并
+        _best = max(_group, key=lambda x: x.get('rrf_score', x.get('score', 0)))
+        _sources = sorted(set(_src.get('source', 'unknown') for _src in _group))
+        _best['_dedup_sources'] = ','.join(_sources)
+        _best['_dedup_count'] = len(_group)
+        _deduped.append(_best)
+
+    # ── Step 2: LTC h_t 门控 ──
+    if syn_network:
+        try:
+            import jieba
+            _q_words = set(jieba.lcut(query.lower()))
+        except ImportError:
+            _q_words = set(re.findall(r'[\w\u4e00-\u9fff]+', query.lower()))
+
+        _neurons = syn_network.neuron_manager.get_all_neurons()
+        # 建立内容→神经元索引（取最后 5000 条）
+        _neuron_by_fp: dict = {}
+        for _n in _neurons[-5000:]:
+            _nfp = _content_fingerprint(_n.content or '')
+            if _nfp:
+                _neuron_by_fp[_nfp] = _n
+
+        for _item in _deduped:
+            _content = _item.get('content', '')
+            _nfp = _content_fingerprint(_content)
+            _n = _neuron_by_fp.get(_nfp)
+
+            _ltc_boost = 1.0
+            _prop_boost = 1.0
+
+            if _n:
+                # LTC h_t 门控：h_t ∈ [0,1]，低于 0.2 接近休眠
+                _ht = getattr(_n, 'ltc_hidden', 0.5)
+                _activation = getattr(_n, 'activation_count', 0)
+                # 公式: boost = 0.5 + 0.5 * h_t  → [0.5, 1.0]
+                # 外加 activation_count 的 log 增益（有历史活跃的加分）
+                _ltc_boost = 0.5 + 0.5 * _ht
+                if _activation > 0:
+                    _ltc_boost = min(1.5, _ltc_boost + 0.05 * math.log10(_activation + 1))
+
+                # 激活传播提权：如果该神经元能传播到会话上下文 → 加分
+                if _session_neuron_texts:
+                    try:
+                        _assoc = syn_network.activation_spreader.spread_activation(
+                            _n.id, threshold=0.01, max_depth=2
+                        )
+                        _ctx_hits = 0
+                        for _a_n, _a_s in _assoc:
+                            _a_fp = _content_fingerprint(getattr(_a_n, 'content', '') or '')
+                            if _a_fp and _a_fp in _session_neuron_texts:
+                                _ctx_hits += 1
+                        if _ctx_hits > 0:
+                            _prop_boost = 1.0 + 0.15 * _ctx_hits
+                    except Exception:
+                        pass
+            else:
+                # 找不到匹配神经元 → 无 ncps 支撑，轻微降权
+                _ltc_boost = 0.85
+
+            # 最终分 = RRF 分 × LTC 门控 × 传播提权
+            _orig_score = _item.get('rrf_score', _item.get('score', 0))
+            _new_score = _orig_score * _ltc_boost * _prop_boost
+            _item['ncps_ltc_boost'] = round(_ltc_boost, 3)
+            _item['ncps_prop_boost'] = round(_prop_boost, 3)
+            _item['ncps_score'] = round(_new_score, 4)
+
+    # ── Step 3: 按 ncps 重排序 ──
+    if syn_network:
+        for _item in _deduped:
+            _base = _item.get('rrf_score', _item.get('score', 0))
+            _item['score'] = _item.get('ncps_score', _base)
+        _deduped.sort(key=lambda x: -x.get('score', 0))
+    else:
+        # 无神经网络时按 RRF 排序
+        _deduped.sort(key=lambda x: -x.get('rrf_score', x.get('score', 0)))
+
+    logger.info(f"neural rerank/dedup: {len(merged)} → {len(_deduped)} (dedup={len(merged)-len(_deduped)})")
+    return _deduped[:top_k]
+
+
 def _recompose_results(sub_results: List[List[Dict]]) -> List[Dict]:
     if not sub_results:
         return []
@@ -1615,7 +1770,14 @@ def retrieval_hub(
             all_source_results.append(r)
 
     # RRF 融合 v2（不含 web）
-    merged = _rrf_merge(all_source_results)[:top_k]
+    merged = _rrf_merge(all_source_results)[:top_k * 2]  # 多留点给重排序裁
+
+    # ── 神经网络重排序 + 跨通道去重 ──
+    try:
+        merged = _neural_rerank_dedup(merged, effective_query, session_id, top_k)
+    except Exception as _ner_err:
+        logger.debug(f"neural rerank/dedup skipped: {_ner_err}")
+        merged = merged[:top_k]
 
     # CRAG decompose
     crag_decomposed = False

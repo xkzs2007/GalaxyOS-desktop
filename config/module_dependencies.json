@@ -1505,8 +1505,8 @@
       "depends_on": [
         "crag_pipeline",
         "hybrid_search",
-        "skill_coordinator",
-      ],
+        "skill_coordinator"
+],
       "external_deps": [],
       "provides": [
         "FullIntegration",
@@ -1542,6 +1542,7 @@
       ],
       "file": "skills/llm-memory-integration/core/multimodal_search.py"
     },
+      "tencentdb_memory": {
       "description": "腾讯云记忆插件集成 (TencentDB Memory Integration)",
       "depends_on": [],
       "external_deps": [],
@@ -1556,8 +1557,8 @@
         "get_scene_blocks",
         "get_scene_block",
         "get_persona"
-      ],
-    },
+      ]
+},
     "llm_client": {
       "description": "LLM Client - LLM 客户端封装",
       "depends_on": [
