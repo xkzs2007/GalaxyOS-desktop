@@ -53,7 +53,7 @@ class ModuleType(Enum):
     # Layer 1.6: 集成与管理模块
     RULES_MANAGER = "rules_manager"
     AUTONOMOUS_INTEGRATOR = "autonomous_integrator"
-    TENCENTDB_INTEGRATION = "tencentdb_integration"
+
     FULL_INTEGRATION = "full_integration"
     XIAOYI_MEMORY_V2 = "xiaoyi_memory_v2"
     OPTIMIZATION_INTEGRATION = "optimization_integration"
@@ -270,15 +270,7 @@ MODULE_REGISTRY: Dict[str, ModuleInfo] = {
         layer=1,
         dependencies=["proactive_tasks", "brain", "today_task"]
     ),
-    "tencentdb_integration": ModuleInfo(
-        name="tencentdb_integration",
-        module_type=ModuleType.TENCENTDB_INTEGRATION,
-        description="腾讯云记忆集成 - L0-L3 四层架构、统一召回接口",
-        triggers=["腾讯云", "记忆集成", "四层架构"],
-        script_path=str(CORE_DIR / "tencentdb_integration.py"),
-        layer=1,
-        dependencies=["memory_functions", "vector_api"]
-    ),
+
     "full_integration": ModuleInfo(
         name="full_integration",
         module_type=ModuleType.FULL_INTEGRATION,
@@ -1554,14 +1546,7 @@ class UnifiedCoordinator:
                 ("heartbeat_task_executor", "记录执行结果"),
             ],
             
-            # 腾讯云记忆集成
-            "tencentdb_recall": [
-                ("tencentdb_integration", "L0 原始对话检索"),
-                ("tencentdb_integration", "L1 结构化记忆检索"),
-                ("tencentdb_integration", "L2 场景归纳检索"),
-                ("tencentdb_integration", "L3 用户画像检索"),
-                ("tencentdb_integration", "统一召回合并"),
-            ],
+
             
             # 完整集成流程
             "full_integrated_recall": [
@@ -2102,7 +2087,7 @@ class UnifiedCoordinator:
             "rule_management": "规则管理：加载/验证/摘要",
             "rule_sync": "规则同步：检测变更/同步/更新触发词",
             "autonomous_execution": "自主任务执行：检查/执行/更新/记录",
-            "tencentdb_recall": "腾讯云记忆召回：L0-L3 四层检索",
+
             "full_integrated_recall": "完整集成检索：CRAG/混合/思考/自主/向量",
             "smart_recall_flow": "智能召回流程：统一入口/完整集成/三级内存/验证",
             "smart_answer_flow": "智能回答流程：统一入口/检索决策/知识检索/多源验证",
@@ -2876,11 +2861,7 @@ INTEGRATED_WORKFLOWS = {
         ("synapse_network", "创建关联"),
         ("emotion_memory", "计算重要性")
     ],
-    "tencentdb_sync": [
-        ("tencentdb_integration", "腾讯云同步"),
-        ("memory_unified", "统一记忆"),
-        ("full_integration", "完整集成")
-    ],
+
     "full_recall": [
         ("full_integration", "完整集成入口"),
         ("crag_pipeline", "CRAG纠错"),
