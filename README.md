@@ -51,29 +51,15 @@ GalaxyOS/
 ├── docs/              # 架构文档 + API 速查
 ├── skills/            # 技能定义 + llm-memory-integration core (260 模块)
 ├── .github/           # CI/CD workflows
-├── Dockerfile         # Docker 镜像构建
 ├── Makefile           # 开发命令速查
 └── pyproject.toml     # pytest/coverage/ruff/mypy 配置
 ```
 
 ## 安装
 
-### 方式一：Docker（推荐，开箱即用）
+> GalaxyOS 是 OpenClaw 的底层引擎包，作为 Python 库安装到 OpenClaw 环境中使用。
 
-```bash
-git clone https://cnb.cool/llm-memory-integrat/GalaxyOS.git
-cd GalaxyOS
-
-# 1. 配置 API Key
-cp config/llm_config.example.json config/llm_config.json
-# 编辑 config/llm_config.json，填入你的 DeepSeek / 硅基流动 API Key
-
-# 2. 启动
-docker compose up -d
-docker compose exec galaxyos python -m services.xiaoyi_claw_api health
-```
-
-### 方式二：pip install（开发者）
+### pip install（开发者模式）
 
 ```bash
 git clone https://cnb.cool/llm-memory-integrat/GalaxyOS.git
@@ -87,18 +73,17 @@ pip install -e .
 
 # 配置 API Key
 cp config/llm_config.example.json config/llm_config.json
-# 编辑填入 API Key
+# 编辑填入你的 DeepSeek / 硅基流动 API Key
 
 # 运行安装向导（自检 + 配置验证）
 python scripts/install_wizard.py --check
 ```
 
-### 方式三：仅安装依赖
+### 仅安装依赖
 
 ```bash
 pip install -r requirements.txt
 cp config/llm_config.example.json config/llm_config.json
-# 编辑填入 API Key
 ```
 
 ### 📋 配置说明

@@ -74,16 +74,6 @@ stages:
           python -m build
           echo "✅ 包构建成功"
 
-  - name: docker
-    label: 🐳 Docker
-    image: docker:latest
-    needs: [test]
-    steps:
-      - name: docker-build
-        run: |
-          docker build -t galaxyos:ci .
-          echo "✅ Docker 镜像构建成功"
-
 # ── 通知 ──
 notifications:
   - type: webhook
