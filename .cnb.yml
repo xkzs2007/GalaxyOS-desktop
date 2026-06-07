@@ -1,0 +1,90 @@
+# GalaxyOS CI/CD — CNB (Cloud Native Build) 原生配置
+# 参考: https://cnb.cool/docs/ci/overview
+
+branch:
+  - main
+  - master
+
+# ── 全局环境 ──
+env:
+  PYTHONUNBUFFERED: "1"
+
+# ── 流水线阶段 ──
+stages:
+  - name: test
+    label: 🧪 测试
+    image: python:3.13-slim
+    steps:
+      - name: setup
+        run: |
+          apt-get update -qq && apt-get install -y -qq build-essential
+          pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest pytest-cov
+      - name: verify-imports
+        run: |
+          python -c "import numpy, scipy, sklearn, torch, pydantic, faiss, jieba, ncps"
+          echo "✅ All core deps loaded"
+      - name: run-tests
+        run: |
+          python -m pytest tests/ -v --tb=short \
+            --cov=services --cov-report=term-missing \
+            -p no:warnings
+
+  - name: lint
+    label: 📋 代码检查
+    image: python:3.13-slim
+    steps:
+      - name: ruff
+        run: |
+          pip install ruff
+          ruff check --select=E,F,W --ignore=E501,E402 services/ tests/ || true
+          echo "✅ Lint complete"
+
+  - name: security
+    label: 🔒 安全扫描
+    image: python:3.13-slim
+    steps:
+      - name: detect-secrets
+        run: |
+          echo "🔍 扫描硬编码密钥..."
+          if grep -rP 'sk-[a-zA-Z0-9]{20,}' services/ extensions/ 2>/dev/null; then
+            echo "❌ 发现疑似 API Key！" && exit 1
+          fi
+          if grep -rPni "api_key\s*=\s*'[^Y][^O][^U]|api_key\s*=\s*\"[^Y][^O][^U]" services/ 2>/dev/null; then
+            echo "⚠️  发现可疑硬编码，请检查" && exit 1
+          fi
+          echo "✅ 密钥扫描通过"
+      - name: critical-imports
+        run: |
+          python -c "
+          from services.exceptions import SkillError
+          from services.unified_cache import UnifiedCache
+          from services.adaptive_rrf import AdaptiveRRF
+          print('✅ 核心模块导入正常')
+          "
+
+  - name: build
+    label: 📦 打包
+    image: python:3.13-slim
+    steps:
+      - name: build-package
+        run: |
+          pip install build
+          python -m build
+          echo "✅ 包构建成功"
+
+  - name: docker
+    label: 🐳 Docker
+    image: docker:latest
+    needs: [test]
+    steps:
+      - name: docker-build
+        run: |
+          docker build -t galaxyos:ci .
+          echo "✅ Docker 镜像构建成功"
+
+# ── 通知 ──
+notifications:
+  - type: webhook
+    events: [success, failure]
