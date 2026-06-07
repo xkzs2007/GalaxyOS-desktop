@@ -1,7 +1,7 @@
 ---
 name: llm-memory-integration
 description: LLM + 向量模型集成方案。支持任意 LLM + Embedding 模型，用户自行配置。支持混合检索、智能路由、渐进式启用、用户画像自动更新。v6.1: ONNX bge-small-zh-v1.5 中文原生嵌入 + MN-RU siliconflow BAAI/bge-m3 + 7通道检索 Hub。
-version: 6.1.0
+version: 6.2.0
 license: MIT-0
 author: xkzs2007
 homepage: https://clawhub.ai/skill/llm-memory-integration

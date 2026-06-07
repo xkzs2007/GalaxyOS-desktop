@@ -2,7 +2,17 @@
 
 GalaxyOS 版本变更记录。
 
-## [6.1.0] — 2026-06-07
+## [6.2.0] — 2026-06-08
+
+### Added
+- **睡眠巩固 v2 (BioRhythmSleepConsolidator)**: NREM→REM→DeepSleep 5阶段，接入 CfC 序列重放 + GAT 注意力权重建梦 + LTP/LTD 自适应调权 + 情感再关联。空闲 120s 自动触发
+- **对比学习预训练 (synapse_pretrain.py)**: GraphCL 风格自监督对比学习，子图采样/特征掩码/边扰动三增强，InfoNCE loss。预训练权重自动加载到 GAT 初始化
+- **SSparseGAT (gat_layer.py)**: O(E·d) 稀疏注意力替代 O(N²·d) 稠密。全量 3078 节点 ~3MB（原 ~20GB OOM）。`use_sparse` 开关默认 True
+- **MemGAS 熵路由 (entropy_router.py)**: 基于香农熵的自适应通道权重分配，低熵通道高权重
+- **GMM 记忆关联 (memory_consolidation.py)**: 高斯混合模型记忆关联，新记忆→accept/reject 聚类→余弦相似度建边
+- **GAT 注意力权重 → RRF 融合**: `forward_with_attention()` 暴露边级注意力，RRF 融合用 GAT 权重增强评分
+
+### [6.1.0] — 2026-06-07
 
 ### Added
 - 测试套件：32 文件, 428 用例, 3706 行测试代码

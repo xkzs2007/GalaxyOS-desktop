@@ -1,7 +1,7 @@
 # 🌌 GalaxyOS — 认知增强引擎
 
 > OpenClaw 的开源认知增强引擎，为 AI Assistant 提供记忆、检索、推理、验证、自进化等全套认知能力
-> 版本: v6.1 · BlobArena无损存储 + ONNX bge-small-zh + 7通道检索Hub + ContextEngine neural_rerank + Galaxy Kernel assemble 注入 + 上下文内容类型排序
+> 版本: v6.2 · BlobArena无损存储 + ONNX bge-small-zh + 7通道检索Hub + ContextEngine neural_rerank + Galaxy Kernel assemble 注入 + 上下文内容类型排序
 
 ## 总览
 
@@ -159,8 +159,8 @@ python3 -m services.xiaoyi_claw_api recall --query "查询"
 
 | 版本 | 文件 | 说明 |
 |------|------|------|
-| **v6.1 (最新)** | — | **BlobArena无损存储 + ONNX bge-small-zh-v1.5 中文嵌入 + RetrievalHub 7通道全链路** |
-| **v6.0** | — | **神经检索全链路集成: neural_rerank → ContextEngine assemble + Galaxy Kernel 认知注入 + _content_type 上下文排序** |
+| **v6.2 (最新)** | — | **睡眠巩固(5阶段+CfC+GAT+LTP) + 对比学习预训练 + SparseGAT + MemGAS熵路由/GMM关联 + GAT→RRF融合** |
+| **v5.6** | — | **神经检索全链路集成: neural_rerank → ContextEngine assemble + Galaxy Kernel 认知注入 + _content_type 上下文排序** |
 | **v5.5** | `docs/xiaoyi-claw-core-architecture-v5.0.md` | **IntelligentThinkingTrigger v2.0** 三论文集成 + Cognition Forest 子树修正 |
 | **v5.4** | `docs/xiaoyi-claw-core-architecture-v5.0.md` | **KG as Memory Backbone 4 阶段** + 检索通道 + Cognition 图推理 + 睡眠图维护 |
 | **v5.2** | `docs/xiaoyi-claw-core-architecture-v5.0.md` | **KoRa v2 行为模式引擎** + DAG 上下文持久化修复 |
@@ -174,6 +174,17 @@ python3 -m services.xiaoyi_claw_api recall --query "查询"
 | v3.0.0 | `docs/xiaoyi-claw-core-architecture-v3.0.0.md` | 16 层架构、R-CCAM 认知循环 |
 
 **完整架构文档（含 15 层全景图、470+ 功能列表、更新日志）：** 👉 [📖 查看 Skills 文档栏](https://cnb.cool/llm-memory-integrat/GalaxyOS?tabValue=SKILLS-ov-file)
+
+### v6.2 新特性
+
+| 特性 | 说明 |
+|------|------|
+| **睡眠巩固 (BioRhythmSleepConsolidator v2)** | NREM→REM→DeepSleep 5阶段接入 CfC 序列预测 + GAT 注意力权重 + LTP/LTD 自适应调权。空闲 120s 自动触发模拟睡眠巩固 |
+| **对比学习预训练 (SynapseContrastor)** | GraphCL 风格自监督学习，子图采样/特征掩码/边扰动三增强，InfoNCE loss。预训练权重建入 GAT 初始化替代随机 |
+| **SparseGAT** | O(E·d) 稀疏注意力替代 O(N²·d) 稠密，全量 3078 节点 ~3MB（原 20GB OOM），`use_sparse` 开关默认 True |
+| **MemGAS 熵路由 (EntropyRouter)** | 自适应通道权重分配：低熵通道高权重，高熵通道压权重。平滑系数 0.3*熵+0.7*均匀 |
+| **GMM 记忆关联 (GMMMemoryAssociator)** | 新记忆→GMM 聚 2 类(accept/reject)→accept 类建关联边，边权重=余弦相似度 |
+| **GAT 注意力权重 → RRF 融合** | `forward_with_attention()` 暴露边级注意力，RRF 融合用 GAT 权重增强/替代评分 |
 
 ### v6.1 新特性
 

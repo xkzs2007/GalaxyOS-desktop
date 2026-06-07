@@ -533,9 +533,21 @@ class ConsolidationEngine:
             try:
                 # 导入睡眠引擎
                 import importlib.util
-                sleep_path = os.path.join(self.workspace,
-                    "GalaxyOS/skills/llm-memory-integration/core/biorhythm_sleep_consolidation.py")
-                spec = importlib.util.spec_from_file_location("biorhythm_sleep_consolidation", sleep_path)
+                _sleep_paths = [
+                    os.path.join(os.path.dirname(os.path.abspath(__file__)), "biorhythm_sleep_consolidation.py"),
+                    os.path.join(self.workspace,
+                        "GalaxyOS/skills/llm-memory-integration/core/biorhythm_sleep_consolidation.py"),
+                    os.path.join(self.workspace,
+                        "GalaxyOS/extensions/claw-core/dist/scripts/biorhythm_sleep_consolidation.py"),
+                ]
+                _sleep_path = None
+                for _p in _sleep_paths:
+                    if os.path.exists(_p):
+                        _sleep_path = _p
+                        break
+                if not _sleep_path:
+                    return {"error": "sleep_consolidation.py not found"}
+                spec = importlib.util.spec_from_file_location("biorhythm_sleep_consolidation", _sleep_path)
                 if spec and spec.loader:
                     mod = importlib.util.module_from_spec(spec)
                     spec.loader.exec_module(mod)
@@ -681,6 +693,166 @@ class ConsolidationEngine:
             pass
         
         return stats
+
+
+# ============================================================
+# GMMMemoryAssociator — 高斯混合模型记忆关联 (MemGAS)
+# ============================================================
+
+class GMMMemoryAssociator:
+    """
+    高斯混合模型记忆关联。
+
+    MemGAS 方案：新记忆进来时，
+    1. GMM 聚 2 类（accept/reject）
+    2. accept 类的记忆与新记忆建立边
+    3. 边权重 = 记忆间相似度
+    """
+
+    def __init__(self, n_components=2, random_state=42):
+        from sklearn.mixture import GaussianMixture
+        self.gmm = GaussianMixture(
+            n_components=n_components,
+            random_state=random_state,
+            n_init=1,           # 新记忆增量场景, 1 init 够用
+            tol=1e-4,
+            max_iter=100,
+        )
+        self.embeddings: List[List[float]] = []    # 记忆向量
+        self.memory_ids: List[str] = []            # 对应 id
+        self.metadata: List[Dict] = []             # 额外信息
+        self._fitted = False
+
+    def associate(
+        self,
+        new_embedding: List[float],
+        new_memory_id: str,
+        existing_memories: List[Dict],
+        similarity_threshold: float = 0.3,
+    ) -> List[tuple]:
+        """
+        新记忆进来 → GMM 聚类 → 建立关联边。
+
+        Args:
+            new_embedding: 新记忆的向量
+            new_memory_id: 新记忆的 ID
+            existing_memories: list[dict], 每个 dict 至少含
+                {'id': str, 'embedding': List[float], 'content': str}
+            similarity_threshold: 余弦相似度阈值，低于该值不建边
+
+        Returns:
+            list[tuple]: [(source_id, target_id, weight), ...]
+                关联边列表，weight ∈ [0, 1]
+        """
+        if not existing_memories:
+            return []
+
+        # 1. 合并向量
+        all_embeddings = [new_embedding] + [m['embedding'] for m in existing_memories]
+        all_ids = [new_memory_id] + [m['id'] for m in existing_memories]
+
+        # 2. GMM 预测每个记忆属于 accept(0) 还是 reject(1)
+        try:
+            self.gmm.fit(all_embeddings)
+            self._fitted = True
+            labels = self.gmm.predict(all_embeddings)
+        except Exception as e:
+            # GMM 拟合失败（如维度不匹配）, 降级为全连接
+            labels = [0] * len(all_embeddings)
+
+        # 判断哪个 cluster 是 accept
+        # accept cluster 应包含新记忆本身（label 0 或 1）
+        new_label = labels[0]
+        accept_cluster_id = new_label
+
+        # 3. accept 类的记忆与新记忆建立边
+        edges: List[tuple] = []
+        for i in range(1, len(all_ids)):
+            if labels[i] == accept_cluster_id:
+                # 计算余弦相似度作为边权重
+                weight = self._cosine_similarity(new_embedding, all_embeddings[i])
+                if weight >= similarity_threshold:
+                    edges.append((new_memory_id, all_ids[i], round(weight, 4)))
+
+        # 更新内部缓存
+        self._update_cache(all_ids, all_embeddings, existing_memories)
+
+        return edges
+
+    def _cosine_similarity(self, a: List[float], b: List[float]) -> float:
+        """余弦相似度"""
+        if not a or not b or len(a) != len(b):
+            return 0.0
+        dot = sum(x * y for x, y in zip(a, b))
+        norm_a = math.sqrt(sum(x * x for x in a))
+        norm_b = math.sqrt(sum(x * x for x in b))
+        if norm_a * norm_b == 0:
+            return 0.0
+        return dot / (norm_a * norm_b)
+
+    def _update_cache(
+        self,
+        all_ids: List[str],
+        all_embeddings: List[List[float]],
+        existing_memories: List[Dict],
+    ):
+        """增量更新内部缓存（用新加入的记忆替换旧缓存）"""
+        # 重建缓存：保持内部状态与最新数据一致
+        self.embeddings = list(all_embeddings)
+        self.memory_ids = list(all_ids)
+        # 重建 metadata
+        self.metadata = []
+        for mid in self.memory_ids:
+            found = [m for m in existing_memories if m['id'] == mid]
+            if found:
+                self.metadata.append(found[0])
+            else:
+                self.metadata.append({'id': mid, 'content': ''})
+
+    def update(
+        self,
+        embeddings: List[List[float]],
+        memory_ids: List[str],
+        metadata: Optional[List[Dict]] = None,
+        retrain: bool = True,
+    ):
+        """增量更新 GMM"""
+        self.embeddings = list(embeddings)
+        self.memory_ids = list(memory_ids)
+        if metadata:
+            self.metadata = list(metadata)
+        else:
+            self.metadata = [{'id': mid, 'content': ''} for mid in memory_ids]
+
+        if retrain and len(embeddings) >= self.gmm.n_components:
+            try:
+                self.gmm.fit(embeddings)
+                self._fitted = True
+            except Exception:
+                pass
+
+    def is_fitted(self) -> bool:
+        return self._fitted
+
+    def get_cluster_assignments(self) -> Dict[str, int]:
+        """返回每条记忆的 GMM 聚类标签"""
+        if not self._fitted or not self.embeddings:
+            return {}
+        try:
+            labels = self.gmm.predict(self.embeddings)
+            return dict(zip(self.memory_ids, labels.tolist()))
+        except Exception:
+            return {}
+
+    def get_stats(self) -> Dict:
+        """获取 GMM 统计信息"""
+        return {
+            "n_memories": len(self.memory_ids),
+            "n_components": self.gmm.n_components,
+            "fitted": self._fitted,
+            "cluster_means": self.gmm.means_.tolist() if self._fitted else [],
+            "cluster_weights": self.gmm.weights_.tolist() if self._fitted else [],
+        }
 
 
 # ==================== 便捷接口 ====================

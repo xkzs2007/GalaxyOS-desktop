@@ -398,6 +398,67 @@ class SynapseGATEncoder(torch.nn.Module):
             adj = adj + torch.eye(n, device=features.device)
             return self.gat(features, adj)
 
+    def forward_with_attention(self, graph: SynapseGraph) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        前向传播, 同时返回边级注意力权重
+
+        Returns:
+            (节点嵌入, edge_attention) — edge_attention: (E,) 每条边的注意力值
+        """
+        if graph.num_nodes == 0:
+            return torch.empty(0, self.output_dim, device=graph.node_features.device), \
+                   torch.empty(0, device=graph.node_features.device)
+
+        if self.use_sparse:
+            from gat_layer import SparseGraphAttentionLayer
+            features = graph.node_features
+            edge_index = graph.edge_index
+            _n = features.size(0)
+            _self_loop = torch.arange(_n, device=edge_index.device).unsqueeze(0).expand(2, -1)
+            full_edge_index = torch.cat([edge_index, _self_loop], dim=1)
+
+            # 运行标准前向
+            h = features
+            for layer_idx, heads in enumerate(self.gat.layers):
+                if len(heads) > 1:
+                    h = torch.cat([att(h, full_edge_index) for att in heads], dim=-1)
+                else:
+                    h = heads[0](h, full_edge_index)
+                if layer_idx < len(self.gat.layers) - 1:
+                    h = torch.nn.functional.elu(h)
+
+            emb = h
+
+            # 从第一层第一头提取注意力权重
+            first_head = self.gat.layers[0][0]
+            Wh = torch.mm(features, first_head.W)
+            src_idx = full_edge_index[0]
+            dst_idx = full_edge_index[1]
+            e_src = torch.mm(Wh, first_head.a_src).squeeze(-1)
+            e_dst = torch.mm(Wh, first_head.a_dst).squeeze(-1)
+            raw_attn = first_head.leaky_relu(e_src[src_idx] + e_dst[dst_idx])
+
+            # 稀疏 softmax 按目标节点分组
+            attn_sparse = torch.sparse_coo_tensor(
+                full_edge_index, raw_attn,
+                size=(_n, _n), check_invariants=False,
+            )
+            attn_sparse = torch.sparse.softmax(attn_sparse, dim=1)
+            all_attn = attn_sparse.values().detach()
+
+            # 只返回原始边（不含自环）的注意力
+            e = edge_index.size(1)
+            attn_weights = all_attn[:e] if all_attn.numel() >= e else all_attn
+
+            # 归一化
+            if attn_weights.numel() > 0:
+                attn_weights = attn_weights / (attn_weights.max() + 1e-8)
+        else:
+            emb = self.forward(graph)
+            attn_weights = torch.empty(0, device=graph.node_features.device)
+
+        return emb, attn_weights
+
 
 # ═══════════════════════════════════════════════════
 # SynapseGraphSAGEEncoder — GraphSAGE 编码器封装

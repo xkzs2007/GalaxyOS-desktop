@@ -65,7 +65,7 @@ class PipelineResult:
     __slots__ = (
         "activated_neurons", "neuron_labels", "pipeline_time_ms",
         "gnn_time_ms", "cfc_time_ms", "num_neurons", "num_synapses",
-        "embedding_dim", "gnn_model", "predicted_ids",
+        "embedding_dim", "gnn_model", "predicted_ids", "attention_weights",
     )
     def __init__(
         self,
@@ -79,6 +79,7 @@ class PipelineResult:
         embedding_dim: int = 0,
         gnn_model: str = "",
         predicted_ids=None,
+        attention_weights=None,
     ):
         self.activated_neurons = activated_neurons or []
         self.neuron_labels = neuron_labels or {}
@@ -90,6 +91,7 @@ class PipelineResult:
         self.embedding_dim = embedding_dim
         self.gnn_model = gnn_model
         self.predicted_ids = predicted_ids or []
+        self.attention_weights = attention_weights or {}
 
 
 class NeuralMemoryPipeline:
@@ -253,6 +255,15 @@ class NeuralMemoryPipeline:
             raise ValueError(f"未知 GNN 类型: {self.gnn_type}")
 
         self.gnn_encoder.to(self.device)
+
+        # 尝试加载预训练权重（不影响功能，失败了也继续）
+        try:
+            from synapse_pretrain import load_pretrained_weights
+            if load_pretrained_weights(self.gnn_encoder):
+                logger.info(f"预训练权重加载成功，替代随机初始化 ({self.gnn_type})")
+        except Exception:
+            pass
+
         self.gnn_encoder.eval()
         logger.info(f"GNN 编码器初始化完成 ({self.gnn_type})")
 
@@ -355,6 +366,24 @@ class NeuralMemoryPipeline:
             self._run_gnn_embedding()
         t1 = time.time()
 
+        # GAT 注意力权重（仅 GAT 模式支持）
+        attention_weights = {}
+        if self.gnn_type == "gat" and hasattr(self.gnn_encoder, 'forward_with_attention'):
+            try:
+                with torch.no_grad():
+                    _, edge_attn = self.gnn_encoder.forward_with_attention(self.graph)
+                if edge_attn.numel() > 0 and self.graph.edge_index.numel() > 0:
+                    src = self.graph.edge_index[0].tolist()
+                    for i, attn_val in enumerate(edge_attn.tolist()):
+                        if i < len(src):
+                            nid = self.graph.node_ids[src[i]] if src[i] < len(self.graph.node_ids) else None
+                            if nid:
+                                if nid not in attention_weights:
+                                    attention_weights[nid] = 0.0
+                                attention_weights[nid] = max(attention_weights[nid], attn_val)
+            except Exception as e:
+                logger.debug(f"attention_weights extraction skipped: {e}")
+
         # CfC 激活传播
         results = self.cfc_engine.activate_and_propagate(
             seed_neuron_id=neuron_id,
@@ -420,6 +449,7 @@ class NeuralMemoryPipeline:
             embedding_dim=self.cfc_hidden_size,
             gnn_model=self.gnn_type,
             predicted_ids=predicted_ids,
+            attention_weights=attention_weights,
         )
 
     def _update_reinforcement(self, seed_id: str, activated_ids: List[str]):
@@ -528,6 +558,67 @@ class NeuralMemoryPipeline:
             f"CfCCell 参数优化完成: {num_synapses} 条突触, {epochs} epochs"
         )
         return num_synapses
+
+    def pretrain(self, epochs: int = 50) -> Dict[str, Any]:
+        """
+        执行自监督对比学习预训练
+
+        使用突触图做 node-level contrastive learning (GraphCL-inspired),
+        学到的嵌入存储在 models/synapse_pretrain.pth, 供 GAT 初始化用。
+
+        Args:
+            epochs: 训练轮数
+
+        Returns:
+            训练统计
+        """
+        if not self._initialized:
+            self.initialize()
+
+        if self.graph.num_nodes < 3:
+            return {"status": "skipped", "reason": "too_few_nodes"}
+
+        try:
+            from synapse_pretrain import SynapsePretrainer
+            trainer = SynapsePretrainer(
+                workspace_path=self.workspace_path,
+                input_dim=self.feature_dim,
+                hidden_dim=self.hidden_dim,
+                output_dim=self.cfc_hidden_size,
+                device=str(self.device),
+            )
+            stats = trainer.pretrain(epochs=epochs)
+
+            # 如果预训练成功，尝试将权重加载到 GNN 编码器
+            if stats.get("status") == "completed" and self.gnn_encoder is not None:
+                try:
+                    params = trainer.get_gat_init_params()
+                    if params:
+                        self._load_pretrained_to_gnn(params)
+                except Exception as e:
+                    logger.debug(f"pretrained weights to GNN failed: {e}")
+
+            return stats
+        except Exception as e:
+            logger.warning(f"pretrain failed: {e}")
+            return {"status": "error", "error": str(e)}
+
+    def _load_pretrained_to_gnn(self, params: Dict[str, torch.Tensor]):
+        """将预训练参数加载到 GNN 编码器"""
+        sd = self.gnn_encoder.state_dict()
+        matched = 0
+        for name, param in params.items():
+            if param is None:
+                continue
+            # 适配名
+            for m_name, m_param in sd.items():
+                if m_param.shape == param.shape and m_name.split('.')[-1] == name.split('.')[-1]:
+                    sd[m_name] = param.to(self.device)
+                    matched += 1
+                    break
+        if matched > 0:
+            self.gnn_encoder.load_state_dict(sd, strict=False)
+            logger.info(f"预训练权重加载到 GNN: {matched} 层匹配")
 
     def get_stats(self) -> dict:
         """获取管道统计"""

@@ -690,6 +690,9 @@ def _rrf_merge(all_results: List[List[Dict]], k: int = 10) -> List[Dict]:
         'dag': DAG_BOOST,
         'dag_msg': DAG_BOOST,
         'dag_fallback': DAG_BOOST * 0.6,
+        'synapse_seed': 0.5,  # GAT 权重将由 gat_weight 替代
+        'synapse_cfc': 1.2,
+        'synapse_pred': 0.8,
     }
     
     rrf_scores = {}
@@ -718,6 +721,15 @@ def _rrf_merge(all_results: List[List[Dict]], k: int = 10) -> List[Dict]:
                 if mn_src in ('mini', 'session'):
                     weight *= 1.5
             
+            # GAT 注意力权重替代 RRF 基础分（for synapse_seed）
+            _gat_weight = r.get('_gat_weight', None)
+            if src == 'synapse_seed' and _gat_weight is not None and _gat_weight > 0:
+                # 用 GAT 权重替代默认的 RRF rank 贡献
+                # GAT 权重 [0,1] 越高，排名越靠前
+                weight = _gat_weight * 10.0  # 将 [0,1] 映射到 [0,10] RRF 权重范围
+            elif src == 'synapse_cfc' and _gat_weight is not None and _gat_weight > 0:
+                weight *= (1.0 + _gat_weight)  # GAT 增强
+            
             rrf_scores[rid] += weight / (k + i + 1)
             
             # 收集原始相似度（来自各源的 score 字段）
@@ -738,8 +750,13 @@ def _rrf_merge(all_results: List[List[Dict]], k: int = 10) -> List[Dict]:
         norm_rrf = rrf_scores[rid] / max_rrf if max_rrf > 0 else 0
         # 原始相似度（取最高分）
         best_raw = max(raw_scores[rid]) if raw_scores.get(rid) else 0
-        # 混合
-        final_score = norm_rrf * 0.4 + best_raw * 0.6
+        # 混合 — 如果来源是 synapse_seed 且有 GAT 权重，优先用 GAT 权重代替 best_raw
+        _gat_w = item.get('_gat_weight', None)
+        if item.get('source', '').startswith('synapse_seed') and _gat_w is not None and _gat_w > 0:
+            best_raw = _gat_w  # GAT 注意力权重替代原始相似度
+            final_score = norm_rrf * 0.3 + best_raw * 0.7  # GAT 权重占更高比例
+        else:
+            final_score = norm_rrf * 0.4 + best_raw * 0.6
         item['rrf_score'] = round(final_score, 4)
         item['source'] = '/'.join(
             sorted(item['sources'])
@@ -1182,6 +1199,7 @@ def _do_synapse(query: str) -> list:
         # ── ③ GAT+CfC 激活传播（稀疏，不 OOM） ──
         _activated = {}
         _predicted = []
+        _gat_weights = {}  # neuron_id → GAT attention weight
         for _sid, _sc, _ in _seeds[:3]:
             try:
                 _result = _pipe.activate(_sid, top_k=8, max_depth=2, activation_strength=0.05)
@@ -1192,22 +1210,30 @@ def _do_synapse(query: str) -> list:
                     for _pid in _result.predicted_ids:
                         if _pid != _sid and _pid not in _predicted:
                             _predicted.append(_pid)
+                # 收集 GAT 注意力权重
+                if hasattr(_result, 'attention_weights') and _result.attention_weights:
+                    for _nid, _attn in _result.attention_weights.items():
+                        _gat_weights[_nid] = max(_gat_weights.get(_nid, 0), _attn)
             except Exception:
                 pass
 
-        # ── ④ 组装 ──
+        # ── ④ 组装（附带 GAT 注意力权重） ──
         _label_map = {n['id']: n.get('content', '') for n in _neurons}
         _seen_out = set()
         for _sid, _sc, _ in _seeds:
             _c = _label_map.get(_sid, '')
             if _c and _c[:60] not in _seen_out:
                 _seen_out.add(_c[:60])
-                _r.append({'content': _c, 'score': round(_sc, 3), 'source': 'synapse_seed'})
+                _gat_w = _gat_weights.get(_sid, 0.0)
+                _r.append({'content': _c, 'score': round(_sc, 3), 'source': 'synapse_seed',
+                           '_gat_weight': round(_gat_w, 4)})
         for _aid, _st in sorted(_activated.items(), key=lambda x: -x[1]):
             _c = _label_map.get(_aid, '')
             if _c and _c[:60] not in _seen_out:
                 _seen_out.add(_c[:60])
-                _r.append({'content': _c[:1000], 'score': round(_st, 3), 'source': 'synapse_cfc'})
+                _gat_w = _gat_weights.get(_aid, 0.0)
+                _r.append({'content': _c[:1000], 'score': round(_st, 3), 'source': 'synapse_cfc',
+                           '_gat_weight': round(_gat_w, 4)})
                 if len(_r) >= 10: break
         for _pid in _predicted[:3]:
             _c = _label_map.get(_pid, '')

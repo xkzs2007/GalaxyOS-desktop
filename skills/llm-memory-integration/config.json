@@ -1,6 +1,6 @@
 {
   "name": "llm-memory-integration",
-  "version": "6.1.0",
+  "version": "6.2.0",
   "license": "MIT-0",
   "description": "LLM + 向量模型集成方案。支持任意 LLM + Embedding 模型，用户自行配置。支持混合检索、智能路由、渐进式启用、用户画像自动更新。",
   "author": "@xkzs2007",
