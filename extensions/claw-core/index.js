@@ -1531,13 +1531,13 @@ export default function register(api) {
         try {
             const w = getWorker(ws);
             if (w.ready) {
-                await w.call("store", { content: content.slice(0, 2000), source }, 5000);
+                await w.call("store", { content, source }, 5000);
                 return true;
             }
         } catch (e) { /* fall through */ }
         // Worker 不可用,降级 spawnSync
         try {
-            const result = runClawScript(ws, "store", { content: content.slice(0, 2000), source }, 8000);
+            const result = runClawScript(ws, "store", { content, source }, 8000);
             return !result.error;
         } catch (e) {
             return false;
@@ -1974,7 +1974,7 @@ export default function register(api) {
                         dagCall("dag_ingest", {
                             sessionId,
                             role: message?.role || source,
-                            content: content.slice(0, 2000),
+                            content,
                             tokens,
                             metadata: galaxyMeta,
                         }),
