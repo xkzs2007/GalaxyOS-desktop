@@ -1119,16 +1119,28 @@ def _do_dag_fallback(query: str, top_k: int) -> list:
 
 
 def _do_synapse(query: str) -> list:
-    """3. 突触神经网络检索（ONNX embedding + GAT 种子 + CfC 激活传播）
+    """3. 突触检索——按规模自适应选择路径
 
-    流程：
-      1. jieba 粗筛 200 个候选人 → ONNX 精排（余弦相似度）
-      2. GAT→CfC 激活传播（NCP 拓扑约束）
-      3. CfC 序列预测器预取后续可能激活的记忆
+    策略：
+      - 神经元 ≤ 200 → 全链路（ONNX + GAT → CfC）
+      - 神经元 > 200 → 直接走 jieba 关键词匹配 fallback（避免 OOM）
     """
-    _r = []
     try:
+        # 先看神经元数量决定走哪条路
         _ws = os.path.expanduser("~/.openclaw/workspace")
+        _syn_file = os.path.join(_ws, ".learnings/synapse_network/neurons.jsonl")
+        _neuron_count = 0
+        if os.path.exists(_syn_file):
+            with open(_syn_file) as _f:
+                for _ in _f:
+                    if _.strip():
+                        _neuron_count += 1
+        
+        # 神经元太多 → 降级到 jieba 匹配（轻量）
+        if _neuron_count > 200:
+            return _do_synapse_fallback(query)
+
+        # 小规模 → 全链路
         _core_dir = os.path.join(_ws, "GalaxyOS/extensions/claw-core/dist/scripts")
         if _core_dir not in sys.path:
             sys.path.insert(0, _core_dir)
@@ -1153,15 +1165,10 @@ def _do_synapse(query: str) -> list:
             _neurons = [{'id': n, 'content': l} for n, l in zip(nids, lbls)]
 
         if not _neurons:
-            return _r
+            return []
 
-        # ── ① jieba 粗筛 200 个候选人 ──
-        try:
-            import jieba
-            _q_words = set(jieba.lcut(query.lower()))
-        except ImportError:
-            _q_words = set(re.findall(r'[\w\u4e00-\u9fff]+', query.lower()))
-
+        import jieba
+        _q_words = set(jieba.lcut(query.lower()))
         _candidates = []
         _seen = set()
         for n in _neurons:
@@ -1169,39 +1176,26 @@ def _do_synapse(query: str) -> list:
             if not _c or _c[:60] in _seen:
                 continue
             _seen.add(_c[:60])
-            try:
-                _nw = set(jieba.lcut(_c.lower()))
-            except ImportError:
-                _nw = set(re.findall(r'[\w\u4e00-\u9fff]+', _c.lower()))
-            if len(_q_words & _nw) >= 1:
+            _nw = set(jieba.lcut(_c.lower()))
+            if _q_words & _nw:
                 _score = len(_q_words & _nw) / max(len(_q_words | _nw), 1)
                 _candidates.append((n['id'], _score, _c[:1000]))
-
-        # 只取 top-200 候选人
         _candidates.sort(key=lambda x: -x[1])
         _candidates = _candidates[:200]
-
         if not _candidates:
-            return _r
+            return []
 
-        # ── ② ONNX 精排（余弦相似度） ──
-        _seeds = _onnx.find_seeds(
-            query, top_k=5, min_score=0.15,
-            candidates=[(nid, c) for nid, _, c in _candidates],
-        )
+        _seeds = _onnx.find_seeds(query, top_k=5, min_score=0.15,
+            candidates=[(nid, c) for nid, _, c in _candidates])
 
-        # ── ③ GAT→CfC 激活传播 ──
-        _activated = {}
-        _predicted = []
+        _r = []
+        _activated, _predicted = {}, []
         for _sid, _sc, _content in _seeds[:3]:
             try:
-                _result = _pipe.activate(
-                    _sid, top_k=8, max_depth=2, activation_strength=0.05,
-                )
+                _result = _pipe.activate(_sid, top_k=8, max_depth=2, activation_strength=0.05)
                 for _aid, _st in _result.activated_neurons:
-                    if _aid == _sid:
-                        continue
-                    _activated[_aid] = max(_activated.get(_aid, 0), _st)
+                    if _aid != _sid:
+                        _activated[_aid] = max(_activated.get(_aid, 0), _st)
                 if hasattr(_result, 'predicted_ids') and _result.predicted_ids:
                     for _pid in _result.predicted_ids:
                         if _pid != _sid and _pid not in _predicted:
@@ -1209,98 +1203,75 @@ def _do_synapse(query: str) -> list:
             except Exception:
                 pass
 
-        # ── ④ 组装结果 ──
         _label_map = {n['id']: n.get('content', '') for n in _neurons}
         _seen_out = set()
-
-        # ONNX 种子
         for _sid, _sc, _content in _seeds:
-            if not _content or _content[:60] in _seen_out:
-                continue
-            _seen_out.add(_content[:60])
-            _r.append({'content': _content, 'score': round(_sc, 3), 'source': 'synapse_seed'})
-
-        # CfC 扩散
+            if _content and _content[:60] not in _seen_out:
+                _seen_out.add(_content[:60])
+                _r.append({'content': _content, 'score': round(_sc, 3), 'source': 'synapse_seed'})
         for _aid, _st in sorted(_activated.items(), key=lambda x: -x[1]):
             _c = _label_map.get(_aid, '')
-            if not _c or _c[:60] in _seen_out:
-                continue
-            _seen_out.add(_c[:60])
-            _r.append({'content': _c[:1000], 'score': round(_st, 3), 'source': 'synapse_cfc'})
-            if len(_r) >= 10:
-                break
-
-        # 序列预测
+            if _c and _c[:60] not in _seen_out:
+                _seen_out.add(_c[:60])
+                _r.append({'content': _c[:1000], 'score': round(_st, 3), 'source': 'synapse_cfc'})
+                if len(_r) >= 10: break
         for _pid in _predicted[:3]:
             _c = _label_map.get(_pid, '')
-            if not _c or _c[:60] in _seen_out:
-                continue
-            _seen_out.add(_c[:60])
-            _r.append({'content': _c[:1000], 'score': 0.4, 'source': 'synapse_pred'})
+            if _c and _c[:60] not in _seen_out:
+                _seen_out.add(_c[:60])
+                _r.append({'content': _c[:1000], 'score': 0.4, 'source': 'synapse_pred'})
 
         logger.info(f"  synapse (ONNX+GAT+CfC): {len(_r)} results")
+        return _r
     except Exception as e:
         logger.debug(f"  synapse skipped: {e}")
-        if not _r:
-            _r = _do_synapse_fallback(query)
-    return _r
+        return _do_synapse_fallback(query)
 
 
 def _do_synapse_fallback(query: str) -> list:
-    """synapse 回退：旧 jieba 关键词匹配"""
+    """synapse 回退：jieba 关键词匹配 + 突触网络"""
     _r = []
     try:
         _ws = os.path.expanduser("~/.openclaw/workspace")
         _core_dir = os.path.join(
-            _ws, "skills/xiaoyi-claw-omega-final/skills/llm-memory-integration/core")
-        sys.path.insert(0, _core_dir)
-        from memory_consolidation import ConsolidationEngine
-        ce = ConsolidationEngine(_ws)
-        if hasattr(ce, 'consolidate_from_dag'):
-            ce.consolidate_from_dag()
-        syn_network = ce._get_synapse_network()
-        if syn_network:
-            try:
-                import jieba
-                q_words = set(jieba.lcut(query.lower()))
-            except ImportError:
-                q_words = set(re.findall(r'[\w\u4e00-\u9fff]+', query.lower()))
-            neurons = syn_network.neuron_manager.get_all_neurons()
-            scan_set = neurons[-8000:]
-            if len(neurons) > 8000:
-                early = sorted(neurons[:3000], key=lambda n: -getattr(n, 'activation_count', 0))
-                scan_set = scan_set + early[:1000]
-            scored = []
-            dedup_seen = set()
-            for n in scan_set:
-                if not n.content:
-                    continue
-                dedup_key = n.content[:80]
-                if dedup_key in dedup_seen:
-                    continue
-                dedup_seen.add(dedup_key)
-                try:
-                    n_words = set(jieba.lcut(n.content.lower()))
-                except ImportError:
-                    n_words = set(re.findall(r'[\w\u4e00-\u9fff]+', n.content.lower()))
-                overlap = len(q_words & n_words)
-                if overlap >= 1:
-                    score = overlap / max(len(q_words | n_words), 1)
-                    scored.append((n, score))
-            scored.sort(key=lambda x: -x[1])
-            seen2 = set()
-            for n, s in scored[:5]:
-                if not n.content or n.content[:60] in seen2:
-                    continue
-                seen2.add(n.content[:60])
-                _r.append({
-                    'content': n.content[:1000],
-                    'score': round(s, 3),
-                    'source': 'synapse_fb',
-                })
+            _ws, "GalaxyOS/extensions/claw-core/dist/scripts")
+        if _core_dir not in sys.path:
+            sys.path.insert(0, _core_dir)
+        from memory_synapse_network import SynapseNetwork
+        sn = SynapseNetwork(_ws)
+        if not sn._neurons_cache:
+            return _r
+        import jieba
+        q_words = set(jieba.lcut(query.lower()))
+        neurons = list(sn._neurons_cache.values())
+        scored = []
+        dedup_seen = set()
+        for n in neurons:
+            if not n.content:
+                continue
+            dedup_key = n.content[:80]
+            if dedup_key in dedup_seen:
+                continue
+            dedup_seen.add(dedup_key)
+            n_words = set(jieba.lcut(n.content.lower()))
+            overlap = len(q_words & n_words)
+            if overlap >= 1:
+                score = overlap / max(len(q_words | n_words), 1)
+                scored.append((n, score))
+        scored.sort(key=lambda x: -x[1])
+        seen2 = set()
+        for n, s in scored[:5]:
+            if not n.content or n.content[:60] in seen2:
+                continue
+            seen2.add(n.content[:60])
+            _r.append({
+                'content': n.content[:1000],
+                'score': round(s, 3),
+                'source': 'synapse_fb',
+            })
         logger.info(f"  synapse_fallback: {len(_r)} results")
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug(f"  synapse_fallback error: {e}")
     return _r
 
 
