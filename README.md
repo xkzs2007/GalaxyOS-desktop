@@ -5,7 +5,7 @@
 
 ## 总览
 
-`GalaxyOS`（前身：小艺 Claw 系统）是 **OpenClaw 的底层认知增强引擎**。提供 **15 层架构、440+ 功能项、144+ 服务模块**，覆盖从记忆管理到认知推理的全链路。
+`GalaxyOS`（前身：小艺 Claw 系统）是 **OpenClaw 的底层认知增强引擎**。提供 **15 层架构、470+ 功能项、160+ 服务模块**，覆盖从记忆管理到认知推理的全链路。
 
 ### 核心能力
 
@@ -42,7 +42,7 @@ GalaxyOS/
 │   ├── intelligent_thinking_trigger.py  # v2.0 三论文集成引擎
 │   ├── skill_scorer.py           # RCR-Router 动态评分引擎
 │   ├── thinking_memory.py        # Springdrift CBR 记忆层
-│   ├── ... (共 144+ 个模块)
+│   ├── ... (共 160+ 个模块)
 ├── extensions/        # OpenClaw 扩展插件
 │   ├── claw-core/     # 核心插件 (UDS+ZMQ+mmap 三通道 + ContextEngine + Hook)
 │   
@@ -57,67 +57,82 @@ GalaxyOS/
 
 ## 安装
 
-### 从 PyPI（未来）
+### 方式一：Docker（推荐，开箱即用）
 
 ```bash
-pip install galaxyos
-```
-
-### 从仓库
-
-```bash
-# 克隆仓库
 git clone https://cnb.cool/llm-memory-integrat/GalaxyOS.git
 cd GalaxyOS
 
-# 安装核心服务包
-pip install -e .
+# 1. 配置 API Key
+cp config/llm_config.example.json config/llm_config.json
+# 编辑 config/llm_config.json，填入你的 DeepSeek / 硅基流动 API Key
 
-# 或仅安装依赖
-pip install -r requirements.txt
+# 2. 启动
+docker compose up -d
+docker compose exec galaxyos python -m services.xiaoyi_claw_api health
 ```
 
-### 安装依赖
+### 方式二：pip install（开发者）
+
+```bash
+git clone https://cnb.cool/llm-memory-integrat/GalaxyOS.git
+cd GalaxyOS
+
+# 推荐使用虚拟环境
+python3 -m venv .venv && source .venv/bin/activate
+
+# 安装
+pip install -e .
+
+# 配置 API Key
+cp config/llm_config.example.json config/llm_config.json
+# 编辑填入 API Key
+
+# 运行安装向导（自检 + 配置验证）
+python scripts/install_wizard.py --check
+```
+
+### 方式三：仅安装依赖
 
 ```bash
 pip install -r requirements.txt
+cp config/llm_config.example.json config/llm_config.json
+# 编辑填入 API Key
 ```
 
-**核心依赖**：
+### 📋 配置说明
+
+项目通过 `config/llm_config.json` 管理所有外部 API 配置：
+
+| 配置项 | 用途 | 提供商 |
+|--------|------|--------|
+| `llm` | 对话推理 (DeepSeek v4-flash) | DeepSeek |
+| `llm_pro` | 并行/批量处理 (DeepSeek v4-pro) | DeepSeek |
+| `embedding` | 文本向量嵌入 (bge-m3, 1024d) | 硅基流动 |
+| `rerank` | 结果重排序 (bge-reranker-v2-m3) | 硅基流动 |
+| `vlm` | 图像理解 | 硅基流动 |
+
+> 模板文件：`config/llm_config.example.json`，复制后填入 `YOUR_API_KEY` 替换为实际密钥。
+
+### 环境要求
+
+- **OS**: Linux x86_64
+- **Python**: 3.12+
+- **内存**: ≥ 2 GB
+- **磁盘**: ≥ 1 GB
+
+### 依赖总览
 
 | 包名 | 版本 | 用途 |
 |------|------|------|
 | numpy | >=2.4.5 | 数值计算基础 |
-| scipy | >=1.10.0 | 科学计算（MKL 后端优化） |
-| pyzmq | >=25.0.0 | 进程间事件推送 |
-| aiohttp | >=3.9.0 | 异步 HTTP 客户端 |
-| httpx | >=0.27.0 | HTTP 客户端 |
-| faiss-cpu | >=1.7.0 | 向量检索 |
-| Pillow | >=10.0.0 | 图像处理 |
-| orjson | >=3.9.0 | 高速 JSON 序列化 |
-| polars | >=1.0.0 | 结构化数据处理 |
-| duckdb | >=1.0.0 | SQL 嵌入式引擎 |
-| jieba | >=0.42.0 | 中文分词 |
-| snownlp | >=0.12.0 | 情感分析 |
-| tiktoken | >=0.5.0 | Token 计数 |
-| uvloop | >=0.19.0 | 事件循环加速 |
 | torch | >=2.0.0 | GNN / 图神经网络 / ncps |
-| scikit-learn | >=1.3.0 | 机器学习工具 |
-| pandas | >=2.0.0 | 数据分析 |
+| faiss-cpu | >=1.7.0 | 向量检索 |
+| pyzmq | >=25.0.0 | 进程间事件推送 |
 | onnxruntime | >=1.15.0 | 推理优化 |
-| psutil | >=5.9.0 | 系统监控 |
+| ncps | >=1.0.0 | 神经电路策略 (LTC/CfC) |
 | openai | >=1.0.0 | LLM API 客户端 |
-| requests | >=2.31.0 | HTTP 请求 |
-| **ncps** | >=1.0.0 | 神经电路策略 (LTC/CfC) |
 | pydantic | >=2.0.0 | 数据校验 |
-
-### 环境要求
-
-- **OS**: Linux x86_64（已验证华为云 EulerOS 2.0）
-- **Python**: 3.12+
-- **CPU**: 支持 AVX-512 指令集（Xeon 8378C 等）
-- **内存**: ≥ 2 GB
-- **磁盘**: ≥ 1 GB
 
 ## 快速使用
 
@@ -172,7 +187,7 @@ python3 -m services.xiaoyi_claw_api recall --query "查询"
 | v3.1.0 | `docs/xiaoyi-claw-core-architecture-v3.1.0.md` | ContextEngine 注册、DAG 上下文中继 |
 | v3.0.0 | `docs/xiaoyi-claw-core-architecture-v3.0.0.md` | 16 层架构、R-CCAM 认知循环 |
 
-**完整架构文档（含 15 层全景图、440+ 功能列表、更新日志）：** 👉 [📖 查看 Skills 文档栏](https://cnb.cool/llm-memory-integrat/GalaxyOS?tabValue=SKILLS-ov-file)
+**完整架构文档（含 15 层全景图、470+ 功能列表、更新日志）：** 👉 [📖 查看 Skills 文档栏](https://cnb.cool/llm-memory-integrat/GalaxyOS?tabValue=SKILLS-ov-file)
 
 ### v6.1 新特性
 
@@ -245,7 +260,7 @@ python3 -m services.xiaoyi_claw_api recall --query "查询"
 | **DAG 上下文管理器升级** | 时间衰减权重排序 + Cognition Forest 子树 + cycle_summary 追加 |
 | **WorkflowEngine 修复** | claw_worker.py 补 ORCHESTRATION_DIR，健康检查链路正常 |
 | **记忆验证增强** | from_dict 容错、SourceType 补全 |
-| **install_wizard 安装向导** | 6 阶段全自动自检（环境→模块→文件→服务→断路器→配置） |
+| **install_wizard 安装向导** | 7 阶段全自动自检（环境→模块→services 模块→pip 依赖→文件→断路器→配置） |
 | **Heuristic 批量验证** | 规则检查零 LLM 成本，75 条记忆批量处理 |
 | **系统品牌更名 GalaxyOS** | 从小艺 Claw 系统架构升级 |
 | **process() 精简 -70%** | 863→254 行 |

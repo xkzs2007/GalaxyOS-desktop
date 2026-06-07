@@ -25,83 +25,27 @@ WORKSPACE = os.environ.get(
     str(Path.home() / ".openclaw" / "workspace"),
 )
 
-# ── 10论文方向模块集成 (R-CCAM 五阶段调用) ──
-try:
-    from retrieval_hub import retrieval_hub, _decompose_query, classify_query_complexity
-    _HAS_RETRIEVAL_HUB = True
-except ImportError:
-    _HAS_RETRIEVAL_HUB = False
-try:
-    from paper_integration import get_integration, PaperIntegration
-    _HAS_PAPER_INT = True
-except ImportError:
-    _HAS_PAPER_INT = False
-try:
-    from adaptive_classifier import AdaptiveClassifier
-    _HAS_ADAPTIVE = True
-except ImportError:
-    _HAS_ADAPTIVE = False
-try:
-    from tree_of_thought import TreeOfThought
-    _HAS_TOT = True
-except ImportError:
-    _HAS_TOT = False
-try:
-    from memory_editor import MemoryEditor
-    _HAS_MEMEDITOR = True
-except ImportError:
-    _HAS_MEMEDITOR = False
-try:
-    from causal_reasoning import CausalReasoning
-    _HAS_CAUSAL = True
-except ImportError:
-    _HAS_CAUSAL = False
-try:
-    from cognitive_load import CognitiveLoad
-    _HAS_COGLOAD = True
-except ImportError:
-    _HAS_COGLOAD = False
-try:
-    from hyper_routing import HyperRouter, extract_features as hyper_features
-    _HAS_HYPER = True
-except ImportError:
-    _HAS_HYPER = False
-try:
-    from plan_solve import PlanSolve
-    _HAS_PLAN = True
-except ImportError:
-    _HAS_PLAN = False
+# ── 统一导入管理（替代分散的 try/except ImportError） ──
+from ._imports import (
+    HAS_RETRIEVAL_HUB, HAS_PAPER_INT, HAS_ADAPTIVE, HAS_TOT,
+    HAS_MEMEDITOR, HAS_CAUSAL, HAS_COGLOAD, HAS_HYPER, HAS_PLAN,
+    HAS_NEURAL,
+    PaperEngines, DynamicConfidence, get_dynamic_confidence,
+    DebateEngine, get_debate_engine,
+    GraphOfThoughts, get_got_engine,
+    get_memory_editor, ContextLayer, get_context_layer,
+    FastPIL, get_fast_pil,
+)
 
-# ── 增强模块导入（降级导入：不可用时设为 None） ──
-try:
-    from four_advancements import FourAdvancements as PaperEngines
-except ImportError:
-    PaperEngines = None
-try:
-    from dynamic_confidence import DynamicConfidence, get_dynamic_confidence
-except ImportError:
-    DynamicConfidence = None; get_dynamic_confidence = lambda: None
-try:
-    from multi_agent_debate import DebateEngine, get_debate_engine
-except ImportError:
-    DebateEngine = None; get_debate_engine = lambda: None
-try:
-    from graph_of_thoughts import GraphOfThoughts, get_got_engine
-except ImportError:
-    GraphOfThoughts = None; get_got_engine = lambda: None
-try:
-    from memory_editor import MemoryEditor, get_memory_editor
-except ImportError:
-    MemoryEditor = None; get_memory_editor = lambda: None
-try:
-    from hierarchical_context import ContextLayer, get_context_layer
-except ImportError:
-    ContextLayer = None; get_context_layer = lambda: None
-try:
-    from fast_pil import FastPIL, get_fast_pil
-except ImportError:
-    FastPIL = None; get_fast_pil = lambda: None
-# ── 9个增强模块导入（统一API全集成） ──
+# ── R-CCAM 状态对象（独立模块） ──
+from .rccam_state import PhaseState
+
+# ── 模块级辅助函数（独立模块） ──
+# 从 claw_helpers 重新导出以保持 API 兼容
+from .claw_helpers import (
+    get_xiaoyi_claw, remember, recall, forget, get_entity, learn,
+    _rci_async_criticism, _load_latest_evolved_capabilities,
+)
 
 # ── 核心模块路径(13层/44工作流/129模块) ──
 import sys as _sys2
@@ -111,17 +55,6 @@ for _p in [_CORE_PATH, _SRC_PATH]:
     if os.path.isdir(_p) and _p not in _sys2.path:
         _sys2.path.insert(0, _p)
         logger.debug(f"核心模块路径已加入 sys.path: {_p}")
-
-# ── ncps 神经网络模块（可选导入） ──
-try:
-    from memory_synapse_network import (
-        MemorySynapseNetwork, SynapseNetwork, NeuronManager, SynapseManager
-    )
-    _HAS_NEURAL = True
-except ImportError as _ne:
-    _HAS_NEURAL = False
-    logger.debug(f"ncps 模块导入失败: {_ne}")
-
 
 
 def _async_memory_phase(claw_instance, state_snapshot: dict, session_key: str):
@@ -517,7 +450,7 @@ class XiaoYiClawLLM:
     def _init_neural(self):
         """初始化 ncps 突触网络（可选模块，降级不报错）"""
         self._smn = None
-        if not _HAS_NEURAL:
+        if not HAS_NEURAL:
             logger.debug("ncps 神经网络模块不可用，跳过")
             return
         try:
@@ -1923,67 +1856,7 @@ class XiaoYiClawLLM:
         }
 
     # ==================== R-CCAM 结构化认知循环 ====================
-
-    class PhaseState:
-        """R-CCAM 五阶段的状态传递对象"""
-
-        def __init__(self, user_input: str):
-            # 原始输入
-            self.user_input = user_input
-            self._start_time = time.time()
-            self.session_key = f"rccam_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:8]}"
-
-            # 图片相关(Visual RAG)
-            self.has_image: bool = False
-            self.image_source: Optional[str] = None
-
-            # Retrieval 阶段输出
-            self.retrieved_memories: List[Dict] = []
-            self.dag_summaries: List[Dict] = []
-            self.kg_entities: List[Dict] = []
-            self.web_results: List[Dict] = []
-            self.retrieval_confidence: float = 0.0
-            self.needs_more_info: bool = False
-            self.paper_engine_results: List[Dict] = []  # RAPTOR/GraphRAG/Reflection
-            self.suggested_tool: Optional[Dict] = None  # Toolformer 预判工具
-
-            # Cognition 阶段输出
-            self.knowledge_type: str = "info"
-            self.type_confidence: float = 0.5
-            self.analysis: Dict[str, Any] = {}
-            self.intent: str = "query"
-            self.thinking_skills_used: List[str] = []
-
-            # Control 阶段输出
-            self.strategy: str = "answer"
-            self.boundaries: List[str] = []
-            self.fallback: str = "polite_refuse"
-            self.reasoning: str = ""
-            self.control_decision: Dict[str, Any] = {}
-
-            # Action 阶段输出
-            self.action_result: Any = None
-            self.action_success: bool = False
-            self.action_error: Optional[str] = None
-            self.generated_answer: str = ""
-            self.answer_confidence: float = 0.0
-
-            # RCI 异步批评结果
-            self.consistency_action: str = ""
-            self.critic_scores: Dict[str, float] = {}
-
-            # Memory 阶段输出
-            self.memory_ids: List[str] = []
-            self.dag_nodes_created: int = 0
-            self.synapse_updated: bool = False
-            self.emotion_marked: bool = False
-            self.evolution_triggered: bool = False
-
-            # 循环控制
-            self.cycle_count: int = 0
-            self.max_cycles: int = 3
-            self.should_stop: bool = False
-            self.stop_reason: str = ""
+    # PhaseState 已提取到 services/rccam_state.py
 
     def _retrieval_phase(self, state: 'PhaseState', custom_query: str = None) -> 'PhaseState':
         """
@@ -2097,7 +1970,7 @@ class XiaoYiClawLLM:
 
         # ═══ CRAG: 复杂查询自动分解检索（二合一分析已确认类型） ═══
         try:
-            if _HAS_RETRIEVAL_HUB and state.analysis.get('adaptive_level') == 'complex' and len(raw_query) > 20:
+            if HAS_RETRIEVAL_HUB and state.analysis.get('adaptive_level') == 'complex' and len(raw_query) > 20:
                 _crag_input = raw_query[:200]
                 _sub = _decompose_query(_crag_input)
                 if len(_sub) > 1:
@@ -2697,7 +2570,7 @@ class XiaoYiClawLLM:
 
         # ═══ Causal Reasoning: 因果推理注入 ═══
         try:
-            if getattr(self, '_paper_int', None) and _HAS_CAUSAL:
+            if getattr(self, '_paper_int', None) and HAS_CAUSAL:
                 if state.type_confidence < 0.6 or len(query) > 30:
                     _causal = self._paper_int.inject_causal_context(query[:300])
                     if _causal.get('causal_graph', {}).get('edges'):
@@ -2720,7 +2593,7 @@ class XiaoYiClawLLM:
 
         # ═══ Cognitive Load: 上下文压缩建议 ═══
         try:
-            if getattr(self, '_paper_int', None) and _HAS_COGLOAD:
+            if getattr(self, '_paper_int', None) and HAS_COGLOAD:
                 _cl = self._paper_int.assess_cognitive_load(query[:100])
                 state.analysis['cognitive_load'] = {
                     'intrinsic': _cl.get('intrinsic', 0.5),
@@ -3072,7 +2945,7 @@ class XiaoYiClawLLM:
 
         # ═══ Tree-of-Thought: 复杂问题多路径探索决策 ═══
         try:
-            if _HAS_TOT and getattr(self, '_paper_int', None) and state.strategy == "info_insufficient" and state.cycle_count <= 1:
+            if HAS_TOT and getattr(self, '_paper_int', None) and state.strategy == "info_insufficient" and state.cycle_count <= 1:
                 _tot_result = self._paper_int.multi_path_search(query[:300])
                 if _tot_result.get('best_path'):
                     state.analysis['tot_paths'] = len(_tot_result.get('all_paths', []))
@@ -3117,7 +2990,7 @@ class XiaoYiClawLLM:
         # ═══ Plan-Solve: 结构化任务分解 ═══
         if state.strategy != "boundary_violation" and len(query) > 15:
             try:
-                if getattr(self, '_paper_int', None) and _HAS_PLAN:
+                if getattr(self, '_paper_int', None) and HAS_PLAN:
                     _plan = self._paper_int.pre_plan(query[:300])
                     if _plan.get('plan') and len(_plan['plan']) > 1:
                         state.analysis['execution_plan'] = _plan['plan']
@@ -3448,7 +3321,7 @@ class XiaoYiClawLLM:
 
         # ═══ MemoryEditor: ROME 自修正闭环 ═══
         try:
-            if _HAS_MEMEDITOR and getattr(self, '_paper_int', None) and state.generated_answer:
+            if HAS_MEMEDITOR and getattr(self, '_paper_int', None) and state.generated_answer:
                 _answer = state.generated_answer[:500]
                 _conflict = self._paper_int.invalidate_conflicting_edges(_answer)
                 if _conflict.get('conflicts_found', 0) > 0:
@@ -3722,7 +3595,7 @@ class XiaoYiClawLLM:
 
         # ═══ MemoryEditor: 记忆冲突检测 + 修正闭环 ═══
         try:
-            if _HAS_MEMEDITOR and getattr(self, '_paper_int', None) and answer:
+            if HAS_MEMEDITOR and getattr(self, '_paper_int', None) and answer:
                 _answer_entities = self._paper_int.extract_and_store_entities(
                     answer[:500], timestamp=time.time(), session_key=state.session_key
                 )
@@ -3737,7 +3610,7 @@ class XiaoYiClawLLM:
 
         # ═══ Generative Replay: 低价值记忆摘要重写 ═══
         try:
-            if _HAS_MEMEDITOR and getattr(self, '_paper_int', None) and state.cycle_count % 3 == 0:
+            if HAS_MEMEDITOR and getattr(self, '_paper_int', None) and state.cycle_count % 3 == 0:
                 _replay = self._paper_int.generative_replay([
                     {"id": "auto", "content": f"Q: {query[:100]}\nA: {(answer or '')[:100]}", "importance": 0.4}
                 ])
@@ -3835,7 +3708,7 @@ class XiaoYiClawLLM:
         Returns:
             处理结果,包含回答和状态信息
         """
-        state = self.PhaseState(user_input)
+        state = PhaseState(user_input)
         state.max_cycles = min(max_cycles, 3)
         # ═══ 延迟预算：每阶段硬熔断 ═══
         import time as _rt
@@ -4416,114 +4289,3 @@ class XiaoYiClawLLM:
         except Exception as _e:
             logger.debug(f"事件日志写入失败 ({operation}): {_e}")
         return
-
-
-# 全局实例
-_instance = None
-
-def get_xiaoyi_claw(config: Optional[Dict] = None) -> XiaoYiClawLLM:
-    """获取小艺 Claw 实例"""
-    global _instance
-    if _instance is None:
-        _instance = XiaoYiClawLLM(config)
-    return _instance
-
-
-# ── RCI 异步批评函数(供 ThreadPoolExecutor submit 使用) ──
-def _rci_async_criticism(self, state):
-    """Background thread: run criticism/consistency, publish via mmap + ZMQ"""
-    import time as _t, os as _os, json as _j, struct as _s, tempfile as _tf, sys as _rci_sys
-    _rci_session = getattr(self, '_kv_session_id', 'xiaoyi-claw-main')
-    _rci_results = {
-        "session_id": _rci_session,
-        "rounds": [{"rci": 1, "scores": {"faithfulness":5,"relevance":7,"completeness":6,"avg":6.0},
-                     "action": "pass", "elapsed_ms": 1}],
-        "total_ms": 1, "rounds_done": 1,
-        "final_scores": getattr(state, 'critic_scores', {}),
-        "final_action": getattr(state, 'consistency_action', 'pass'),
-        "final_answer": (getattr(state, 'generated_answer', '') or '')[:500],
-    }
-    _rci_mmap = _os.path.expanduser("~/.openclaw/extensions/claw-core/var/rci_shared_state")
-    try:
-        _raw = _j.dumps(_rci_results, ensure_ascii=False).encode("utf-8")
-        with _tf.NamedTemporaryFile(dir=_os.path.dirname(_rci_mmap), delete=False, suffix=".tmp") as _tmpf:
-            _tmpf.write(_s.pack("<I", len(_raw)))
-            _tmpf.write(_raw)
-            _tmpn = _tmpf.name
-        _os.rename(_tmpn, _rci_mmap)
-    except Exception:
-        pass
-    if hasattr(self, '_rci_publish_zmq') and self._rci_publish_zmq:
-        try:
-            self._rci_publish_zmq("rci_criticism", _rci_results)
-        except Exception:
-            pass
-
-
-
-# 便捷 API 函数
-def remember(content: str, **kwargs) -> str:
-    """存储记忆"""
-    return get_xiaoyi_claw().remember(content, **kwargs)
-
-def recall(query: str, **kwargs) -> List[Dict]:
-    """检索记忆"""
-    return get_xiaoyi_claw().recall(query, **kwargs)
-
-def forget(memory_id: str) -> int:
-    """删除记忆"""
-    return get_xiaoyi_claw().forget(memory_id)
-
-def get_entity(name: str) -> Dict:
-    """获取实体"""
-    return get_xiaoyi_claw().get_entity(name)
-
-def learn(feedback: Dict) -> bool:
-    """学习反馈"""
-    return get_xiaoyi_claw().learn(feedback)
-
-
-# ==================== memory_unified 能力合并 ====================
-
-
-def _load_latest_evolved_capabilities() -> dict:
-    """从 DAG SQLite 读取最新的 evolved_capability 节点，包装为 cogniton_payload.self_evolution 格式"""
-    try:
-        _dag_db = os.path.expanduser("~/.openclaw/dag_context.db")
-        if not os.path.exists(_dag_db):
-            return {"success": False, "reason": "DAG DB 不存在"}
-        conn = sqlite3.connect(_dag_db)
-        cur = conn.execute(
-            "SELECT content, confidence, timestamp FROM rccam_nodes "
-            "WHERE node_type='evolved_capability' "
-            "ORDER BY timestamp DESC LIMIT 5"
-        )
-        _caps = []
-        for row in cur.fetchall():
-            _cc = row[0]
-            _conf = row[1]
-            try:
-                _cd = json.loads(_cc)
-                _caps.append({
-                    "scenario": _cd.get("name", "未知场景"),
-                    "pattern": _cd.get("trigger", ""),
-                    "first_principles_cause": "",
-                    "suggestion": _cd.get("suggestion", ""),
-                    "activate": _cd.get("activate", "无"),
-                    "confidence": "高" if _conf >= 0.7 else "中" if _conf >= 0.4 else "低",
-                    "evidence": _cd.get("source", "self_evolution"),
-                })
-            except Exception:
-                pass
-        conn.close()
-        if not _caps:
-            return {"success": False, "reason": "无自进化能力节点"}
-        return {
-            "success": True,
-            "patterns": _caps,
-            "system_impact": "后台自进化分析，用于优化下次同类场景的回答",
-            "self_critique": "数据来自 Galaxy Kernel 后台归纳，已按置信度过滤",
-            "_experience_count": {"capability_nodes": len(_caps)},
-        }
-    except Exception as _e:
-        return {"success": False, "reason": f"读取失败: {_e}"}

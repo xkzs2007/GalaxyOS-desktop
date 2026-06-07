@@ -14,6 +14,8 @@ GalaxyOS — 安装向导 + 配置向导
   python3 install_wizard.py --kg-test       # 知识图谱功能专项测试
   python3 install_wizard.py --all            # 全量模式（体检 + 睡眠测试 + 修复）
   python3 install_wizard.py --neural-test    # 神经网络+记忆迁移专项检查
+  python3 install_wizard.py --test           # 运行测试套件（pytest）
+  python3 install_wizard.py --deps           # 依赖完整性检查
 """
 
 import os
@@ -728,6 +730,150 @@ def scan_breakers() -> Dict[str, Any]:
 
 
 # ════════════════════════════════════════════════════════════════
+# Phase 4.5a: services/ 模块检查（主 pip 包）
+# ════════════════════════════════════════════════════════════════
+
+def check_services_modules() -> Dict[str, Any]:
+    """检查 services/ 目录下的核心服务模块"""
+    heading("📦 阶段 4.5a：services/ 服务模块检查")
+
+    results = {"total": 0, "ok": 0, "fail": 0, "skip": 0, "details": []}
+
+    py_files = sorted(SERVICES_DIR.glob("*.py"))
+    results["total"] = len(py_files)
+
+    # 关键模块列表（用于区分核心/辅助）
+    critical_modules = {
+        "xiaoyi_claw_api", "retrieval_hub", "memory_consolidation",
+        "memory_synapse_network", "enhanced_hallucination_guard",
+        "cognitive_map", "crag", "crag_pipeline", "auto_tuner",
+        "smart_processor", "thinking_enhanced", "biorhythm_sleep_consolidation",
+        "adaptive_ltp_ltd", "adaptive_rrf", "chain_of_verification",
+        "dag_context_manager", "conversation", "self_evolution_engine",
+        "unified_cache", "exceptions", "adaptive_memory",
+        "intelligent_thinking_trigger", "temporal_kg",
+    }
+
+    for fp in py_files:
+        mod_name = fp.stem
+        if mod_name.startswith("__"):
+            continue
+
+        try:
+            with open(fp) as f:
+                source = f.read()
+            ast.parse(source)  # 语法检查
+        except SyntaxError as e:
+            results["fail"] += 1
+            results["details"].append({
+                "module": mod_name, "status": "syntax_error", "error": str(e)[:80]
+            })
+            print(f"  {R}❌{N} {mod_name:<45s} 语法错误")
+            continue
+
+        # 尝试 import
+        try:
+            mod = importlib.import_module(f"services.{mod_name}")
+            marker = "⭐" if mod_name in critical_modules else "✅"
+            results["ok"] += 1
+            print(f"  {G}{marker}{N} {mod_name:<45s}")
+            results["details"].append({"module": mod_name, "status": "ok"})
+        except ImportError as e:
+            err_msg = str(e).split("\n")[0][:80]
+            results["fail"] += 1
+            print(f"  {R}❌{N} {mod_name:<45s} 导入失败: {err_msg}")
+            results["details"].append({
+                "module": mod_name, "status": "import_error", "error": err_msg
+            })
+        except Exception as e:
+            results["skip"] += 1
+            print(f"  {Y}⚠️ {N} {mod_name:<45s} {e}")
+            results["details"].append({
+                "module": mod_name, "status": "runtime_error", "error": str(e)[:80]
+            })
+
+    print()
+    ok(f"services/ 模块: {results['ok']}/{results['total']} 通过, {results['fail']} 失败, {results['skip']} 跳过")
+    return results
+
+
+# ════════════════════════════════════════════════════════════════
+# Phase 4.5b: pip 依赖完整性检查
+# ════════════════════════════════════════════════════════════════
+
+def check_dependencies() -> Dict[str, Any]:
+    """检查 requirements.txt 中的依赖是否都已安装"""
+    heading("📦 阶段 4.5b：pip 依赖完整性检查")
+
+    results = {"total": 0, "installed": 0, "missing": [], "version_mismatch": []}
+
+    req_path = GALAXY_ROOT / "requirements.txt"
+    if not req_path.exists():
+        warn("requirements.txt 不存在")
+        return results
+
+    def _parse_requirement(line: str):
+        line = line.split("#")[0].strip()
+        if not line:
+            return None
+        for op in (">=", "==", "<=", "!=", ">", "<", "~="):
+            if op in line:
+                name, ver = line.split(op, 1)
+                return name.strip(), op.strip(), ver.strip()
+        return line.strip(), None, None
+
+    with open(req_path) as f:
+        for line in f:
+            parsed = _parse_requirement(line)
+            if parsed is None:
+                continue
+            name, op, ver = parsed
+            results["total"] += 1
+
+            try:
+                pkg = importlib.import_module(name.replace("-", "_"))
+                actual_ver = getattr(pkg, "__version__", "unknown")
+                if ver and op == ">=" and actual_ver != "unknown":
+                    # 简单的版本比较（仅检查主版本号）
+                    try:
+                        actual_ver_parsed = tuple(int(x) for x in actual_ver.split(".")[:2])
+                        req_ver_parsed = tuple(int(x) for x in ver.split(".")[:2])
+                        if actual_ver_parsed < req_ver_parsed:
+                            results["version_mismatch"].append({
+                                "name": name, "required": f"{op}{ver}",
+                                "actual": actual_ver
+                            })
+                            print(f"  {Y}⚠️ {N} {name}: {actual_ver} (需要 {op}{ver})")
+                            continue
+                    except (ValueError, TypeError):
+                        pass
+                results["installed"] += 1
+            except ImportError:
+                results["missing"].append({"name": name, "required": f"{op}{ver}" if ver else "any"})
+                if name in ("torch", "ncps", "faiss-cpu", "jieba", "onnxruntime"):
+                    # 大型/可选依赖
+                    print(f"  {Y}⬜{N} {name}{' ' + op + ver if ver else ''} — 未安装（可选）")
+                else:
+                    print(f"  {R}❌{N} {name}{' ' + op + ver if ver else ''} — 未安装")
+
+    print()
+    if not results["missing"] and not results["version_mismatch"]:
+        ok(f"全部 {results['total']} 个依赖满足")
+    else:
+        missing_critical = [
+            m for m in results["missing"]
+            if m["name"] not in ("torch", "ncps", "faiss-cpu", "jieba", "onnxruntime")
+        ]
+        if missing_critical:
+            warn(f"{len(missing_critical)} 个关键依赖缺失: "
+                 f"{', '.join(m['name'] for m in missing_critical)}")
+        if results["version_mismatch"]:
+            warn(f"{len(results['version_mismatch'])} 个版本不匹配")
+
+    return results
+
+
+# ════════════════════════════════════════════════════════════════
 # Phase 5: 配置检查 & 向导
 # ════════════════════════════════════════════════════════════════
 
@@ -1365,6 +1511,8 @@ def main():
     parser.add_argument("--kg-test", action="store_true", help="知识图谱功能专项测试")
     parser.add_argument("--all", action="store_true", help="全量模式（体检 + 睡眠测试 + 修复）")
     parser.add_argument("--neural-test", action="store_true", help="神经网络 + 记忆迁移专项检查")
+    parser.add_argument("--test", action="store_true", help="运行测试套件（pytest）")
+    parser.add_argument("--deps", action="store_true", help="依赖完整性检查")
     args = parser.parse_args()
 
     # ── --report 模式：所有 print 重定向到 stderr，stdout 只留最终 JSON ──
@@ -1405,12 +1553,36 @@ def main():
             sys.stdout.flush()
         return
 
+    if args.deps:
+        all_results["deps"] = check_dependencies()
+        report = generate_report(all_results)
+        if args.report:
+            sys.stdout = _real_stdout
+            sys.stdout.write(json.dumps(report, indent=2, ensure_ascii=False) + "\n")
+            sys.stdout.flush()
+        return
+
+    if args.test:
+        _print(f"\n🧪 运行测试套件...\n")
+        test_dir = GALAXY_ROOT / "tests"
+        if test_dir.exists():
+            r = subprocess.run(
+                [sys.executable, "-m", "pytest", str(test_dir), "-v", "--tb=short", "-p", "no:warnings"],
+                cwd=str(GALAXY_ROOT),
+            )
+            sys.exit(r.returncode)
+        else:
+            err("tests/ 目录不存在")
+            return
+
     # ── 执行各阶段 ──
     all_results["env"] = check_environment()
     all_results["modules"] = test_all_modules()
     all_results["sync"] = check_file_sync()
     all_results["services"] = check_services()
     all_results["breakers"] = scan_breakers()
+    all_results["services_modules"] = check_services_modules()
+    all_results["deps"] = check_dependencies()
     all_results["neural"] = check_neural_network()
     all_results["config"] = check_and_wizard_config(interactive=not args.check and not args.report and not args.fix)
 
