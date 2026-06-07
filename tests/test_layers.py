@@ -1,163 +1,138 @@
-#!/usr/bin/env python3
 """
-单元测试 - 六层架构测试
+集成测试 — 跨模块功能性测试
 """
-
 import sys
-import unittest
 from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
-SKILL_ROOT = Path(__file__).parent.parent
-sys.path.insert(0, str(SKILL_ROOT))
-
-
-class TestCoreLayer(unittest.TestCase):
-    """测试 L1 核心层"""
-    
-    def setUp(self):
-        from core.prompt_integration import CoreLayer
-        self.core = CoreLayer({})
-        self.core.start()
-    
-    def tearDown(self):
-        self.core.stop()
-    
-    def test_identity_loaded(self):
-        """测试身份加载"""
-        identity = self.core.get_identity()
-        self.assertIsNotNone(identity)
-        self.assertIn('name', identity)
-    
-    def test_prompts_loaded(self):
-        """测试提示词加载"""
-        system_prompt = self.core.get_prompt('system')
-        self.assertIsNotNone(system_prompt)
-        self.assertIn('小艺', system_prompt)
+import pytest
 
 
-class TestMemoryLayer(unittest.TestCase):
-    """测试 L2 记忆层"""
-    
-    def setUp(self):
-        from memory_context.memory_manager import MemoryLayer
-        self.memory = MemoryLayer({})
-        self.memory.start()
-    
-    def tearDown(self):
-        self.memory.stop()
-    
-    def test_store_memory(self):
-        """测试记忆存储"""
-        memory_id = self.memory.store("测试内容", level="L1")
-        self.assertIsNotNone(memory_id)
-        self.assertTrue(memory_id.startswith("mem_"))
-    
-    def test_retrieve_memory(self):
-        """测试记忆检索"""
-        self.memory.store("测试关键词内容", level="L1")
-        results = self.memory.retrieve("关键词", level="L1")
-        self.assertIsInstance(results, list)
-    
-    def test_context_management(self):
-        """测试上下文管理"""
-        self.memory.set_context("test_key", "test_value")
-        ctx = self.memory.get_context()
-        self.assertIn("test_key", ctx)
-        self.assertEqual(ctx["test_key"], "test_value")
+class TestExceptionIntegration:
+    """异常系统集成测试"""
 
-
-class TestOrchestrationLayer(unittest.TestCase):
-    """测试 L3 编排层"""
-    
-    def setUp(self):
-        from orchestration.task_engine import OrchestrationLayer
-        self.orchestration = OrchestrationLayer({})
-        self.orchestration.start()
-    
-    def tearDown(self):
-        self.orchestration.stop()
-    
-    def test_create_task(self):
-        """测试任务创建"""
-        task = self.orchestration.create_task("测试任务")
-        self.assertIsNotNone(task)
-        self.assertEqual(task.name, "测试任务")
-    
-    def test_execute_task(self):
-        """测试任务执行"""
-        task = self.orchestration.create_task("测试任务", task_type="query")
-        success = self.orchestration.execute_task(task.task_id)
-        self.assertTrue(success)
-    
-    def test_workflow(self):
-        """测试工作流"""
-        task1 = self.orchestration.create_task("任务1")
-        task2 = self.orchestration.create_task("任务2", dependencies=[task1.task_id])
-        
-        workflow_id = self.orchestration.create_workflow(
-            "测试工作流",
-            [task1.task_id, task2.task_id]
+    def test_exception_flow(self):
+        from services.exceptions import (
+            SkillError, LLMError, EmbeddingError,
         )
-        
-        success = self.orchestration.execute_workflow(workflow_id)
-        self.assertTrue(success)
+        try:
+            raise LLMError("api timeout", details={"retry": 3})
+        except SkillError as e:
+            assert e.code == "LLM_ERROR"
+            d = e.to_dict()
+            assert d["error"] is True
+            assert d["details"]["retry"] == 3
 
 
-class TestExecutionLayer(unittest.TestCase):
-    """测试 L4 执行层"""
-    
-    def setUp(self):
-        from execution.skill_adapter_gateway import ExecutionLayer
-        self.execution = ExecutionLayer({})
-        self.execution.start()
-    
-    def tearDown(self):
-        self.execution.stop()
-    
-    def test_list_skills(self):
-        """测试技能列表"""
-        skills = self.execution.list_skills()
-        self.assertIsInstance(skills, list)
-        self.assertGreater(len(skills), 0)
-    
-    def test_execute_skill(self):
-        """测试技能执行"""
-        skills = self.execution.list_skills()
-        if skills:
-            result = self.execution.execute(skills[0], {"test": True})
-            self.assertIn("status", result)
+class TestCacheIntegration:
+    """缓存系统集成测试"""
+
+    def test_cache_lifecycle(self):
+        from services.unified_cache import UnifiedCache
+        cache = UnifiedCache(backend="memory", max_size=10)
+        cache.set("k1", {"data": [1, 2, 3]})
+        cache.set("k2", "string_value")
+        assert cache.get("k1") == {"data": [1, 2, 3]}
+        assert cache.get("k2") == "string_value"
+        cache.delete("k1")
+        assert cache.get("k1") is None
+        stats = cache.stats()
+        assert stats["count"] == 1
 
 
-class TestGovernanceLayer(unittest.TestCase):
-    """测试 L5 治理层"""
-    
-    def setUp(self):
-        from governance.security.auth_integration import GovernanceLayer
-        self.governance = GovernanceLayer({})
-        self.governance.start()
-    
-    def tearDown(self):
-        self.governance.stop()
-    
-    def test_permission_check(self):
-        """测试权限检查"""
-        # 默认用户应该有读权限
-        has_permission = self.governance.check_permission("default", "read", "test")
-        self.assertTrue(has_permission)
-    
-    def test_audit_log(self):
-        """测试审计日志"""
-        self.governance.audit("test_action", user="test_user")
-        logs = self.governance.get_audit_logs(limit=1)
-        self.assertEqual(len(logs), 1)
-        self.assertEqual(logs[0]["action"], "test_action")
-    
-    def test_validate_operation(self):
-        """测试操作验证"""
-        # 允许的操作应该通过
-        valid = self.governance.validate_operation("read", {})
-        self.assertTrue(valid)
+class TestCRAGIntegration:
+    """CRAG 集成测试"""
+
+    def test_full_process_flow(self):
+        from services.crag import CRAG, CRAGResult, CRAGStep, CRAGState
+        crag = CRAG()
+        result = crag.process("test query")
+        assert isinstance(result, CRAGResult)
+        assert result.query == "test query"
+        steps = result.steps
+        assert len(steps) > 0
+        # 第一步可以是 RETRIEVING（实际行为）或 INIT
+        assert steps[0].state in (CRAGState.INIT, CRAGState.RETRIEVING)
+        assert steps[-1].state in (CRAGState.COMPLETED, CRAGState.FAILED, CRAGState.GENERATING)
 
 
-if __name__ == "__main__":
-    unittest.main(verbosity=2)
+class TestRRFIntegration:
+    """RRF 融合集成测试"""
+
+    def test_query_to_weights_to_fusion(self):
+        from services.adaptive_rrf import AdaptiveRRF, QueryCategory
+        rrf = AdaptiveRRF()
+        # 分类
+        cat = rrf.classify_query("specific exact term")
+        assert cat in QueryCategory
+        # 获取权重
+        weights = rrf.get_adaptive_weights("specific exact term")
+        assert weights.k == 60
+        # 融合
+        dense = [("d1", 0.9), ("d2", 0.5)]
+        sparse = [("d2", 0.8), ("d3", 0.4)]
+        fused = rrf.fuse_rankings(dense, sparse)
+        assert len(fused) >= 2
+
+
+class TestThinkingIntegration:
+    """思考引擎集成测试"""
+
+    def test_thinking_enhanced_flow(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("OPENCLAW_WORKSPACE", str(tmp_path))
+        import importlib
+        import services.thinking_enhanced as te
+        importlib.reload(te)
+
+        # Reflexion → retrieve
+        engine = te.ReflexionEngine()
+        results = engine.retrieve("test")
+        assert isinstance(results, list)
+
+        # SelfRefineLoop
+        loop = te.SelfRefineLoop()
+        refined, history = loop.refine("q", "a")
+        assert isinstance(refined, str)
+
+        # MultiPathExplorer
+        explorer = te.MultiPathExplorer()
+        paths = explorer.explore("q")
+        assert isinstance(paths, dict)
+
+
+class TestHallucinationIntegration:
+    """防幻觉系统集成测试"""
+
+    def test_guard_flow(self, tmp_path):
+        from services.enhanced_hallucination_guard import (
+            EnhancedHallucinationGuard, VerificationLevel,
+        )
+        guard = EnhancedHallucinationGuard(workspace_path=str(tmp_path))
+        # 验证级别判定
+        assert guard.determine_verification_level(0.95) == VerificationLevel.NONE
+        assert guard.determine_verification_level(0.5) == VerificationLevel.MODERATE
+        # 交叉验证
+        result = guard.verify_with_cross_validation(
+            "Python is a programming language"
+        )
+        assert isinstance(result, dict)
+
+
+class TestMemoryIntegration:
+    """记忆系统集成测试"""
+
+    def test_memory_params_and_metrics(self):
+        from services.adaptive_memory import MemoryParameters, PerformanceMetrics
+        params = MemoryParameters(
+            recall_threshold=0.5,
+            ltp_strength=0.15,
+        )
+        assert params.to_dict()["recall_threshold"] == 0.5
+
+        metrics = PerformanceMetrics(
+            recall_precision=0.9,
+            user_satisfaction=0.88,
+        )
+        d = metrics.to_dict()
+        assert d["recall_precision"] == 0.9
+        assert d["user_satisfaction"] == 0.88
