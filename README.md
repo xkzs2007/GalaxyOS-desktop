@@ -318,6 +318,17 @@ GalaxyOS 与以下组件协同工作：
 - **xiaoyi-channel** (`extensions/xiaoyi-channel/`) — 小艺通道通信插件
 - **llm-memory-integration** — 开源版本（ClawHub）
 
+## 开发
+
+| 资源 | 说明 |
+|------|------|
+| [CONTRIBUTING.md](CONTRIBUTING.md) | 贡献指南 — 环境搭建、分支策略、提交规范 |
+| [CHANGELOG.md](CHANGELOG.md) | 版本变更记录 |
+| [docs/API.md](docs/API.md) | API 速查 — 核心模块公开接口一览 |
+| `make test` | 运行 428 个测试用例 |
+| `make lint` | 代码风格检查 |
+| `make ci` | lint + test 一键通过 |
+
 ## 许可证
 
 MIT License。详见 `LICENSE` 文件。
