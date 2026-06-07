@@ -1,5 +1,47 @@
+# ── Python ──
 __pycache__/
-.learnings/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+*.so
+.venv/
+venv/
 
-# 配置文件
+# ── 测试/CI ──
+.pytest_cache/
+htmlcov/
+.coverage
+coverage.xml
+*.prof
+
+# ── 运行时数据 ──
+.learnings/
+*.db
+*.sqlite3
+
+# ── 配置文件（含密钥风险） ──
 config/llm_config.json
+*.env
+.env.*
+.env.local
+*.key
+*.pem
+credentials.json
+service-account.json
+
+# ── IDE ──
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# ── OS ──
+.DS_Store
+Thumbs.db
+
+# ── 大文件 ──
+*.tar.gz
+*.zip
+*.pth

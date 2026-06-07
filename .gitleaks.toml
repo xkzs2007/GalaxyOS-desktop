@@ -1,0 +1,24 @@
+# .gitleaks.toml — 防密钥泄露扫描配置
+# 用法: gitleaks detect --config=.gitleaks.toml
+
+[title]
+description = "GalaxyOS GitLeaks 规则"
+
+# 允许的假密钥（示例/测试用）
+[allowlist]
+regexes = [
+    "sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+    "sk-example-key-000000000000",
+]
+
+[[rules]]
+id = "openai-api-key"
+description = "OpenAI / DeepSeek API Key"
+regex = '''(sk-[a-zA-Z0-9]{20,})'''
+tags = ["api-key", "secret"]
+
+[[rules]]
+id = "generic-api-key"
+description = "通用 API Key 模式"
+regex = '''(?i)(api[_-]?key|secret[_-]?key|access[_-]?token)\s*[:=]\s*['"][^'"]{20,}['"]'''
+tags = ["api-key", "secret"]

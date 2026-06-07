@@ -1,0 +1,49 @@
+name: Security Scan
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  schedule:
+    - cron: "0 8 * * 1"  # 每周一运行
+  workflow_dispatch:
+
+jobs:
+  gitleaks:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # 全量历史以检测历史泄露
+
+      - name: Run Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITLEAKS_CONFIG: .gitleaks.toml
+
+  detect-secrets:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Detect hardcoded secrets in code
+        run: |
+          echo "🔍 扫描当前代码中的硬编码密钥..."
+          # 检测 sk- 开头的 API Key
+          if grep -rPn 'sk-[a-zA-Z0-9]{20,}' services/ extensions/ scripts/ 2>/dev/null; then
+            echo "❌ 发现疑似 API Key！"
+            exit 1
+          fi
+          # 检测直接赋值的密钥
+          if grep -rPni '(api_key|api-key|secret_key|password|token)\s*[:=]\s*['\''\"][A-Za-z0-9_\-]{16,}['\''\"]' services/ extensions/ 2>/dev/null; then
+            echo "⚠️  发现可疑硬编码赋值，请检查"
+          fi
+          echo "✅ 代码扫描完成"
