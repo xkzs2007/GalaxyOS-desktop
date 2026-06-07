@@ -25,10 +25,12 @@
 
 ```
 GalaxyOS/
-├── services/          # 📦 核心服务模块包 (pip install 入口)
+├── services/          # 📦 核心服务模块包 (160+ 模块, pip install 入口)
 │   ├── __init__.py    # 包入口，导出全部工具
 │   ├── xiaoyi_claw_api.py        # 统一 API 接口 (Galaxy Kernel + R-CCAM 核心)
-│   ├── claw_worker.py            # Worker 进程 (Galaxy Kernel 后台线程)
+│   ├── _imports.py               # 选装模块降级导入管理
+│   ├── rccam_state.py            # R-CCAM PhaseState 状态对象
+│   ├── claw_helpers.py           # 模块级便捷 API 函数
 │   ├── retrieval_hub.py          # 统一检索入口 (RRF 融合 + DAG 权重)
 │   ├── memory_consolidation.py   # 记忆巩固引擎
 │   ├── memory_synapse_network.py # 神经突触网络 (ncps LTC/CfC/遗忘曲线)
@@ -36,23 +38,22 @@ GalaxyOS/
 │   ├── enhanced_hallucination_guard.py  # 防幻觉守卫
 │   ├── cognitive_map.py          # 认知地图 (AriGraph 空间推理)
 │   ├── temporal_kg.py            # 时序知识图谱 (Graphiti)
-│   ├── spatial_topology.py       # 空间拓扑
 │   ├── self_evolution_engine.py  # 自进化引擎
-│   ├── thinking_enhanced.py      # 思考增强 (_extract_json_block)
-│   ├── intelligent_thinking_trigger.py  # v2.0 三论文集成引擎
-│   ├── skill_scorer.py           # RCR-Router 动态评分引擎
-│   ├── thinking_memory.py        # Springdrift CBR 记忆层
-│   ├── ... (共 160+ 个模块)
+│   ├── thinking_enhanced.py      # 增强思考引擎
+│   ├── ... (共 160+ 个模块文件)
+├── tests/             # 🧪 测试套件 (32 文件, 428 用例)
 ├── extensions/        # OpenClaw 扩展插件
 │   ├── claw-core/     # 核心插件 (UDS+ZMQ+mmap 三通道 + ContextEngine + Hook)
-│   
-├── workspace-scripts/ # 工作台部署/同步脚本
-├── scripts/           # 辅助脚本
+│   └── xiaoyi-channel/  # 小艺通道通信插件
+├── scripts/           # 辅助脚本 + 安装向导
 ├── config/            # 系统配置文件
-├── docs/              # 架构文档
-├── supervisor/        # supervisor 进程管理配置
-├── hooks/             # OpenClaw 管道钩子 (claw-bootstrap)
-└── services/          # 服务模块包
+│   └── llm_config.example.json  # API Key 配置模板
+├── docs/              # 架构文档 + API 速查
+├── skills/            # 技能定义 + llm-memory-integration core (260 模块)
+├── .github/           # CI/CD workflows
+├── Dockerfile         # Docker 镜像构建
+├── Makefile           # 开发命令速查
+└── pyproject.toml     # pytest/coverage/ruff/mypy 配置
 ```
 
 ## 安装
@@ -144,14 +145,14 @@ from services.xiaoyi_claw_api import XiaoYiClawLLM
 claw = XiaoYiClawLLM()
 
 # 记忆操作
-claw.remember("内容")
-results = claw.recall("查询关键词")
-
-# 验证
-result = claw.verify_with_cross_validation("声明内容")
+claw.remember("内容")           # → str (memory_id)
+results = claw.recall("查询关键词")  # → List[Dict]
 
 # R-CCAM 认知循环（含 Galaxy Kernel 后台处理）
-output = claw.rccam_cycle("用户输入")
+output = claw.process("用户输入")   # → str
+
+# 系统状态
+status = claw.health_check()    # → Dict
 ```
 
 ### CLI 命令
@@ -202,8 +203,6 @@ python3 -m services.xiaoyi_claw_api recall --query "查询"
 | **~140 模块全同步** | scripts_core / integration / memory / rails / privileged / api → 138 模块全加载 |
 
 ### v6.0 新特性
-
-| 特性 | 说明 |
 
 | 特性 | 说明 |
 |------|------|
