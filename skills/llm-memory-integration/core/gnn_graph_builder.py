@@ -330,7 +330,10 @@ class SynapseGraphBuilder:
 
 class SynapseGATEncoder(torch.nn.Module):
     """
-    GAT 编码器，包装 gat_layer.GAT
+    GAT 编码器，支持稠密/稀疏切换
+
+    - dense: O(N²·d) — 小图 (<500 节点) 更快
+    - sparse: O(E·d) — 大图 (>500 节点) 省内存，默认
 
     输入: SynapseGraph
     输出: (N, output_dim) 节点嵌入
@@ -344,37 +347,56 @@ class SynapseGATEncoder(torch.nn.Module):
         num_heads: int = 4,
         num_layers: int = 2,
         dropout: float = 0.3,
+        use_sparse: bool = True,  # 默认稀疏 GAT
     ):
         super().__init__()
-        from gat_layer import GAT
         self.input_dim = input_dim
         self.hidden_dim = hidden_dim
         self.output_dim = output_dim
         self.num_heads = num_heads
         self.num_layers = num_layers
+        self.use_sparse = use_sparse
 
-        self.gat = GAT(
-            input_dim=input_dim,
-            hidden_dim=hidden_dim,
-            output_dim=output_dim,
-            num_heads=num_heads,
-            num_layers=num_layers,
-            dropout=dropout,
-        )
+        if use_sparse:
+            from gat_layer import SparseGAT
+            self.gat = SparseGAT(
+                input_dim=input_dim,
+                hidden_dim=hidden_dim,
+                output_dim=output_dim,
+                num_heads=num_heads,
+                num_layers=num_layers,
+                dropout=dropout,
+            )
+        else:
+            from gat_layer import GAT
+            self.gat = GAT(
+                input_dim=input_dim,
+                hidden_dim=hidden_dim,
+                output_dim=output_dim,
+                num_heads=num_heads,
+                num_layers=num_layers,
+                dropout=dropout,
+            )
 
     def forward(self, graph: SynapseGraph) -> torch.Tensor:
         if graph.num_nodes == 0:
             return torch.empty(0, self.output_dim, device=graph.node_features.device)
-        features = graph.node_features
-        n = features.size(0)
-        # 用边构造稠密邻接矩阵
-        adj = torch.zeros(n, n, device=features.device)
-        if graph.num_edges > 0:
-            src, dst = graph.edge_index[0], graph.edge_index[1]
-            adj[src, dst] = 1.0
-        # 自环
-        adj = adj + torch.eye(n, device=features.device)
-        return self.gat(features, adj)
+
+        if self.use_sparse:
+            edge_index = graph.edge_index
+            _n = graph.node_features.size(0)
+            _self_loop = torch.arange(_n, device=edge_index.device).unsqueeze(0).expand(2, -1)
+            edge_index = torch.cat([edge_index, _self_loop], dim=1)
+            return self.gat(graph.node_features, edge_index)
+        else:
+            features = graph.node_features
+            n = features.size(0)
+            adj = torch.zeros(n, n, device=features.device)
+            if graph.num_edges > 0:
+                src, dst = graph.edge_index[0], graph.edge_index[1]
+                adj[src, dst] = 1.0
+            adj = adj + torch.eye(n, device=features.device)
+            return self.gat(features, adj)
 
 
 # ═══════════════════════════════════════════════════

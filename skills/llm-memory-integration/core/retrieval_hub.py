@@ -1119,28 +1119,17 @@ def _do_dag_fallback(query: str, top_k: int) -> list:
 
 
 def _do_synapse(query: str) -> list:
-    """3. 突触检索——按规模自适应选择路径
+    """3. 突触 GAT+CfC 全链路检索（稀疏 GAT，不 OOM）
 
-    策略：
-      - 神经元 ≤ 200 → 全链路（ONNX + GAT → CfC）
-      - 神经元 > 200 → 直接走 jieba 关键词匹配 fallback（避免 OOM）
+    流程：
+      1. jieba 粗筛 200 个候选人
+      2. ONNX 精排（bge-small-zh 512d 余弦）→ top-5 种子
+      3. NeuralMemoryPipeline GAT+CfC 激活传播（稀疏邻接，~3MB）
+      4. CfC 序列预测预取后继记忆
     """
+    _r = []
     try:
-        # 先看神经元数量决定走哪条路
         _ws = os.path.expanduser("~/.openclaw/workspace")
-        _syn_file = os.path.join(_ws, ".learnings/synapse_network/neurons.jsonl")
-        _neuron_count = 0
-        if os.path.exists(_syn_file):
-            with open(_syn_file) as _f:
-                for _ in _f:
-                    if _.strip():
-                        _neuron_count += 1
-        
-        # 神经元太多 → 降级到 jieba 匹配（轻量）
-        if _neuron_count > 200:
-            return _do_synapse_fallback(query)
-
-        # 小规模 → 全链路
         _core_dir = os.path.join(_ws, "GalaxyOS/extensions/claw-core/dist/scripts")
         if _core_dir not in sys.path:
             sys.path.insert(0, _core_dir)
@@ -1151,8 +1140,8 @@ def _do_synapse(query: str) -> list:
 
         from neural_pipeline import NeuralMemoryPipeline
         _pipe = NeuralMemoryPipeline(
-            feature_dim=64, hidden_dim=64, gnn_heads=4,
-            gnn_layers=2, cfc_hidden_size=64,
+            workspace_path=_ws, feature_dim=64, hidden_dim=64,
+            gnn_heads=4, gnn_layers=2, cfc_hidden_size=64,
         )
         _pipe.initialize()
 
@@ -1165,8 +1154,9 @@ def _do_synapse(query: str) -> list:
             _neurons = [{'id': n, 'content': l} for n, l in zip(nids, lbls)]
 
         if not _neurons:
-            return []
+            return _r
 
+        # ── ① jieba 粗筛 ──
         import jieba
         _q_words = set(jieba.lcut(query.lower()))
         _candidates = []
@@ -1183,14 +1173,16 @@ def _do_synapse(query: str) -> list:
         _candidates.sort(key=lambda x: -x[1])
         _candidates = _candidates[:200]
         if not _candidates:
-            return []
+            return _r
 
+        # ── ② ONNX 精排 → 种子 ──
         _seeds = _onnx.find_seeds(query, top_k=5, min_score=0.15,
             candidates=[(nid, c) for nid, _, c in _candidates])
 
-        _r = []
-        _activated, _predicted = {}, []
-        for _sid, _sc, _content in _seeds[:3]:
+        # ── ③ GAT+CfC 激活传播（稀疏，不 OOM） ──
+        _activated = {}
+        _predicted = []
+        for _sid, _sc, _ in _seeds[:3]:
             try:
                 _result = _pipe.activate(_sid, top_k=8, max_depth=2, activation_strength=0.05)
                 for _aid, _st in _result.activated_neurons:
@@ -1203,12 +1195,14 @@ def _do_synapse(query: str) -> list:
             except Exception:
                 pass
 
+        # ── ④ 组装 ──
         _label_map = {n['id']: n.get('content', '') for n in _neurons}
         _seen_out = set()
-        for _sid, _sc, _content in _seeds:
-            if _content and _content[:60] not in _seen_out:
-                _seen_out.add(_content[:60])
-                _r.append({'content': _content, 'score': round(_sc, 3), 'source': 'synapse_seed'})
+        for _sid, _sc, _ in _seeds:
+            _c = _label_map.get(_sid, '')
+            if _c and _c[:60] not in _seen_out:
+                _seen_out.add(_c[:60])
+                _r.append({'content': _c, 'score': round(_sc, 3), 'source': 'synapse_seed'})
         for _aid, _st in sorted(_activated.items(), key=lambda x: -x[1]):
             _c = _label_map.get(_aid, '')
             if _c and _c[:60] not in _seen_out:
@@ -1225,7 +1219,9 @@ def _do_synapse(query: str) -> list:
         return _r
     except Exception as e:
         logger.debug(f"  synapse skipped: {e}")
-        return _do_synapse_fallback(query)
+        if not _r:
+            _r = _do_synapse_fallback(query)
+        return _r
 
 
 def _do_synapse_fallback(query: str) -> list:

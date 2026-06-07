@@ -184,6 +184,7 @@ python3 -m services.xiaoyi_claw_api recall --query "查询"
 | **RetrievalHub 7通道全链路** | KG + Local + DAG(MN-RU) + Synapse(GNN+CfC) + Paper + Cognitive(MN-RU三通道) + Web。RRF v2 → neural rerank → quality assessment。融合置信度 0.93 |
 | **MN-RU siliconflow fallback** | BAAI/bge-m3 的 dimensions 参数 siliconflow 不支持 → 自动无参重试 fallback，3879 节点 |
 | **ANNSelector v2 + FAISS 动态索引** | <5000 自动 HNSWFlat，延迟选择，unified_vector_store 集成 |
+| **SparseGAT** | O(E·d) 稀疏注意力替代 O(N²·d) 稠密，全量 3078 节点 ~3MB（原 20GB OOM），默认 `use_sparse=True` |
 | **GNN Graph Builder** | GraphSAGE/GAT/GCN 三卷积层，突触网络图推理底层构建 |
 | **~140 模块全同步** | scripts_core / integration / memory / rails / privileged / api → 138 模块全加载 |
 

@@ -10,8 +10,15 @@ GalaxyOS 版本变更记录。
 - Docker 支持：Dockerfile + docker-compose.yml + .dockerignore
 - 安全加固：.gitleaks.toml + pre-commit hooks + CI 密钥扫描
 - 安装向导增强：services/ 模块检查 + pip 依赖验证 + --test/--deps 模式
+- **SparseGAT** (`gat_layer.py`): O(E·d) 稀疏注意力替代 O(N²·d) 稠密。全量 3078 节点 → ~3MB，原稠密 ~20GB OOM。`use_sparse` 开关默认 True
+- **GAT+CfC 全链路在线**: 因稠密 OOM 降级的 BFS → 恢复 ONNX→jieba→稀疏 GAT→CfC 全链路。3078 节点 43ms 不 OOM
 - 开发工具：Makefile + pyproject.toml (pytest/coverage/ruff/mypy)
 - CONTRIBUTING.md / CHANGELOG.md / docs/API.md
+
+### Fixed
+- **GAT OOM** (`gat_layer.py/gnn_graph_builder.py`): `adj=zeros(3078,3078)` 稠密邻接矩阵 → 4.6GB/head/layer，峰值为 20GB → 新增 `SparseGAT` 用 `edge_index` + 稀疏 softmax，峰值 ~3MB
+- **突触网络读不到数据** (`memory_synapse_network.py`): `__init__` 没调 `_load()`，3078 神经元在缓存空 → 加 `self._load()`
+- **synapse 检索吞错误** (`retrieval_hub.py`): `_do_synapse_fallback` 残留旧代码 + `except:pass` 吞异常 → 重写为直接读 `SynapseNetwork`
 
 ### Changed
 - God Object 解耦：xiaoyi_claw_api 4529→4291 行
