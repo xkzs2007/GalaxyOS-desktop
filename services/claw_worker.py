@@ -114,7 +114,7 @@ _MMAP_SHM_PATH = os.path.expanduser("~/.openclaw/extensions/claw-core/var/claw_s
 _MMAP_SHM_SIZE = 4096
 
 class _GatewayProxy:
-    """Gateway 调用代理 — 透明远程调用
+    """Gateway 调用代理 — 透明远程调用（线程安全，每线程一个连接）
 
     用法:
         await gateway.web_fetch(url="https://...")
@@ -122,13 +122,18 @@ class _GatewayProxy:
         status = gateway.mmap_read()  # mmap 直接读，不走 UDS
     """
     def __init__(self):
-        self._conn = None
-        self._id = 0
+        self._local = threading.local()
+
+    def _init_thread(self):
+        self._local.conn = None
+        self._local.id = 0
 
     def _get_conn(self):
-        """获取或创建 HTTP over UDS 连接"""
-        if self._conn is not None:
-            return self._conn
+        """获取或创建当前线程 HTTP over UDS 连接（线程安全，无锁）"""
+        if not hasattr(self._local, 'conn'):
+            self._init_thread()
+        if self._local.conn is not None:
+            return self._local.conn
         import http.client
         class _UnixHTTPConn(http.client.HTTPConnection):
             def __init__(self, path):
@@ -139,15 +144,17 @@ class _GatewayProxy:
                 self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
                 self.sock.settimeout(10.0)
                 self.sock.connect(self._uds_path)
-        self._conn = _UnixHTTPConn(_GATEWAY_UDS_PATH)
-        return self._conn
+        self._local.conn = _UnixHTTPConn(_GATEWAY_UDS_PATH)
+        return self._local.conn
 
     def _call(self, method, params=None, timeout=10.0):
-        """HTTP over UDS 调用"""
+        """HTTP over UDS 调用（线程安全：每线程独立连接 + ID）"""
         if params is None:
             params = {}
-        self._id += 1
-        req = {"id": self._id, "method": method, "params": params}
+        if not hasattr(self._local, 'id'):
+            self._init_thread()
+        self._local.id += 1
+        req = {"id": self._local.id, "method": method, "params": params}
         body = json.dumps(req, ensure_ascii=False).encode('utf-8')
         try:
             conn = self._get_conn()
@@ -159,7 +166,7 @@ class _GatewayProxy:
                 raise RuntimeError(f"Gateway RPC error: {result.get('error')}")
             return result.get('result')
         except Exception as e:
-            self._conn = None  # 断线，下次重建
+            self._local.conn = None  # 断线，仅清理当前线程的连接
             raise RuntimeError(f"Gateway call '{method}' failed: {e}")
 
     def __getattr__(self, name):
@@ -1510,9 +1517,10 @@ def _uds_server_thread(methods_map):
     server = _UDSServer(UDS_PATH, _Handler)
     os.chmod(UDS_PATH, 0o600)
     sys.stderr.write(f"[claw-worker] HTTP UDS listening on {UDS_PATH}\n")
+    server.timeout = 1.0  # 每秒轮询 _shutdown_flag，不阻塞关闭
     while not _shutdown_flag:
         server.handle_request()
-    server.close()
+    server.server_close()
 
 
 def _zmq_pub_init():

@@ -88,6 +88,30 @@ let _gatewayServerSock = null;
 let _zmqRouter = null;
 let _zmqRouterThread = null;
 
+// ======== UDS 连接池（Plugin → Worker，复用连接减少握手开销） ========
+const _udsHttpAgent = new http.Agent({
+    keepAlive: true,
+    keepAliveMsecs: 30000,
+    maxSockets: 8,        // 单 Worker 最多 8 个并发连接
+    maxFreeSockets: 4,    // 空闲保留 4 个（热连接）
+    timeout: 60000,        // 空闲 60s 后回收
+});
+
+// 同时为每个 pool Worker 创建独立 Agent，避免跨 Worker 连接串扰
+const _workerAgents = new Map(); // workerId → http.Agent
+function _getWorkerAgent(workerId) {
+    if (!_workerAgents.has(workerId)) {
+        _workerAgents.set(workerId, new http.Agent({
+            keepAlive: true,
+            keepAliveMsecs: 30000,
+            maxSockets: 8,
+            maxFreeSockets: 4,
+            timeout: 60000,
+        }));
+    }
+    return _workerAgents.get(workerId);
+}
+
 // ======== Worker 池 + 任务队列（替代单 Worker 架构） ========
 let _workerPool = null;
 let _poolConfig = { size: 2, maxQueue: 20 };
@@ -662,9 +686,11 @@ class ClawWorkerClient {
                 socketPath: this._udsPath,
                 path: '/',
                 method: 'POST',
+                agent: _getWorkerAgent(this.id),
                 headers: {
                     'Content-Type': 'application/json',
                     'Content-Length': Buffer.byteLength(body),
+                    'Connection': 'keep-alive',
                 },
                 timeout: timeoutMs,
             }, (res) => {
@@ -817,6 +843,9 @@ class ClawWorkerClient {
             this.proc = null;
         }
         if (this._reconnectTimer) { clearTimeout(this._reconnectTimer); this._reconnectTimer = null; }
+        // 清理该 Worker 的 UDS 连接池
+        const agent = _workerAgents.get(this.id);
+        if (agent) { try { agent.destroy(); } catch (e) {} _workerAgents.delete(this.id); }
         this._ready = false;
         for (const [id, resolver] of this.pending) { resolver({ id, error: 'Worker stopped' }); }
         this.pending.clear();

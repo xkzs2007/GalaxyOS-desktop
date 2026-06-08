@@ -40,67 +40,72 @@ class _UnixHTTPConn:
 
 
 class GatewayClient:
-    """连接到 Gateway 三通道，发送反向 RPC 请求
+    """连接到 Gateway 三通道，发送反向 RPC 请求（线程安全：每线程独立连接）
 
     UDS 通道：HTTP/JSON over Unix Socket
     ZMQ 通道：DEALER 异步双向
     mmap 通道：控制信令
     """
-    _lock = threading.Lock()
-    _http_conn = None
+    _local = threading.local()
+
+    @classmethod
+    def _init_thread(cls):
+        cls._local.http_conn = None
 
     # ────────── UDS 通道（HTTP/JSON over Unix Socket） ──────────
 
     @classmethod
     def connect_uds(cls, max_retries=3):
-        with cls._lock:
-            if not hasattr(socket, 'AF_UNIX'):
-                import sys
-                sys.stderr.write('[gateway-client] AF_UNIX not available, skipping UDS\n')
-                return False
-            for i in range(max_retries):
-                try:
-                    conn = http_client.HTTPConnection('localhost', 80)
-                    conn.sock = _UnixHTTPConn(_GATEWAY_UDS).connect()
-                    cls._http_conn = conn
-                    import sys
-                    sys.stderr.write(f'[gateway-client] HTTP over UDS connected to {_GATEWAY_UDS}\n')
-                    return True
-                except Exception:
-                    if i < max_retries - 1:
-                        time.sleep(1.0)
-                    continue
+        if not hasattr(cls._local, 'http_conn'):
+            cls._init_thread()
+        if not hasattr(socket, 'AF_UNIX'):
             import sys
-            sys.stderr.write('[gateway-client] UDS connect failed after %d retries\n' % max_retries)
+            sys.stderr.write('[gateway-client] AF_UNIX not available, skipping UDS\n')
             return False
+        for i in range(max_retries):
+            try:
+                conn = http_client.HTTPConnection('localhost', 80)
+                conn.sock = _UnixHTTPConn(_GATEWAY_UDS).connect()
+                cls._local.http_conn = conn
+                import sys
+                sys.stderr.write(f'[gateway-client] HTTP over UDS connected to {_GATEWAY_UDS}\n')
+                return True
+            except Exception:
+                if i < max_retries - 1:
+                    time.sleep(1.0)
+                continue
+        import sys
+        sys.stderr.write('[gateway-client] UDS connect failed after %d retries\n' % max_retries)
+        return False
 
     @classmethod
     def call(cls, method, params=None, timeout_ms=10000):
-        """通过 HTTP over UDS 调用 Gateway 方法"""
+        """通过 HTTP over UDS 调用 Gateway 方法（线程安全：无全局锁）"""
         params = params or {}
+        if not hasattr(cls._local, 'http_conn'):
+            cls._init_thread()
         req_id = int(time.time() * 1000) % 1000000
         body = json.dumps({"id": req_id, "method": method, "params": params}, ensure_ascii=False)
 
-        with cls._lock:
-            if cls._http_conn is None:
-                if not cls.connect_uds():
-                    return {"_error": "gateway UDS not connected"}
-            try:
-                conn = cls._http_conn
-                conn.request(
-                    'POST', '/',
-                    body=body.encode('utf-8'),
-                    headers={'Content-Type': 'application/json'}
-                )
-                resp = conn.getresponse()
-                data = resp.read()
-                msg = json.loads(data.decode('utf-8'))
-                if "error" in msg:
-                    return {"_error": msg["error"]}
-                return msg.get("result", {})
-            except Exception as e:
-                cls._http_conn = None
-                return {"_error": str(e)}
+        if cls._local.http_conn is None:
+            if not cls.connect_uds():
+                return {"_error": "gateway UDS not connected"}
+        try:
+            conn = cls._local.http_conn
+            conn.request(
+                'POST', '/',
+                body=body.encode('utf-8'),
+                headers={'Content-Type': 'application/json'}
+            )
+            resp = conn.getresponse()
+            data = resp.read()
+            msg = json.loads(data.decode('utf-8'))
+            if "error" in msg:
+                return {"_error": msg["error"]}
+            return msg.get("result", {})
+        except Exception as e:
+            cls._local.http_conn = None  # 仅断当前线程连接
+            return {"_error": str(e)}
 
     # ────────── 便捷方法（UDS） ──────────
 

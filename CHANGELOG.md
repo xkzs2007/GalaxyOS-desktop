@@ -2,6 +2,16 @@
 
 GalaxyOS 版本变更记录。
 
+## [6.3.2] — 2026-06-08
+
+### Fixed
+- **UDS 并发瓶颈全面修复** — Worker → Gateway / Plugin → Worker 两大通道去锁化
+  - `_GatewayProxy` (claw_worker.py): 单连接 `self._conn` → `threading.local()` 每线程独立连接，消除 Gateway 调用串行瓶颈
+  - `GatewayClient` (gateway_client.py): 类级 `_lock` + `_http_conn` → `threading.local()` 每线程连接，消除全局锁
+  - Plugin → Worker (index.js): 每次 `http.request` 新建连接 → `http.Agent` 连接池 (keepAlive + maxSockets=8)，复用热连接减少握手开销
+  - UDS 服务端 `handle_request()` 循环: 增加 `server.timeout = 1.0s`，Shutdown 不再无限阻塞
+  - Agent 生命周期绑定 Worker: `_cleanup()` 中 `agent.destroy()` 释放连接池
+
 ## [6.3.1] — 2026-06-08
 
 ### Fixed
