@@ -224,7 +224,10 @@ class MemoryNeuron:
             return None
 
     def to_dict(self) -> Dict:
-        return asdict(self)
+        d = asdict(self)
+        # _cell_cache 包含不可序列化的 LTCCell 对象，序列化前移除
+        d.pop('_cell_cache', None)
+        return d
 
     @classmethod
     def from_dict(cls, data: Dict) -> 'MemoryNeuron':
@@ -350,7 +353,28 @@ class SynapseNetwork:
         self._loaded = True
     
     def _save_neuron(self, neuron: MemoryNeuron):
-        """保存神经元"""
+        """保存神经元（幂等：按 content hash 去重，同内容只更新）"""
+        # 按内容去重：计算 content hash，检查是否已存在
+        _ck = hashlib.md5(neuron.content[:200].encode()).hexdigest()[:12]
+        _existing_id = None
+        for _nid, _n in self._neurons_cache.items():
+            if hashlib.md5(_n.content[:200].encode()).hexdigest()[:12] == _ck:
+                _existing_id = _nid
+                break
+        if _existing_id:
+            # 更新已有神经元（强化权重）
+            _existing = self._neurons_cache[_existing_id]
+            _existing.activation_count += 1
+            _existing.apply_activation_signal(strength=1.0)
+            # 重写文件（删除旧行追加新行）
+            _lines = []
+            with open(self.neurons_path, "r", encoding="utf-8") as _f:
+                _lines = [l for l in _f if l.strip() and json.loads(l).get("id") != _existing_id]
+            _lines.append(json.dumps(_existing.to_dict(), ensure_ascii=False) + "\n")
+            with open(self.neurons_path, "w", encoding="utf-8") as _f:
+                _f.writelines(_lines)
+            return
+        # 新神经元：追加
         with open(self.neurons_path, "a", encoding="utf-8") as f:
             f.write(json.dumps(neuron.to_dict(), ensure_ascii=False) + "\n")
     
@@ -454,6 +478,29 @@ class NeuronManager:
 
         self.network._neurons_cache[neuron.id] = neuron
         self.network._save_neuron(neuron)
+
+        # ── 同步到 AssetRegistry（MemGAS-SkVM 桥接） ──
+        try:
+            from knowledge_asset import get_asset_registry, create_memory_asset
+            from multi_granularity import MultiGranularityExtractor
+            _reg = get_asset_registry()
+            _ext = MultiGranularityExtractor()
+            _asset = create_memory_asset(
+                memory_id=neuron.id,
+                raw_content=content[:2000],
+                tags=keywords[:5] if isinstance(keywords, list) else [],
+                category='neuron',
+                source='synapse_network',
+            )
+            _asset.multi_granularity = _ext.extract(content)
+            if isinstance(entities, dict) and entities:
+                _asset.capability_profile['entities'] = str(entities)[:500]
+            _asset.capability_profile['nlp_importance'] = importance
+            _asset.capability_profile['nlp_sentiment'] = str(sentiment)[:200]
+            _asset.capability_profile['nlp_keywords'] = keywords[:10] if isinstance(keywords, list) else []
+            _reg.register(_asset)
+        except Exception:
+            pass
 
         return neuron
     
