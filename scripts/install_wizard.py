@@ -17,6 +17,7 @@ GalaxyOS — 安装向导 + 配置向导
 
 import os
 import sys
+import platform
 import json
 import ast
 import time
@@ -1150,7 +1151,7 @@ def generate_report(all_results: Dict[str, Any]) -> Dict[str, Any]:
 
     report = {
         "generated": now,
-        "hostname": os.uname().nodename,
+        "hostname": platform.uname().nodename,
         "python": env.get("python", {}),
         "version": get_core_version(),
         "summary": {

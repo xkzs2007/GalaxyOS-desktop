@@ -44,6 +44,11 @@ class GatewayClient:
                 except Exception:
                     cls._sock = None
             for i in range(max_retries):
+                # AF_UNIX 守卫：无 Unix socket 环境则直接回退
+                if not hasattr(_socket, 'AF_UNIX'):
+                    import sys
+                    sys.stderr.write('[gateway-client] AF_UNIX not available, skipping UDS\n')
+                    return False
                 try:
                     sock = _socket.socket(_socket.AF_UNIX, _socket.SOCK_STREAM)
                     sock.settimeout(3.0)
@@ -57,7 +62,19 @@ class GatewayClient:
                     if i < max_retries - 1:
                         time.sleep(1.0)
                     continue
-            return False
+            # TCP 回退：UDS 全失败时尝试 localhost TCP
+            import sys
+            try:
+                sock = _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM)
+                sock.settimeout(3.0)
+                sock.connect(('127.0.0.1', 5560))
+                sock.settimeout(None)
+                cls._sock = sock
+                sys.stderr.write('[gateway-client] TCP fallback connected\n')
+                return True
+            except Exception as _e:
+                sys.stderr.write(f'[gateway-client] TCP fallback failed: {_e}\n')
+                return False
 
     @classmethod
     def call(cls, method, params=None, timeout_ms=10000):
