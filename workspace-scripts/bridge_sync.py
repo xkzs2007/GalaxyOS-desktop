@@ -23,7 +23,7 @@ def get_unified_count():
             cnt = conn.execute("SELECT COUNT(*) FROM vectors").fetchone()[0]
             conn.close()
             return cnt
-    except: pass
+    except Exception: pass
     return 0
 
 def store(content, source="memory-tdai"):

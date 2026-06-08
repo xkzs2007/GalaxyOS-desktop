@@ -200,13 +200,13 @@ class XiaoYiClawLLM:
         logger.info("小艺 Claw 大模型初始化完成")
 
     def _init_vector_store(self):
-        """初始化向量存储(优先 hnswlib,降级 sqlite)"""
+        """初始化向量存储(sqllite, 128维, 与 text-embedding-v1.0 一致)"""
         try:
             from unified_vector_store import UnifiedVectorStore
-            backend = self.config.get('vector_backend', 'hnswlib')
+            # 数据已迁移为 128 维 text-embedding-v1.0，使用 SQLite 后端
             self.vector_store = UnifiedVectorStore(
-                backend=backend,
-                dim=self.config.get('vector_dim', 1024)
+                backend='sqlite',
+                dim=128
             )
         except Exception as e:
             logger.warning(f"向量存储初始化失败: {e}")
@@ -420,24 +420,38 @@ class XiaoYiClawLLM:
             logger.info(f"LLM 客户端初始化: flash={self.llm_flash is not None}, pro={self.llm_pro is not None}")
 
             # ===== 嵌入客户端(用于 recall 自动生成查询向量) =====
+            # 使用 OpenClaw 内置 text-embedding-v1.0（128d），与 memory_core_import 数据维度一致
             self.embedding = None
-            self.embedding_model = "bge-m3"
-            self.embedding_dim = 1024
+            self.embedding_model = ""
+            self.embedding_dim = 128
             try:
-                if config_path.exists():
-                    import json as _j2
-                    with open(config_path, "r", encoding="utf-8") as f:
-                        llm_cfg = _j2.load(f)
-                    emb_cfg = llm_cfg.get("embedding", {})
-                    if emb_cfg.get("api_key"):
+                import json as _j2
+                oc_cfg_path = os.path.expanduser("~/.openclaw/openclaw.json")
+                if os.path.exists(oc_cfg_path):
+                    with open(oc_cfg_path, "r", encoding="utf-8") as f:
+                        _oc = _j2.load(f)
+                    _ms = _oc.get("agents",{}).get("defaults",{}).get("memorySearch",{})
+                    _remote = _ms.get("remote",{})
+                    _base = _remote.get("baseUrl","").rstrip("/")
+                    _headers = dict(_remote.get("headers",{}))
+                    if _base and _headers.get("x-api-key"):
+                        # 使用兼容 OpenAI 的 client，把 headers 作为 default headers
                         from openai import OpenAI as _O
-                        self.embedding = _O(
-                            api_key=emb_cfg["api_key"],
-                            base_url=emb_cfg.get("base_url", "https://cloud.infini-ai.com/maas/v1"),
+                        import httpx as _httpx
+                        _client_kw = dict(
+                            api_key=_headers.get("x-api-key",""),
+                            base_url=_base,
                         )
-                        self.embedding_model = emb_cfg.get("model", "bge-m3")
-                        self.embedding_dim = emb_cfg.get("dimensions", 1024)
-                        logger.info(f"嵌入客户端初始化: model={self.embedding_model}, dim={self.embedding_dim}")
+                        # 额外 headers 通过 httpx client 传入
+                        _custom_headers = {k:v for k,v in _headers.items() 
+                                          if k.lower() not in ("content-type",)}
+                        if _custom_headers:
+                            _http_client = _httpx.Client(headers=_custom_headers)
+                            _client_kw["http_client"] = _http_client
+                        self.embedding = _O(**_client_kw)
+                        self.embedding_model = _ms.get("model", "xiaoyiprovider/text-embedding-v1.0")
+                        self.embedding_dim = 128
+                        logger.info(f"嵌入客户端初始化: model={self.embedding_model}, dim=128, base={_base[:40]}...")
             except Exception as e:
                 logger.warning(f"嵌入客户端初始化失败: {e}")
 
@@ -1989,14 +2003,89 @@ class XiaoYiClawLLM:
             self.should_stop: bool = False
             self.stop_reason: str = ""
 
+    # ── v2: 不确定性门控检索（Oblivion 参考） ──
+
+    def _should_query_memory(self, state: 'PhaseState') -> bool:
+        """
+        判断是否需要触发记忆检索（Oblivion read_decide 等价）。
+
+        三条判断：
+        1. LTC 平均兴奋度：低兴奋度 → 神经网络处于惰性状态 → 跳过检索
+        2. 语义熵：低熵且低复杂度 → 直接答即可
+        3. 记忆缓冲区：最近记忆足够 → 跳过
+
+        Returns:
+            True = 需要检索, False = 跳过检索
+        """
+        # 强制检索：用户 query 含复杂推理标记
+        _complex_markers = {"为什么", "如何", "对比", "区别", "原理", "机制",
+                            "流程", "步骤", "方案", "设计", "原因", "影响"}
+        _q = state.user_input.lower()
+        if any(m in _q for m in _complex_markers) and len(_q) > 10:
+            return True
+
+        # 1. LTC 平均兴奋度
+        _avg_ltc = 0.5
+        try:
+            _ws = getattr(self, '_workspace', os.path.expanduser("~/.openclaw/workspace"))
+            _core_dir = os.path.join(_ws, "GalaxyOS/skills/llm-memory-integration/core")
+            sys.path.insert(0, _core_dir)
+            from memory_consolidation import ConsolidationEngine
+            _ce = ConsolidationEngine(_ws)
+            _sn = _ce._get_synapse_network()
+            if _sn:
+                _neurons = _sn.neuron_manager.get_all_neurons()[-2000:]
+                if _neurons:
+                    _h_vals = []
+                    for _n in _neurons:
+                        try:
+                            _h_vals.append(_n.evaluate_state())
+                        except Exception:
+                            pass
+                    if _h_vals:
+                        _avg_ltc = sum(_h_vals) / len(_h_vals)
+        except Exception:
+            pass
+
+        # 2. 语义熵
+        _semantic_entropy = state.analysis.get('semantic_entropy', 0.5)
+        _adaptive_level = state.analysis.get('adaptive_level', 'simple')
+
+        # 3. 记忆缓冲区（最近 DAG 节点数）
+        _buffer_sufficient = False
+        try:
+            if self.dag:
+                _nodes = self.dag.get_session_nodes(
+                    getattr(state, 'session_key', 'xiaoyi-channel'),
+                    limit=10
+                )
+                _buffer_sufficient = len(_nodes) >= 3
+        except Exception:
+            pass
+
+        # 决策
+        _skip = (_avg_ltc < 0.3 and _semantic_entropy < 0.3
+                 and _adaptive_level in ('simple', 'greeting')
+                 and _buffer_sufficient)
+
+        if _skip:
+            logger.info(f"Oblivion read_decide: 跳过检索（LTC={_avg_ltc:.2f}, "
+                        f"熵={_semantic_entropy:.2f}, 缓冲={_buffer_sufficient}）")
+            state.analysis['oblivion_skip'] = True
+            return False
+
+        return True
+
     def _retrieval_phase(self, state: 'PhaseState', custom_query: str = None) -> 'PhaseState':
         """
         R-CCAM 阶段 1: Retrieval(检索阶段)
 
+        [v2] Oblivion 不确定性门控：_should_query_memory() 返回 False 时跳过检索。
+
         通过 retrieval_hub 统一入口,五路并行检索后 RRF 融合:
         1. UnifiedVectorStore(本地向量, bge-m3 1024d)
         2. DAG 上下文(scene_trace + GRAVITY)
-        3. 突触巩固引擎(突触网络 + 艾宾浩斯)
+        3. 突触巩固引擎(突触网络 + 艾宾浩斯) — v2: 多轮 Researcher
         4. 论文引擎(RAPTOR + GraphRAG + Reflection)
         5. 联网搜索(xiaoyi-web-search,低置信度时自动触发)
 
@@ -2043,6 +2132,18 @@ class XiaoYiClawLLM:
                 logger.debug(f"查询分析跳过: {e}")
         else:
             logger.debug(f"跳过查询分析: len={len(raw_query)}")
+
+        # ═══ v2: Oblivion 不确定性门控 ═══
+        if not self._should_query_memory(state):
+            state.retrieval_confidence = 0.8
+            state.needs_more_info = False
+            state.generated_answer = state.user_input  # 直接进入 action
+            state.answer_confidence = 0.8
+            state.strategy = "direct_answer_oblivion"
+            state.stop_reason = "oblivion_skip_retrieval"
+            state.should_stop = True
+            logger.info(f"Oblivion: 跳过检索, 直接答题")
+            return state
         
         # ═══ 语义熵不确定性评估 ═══
         try:
@@ -2057,7 +2158,7 @@ class XiaoYiClawLLM:
                     return state
         except Exception as _see:
             pass
-        
+
         # ═══ 问候快速通路（跳过检索 + control + action + memory） ═══
         # 双保险：LLM 分析 + 关键词兜底
         _greeting_kw = {"嗨", "哈喽", "你好", "hello", "hi", "在吗", "在不在", "hey", "早上好", "晚上好", "下午好"}

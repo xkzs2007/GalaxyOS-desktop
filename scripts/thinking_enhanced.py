@@ -129,6 +129,7 @@ class ReflexionEngine:
                     max_tokens=200, temperature=0.1,
                 )
                 text = rsp.choices[0].message.content.strip()
+                # 提取 JSON
                 import re
                 jm = re.search(r'\{.*\}', text, re.DOTALL)
                 if jm:
@@ -138,36 +139,10 @@ class ReflexionEngine:
                     fix_strategy = data.get("fix_strategy", "")
             except Exception:
                 pass
-
-        # 先计算置信度下降（兜底逻辑需要此值）
-        avg_score = (scores.get("faithfulness",5) + scores.get("relevance",5) + scores.get("completeness",5)) / 3
-        confidence_drop = round((10 - avg_score) / 10, 2)
         
-        # 兜底：LLM 分析失败时，根据评分维度做启发式推断，确保根因不空
-        if not root_cause:
-            faithful = scores.get('faithfulness', 5)
-            relevance = scores.get('relevance', 5)
-            completeness = scores.get('completeness', 5)
-            if faithful < 5:
-                failure_pattern = "幻觉"
-                root_cause = f"忠实度{faithful}/10，回答偏离事实"
-                fix_strategy = "增强事实核查"
-            elif relevance < 5:
-                failure_pattern = "偏离"
-                root_cause = f"相关性{relevance}/10，未命中用户意图"
-                fix_strategy = "检索相关上下文"
-            elif completeness < 5:
-                failure_pattern = "遗漏"
-                root_cause = f"完整性{completeness}/10，回答不充分"
-                fix_strategy = "补充更多维度"
-            elif avg_score >= 7:
-                # 评分不低——用户纠正类，不依赖LLM分析
-                failure_pattern = "偏离" if question and len(question) > 5 else "其他"
-                root_cause = "用户纠正，未准确理解意图"
-                fix_strategy = "细化意图理解"
-            else:
-                root_cause = "信息不足，无法给出可靠回答"
-                fix_strategy = "扩展检索范围"
+        # 计算置信度下降
+        avg = (scores.get("faithfulness",5) + scores.get("relevance",5) + scores.get("completeness",5)) / 3
+        confidence_drop = round((10 - avg) / 10, 2)
         
         entry = ReflexionEntry(
             id=f"RFX-{int(time.time())}-{os.urandom(4).hex()}",
@@ -525,27 +500,6 @@ class FlashNLP:
 
 # ==================== 集成入口 ====================
 
-def _extract_json_block(text: str) -> Optional[dict]:
-    """从文本中提取第一个完整的 JSON 对象（支持嵌套大括号）"""
-    start = text.find('{')
-    if start < 0:
-        return None
-    depth = 0
-    for i in range(start, len(text)):
-        ch = text[i]
-        if ch == '{':
-            depth += 1
-        elif ch == '}':
-            depth -= 1
-            if depth == 0:
-                block = text[start:i+1]
-                try:
-                    return json.loads(block)
-                except json.JSONDecodeError:
-                    return None
-    return None
-
-
 class ThinkingEnhanced:
     """增强思考引擎集成入口
 
@@ -576,7 +530,7 @@ class ThinkingEnhanced:
     def _load_experience_data(self) -> Dict[str, list]:
         """从过滤后的数据源加载体验样本"""
         ws = _WORKSPACE
-        data = {"reflexions": [], "verified": [], "implicit": [], "performance": [], "rccam": []}
+        data = {"reflexions": [], "verified": [], "implicit": [], "performance": []}
         
         # 1. reflexions.jsonl — 失败→根因→修复
         rfx_path = os.path.join(ws, ".learnings", "reflexions.jsonl")
@@ -625,28 +579,6 @@ class ThinkingEnhanced:
                             data["performance"].append(json.loads(line))
                         except Exception:
                             pass
-        
-        # 5. rccam_cycles — R-CCAM 循环产出（从 DAG SQLite 读取）
-        try:
-            from dag_context_manager import DAGContextManager
-            _dag = DAGContextManager()
-            _cycles = _dag.get_rccam_session_cycles("xiaoyi-claw-dag")
-            for _c in (_cycles or [])[-10:]:
-                _nodes = _dag.get_rccam_cycle_nodes("xiaoyi-claw-dag", _c["cycle_id"])
-                _summary = ""
-                for _n in _nodes:
-                    if _n.get("node_type") == "rccam_cycle_summary":
-                        _summary = _n.get("content", "")[:200]
-                        break
-                if _summary or len(_nodes) > 3:
-                    _phase_names = [_n.get("phase_name","?") for _n in _nodes if _n.get("phase_name")]
-                    data["rccam"].append({
-                        "cycle_index": _c.get("cycle_index", 0),
-                        "summary": _summary or "(" + ",".join(_phase_names) + ")",
-                        "phase_count": len(_nodes),
-                    })
-        except Exception:
-            pass
         
         return data
     
@@ -703,32 +635,16 @@ class ThinkingEnhanced:
             ms = pm.get("duration_ms", 0)
             prompt_lines.append(f"  {'✅' if ok else '❌'} {op} ({ms}ms)")
         
-        # --- R-CCAM 循环产出 ---
-        prompt_lines.append("\n=== R-CCAM 循环产出（最近 cycles） ===")
-        for rc in sample.get("rccam", [])[:5]:
-            idx = rc.get("cycle_index", "?")
-            summ = rc.get("summary", "")[:120]
-            cnt = rc.get("phase_count", 0)
-            prompt_lines.append(f"  cycle#{idx} ({cnt} phases): {summ}")
-        
-        # --- 动态读取 USER.md 用户画像 ---
-        _user_profile = ""
-        _user_path = os.path.join(_WORKSPACE, "USER.md")
-        if os.path.exists(_user_path):
-            try:
-                with open(_user_path, "r") as _uf:
-                    _user_profile = _uf.read()[:2000]
-            except Exception:
-                pass
-        if not _user_profile.strip():
-            _user_profile = "用户（xkzs2007）是一位工程严谨主义者，偏好论文驱动的技术改进、完成即启用、先改代码后写文档、单一路径权威、融合合并非直接替换、学术-工程全闭环"
-        else:
-            _user_profile = _user_profile[:800]  # 限制长度避免 Flash 输出不稳定
-        
         prompt_lines.append(f"""
-\n你正在以用户的视角审视这些体验数据。用户的完整画像如下：
+\n你正在以用户的视角审视这些体验数据。用户（xkzs2007）是一位工程严谨主义者，其核心特质如下：
 
-{_user_profile}
+**用户视角特征：**
+- 论文驱动的技术改进（不可验证的经验主义不认可）
+- 完成即启用、识别即全量推进
+- 先改代码验证通过后写文档（代码先于方案讨论）
+- 单一路径权威（两套机制做同一件事→保留更成熟的一个，完全移除另一个）
+- 融合合并非直接替换
+- 学术-工程全闭环实践者
 
 请按以下方式分析上述体验数据：
 
@@ -770,25 +686,21 @@ class ThinkingEnhanced:
         try:
             rsp = self._llm_flash.chat.completions.create(
                 model="deepseek-v4-flash",
-                messages=[
-                    {"role": "system", "content": "你是一个JSON-only输出器。只输出JSON，不输出任何其他文字，不使用markdown代码块。"},
-                    {"role": "user", "content": prompt},
-                ],
-                max_tokens=1500,
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=800,
                 temperature=0.2,
             )
             text = rsp.choices[0].message.content.strip()
             import re
-            # 用 _extract_json_block 替代旧的 re.search 模式（支持嵌套大括号）
-            result = _extract_json_block(text)
-            if result:
+            jm = re.search(r'\{.*\}', text, re.DOTALL)
+            if jm:
+                result = json.loads(jm.group())
                 result["success"] = True
                 result["_experience_count"] = {
                     "reflexions": len(data["reflexions"]),
                     "verified": len(data["verified"]),
                     "implicit": len(data["implicit"]),
                     "performance": len(data["performance"]),
-                    "rccam": len(data["rccam"]),
                     "total": total,
                 }
                 return result
@@ -821,22 +733,6 @@ class ThinkingEnhanced:
                 f.write(json.dumps(entry, ensure_ascii=False) + "\n")
             result["written_to"] = evo_path
             result["success"] = True
-            
-            # 同步写 DAG rccam_nodes（evolved_capability），让 before_prompt_build 能读到
-            try:
-                from dag_context_manager import DAGContextManager
-                _dag = DAGContextManager()
-                for _p in (result.get("patterns") or [])[:3]:
-                    _cap = {
-                        "name": _p.get("scenario", "未知场景")[:60],
-                        "trigger": _p.get("pattern", "")[:100],
-                        "suggestion": _p.get("suggestion", "")[:200],
-                        "source": "self_evolution",
-                        "confidence": 0.7 if _p.get("confidence") == "高" else 0.4 if _p.get("confidence") == "中" else 0.2,
-                    }
-                    _dag.write_capability_node(_cap, session_key='xiaoyi-claw-dag')
-            except Exception:
-                pass
         except Exception as e:
             result["success"] = False
             result["reason"] = f"写入失败: {e}"

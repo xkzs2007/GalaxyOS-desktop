@@ -518,6 +518,47 @@ class ClawWorker:
         self._ensure()
         return self._entry.recall(p.get("query", ""), p.get("top_k", 5))
 
+    def smart_retrieval(self, p: dict) -> dict:
+        """神经网络增强检索：走 retrieval_hub 完整五路管道 + neural_rerank_dedup
+
+        供 ContextEngine assemble 注入使用，确保注入上下文经过噪声过滤和去重。
+        """
+        query = p.get("query", "")
+        top_k = p.get("top_k", 5)
+        session_id = p.get("session_id", "")
+        if not query:
+            return {"results": [], "success": False, "error": "empty query"}
+        try:
+            from retrieval_hub import retrieval_hub
+            result = retrieval_hub(query, top_k=top_k, session_id=session_id,
+                                   include_web=False, enable_crag=False)
+            merged = result.get("results", [])
+            merged = merged[:top_k]
+            # 确保每条结果都有 _content_type 标记（兼容旧版 retrieval_hub 缓存）
+            for _item in merged:
+                if '_content_type' in _item:
+                    continue
+                _content = _item.get('content', '')
+                _source = _item.get('source', '')
+                if _content.strip().startswith('{') and '"name"' in _content and '"trigger"' in _content:
+                    _item['_content_type'] = 'metadata'
+                elif _source in ('user', 'ai', 'dag_msg') or '用户:' in _content or '系统:' in _content or '助手:' in _content:
+                    _item['_content_type'] = 'conversation'
+                else:
+                    _item['_content_type'] = 'summary'
+            return {"results": merged, "success": True,
+                    "stats": result.get("stats", {})}
+        except Exception as e:
+            # 降级到旧 recall
+            try:
+                self._ensure()
+                fallback = self._entry.recall(query, top_k)
+                return {"results": fallback[:top_k], "success": True,
+                        "fallback": True, "error": str(e)}
+            except Exception as e2:
+                return {"results": [], "success": False,
+                        "error": f"smart_retrieval failed: {e}, fallback failed: {e2}"}
+
     def store(self, p: dict) -> dict:
         self._ensure()
         return self._entry.store(p.get("content", ""), source=p.get("source", "user"))
@@ -1372,6 +1413,7 @@ def _init_methods(worker):
         "shutdown": worker.shutdown,
         "get_status": worker.get_status,
         "smart_process": worker.smart_process,
+        "smart_retrieval": worker.smart_retrieval,
         "save_memory": worker.save_memory,
     }
 
@@ -1732,35 +1774,51 @@ def main():
 
         # ── 后处理：轻量论文功能 ──
         def _run_paper_post_response(query, answer, confidence=0.5):
-            """运行所有轻量论文后处理：情感、因果、TKG 建图、CoVe 验证"""
+            """运行所有轻量论文后处理：情感、因果、TKG 建图、CoVe 验证
+
+            优化：所有子调用传入 完整对话对(query+answer) 而非仅 query，
+            使情感/因果/空间分析有足够文本上下文，提升数据质量。
+            """
             _insights = {'ts': time.time()}
             if not answer:
                 return
+            # 拼接完整对话对作为分析输入
+            _full_text = f"用户说: {query[:300]}\n小艺回答: {answer[:600]}"
             try:
                 _p = _lazy_pi()
+                # 情感分析：传入完整对话（有 AI 回答才有情感判断依据）
                 if hasattr(_p, 'update_emotion'):
-                    _p.update_emotion(query[:200], 'xiaoyi-claw-dag')
+                    _p.update_emotion(_full_text[:400], 'xiaoyi-claw-dag')
                 if hasattr(_p, 'inject_emotion_context'):
-                    _ctx2 = _p.inject_emotion_context(query[:200], 'xiaoyi-claw-dag')
-                    if _ctx2: _insights['emotion_context'] = str(_ctx2)[:200]
+                    _ctx2 = _p.inject_emotion_context(_full_text[:400], 'xiaoyi-claw-dag')
+                    if _ctx2: _insights['emotion_context'] = str(_ctx2)[:300]
+                # 因果分析：传入完整对话对，user_response 填 answer 本体
                 if hasattr(_p, 'inject_causal_context'):
-                    _cau = _p.inject_causal_context(query[:300])
-                    if _cau: _insights['causal_context'] = str(_cau)[:300]
+                    _cau = _p.inject_causal_context(query[:300], user_response=answer[:500])
+                    if _cau and (_cau.get('causes') or _cau.get('effects') or _cau.get('links')):
+                        _insights['causal_context'] = str({k: _cau[k] for k in ('causes','effects','links','graph') if k in _cau})[:400]
+                # 空间场景：从 AI 回答提取场景标签（回答中提到的地点/空间信息）
                 if hasattr(_p, 'extract_and_register_scene'):
-                    _scene_label = _p.extract_and_register_scene(query[:200], current_session='xiaoyi-claw-dag')
-                    if _scene_label: _insights['spatial_scene'] = str(_scene_label)[:100]
+                    _scene_label = _p.extract_and_register_scene(answer[:300], current_session='xiaoyi-claw-dag')
+                    if _scene_label: _insights['spatial_scene'] = str(_scene_label)[:120]
+                # 实体抽取：同时传入 query + answer（双倍信息）
                 if hasattr(_p, 'extract_and_store_entities'):
-                    _p.extract_and_store_entities(answer, timestamp=time.time(), session_key="xiaoyi-claw-dag")
+                    _p.extract_and_store_entities(_full_text[:800], timestamp=time.time(), session_key="xiaoyi-claw-dag")
             except Exception:
                 pass
-            # CoVe 回答验证
+            # CoVe 验证：对比 query vs answer 一致性（是否自相矛盾/偏离主题）
             try:
                 from chain_of_verification import ChainOfVerificationEngine
                 _cove = ChainOfVerificationEngine(llm_flash=_flash_client, llm_pro=_flash_client)
                 _vr = _cove.verify_and_refine(answer=answer, query=query, max_rounds=1)
-                if _vr and _vr.refined_answer and _vr.contradictions_found > 0:
-                    _insights['cove_contradictions'] = _vr.contradictions_found
-                    sys.stderr.write(f'[galaxy-kernel] CoVe: {_vr.contradictions_found} contradictions\n')
+                if _vr:
+                    if getattr(_vr, 'contradictions_found', 0) > 0:
+                        _insights['cove_contradictions'] = _vr.contradictions_found
+                        sys.stderr.write(f'[galaxy-kernel] CoVe: {_vr.contradictions_found} contradictions\n')
+                    # 即使没有矛盾，也记录一致性分数
+                    _consistency = getattr(_vr, 'consistency_score', None) or getattr(_vr, 'confidence', None)
+                    if _consistency is not None:
+                        _insights['cove_consistency'] = _consistency
             except Exception:
                 pass
             # 写 insights 供下一轮 process() 消费

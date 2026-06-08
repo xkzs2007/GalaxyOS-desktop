@@ -62,7 +62,6 @@ class QueryAnalysis:
     suggested_skill: ThinkingSkill
     confidence: float           # 建议置信度
     reasoning: str              # 推理过程
-    suggested_skills: List[ThinkingSkill] = None  # top-3 技能推荐
 
 
 class IntelligentThinkingTrigger:
@@ -501,71 +500,7 @@ class IntelligentThinkingTrigger:
         })
         
         return analysis
-
-    def detect_thinking_needs(
-        self,
-        query: str,
-        context: Optional[Dict] = None,
-        top_k: int = 3
-    ) -> QueryAnalysis:
-        """
-        检测 top-k 思考技能推荐（多技能推荐）
-
-        原 detect_thinking_need 只返回一个技能。此方法返回 top_k 个技能，
-        按优先级排序：主技能（最匹配）→ 副技能（互补）。
-
-        Args:
-            query: 用户查询
-            context: 对话上下文
-            top_k: 推荐技能数量（默认 3）
-
-        Returns:
-            QueryAnalysis 含 suggested_skills 列表
-        """
-        analysis = self.detect_thinking_need(query, context)
-        _main = analysis.suggested_skill
-
-        if _main == ThinkingSkill.NONE or top_k <= 1:
-            analysis.suggested_skills = [_main] if _main != ThinkingSkill.NONE else []
-            return analysis
-
-        # 按问题类型推荐互补技能
-        _complement_map = {
-            # (主类型, 副维度) → 技能
-            "problem_solving": [ThinkingSkill.FIRST_PRINCIPLES, ThinkingSkill.SYSTEMS_THINKING, ThinkingSkill.CRITICAL_THINKING],
-            "evaluation": [ThinkingSkill.CRITICAL_THINKING, ThinkingSkill.DECISION_ENGINE, ThinkingSkill.PRACTICE_COGNITION],
-            "decision": [ThinkingSkill.DECISION_ENGINE, ThinkingSkill.PROTRACTED_STRATEGY, ThinkingSkill.CONCENTRATE_FORCES],
-            "creative": [ThinkingSkill.SYSTEMS_THINKING, ThinkingSkill.PRODUCT_THINKING, ThinkingSkill.OVERALL_PLANNING],
-            "explanation": [ThinkingSkill.FEYNMAN_TECHNIQUE, ThinkingSkill.INVESTIGATION_FIRST, ThinkingSkill.CRITICAL_THINKING],
-            "debug": [ThinkingSkill.DIAGNOSE, ThinkingSkill.FIRST_PRINCIPLES, ThinkingSkill.CRITICAL_THINKING],
-            "architecture": [ThinkingSkill.ZOOM_OUT, ThinkingSkill.IMPROVE_ARCH, ThinkingSkill.SYSTEMS_THINKING],
-            "review": [ThinkingSkill.GRILL_WITH_DOCS, ThinkingSkill.GRILL_ME, ThinkingSkill.CRITICISM_SELF_CRITICISM],
-            "code": [ThinkingSkill.TDD, ThinkingSkill.IMPROVE_ARCH, ThinkingSkill.PRACTICE_COGNITION],
-            "prototype": [ThinkingSkill.PROTOTYPE, ThinkingSkill.CONCENTRATE_FORCES, ThinkingSkill.SPARK_PRAIRIE_FIRE],
-            "procedure": [ThinkingSkill.BACKWARD_THINKING, ThinkingSkill.OVERALL_PLANNING, ThinkingSkill.WORKFLOWS],
-            "investigation": [ThinkingSkill.INVESTIGATION_FIRST, ThinkingSkill.MASS_LINE, ThinkingSkill.CRITICAL_THINKING],
-            "conflict": [ThinkingSkill.CONTRADICTION_ANALYSIS, ThinkingSkill.CONCENTRATE_FORCES, ThinkingSkill.DECISION_ENGINE],
-            "practice": [ThinkingSkill.PRACTICE_COGNITION, ThinkingSkill.PROTOTYPE, ThinkingSkill.CRITICISM_SELF_CRITICISM],
-            "focus": [ThinkingSkill.CONCENTRATE_FORCES, ThinkingSkill.CONTRADICTION_ANALYSIS, ThinkingSkill.OVERALL_PLANNING],
-            "planning": [ThinkingSkill.OVERALL_PLANNING, ThinkingSkill.PROTRACTED_STRATEGY, ThinkingSkill.ZOOM_OUT],
-            "collect": [ThinkingSkill.MASS_LINE, ThinkingSkill.INVESTIGATION_FIRST, ThinkingSkill.CRITICAL_THINKING],
-            "improve": [ThinkingSkill.CRITICISM_SELF_CRITICISM, ThinkingSkill.PRACTICE_COGNITION, ThinkingSkill.INVESTIGATION_FIRST],
-            "seed": [ThinkingSkill.SPARK_PRAIRIE_FIRE, ThinkingSkill.PROTOTYPE, ThinkingSkill.CONCENTRATE_FORCES],
-            "strategy": [ThinkingSkill.PROTRACTED_STRATEGY, ThinkingSkill.OVERALL_PLANNING, ThinkingSkill.SYSTEMS_THINKING],
-            "automation": [ThinkingSkill.WORKFLOWS, ThinkingSkill.IMPROVE_ARCH, ThinkingSkill.PROTOTYPE],
-            "compare": [ThinkingSkill.ANALOGICAL_THINKING, ThinkingSkill.CRITICAL_THINKING, ThinkingSkill.DECISION_ENGINE],
-        }
-
-        _combo = _complement_map.get(analysis.question_type, [])
-        _skills = [_main]
-        for _s in _combo:
-            if _s != _main and _s not in _skills:
-                _skills.append(_s)
-                if len(_skills) >= top_k:
-                    break
-        analysis.suggested_skills = _skills[:top_k]
-        return analysis
-
+    
     def get_analysis_stats(self) -> Dict[str, Any]:
         """获取分析统计"""
         if not self.analysis_log:

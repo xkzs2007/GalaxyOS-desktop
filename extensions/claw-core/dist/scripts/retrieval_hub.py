@@ -720,6 +720,14 @@ def _rrf_merge(all_results: List[List[Dict]], k: int = 10) -> List[Dict]:
             
             rrf_scores[rid] += weight / (k + i + 1)
             
+            # GAT 注意力权重增强：synapse_seed → ×10 替代 RRF，synapse_cfc → ×(1+gw)
+            _gw = r.get('gat_weight', 0)
+            if _gw > 0:
+                if src == 'synapse_seed':
+                    rrf_scores[rid] += _gw * 10.0
+                elif src in ('synapse_cfc', 'synapse_pred'):
+                    rrf_scores[rid] += _gw * 1.5
+            
             # 收集原始相似度（来自各源的 score 字段）
             inner_score = r.get('score', r.get('_mn_score', 0))
             if isinstance(inner_score, (int, float)):
@@ -1118,15 +1126,21 @@ def _do_dag_fallback(query: str, top_k: int) -> list:
     return _r
 
 
-def _do_synapse(query: str) -> list:
-    """3. 突触检索——按规模自适应选择路径
+# ── synapse 检索三个规模阈值 ──
+SYNAPSE_FULL_THRESHOLD = 200     # ≤ 200: 全链路 ONNX+GAT+CfC
+SYNAPSE_GAT_THRESHOLD = 2000     # 201-2000: GAT 嵌入相似度（无 CfC，轻量）
+                                  # > 2000: jieba 关键词 fallback
 
-    策略：
-      - 神经元 ≤ 200 → 全链路（ONNX + GAT → CfC）
-      - 神经元 > 200 → 直接走 jieba 关键词匹配 fallback（避免 OOM）
+
+def _do_synapse(query: str) -> list:
+    """3. 突触检索——按规模自适应选择三条路径
+
+    策略（三级降级）：
+      - 神经元 ≤ 200   → 全链路（ONNX + GAT → CfC 激活传播）
+      - 201 - 2000     → GAT 嵌入相似度检索（无 CfC，轻量，利用 GAT 结构信息）
+      - > 2000         → jieba 关键词匹配（兜底）
     """
     try:
-        # 先看神经元数量决定走哪条路
         _ws = os.path.expanduser("~/.openclaw/workspace")
         _syn_file = os.path.join(_ws, ".learnings/synapse_network/neurons.jsonl")
         _neuron_count = 0
@@ -1135,12 +1149,190 @@ def _do_synapse(query: str) -> list:
                 for _ in _f:
                     if _.strip():
                         _neuron_count += 1
-        
-        # 神经元太多 → 降级到 jieba 匹配（轻量）
-        if _neuron_count > 200:
+
+        if _neuron_count == 0:
+            return []
+
+        # Tier 3: 超大规模 → jieba 兜底
+        if _neuron_count > SYNAPSE_GAT_THRESHOLD:
             return _do_synapse_fallback(query)
 
-        # 小规模 → 全链路
+        # Tier 2: 中等规模 → GAT 嵌入相似度检索
+        if _neuron_count > SYNAPSE_FULL_THRESHOLD:
+            return _do_synapse_gat(query, _ws, _neuron_count)
+
+        # Tier 1: 小规模 → 全链路 ONNX+GAT+CfC
+        return _do_synapse_full(query, _ws)
+
+    except Exception as e:
+        logger.debug(f"  synapse skipped: {e}")
+        return _do_synapse_fallback(query)
+
+
+def _do_synapse_full(query: str, _ws: str) -> list:
+    """Tier 1: 全链路 ONNX+GAT+CfC（≤ 200 神经元）"""
+    _core_dir = os.path.join(_ws, "GalaxyOS/extensions/claw-core/dist/scripts")
+    if _core_dir not in sys.path:
+        sys.path.insert(0, _core_dir)
+
+    from onnx_embedding import get_onnx_embedding
+    _onnx = get_onnx_embedding()
+    _onnx.initialize()
+
+    from neural_pipeline import NeuralMemoryPipeline
+    _pipe = NeuralMemoryPipeline(
+        feature_dim=64, hidden_dim=64, gnn_heads=4,
+        gnn_layers=2, cfc_hidden_size=64,
+    )
+    _pipe.initialize()
+
+    _neurons = []
+    if hasattr(_pipe, '_cached_neurons') and _pipe._cached_neurons:
+        _neurons = _pipe._cached_neurons
+    elif hasattr(_pipe, 'graph') and _pipe.graph is not None:
+        nids = getattr(_pipe.graph, 'node_ids', []) or []
+        lbls = getattr(_pipe.graph, 'node_labels', []) or []
+        _neurons = [{'id': n, 'content': l} for n, l in zip(nids, lbls)]
+
+    if not _neurons:
+        return []
+
+    import jieba
+    _q_words = set(jieba.lcut(query.lower()))
+    _candidates = []
+    _seen = set()
+    for n in _neurons:
+        _c = n.get('content', '') or ''
+        if not _c or _c[:60] in _seen:
+            continue
+        _seen.add(_c[:60])
+        _nw = set(jieba.lcut(_c.lower()))
+        if _q_words & _nw:
+            _score = len(_q_words & _nw) / max(len(_q_words | _nw), 1)
+            _candidates.append((n['id'], _score, _c[:1000]))
+    _candidates.sort(key=lambda x: -x[1])
+    _candidates = _candidates[:200]
+    if not _candidates:
+        return []
+
+    _seeds = _onnx.find_seeds(query, top_k=5, min_score=0.15,
+        candidates=[(nid, c) for nid, _, c in _candidates])
+
+    _r = []
+    _activated, _predicted = {}, []
+    _gat_weights = {}  # neuron_id → GAT 注意力权重
+    for _sid, _sc, _content in _seeds[:3]:
+        try:
+            _result = _pipe.activate(_sid, top_k=8, max_depth=2, activation_strength=0.05)
+            for _aid, _st in _result.activated_neurons:
+                if _aid != _sid:
+                    _activated[_aid] = max(_activated.get(_aid, 0), _st)
+            if hasattr(_result, 'predicted_ids') and _result.predicted_ids:
+                for _pid in _result.predicted_ids:
+                    if _pid != _sid and _pid not in _predicted:
+                        _predicted.append(_pid)
+            # 收集 GAT 注意力权重
+            if hasattr(_result, 'attention_weights') and _result.attention_weights:
+                for _nid, _gw in _result.attention_weights.items():
+                    if _nid not in _gat_weights:
+                        _gat_weights[_nid] = _gw
+        except Exception:
+            pass
+
+    _label_map = {n['id']: n.get('content', '') for n in _neurons}
+    _seen_out = set()
+    for _sid, _sc, _content in _seeds:
+        if _content and _content[:60] not in _seen_out:
+            _seen_out.add(_content[:60])
+            _entry = {'content': _content, 'score': round(_sc, 3), 'source': 'synapse_seed'}
+            # 种子节点 GAT 权重（提升到 ×10 替代 RRF 贡献）
+            _gw = _gat_weights.get(_sid, 0)
+            if _gw > 0:
+                _entry['gat_weight'] = round(_gw, 4)
+            _r.append(_entry)
+    for _aid, _st in sorted(_activated.items(), key=lambda x: -x[1]):
+        _c = _label_map.get(_aid, '')
+        if _c and _c[:60] not in _seen_out:
+            _seen_out.add(_c[:60])
+            _entry = {'content': _c[:1000], 'score': round(_st, 3), 'source': 'synapse_cfc'}
+            # 激活结果 GAT 权重（× (1 + weight) 增强）
+            _gw = _gat_weights.get(_aid, 0)
+            if _gw > 0:
+                _entry['gat_weight'] = round(_gw, 4)
+            _r.append(_entry)
+            if len(_r) >= 10: break
+    for _pid in _predicted[:3]:
+        _c = _label_map.get(_pid, '')
+        if _c and _c[:60] not in _seen_out:
+            _seen_out.add(_c[:60])
+            _entry = {'content': _c[:1000], 'score': 0.4, 'source': 'synapse_pred'}
+            _gw = _gat_weights.get(_pid, 0)
+            if _gw > 0:
+                _entry['gat_weight'] = round(_gw, 4)
+            _r.append(_entry)
+
+    logger.info(f"  synapse (ONNX+GAT+CfC): {len(_r)} results")
+    return _r
+
+
+def _do_synapse_gat(query: str, _ws: str, _neuron_count: int) -> list:
+    """Tier 2: GAT 嵌入相似度检索（201-2000 神经元，无 CfC，轻量）
+
+    利用 GAT 的结构信息（注意力加权邻居聚合）做嵌入相似度检索，
+    比纯 jieba BOW 更准确，比全链路 CfC 更快。
+
+    流程:
+      1. 加载神经元 + 突触边
+      2. ONNX 编码节点特征
+      3. 构建图 → GAT 前向 → 结构感知嵌入
+      4. Query 嵌入 → cosine 相似度 → Top-K
+    """
+    _r = []
+    try:
+        _syn_dir = os.path.join(_ws, ".learnings/synapse_network")
+        _neurons_file = os.path.join(_syn_dir, "neurons.jsonl")
+        _synapses_file = os.path.join(_syn_dir, "synapses.jsonl")
+
+        if not os.path.exists(_neurons_file):
+            return _do_synapse_fallback(query)
+
+        # 1. 加载神经元
+        _neurons = []
+        with open(_neurons_file) as _f:
+            for _line in _f:
+                _line = _line.strip()
+                if not _line:
+                    continue
+                try:
+                    _obj = json.loads(_line)
+                    _neurons.append(_obj)
+                except json.JSONDecodeError:
+                    continue
+
+        if not _neurons:
+            return []
+
+        _id_to_idx = {n.get('id', ''): i for i, n in enumerate(_neurons)}
+
+        # 2. 加载突触（边）
+        _edges_src, _edges_dst = [], []
+        if os.path.exists(_synapses_file):
+            with open(_synapses_file) as _f:
+                for _line in _f:
+                    _line = _line.strip()
+                    if not _line:
+                        continue
+                    try:
+                        _obj = json.loads(_line)
+                        _s = _obj.get('source', '')
+                        _t = _obj.get('target', '')
+                        if _s in _id_to_idx and _t in _id_to_idx:
+                            _edges_src.append(_id_to_idx[_s])
+                            _edges_dst.append(_id_to_idx[_t])
+                    except json.JSONDecodeError:
+                        continue
+
+        # 3. ONNX 特征
         _core_dir = os.path.join(_ws, "GalaxyOS/extensions/claw-core/dist/scripts")
         if _core_dir not in sys.path:
             sys.path.insert(0, _core_dir)
@@ -1149,82 +1341,69 @@ def _do_synapse(query: str) -> list:
         _onnx = get_onnx_embedding()
         _onnx.initialize()
 
-        from neural_pipeline import NeuralMemoryPipeline
-        _pipe = NeuralMemoryPipeline(
-            feature_dim=64, hidden_dim=64, gnn_heads=4,
-            gnn_layers=2, cfc_hidden_size=64,
-        )
-        _pipe.initialize()
+        _texts = [n.get('content', '') or '' for n in _neurons]
+        _features_list = _onnx.encode_batch(_texts, dim=64) if hasattr(_onnx, 'encode_batch') else []
+        if not _features_list:
+            return _do_synapse_fallback(query)
 
-        _neurons = []
-        if hasattr(_pipe, '_cached_neurons') and _pipe._cached_neurons:
-            _neurons = _pipe._cached_neurons
-        elif hasattr(_pipe, 'graph') and _pipe.graph is not None:
-            nids = getattr(_pipe.graph, 'node_ids', []) or []
-            lbls = getattr(_pipe.graph, 'node_labels', []) or []
-            _neurons = [{'id': n, 'content': l} for n, l in zip(nids, lbls)]
+        import numpy as np
 
-        if not _neurons:
-            return []
+        # 4. 构建邻接矩阵 + GAT 前向
+        import torch
+        _n = len(_neurons)
+        _features = torch.tensor(np.array(_features_list), dtype=torch.float32)
+        _adj = torch.eye(_n)
+        if _edges_src:
+            for _si, _ti in zip(_edges_src, _edges_dst):
+                _adj[_si, _ti] = 1.0
 
-        import jieba
-        _q_words = set(jieba.lcut(query.lower()))
-        _candidates = []
-        _seen = set()
-        for n in _neurons:
-            _c = n.get('content', '') or ''
-            if not _c or _c[:60] in _seen:
-                continue
-            _seen.add(_c[:60])
-            _nw = set(jieba.lcut(_c.lower()))
-            if _q_words & _nw:
-                _score = len(_q_words & _nw) / max(len(_q_words | _nw), 1)
-                _candidates.append((n['id'], _score, _c[:1000]))
-        _candidates.sort(key=lambda x: -x[1])
-        _candidates = _candidates[:200]
-        if not _candidates:
-            return []
+        try:
+            from gat_layer import GAT
+            _gat = GAT(
+                input_dim=64, hidden_dim=64, output_dim=64,
+                num_heads=4, num_layers=2, dropout=0.3,
+            )
+            _gat.eval()
+            with torch.no_grad():
+                _embeddings = _gat(_features, _adj)
+        except Exception as _e:
+            logger.debug(f"GAT forward failed, fallback to ONNX raw: {_e}")
+            _embeddings = _features
 
-        _seeds = _onnx.find_seeds(query, top_k=5, min_score=0.15,
-            candidates=[(nid, c) for nid, _, c in _candidates])
+        # 5. Query 嵌入
+        _q_vec_raw = _onnx.encode(query)
+        if _q_vec_raw is None:
+            return _do_synapse_fallback(query)
+        _q_vec = torch.tensor(np.array(_q_vec_raw), dtype=torch.float32)
 
-        _r = []
-        _activated, _predicted = {}, []
-        for _sid, _sc, _content in _seeds[:3]:
-            try:
-                _result = _pipe.activate(_sid, top_k=8, max_depth=2, activation_strength=0.05)
-                for _aid, _st in _result.activated_neurons:
-                    if _aid != _sid:
-                        _activated[_aid] = max(_activated.get(_aid, 0), _st)
-                if hasattr(_result, 'predicted_ids') and _result.predicted_ids:
-                    for _pid in _result.predicted_ids:
-                        if _pid != _sid and _pid not in _predicted:
-                            _predicted.append(_pid)
-            except Exception:
-                pass
+        # 6. Cosine 相似度
+        _emb_norm = torch.nn.functional.normalize(_embeddings, dim=1)
+        _q_norm = torch.nn.functional.normalize(_q_vec.unsqueeze(0), dim=1)
+        _sims = torch.mm(_q_norm, _emb_norm.t()).squeeze(0)
 
-        _label_map = {n['id']: n.get('content', '') for n in _neurons}
+        _topk_vals, _topk_indices = torch.topk(_sims, min(10, _n))
         _seen_out = set()
-        for _sid, _sc, _content in _seeds:
-            if _content and _content[:60] not in _seen_out:
-                _seen_out.add(_content[:60])
-                _r.append({'content': _content, 'score': round(_sc, 3), 'source': 'synapse_seed'})
-        for _aid, _st in sorted(_activated.items(), key=lambda x: -x[1]):
-            _c = _label_map.get(_aid, '')
-            if _c and _c[:60] not in _seen_out:
-                _seen_out.add(_c[:60])
-                _r.append({'content': _c[:1000], 'score': round(_st, 3), 'source': 'synapse_cfc'})
-                if len(_r) >= 10: break
-        for _pid in _predicted[:3]:
-            _c = _label_map.get(_pid, '')
-            if _c and _c[:60] not in _seen_out:
-                _seen_out.add(_c[:60])
-                _r.append({'content': _c[:1000], 'score': 0.4, 'source': 'synapse_pred'})
+        for _val, _idx in zip(_topk_vals.tolist(), _topk_indices.tolist()):
+            _score = float(_val)
+            if _score < 0.2:
+                continue
+            _n = _neurons[_idx]
+            _content = _n.get('content', '') or ''
+            _dedup = _content[:80]
+            if _dedup in _seen_out:
+                continue
+            _seen_out.add(_dedup)
+            _r.append({
+                'content': _content[:1000],
+                'score': round(_score, 3),
+                'source': 'synapse_gat',
+            })
 
-        logger.info(f"  synapse (ONNX+GAT+CfC): {len(_r)} results")
+        logger.info(f"  synapse (GAT embed, n={_n}): {len(_r)} results")
         return _r
+
     except Exception as e:
-        logger.debug(f"  synapse skipped: {e}")
+        logger.debug(f"  synapse GAT failed: {e}, fallback to jieba")
         return _do_synapse_fallback(query)
 
 

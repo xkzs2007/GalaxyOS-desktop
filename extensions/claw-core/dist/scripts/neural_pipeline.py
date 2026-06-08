@@ -66,6 +66,7 @@ class PipelineResult:
         "activated_neurons", "neuron_labels", "pipeline_time_ms",
         "gnn_time_ms", "cfc_time_ms", "num_neurons", "num_synapses",
         "embedding_dim", "gnn_model", "predicted_ids",
+        "attention_weights",
     )
     def __init__(
         self,
@@ -79,6 +80,7 @@ class PipelineResult:
         embedding_dim: int = 0,
         gnn_model: str = "",
         predicted_ids=None,
+        attention_weights=None,
     ):
         self.activated_neurons = activated_neurons or []
         self.neuron_labels = neuron_labels or {}
@@ -90,6 +92,7 @@ class PipelineResult:
         self.embedding_dim = embedding_dim
         self.gnn_model = gnn_model
         self.predicted_ids = predicted_ids or []
+        self.attention_weights = attention_weights or {}
 
 
 class NeuralMemoryPipeline:
@@ -409,6 +412,27 @@ class NeuralMemoryPipeline:
         # 更新突触网络的最后使用时间
         self._update_reinforcement(neuron_id, [r[0] for r in results])
 
+        # ── GAT 注意力权重收集 ──
+        _attn_weights = {}
+        try:
+            if self.gnn_type == "gat" and hasattr(self.gnn_encoder, 'gat'):
+                _gat_model = self.gnn_encoder.gat
+                if self._neuron_embeddings is not None and self.graph.num_nodes > 0:
+                    _n = self._neuron_embeddings.size(0)
+                    _adj = self._build_adj_from_synapses(_n)
+                    _attn_mat = _gat_model.get_attention_weights(
+                        self._neuron_embeddings, _adj, layer_idx=0
+                    )
+                    if _attn_mat is not None and _attn_mat.size(0) == _n:
+                        # 每个神经元的"结构重要性" = 各节点对它的注意力之和
+                        _incoming = _attn_mat.sum(dim=0).cpu().tolist()
+                        for _idx, _w in enumerate(_incoming):
+                            _nid = self.graph.node_ids[_idx] if _idx < len(self.graph.node_ids) else ""
+                            if _nid:
+                                _attn_weights[_nid] = float(_w)
+        except Exception:
+            pass
+
         return PipelineResult(
             activated_neurons=results,
             neuron_labels=labels,
@@ -420,6 +444,7 @@ class NeuralMemoryPipeline:
             embedding_dim=self.cfc_hidden_size,
             gnn_model=self.gnn_type,
             predicted_ids=predicted_ids,
+            attention_weights=_attn_weights,
         )
 
     def _update_reinforcement(self, seed_id: str, activated_ids: List[str]):
@@ -431,6 +456,17 @@ class NeuralMemoryPipeline:
             if s["source_id"] == seed_id and s["target_id"] in activated_ids:
                 s["last_reinforced"] = now
                 s["reinforcement_count"] = s.get("reinforcement_count", 0) + 1
+
+    def _build_adj_from_synapses(self, n_nodes: int) -> torch.Tensor:
+        """从缓存的突触列表构建邻接矩阵（含自环），用于 GAT 注意力可视化"""
+        import torch
+        _adj = torch.eye(n_nodes)
+        for s in self._cached_synapses:
+            _src = self.graph.id_to_idx.get(s.get("source_id") or s.get("source", ""))
+            _dst = self.graph.id_to_idx.get(s.get("target_id") or s.get("target", ""))
+            if _src is not None and _dst is not None and _src < n_nodes and _dst < n_nodes:
+                _adj[_src, _dst] = 1.0
+        return _adj
 
     def batch_optimize_ltc(self, epochs: int = 100):
         """

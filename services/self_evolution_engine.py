@@ -142,53 +142,97 @@ class SelfEvolutionEngine:
     
     def detect_error_patterns(self) -> List[Dict]:
         """
-        检测 .learnings/ERRORS.md 中的错误模式
+        检测错误模式，双数据源：
+        1. .learnings/ERRORS.md（显式错误记录）
+        2. .learnings/reflexions.jsonl（失败反思记录，主要来源）
         
         判断：同类错误 ≥3 次自动生成改进建议
         """
-        errors_path = self.workspace / '.learnings' / 'ERRORS.md'
-        if not errors_path.exists():
-            return []
-        
         patterns: Dict[str, List[str]] = {}
+        examples: Dict[str, List[str]] = {}
         
-        with open(errors_path, 'r', encoding='utf-8') as f:
-            for line in f:
-                line = line.strip()
-                if not line or line.startswith('#') or line.startswith('---'):
-                    continue
-                # 提取错误类型
-                for kw in ['超时', '失败', '错误', '异常', 'timeout', 'error', 'fail']:
-                    if kw in line.lower():
-                        key = f"error_{kw}"
-                        if key not in patterns:
-                            patterns[key] = []
-                        patterns[key].append(line[:100])
-                        break
-        
+        # ═══ 源1: ERRORS.md ═══
+        errors_path = self.workspace / '.learnings' / 'ERRORS.md'
+        if errors_path.exists():
+            with open(errors_path, 'r', encoding='utf-8') as f:
+                for line in f:
+                    line = line.strip()
+                    if not line or line.startswith('#') or line.startswith('---'):
+                        continue
+                    for kw in ['超时', '失败', '错误', '异常', 'timeout', 'error', 'fail']:
+                        if kw in line.lower():
+                            key = f"error_{kw}"
+                            if key not in patterns:
+                                patterns[key] = []
+                            patterns[key].append(line[:100])
+                            break
+
+        # ═══ 源2: reflexions.jsonl（292条失败反思，主要数据源） ═══
+        reflexions_path = self.workspace / '.learnings' / 'reflexions.jsonl'
+        if reflexions_path.exists():
+            with open(reflexions_path, 'r', encoding='utf-8') as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        r = json.loads(line)
+                    except Exception:
+                        continue
+                    fp = r.get('failure_pattern', 'unknown')
+                    rc = r.get('root_cause', '').strip()
+                    q = r.get('question', '')[:80]
+                    
+                    # 按 failure_pattern 聚合
+                    key = f'failure_{fp}'
+                    if key not in patterns:
+                        patterns[key] = []
+                        examples[key] = []
+                    patterns[key].append(line)
+                    if len(examples[key]) < 3:
+                        examples[key].append(f'{fp}: {q}')
+                    
+                    # 有根因的也按 root_cause 关键词聚合
+                    if rc:
+                        for kw in ['信息不足', '误解', '幻觉', '遗漏', '偏离', '超时', '未理解', '编造']:
+                            if kw in rc:
+                                rk = f'root_{kw}'
+                                if rk not in patterns:
+                                    patterns[rk] = []
+                                    examples[rk] = []
+                                patterns[rk].append(line)
+                                if len(examples[rk]) < 3:
+                                    examples[rk].append(f'{rc}: {q}')
+                                break
+
+        # 生成建议
         suggestions = []
         for key, entries in patterns.items():
             if len(entries) >= 3:
+                fp_label = key.replace('failure_', '').replace('root_', '')
                 suggestions.append({
                     "pattern": key,
                     "count": len(entries),
-                    "examples": entries[:3],
-                    "suggestion": self._generate_improvement_suggestion(key, entries[0]),
+                    "examples": examples.get(key, entries[:3]),
+                    "suggestion": self._generate_improvement_suggestion(key, examples.get(key, [''])[0]),
                     "severity": "high" if len(entries) >= 10 else "medium",
+                    "source": "reflexions.jsonl",
                 })
         
         if suggestions:
             self._record_evolution_event({
                 "event_type": "pattern_detected",
                 "patterns": suggestions,
+                "total_reflexions": len(patterns),
                 "timestamp": datetime.now(timezone.utc).isoformat(),
             })
         
         return suggestions
     
     def _generate_improvement_suggestion(self, pattern: str, example: str) -> str:
-        """根据错误模式生成改进建议"""
+        """根据错误/失败模式生成改进建议"""
         suggestions = {
+            # ── 旧 ERROR.md 关键词（保留向下兼容） ──
             "error_超时": "增加超时时间或添加重试机制",
             "error_失败": "检查前置条件是否满足，增加错误处理和降级策略",
             "error_错误": "检查输入参数合法性，增加输入验证",
@@ -196,11 +240,24 @@ class SelfEvolutionEngine:
             "error_timeout": "Increase timeout values or implement retry with backoff",
             "error_error": "Validate input parameters, add error handling and fallback",
             "error_fail": "Check preconditions, add error handling and degradation",
+            # ── reflexions.jsonl 实际失败模式 ──
+            "failure_unknown": "LLM 分析失败导致根因缺失：降级为启发式推断（根据评分维度自动归类）",
+            "failure_偏离": "回答偏离用户意图：增强用户输入意图检测，检索额外上下文后再生成",
+            "failure_遗漏": "回答不完整遗漏关键信息：开启多轮检索，补充多维度证据",
+            "failure_幻觉": "生成了事实不准确的回答：强制引用检索结果，禁止自由发挥",
+            "failure_矛盾": "回答前后自相矛盾：引入一致性检查，对比同一对话周期中的前序回答",
+            "failure_冗余": "回答过于冗长啰嗦：压缩上下文，限制输出长度",
+            "failure_其他": "归类外的异常场景：记录详情到 ERROR.md 供后续分析",
+            "root_信息不足": "检索资源不足：扩展检索范围并降低置信度，避免编造",
+            "root_误解": "模型误解用户意图：先反问澄清再回答，不直接猜测",
+            "root_未理解": "未洞察用户底层需求：拆解为更小的子问题逐一确认",
+            "root_编造": "编造不存在的信息：严格禁止无证据输出，强制用'无相关信息'替代",
+            "root_偏离": "意图定位漂移：回退到用户原始问题重新分析",
         }
         for k, v in suggestions.items():
             if k in pattern:
                 return v
-        return "检查错误原因，添加异常处理"
+        return f"识别到模式 {pattern}（{example[:30]}...），需人工补充修复策略"
     
     # ── 3. 进化追踪 ────────────────────────────────────────
     

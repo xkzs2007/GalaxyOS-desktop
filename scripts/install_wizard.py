@@ -13,9 +13,6 @@ GalaxyOS — 安装向导 + 配置向导
   python3 install_wizard.py --sleep-test    # 仿生睡眠巩固引擎专项测试
   python3 install_wizard.py --kg-test       # 知识图谱功能专项测试
   python3 install_wizard.py --all            # 全量模式（体检 + 睡眠测试 + 修复）
-  python3 install_wizard.py --neural-test    # 神经网络+记忆迁移专项检查
-  python3 install_wizard.py --test           # 运行测试套件（pytest）
-  python3 install_wizard.py --deps           # 依赖完整性检查
 """
 
 import os
@@ -78,20 +75,12 @@ def heading(title):
     _print(f"{C}{'='*60}{N}")
 
 # ── 路径定义 ──
-# GalaxyOS 根目录（仓库根路径）
-GALAXY_ROOT = Path(__file__).parent.parent.resolve()
-# OpenClaw 工作区
 WORKSPACE = Path(os.environ.get("OPENCLAW_WORKSPACE", str(Path.home() / ".openclaw" / "workspace")))
-
-# GalaxyOS 核心目录
-SERVICES_DIR = GALAXY_ROOT / "services"                # pip 可安装包 (144+ 模块)
-SCRIPTS_DIR = GALAXY_ROOT / "scripts"                  # 辅助脚本
-CORE_DIR = GALAXY_ROOT / "skills" / "llm-memory-integration" / "core"   # 核心引擎 (158 模块)
-SRC_DIR = GALAXY_ROOT / "skills" / "llm-memory-integration" / "src"     # 源模块
-CONFIG_DIR = GALAXY_ROOT / "config"                     # 配置文件
-EXT_DIR = GALAXY_ROOT / "extensions"                    # 扩展插件
-
-# 部署目标路径（Worker 实际加载位置）
+SKILL_DIR = WORKSPACE / "skills" / "xiaoyi-claw-omega-final"
+SCRIPTS_DIR = SKILL_DIR / "scripts"
+CORE_DIR = SKILL_DIR / "skills" / "llm-memory-integration" / "core"
+SRC_DIR = WORKSPACE / "skills" / "llm-memory-integration" / "src"
+CONFIG_DIR = SKILL_DIR / "config"
 DIST_DIR = Path.home() / ".openclaw" / "extensions" / "claw-core" / "dist" / "scripts"
 VAR_DIR = Path.home() / ".openclaw" / "extensions" / "claw-core" / "var"
 
@@ -101,9 +90,7 @@ SLEEP_LOG = Path.home() / ".openclaw" / "workspace" / "memory" / "dreaming" / "d
 
 # ── KG as Memory Backbone ──
 KG_DB = Path.home() / ".openclaw" / "workspace" / "temporal_kg.db"
-# 旧兼容路径（Worker 运行时可能仍从此路径加载）
 DIST2_DIR = Path.home() / ".openclaw" / "dist" / "scripts" / "skills" / "llm-memory-integration" / "core"
-DIST2_GALAXY = Path.home() / ".openclaw" / "dist" / "scripts" / "GalaxyOS" / "skills" / "llm-memory-integration" / "core"
 
 
 # ════════════════════════════════════════════════════════════════
@@ -176,7 +163,7 @@ def test_all_modules() -> Dict[str, Any]:
     results = {"total": 0, "ok": 0, "fail": 0, "details": []}
 
     # ── 确保路径 ──
-    for p in [str(SCRIPTS_DIR), str(CORE_DIR), str(CORE_DIR / "integration")]:
+    for p in [str(SCRIPTS_DIR), str(CORE_DIR), str(SRC_DIR), str(SRC_DIR / "integration"), str(SRC_DIR / "memory")]:
         if os.path.isdir(p):
             sys.path.insert(0, p)
 
@@ -198,7 +185,13 @@ def test_all_modules() -> Dict[str, Any]:
 
     # ── 2) 扫描 src/ 各子目录 ──
     src_py_files = {}
-    # src/ 目录仅有模型权重（.pt），无 Python 模块
+    if SRC_DIR.exists():
+        for root, dirs, files in os.walk(SRC_DIR):
+            for fn in files:
+                if fn.endswith(".py") and fn != "__init__.py":
+                    rel = os.path.relpath(os.path.join(root, fn), SRC_DIR).replace("/", ".")[:-3]
+                    src_py_files[rel] = os.path.join(root, fn)
+        info(f"src/ 目录发现 {len(src_py_files)} 个模块文件", indent=1)
 
     # ── 3) 扫描 scripts/（入口/协调/辅助） ──
     script_py_files = {}
@@ -532,128 +525,6 @@ def check_services() -> Dict[str, Any]:
 # Phase 4: 断路器扫描（静态分析）
 # ════════════════════════════════════════════════════════════════
 
-def check_neural_network() -> Dict[str, Any]:
-    """检查神经网络 + 记忆迁移状态"""
-    heading("🧠 阶段 5：神经网络 & 记忆迁移检查")
-
-    results = {
-        "synapse_network": {},
-        "emotion": {},
-        "cfc_sequence": {},
-        "memory_migration": {},
-        "total_neurons": 0,
-        "total_synapses": 0,
-        "errors": [],
-    }
-
-    learnings = WORKSPACE / ".learnings"
-    syn_dir = learnings / "synapse_network"
-
-    # ── 突触网络文件 ──
-    if syn_dir.exists():
-        for name in ["neurons", "synapses", "ltc_params"]:
-            fp = syn_dir / f"{name}.jsonl"
-            if fp.exists():
-                count = sum(1 for _ in open(fp))
-                results["synapse_network"][name] = count
-                ok(f"突触网络: {name}.jsonl ({count} 条)")
-            else:
-                results["synapse_network"][name] = 0
-                warn(f"突触网络: {name}.jsonl 缺失")
-
-        results["total_neurons"] = results["synapse_network"].get("neurons", 0)
-        results["total_synapses"] = results["synapse_network"].get("synapses", 0)
-        n = results["total_neurons"]
-        s = results["total_synapses"]
-        if n > 0 and s > 0:
-            ok(f"网络拓扑: {n} 神经元, {s} 突触 ({s/n:.1f} 突触/神经元)")
-        else:
-            info("神经网络数据为空（首次运行自动创建）", indent=1)
-    else:
-        warn(f"突触网络目录不存在: {syn_dir}")
-
-    # ── LTC 参数 ──
-    ltc_count = results["synapse_network"].get("ltc_params", 0)
-    if ltc_count > 0:
-        ok(f"LTC 参数: {ltc_count} 个神经元内置 LTCCell")
-    else:
-        info("LTC 参数: 无（运行时按需生成）", indent=1)
-
-    # ── 情绪模型 ──
-    emotion_files = ["emotion_memories.jsonl", "emotion_track.json"]
-    e_found = 0
-    for fn in emotion_files:
-        fp = learnings / fn
-        if fp.exists():
-            e_found += 1
-            ok(f"情绪模型: {fn} ({fp.stat().st_size} 字节)")
-    results["emotion"]["files_found"] = e_found
-    if e_found == 0:
-        warn("情绪模型数据缺失")
-
-    # ── CfC 序列预测器 ──
-    cfc_found = 0
-    for fn in sorted(learnings.glob("cfc_sequence_*")):
-        cfc_found += 1
-        ok(f"CfC 序列预测器: {fn.name} ({fn.stat().st_size} 字节)")
-    results["cfc_sequence"]["files_found"] = cfc_found
-    if cfc_found == 0:
-        info("CfC 序列预测器数据暂未持久化（运行时按需创建）", indent=1)
-
-    # ── 实时加载 MemorySynapseNetwork ──
-    try:
-        sys.path.insert(0, str(CORE_DIR))
-        from memory_synapse_network import MemorySynapseNetwork
-        network = MemorySynapseNetwork()
-        stats = network.get_stats() if hasattr(network, "get_stats") else {}
-        results["live_stats"] = stats
-        if stats:
-            ok(f"突触网络实时统计: {stats}")
-    except Exception as e:
-        results["errors"].append(f"MemorySynapseNetwork 加载失败: {e}")
-        info(f"突触网络实例化跳过: {e}", indent=1)
-
-    # ── 记忆迁移状态 ──
-    print()
-    heading("📦 记忆迁移状态")
-    migrated = {}
-
-    # DAG 数据库
-    dag_db = Path.home() / ".openclaw" / "dag_context.db"
-    if dag_db.exists():
-        dag_mb = round(dag_db.stat().st_size / 1024 / 1024, 1)
-        migrated["dag_db"] = f"{dag_mb} MB"
-        ok(f"DAG 数据库: {dag_mb} MB")
-    else:
-        warn("DAG 数据库不存在")
-
-    # 学习数据
-    for key, name in [("emotion_memories.jsonl", "情绪记忆"), ("emotion_track.json", "情绪轨迹"),
-                       ("meta_trend.json", "元趋势"), ("memory_params.json", "记忆参数"),
-                       ("hyper_router.json", "超路由")]:
-        fp = learnings / key
-        if fp.exists():
-            migrated[name] = f"{fp.stat().st_size} 字节"
-            ok(f"{name}: {fp.stat().st_size} 字节")
-        else:
-            info(f"{name}: 未找到（按需创建）", indent=1)
-
-    results["memory_migration"] = migrated
-
-    # ── 汇总 ──
-    print()
-    n = results["total_neurons"]
-    s = results["total_synapses"]
-    if n > 0:
-        ok(f"神经网络 + 记忆迁移: {n} 神经元, {s} 突触, {len(migrated)} 项学习数据")
-    else:
-        info("神经网络无数据（首次会话自动创建）", indent=1)
-    if results["errors"]:
-        warn(f"{len(results['errors'])} 个检查错误", indent=1)
-
-    return results
-
-
 def scan_breakers() -> Dict[str, Any]:
     """逐文件扫描 import 但未调用的断路"""
     heading("⚡ 阶段 4：断路器扫描")
@@ -725,150 +596,6 @@ def scan_breakers() -> Dict[str, Any]:
             print(f"  {Y}{fn}{N}")
             for b in breaks:
                 print(f"    L{b['lineno']}: {b['module']} (as {b['alias']})")
-
-    return results
-
-
-# ════════════════════════════════════════════════════════════════
-# Phase 4.5a: services/ 模块检查（主 pip 包）
-# ════════════════════════════════════════════════════════════════
-
-def check_services_modules() -> Dict[str, Any]:
-    """检查 services/ 目录下的核心服务模块"""
-    heading("📦 阶段 4.5a：services/ 服务模块检查")
-
-    results = {"total": 0, "ok": 0, "fail": 0, "skip": 0, "details": []}
-
-    py_files = sorted(SERVICES_DIR.glob("*.py"))
-    results["total"] = len(py_files)
-
-    # 关键模块列表（用于区分核心/辅助）
-    critical_modules = {
-        "xiaoyi_claw_api", "retrieval_hub", "memory_consolidation",
-        "memory_synapse_network", "enhanced_hallucination_guard",
-        "cognitive_map", "crag", "crag_pipeline", "auto_tuner",
-        "smart_processor", "thinking_enhanced", "biorhythm_sleep_consolidation",
-        "adaptive_ltp_ltd", "adaptive_rrf", "chain_of_verification",
-        "dag_context_manager", "conversation", "self_evolution_engine",
-        "unified_cache", "exceptions", "adaptive_memory",
-        "intelligent_thinking_trigger", "temporal_kg",
-    }
-
-    for fp in py_files:
-        mod_name = fp.stem
-        if mod_name.startswith("__"):
-            continue
-
-        try:
-            with open(fp) as f:
-                source = f.read()
-            ast.parse(source)  # 语法检查
-        except SyntaxError as e:
-            results["fail"] += 1
-            results["details"].append({
-                "module": mod_name, "status": "syntax_error", "error": str(e)[:80]
-            })
-            print(f"  {R}❌{N} {mod_name:<45s} 语法错误")
-            continue
-
-        # 尝试 import
-        try:
-            mod = importlib.import_module(f"services.{mod_name}")
-            marker = "⭐" if mod_name in critical_modules else "✅"
-            results["ok"] += 1
-            print(f"  {G}{marker}{N} {mod_name:<45s}")
-            results["details"].append({"module": mod_name, "status": "ok"})
-        except ImportError as e:
-            err_msg = str(e).split("\n")[0][:80]
-            results["fail"] += 1
-            print(f"  {R}❌{N} {mod_name:<45s} 导入失败: {err_msg}")
-            results["details"].append({
-                "module": mod_name, "status": "import_error", "error": err_msg
-            })
-        except Exception as e:
-            results["skip"] += 1
-            print(f"  {Y}⚠️ {N} {mod_name:<45s} {e}")
-            results["details"].append({
-                "module": mod_name, "status": "runtime_error", "error": str(e)[:80]
-            })
-
-    print()
-    ok(f"services/ 模块: {results['ok']}/{results['total']} 通过, {results['fail']} 失败, {results['skip']} 跳过")
-    return results
-
-
-# ════════════════════════════════════════════════════════════════
-# Phase 4.5b: pip 依赖完整性检查
-# ════════════════════════════════════════════════════════════════
-
-def check_dependencies() -> Dict[str, Any]:
-    """检查 requirements.txt 中的依赖是否都已安装"""
-    heading("📦 阶段 4.5b：pip 依赖完整性检查")
-
-    results = {"total": 0, "installed": 0, "missing": [], "version_mismatch": []}
-
-    req_path = GALAXY_ROOT / "requirements.txt"
-    if not req_path.exists():
-        warn("requirements.txt 不存在")
-        return results
-
-    def _parse_requirement(line: str):
-        line = line.split("#")[0].strip()
-        if not line:
-            return None
-        for op in (">=", "==", "<=", "!=", ">", "<", "~="):
-            if op in line:
-                name, ver = line.split(op, 1)
-                return name.strip(), op.strip(), ver.strip()
-        return line.strip(), None, None
-
-    with open(req_path) as f:
-        for line in f:
-            parsed = _parse_requirement(line)
-            if parsed is None:
-                continue
-            name, op, ver = parsed
-            results["total"] += 1
-
-            try:
-                pkg = importlib.import_module(name.replace("-", "_"))
-                actual_ver = getattr(pkg, "__version__", "unknown")
-                if ver and op == ">=" and actual_ver != "unknown":
-                    # 简单的版本比较（仅检查主版本号）
-                    try:
-                        actual_ver_parsed = tuple(int(x) for x in actual_ver.split(".")[:2])
-                        req_ver_parsed = tuple(int(x) for x in ver.split(".")[:2])
-                        if actual_ver_parsed < req_ver_parsed:
-                            results["version_mismatch"].append({
-                                "name": name, "required": f"{op}{ver}",
-                                "actual": actual_ver
-                            })
-                            print(f"  {Y}⚠️ {N} {name}: {actual_ver} (需要 {op}{ver})")
-                            continue
-                    except (ValueError, TypeError):
-                        pass
-                results["installed"] += 1
-            except ImportError:
-                results["missing"].append({"name": name, "required": f"{op}{ver}" if ver else "any"})
-                if name in ("torch", "ncps", "faiss-cpu", "jieba", "onnxruntime"):
-                    # 大型/可选依赖
-                    print(f"  {Y}⬜{N} {name}{' ' + op + ver if ver else ''} — 未安装（可选）")
-                else:
-                    print(f"  {R}❌{N} {name}{' ' + op + ver if ver else ''} — 未安装")
-
-    print()
-    if not results["missing"] and not results["version_mismatch"]:
-        ok(f"全部 {results['total']} 个依赖满足")
-    else:
-        missing_critical = [
-            m for m in results["missing"]
-            if m["name"] not in ("torch", "ncps", "faiss-cpu", "jieba", "onnxruntime")
-        ]
-        if missing_critical:
-            warn(f"{len(missing_critical)} 个关键依赖缺失: "
-                 f"{', '.join(m['name'] for m in missing_critical)}")
-        if results["version_mismatch"]:
-            warn(f"{len(results['version_mismatch'])} 个版本不匹配")
 
     return results
 
@@ -1354,39 +1081,26 @@ def auto_fix(sync_result: Dict[str, Any], import_result: Optional[Dict[str, Any]
                     err(f"同步 index.js 失败: {e}")
                 break
 
-    # ── 同步 core → dist2（llm-memory-integration 核心模块） ──
-    if DIST2_DIR.exists() and CORE_DIR.exists():
-        for fn in os.listdir(CORE_DIR):
-            if not fn.endswith(".py") or fn == "__init__.py":
-                continue
-            src = CORE_DIR / fn
-            dst = DIST2_DIR / fn
-            if not dst.exists() or os.path.getmtime(src) > os.path.getmtime(dst):
-                try:
-                    shutil.copy2(str(src), str(dst))
-                    fixed["synced"] += 1
-                    fixed["details"].append({"file": f"core/{fn}", "action": "copied_to_dist2"})
-                except Exception as e:
-                    fixed["failed"] += 1
-                    err(f"同步 core/{fn} → dist2 失败: {e}")
-        if fixed.get("synced", 0) > 0:
-            ok(f"core → dist2: {fixed['synced']} 个文件同步")
-    elif DIST2_DIR.exists() and not CORE_DIR.exists():
-        err(f"CORE_DIR 不存在: {CORE_DIR}")
+    # ── 同步睡眠引擎模块（如不存在则复制） ──
+    sleep_dst_core = CORE_DIR / "biorhythm_sleep_consolidation.py"
+    if SLEEP_CORE.exists() and not sleep_dst_core.exists():
+        try:
+            shutil.copy2(str(SLEEP_CORE), str(sleep_dst_core))
+            fixed["synced"] += 1
+            ok(f"已同步: core/biorhythm_sleep_consolidation.py")
+            fixed["details"].append({"file": "biorhythm_sleep_consolidation.py", "action": "copied_to_core"})
+        except Exception as e:
+            err(f"同步 sleep 模块到 core/ 失败: {e}")
 
-    # ── 同步睡眠引擎 → dist2 ──
-    if SLEEP_CORE.exists() and DIST2_DIR.exists():
-        dst = DIST2_DIR / "biorhythm_sleep_consolidation.py"
-        if not dst.exists() or os.path.getmtime(SLEEP_CORE) > os.path.getmtime(dst):
+    # GalaxyOS 仓库同步
+    galaxyos_repo = Path("/tmp/galaxyos-upload")
+    if galaxyos_repo.exists() and SLEEP_CORE.exists():
+        for dst_dir in [galaxyos_repo / "services", galaxyos_repo / "skills" / "llm-memory-integration" / "core"]:
+            dst_dir.mkdir(parents=True, exist_ok=True)
             try:
-                shutil.copy2(str(SLEEP_CORE), str(dst))
-                fixed["synced"] += 1
-                ok(f"已同步: core/biorhythm_sleep_consolidation.py → dist2")
-                fixed["details"].append({"file": "biorhythm_sleep_consolidation.py", "action": "copied_to_dist2"})
+                shutil.copy2(str(SLEEP_CORE), dst_dir / "biorhythm_sleep_consolidation.py")
             except Exception as e:
-                fixed["failed"] += 1
-                err(f"同步 sleep 模块失败: {e}")
-
+                err(f"同步到 GalaxyOS {dst_dir} 失败: {e}")
 
     return fixed
 
@@ -1417,7 +1131,6 @@ def generate_report(all_results: Dict[str, Any]) -> Dict[str, Any]:
     cfg = all_results.get("config", {})
 
     sleep = all_results.get("sleep", {})
-    neural = all_results.get("neural", {})
     slp_stages = sleep.get("stages", {})
     slp_ok = sum(1 for s in slp_stages.values() if s.get("ok", False))
     slp_total = len(slp_stages) if slp_stages else 0
@@ -1438,8 +1151,6 @@ def generate_report(all_results: Dict[str, Any]) -> Dict[str, Any]:
             "supervisor_ok": svc.get("supervisor", {}).get("status") == "running",
             "sleep_stages_ok": slp_ok,
             "sleep_stages_total": slp_total,
-            "neural_neurons": neural.get("total_neurons", 0),
-            "neural_synapses": neural.get("total_synapses", 0),
         },
         "detail": all_results,
     }
@@ -1490,11 +1201,6 @@ def print_report(report: Dict[str, Any]):
     if slp_total > 0:
         print(f"  {G}💤{N} 仿生睡眠: {slp_ok}/{slp_total} 阶段通过")
 
-    n_count = s.get('neural_neurons', 0)
-    s_count = s.get('neural_synapses', 0)
-    if n_count > 0:
-        print(f"  {G}🧠{N} 神经网络: {n_count} 神经元, {s_count} 突触")
-
 
 # ════════════════════════════════════════════════════════════════
 # 入口
@@ -1510,9 +1216,6 @@ def main():
     parser.add_argument("--sleep-test", action="store_true", help="仿生睡眠巩固引擎专项测试")
     parser.add_argument("--kg-test", action="store_true", help="知识图谱功能专项测试")
     parser.add_argument("--all", action="store_true", help="全量模式（体检 + 睡眠测试 + 修复）")
-    parser.add_argument("--neural-test", action="store_true", help="神经网络 + 记忆迁移专项检查")
-    parser.add_argument("--test", action="store_true", help="运行测试套件（pytest）")
-    parser.add_argument("--deps", action="store_true", help="依赖完整性检查")
     args = parser.parse_args()
 
     # ── --report 模式：所有 print 重定向到 stderr，stdout 只留最终 JSON ──
@@ -1544,46 +1247,12 @@ def main():
             sys.stdout.flush()
         return
 
-    if args.neural_test:
-        all_results["neural"] = check_neural_network()
-        report = generate_report(all_results)
-        if args.report:
-            sys.stdout = _real_stdout
-            sys.stdout.write(json.dumps(report, indent=2, ensure_ascii=False) + "\n")
-            sys.stdout.flush()
-        return
-
-    if args.deps:
-        all_results["deps"] = check_dependencies()
-        report = generate_report(all_results)
-        if args.report:
-            sys.stdout = _real_stdout
-            sys.stdout.write(json.dumps(report, indent=2, ensure_ascii=False) + "\n")
-            sys.stdout.flush()
-        return
-
-    if args.test:
-        _print(f"\n🧪 运行测试套件...\n")
-        test_dir = GALAXY_ROOT / "tests"
-        if test_dir.exists():
-            r = subprocess.run(
-                [sys.executable, "-m", "pytest", str(test_dir), "-v", "--tb=short", "-p", "no:warnings"],
-                cwd=str(GALAXY_ROOT),
-            )
-            sys.exit(r.returncode)
-        else:
-            err("tests/ 目录不存在")
-            return
-
     # ── 执行各阶段 ──
     all_results["env"] = check_environment()
     all_results["modules"] = test_all_modules()
     all_results["sync"] = check_file_sync()
     all_results["services"] = check_services()
     all_results["breakers"] = scan_breakers()
-    all_results["services_modules"] = check_services_modules()
-    all_results["deps"] = check_dependencies()
-    all_results["neural"] = check_neural_network()
     all_results["config"] = check_and_wizard_config(interactive=not args.check and not args.report and not args.fix)
 
     # ── 睡眠测试（--all 或非 --check 模式下都跑） ──

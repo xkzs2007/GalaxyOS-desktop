@@ -534,7 +534,7 @@ class ConsolidationEngine:
                 # 导入睡眠引擎
                 import importlib.util
                 sleep_path = os.path.join(self.workspace,
-                    "skills/xiaoyi-claw-omega-final/skills/llm-memory-integration/core/biorhythm_sleep_consolidation.py")
+                    "GalaxyOS/skills/llm-memory-integration/core/biorhythm_sleep_consolidation.py")
                 spec = importlib.util.spec_from_file_location("biorhythm_sleep_consolidation", sleep_path)
                 if spec and spec.loader:
                     mod = importlib.util.module_from_spec(spec)

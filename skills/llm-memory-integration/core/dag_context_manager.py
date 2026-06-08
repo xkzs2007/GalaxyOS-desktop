@@ -30,7 +30,7 @@ from typing import Dict, List, Optional, Any, Tuple
 from dataclasses import dataclass, field, asdict
 from collections import defaultdict, Counter
 from pathlib import Path
-from blob_arena import BlobArena, get_blob_arena
+from blob_arena import BlobArena, get_blob_arena, generate_memo
 
 logger = logging.getLogger(__name__)
 
@@ -1601,62 +1601,43 @@ class DAGContextManager:
         for group in groups:
             if not group:
                 continue
-            # 提取 user_intent（消息 0 = user，消息 1 = assistant，按 metadata.role 确认）
-            user_msg = ""
-            asst_msg = ""
+
+            # v2: 从 BlobArena 还原完整原文（不截断）
+            full_texts = []
             for n in group:
-                meta = n.metadata or {}
-                role = meta.get('role', '')
-                if role == 'user' and not user_msg:
-                    user_msg = n.content[:300]
-                elif role == 'assistant' and not asst_msg:
-                    asst_msg = n.content[:300]
-            # 兜底：如果没有准确按 role 分出来，按位置取
-            if not user_msg and len(group) >= 1:
-                user_msg = group[0].content[:300]
-            if not asst_msg and len(group) >= 2:
-                asst_msg = group[1].content[:300]
+                full_texts.append(self.restore_full_content(n))
+            full_combined = "\n\n".join(full_texts)
+
+            # BlobArena 无损存储完整原文，SQLite 只存 memo
+            _blob_id = ""
+            _memo_text = ""
+            try:
+                if self._blob_arena:
+                    _blob_id = self._blob_arena.append_text(full_combined)
+                    _memo_text = generate_memo(full_combined) if generate_memo else full_combined[:200]
+                else:
+                    _memo_text = full_combined[:500] + "..." if len(full_combined) > 500 else full_combined
+            except Exception:
+                _memo_text = full_combined[:500] + "..." if len(full_combined) > 500 else full_combined
 
             # 提取关键词
-            keywords = self._extract_keywords(user_msg + " " + asst_msg)[:5]
+            keywords = self._extract_keywords(full_combined[:2000])[:5]
 
-            # 提取实体
-            entities = []
-            for w in keywords:
-                if w and len(w) >= 2:
-                    entities.append(w)
-
-            # 构建 LCM 三级内容
-            level_content = json.dumps({
-                "user_intent": user_msg[:200],
-                "key_findings": [asst_msg[:120]] if asst_msg else [],
-                "conclusion": asst_msg[:200],
-                "compression_level": 1,
-            }, ensure_ascii=False)
-
-            if len(level_content) > 512:
-                level_content = json.dumps({
-                    "user_intent": user_msg[:100],
-                    "conclusion": asst_msg[:150],
-                    "compression_level": 2,
-                }, ensure_ascii=False)
-                if len(level_content) > 512:
-                    level_content = (user_msg[:60] + " → " + asst_msg[:100])[:512]
-
-            # 创建摘要节点
+            # 创建摘要节点（存 memo + blob_id）
             summary_id = f"cog_summ_{session_key}_{int(time.time()*1000)}_{hashlib.md5(group[0].node_id.encode()[:16]).hexdigest()[:6]}"
             summary_node = DAGNode(
                 node_id=summary_id,
                 node_type="cognitive_summary",
                 session_key=session_key,
-                content=f"[认知摘要] {level_content}",
-                tokens=len(level_content) // 4 or 1,
+                content=f"[认知摘要] {_memo_text}",
+                blob_id=_blob_id,
+                tokens=len(_memo_text) // 4 or 1,
                 priority=PriorityLevel.NORMAL,
                 is_summary=True,
                 summary_of_ids=[n.node_id for n in group],
                 timestamp=time.time(),
                 keywords=keywords,
-                entities=entities,
+                entities=keywords[:5],
             )
 
             # 标记原始节点已摘要

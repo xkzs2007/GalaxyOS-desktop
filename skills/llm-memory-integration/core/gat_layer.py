@@ -3,13 +3,9 @@ GAT Layer - 图注意力层
 参考论文: Graph Attention Networks (https://arxiv.org/abs/1710.10903)
 """
 
-import warnings
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
-# Torch 2.12 的 sparse invariant 检查在 C++ 层有 bug（传 check_invariants=False 仍吐警告）
-warnings.filterwarnings("ignore", message=".*Sparse invariant checks are implicitly disabled.*")
 from typing import Optional, Tuple, List, Union
 import numpy as np
 
@@ -197,8 +193,7 @@ class SparseGraphAttentionLayer(nn.Module):
         attention_sparse = torch.sparse_coo_tensor(
             edge_index,
             edge_attention,
-            size=(N, N),
-            check_invariants=False,
+            size=(N, N)
         )
         attention_sparse = torch.sparse.softmax(attention_sparse, dim=1)
         
@@ -477,22 +472,23 @@ class GAT(nn.Module):
         layer_idx: int = 0
     ) -> torch.Tensor:
         """
-        获取注意力权重（用于可视化）
+        获取注意力权重（用于可视化 / 检索排序加权）
+
+        对所有注意力头取平均，而非只返回第一个头。
         
         Args:
-            features: 节点特征
-            adj: 邻接矩阵
+            features: 节点特征 (N, input_dim)
+            adj: 邻接矩阵 (N, N)
             layer_idx: 层索引
             
         Returns:
-            注意力权重矩阵
+            注意力权重矩阵 (N, N)，所有头 softmax 后的平均值
         """
         h = features
         for i, layer in enumerate(self.layers):
             if i == layer_idx:
-                # 获取该层的注意力权重
+                all_attentions = []
                 for att in layer.multi_head.attentions:
-                    # 重新计算注意力
                     Wh = torch.mm(h, att.W)
                     N = h.size(0)
                     Wh1 = Wh.unsqueeze(1).expand(-1, N, -1)
@@ -501,68 +497,12 @@ class GAT(nn.Module):
                     e = att.leaky_relu(torch.matmul(Wh_cat, att.a).squeeze(-1))
                     zero_vec = -9e15 * torch.ones_like(e)
                     attention = torch.where(adj > 0, e, zero_vec)
-                    return F.softmax(attention, dim=1)
+                    all_attentions.append(F.softmax(attention, dim=1))
+                # 平均所有头（而非只取第一个）
+                return torch.stack(all_attentions).mean(dim=0)
             h = layer(h, adj)
         
         return None
-
-
-class SparseGAT(nn.Module):
-    """
-    稀疏 GAT — 用 edge_index 替代稠密 adj
-
-    O(E·d) 而非 O(N²·d), 3078 节点 6372 边只需 ~3MB (稠密要 4.6GB)
-    """
-
-    def __init__(
-        self,
-        input_dim: int,
-        hidden_dim: int,
-        output_dim: int,
-        num_heads: int = 4,
-        num_layers: int = 2,
-        dropout: float = 0.3,
-    ):
-        super().__init__()
-        self.input_dim = input_dim
-        self.hidden_dim = hidden_dim
-        self.output_dim = output_dim
-        self.num_heads = num_heads
-        self.num_layers = num_layers
-
-        self.layers = nn.ModuleList()
-        per_head = hidden_dim  # 每头输出维度
-
-        # 第一层: 每头一个 SparseGraphAttentionLayer, 输出 concat
-        self.layers.append(nn.ModuleList([
-            SparseGraphAttentionLayer(input_dim, per_head, dropout=dropout, concat=True)
-            for _ in range(num_heads)
-        ]))
-
-        # 中间层
-        for _ in range(num_layers - 2):
-            self.layers.append(nn.ModuleList([
-                SparseGraphAttentionLayer(per_head * num_heads, per_head, dropout=dropout, concat=True)
-                for _ in range(num_heads)
-            ]))
-
-        # 输出层（平均多头）
-        if num_layers > 1:
-            self.layers.append(nn.ModuleList([
-                SparseGraphAttentionLayer(per_head * num_heads, output_dim, dropout=dropout, concat=False)
-                for _ in range(num_heads)
-            ]))
-
-    def forward(self, features: torch.Tensor, edge_index: torch.Tensor) -> torch.Tensor:
-        h = features
-        for i, heads in enumerate(self.layers):
-            if len(heads) > 1:
-                h = torch.cat([att(h, edge_index) for att in heads], dim=-1)
-            else:
-                h = heads[0](h, edge_index)
-            if i < len(self.layers) - 1:
-                h = F.elu(h)
-        return h
 
 
 if __name__ == '__main__':

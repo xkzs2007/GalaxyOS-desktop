@@ -472,22 +472,23 @@ class GAT(nn.Module):
         layer_idx: int = 0
     ) -> torch.Tensor:
         """
-        获取注意力权重（用于可视化）
+        获取注意力权重（用于可视化 / 检索排序加权）
+
+        对所有注意力头取平均，而非只返回第一个头。
         
         Args:
-            features: 节点特征
-            adj: 邻接矩阵
+            features: 节点特征 (N, input_dim)
+            adj: 邻接矩阵 (N, N)
             layer_idx: 层索引
             
         Returns:
-            注意力权重矩阵
+            注意力权重矩阵 (N, N)，所有头 softmax 后的平均值
         """
         h = features
         for i, layer in enumerate(self.layers):
             if i == layer_idx:
-                # 获取该层的注意力权重
+                all_attentions = []
                 for att in layer.multi_head.attentions:
-                    # 重新计算注意力
                     Wh = torch.mm(h, att.W)
                     N = h.size(0)
                     Wh1 = Wh.unsqueeze(1).expand(-1, N, -1)
@@ -496,7 +497,9 @@ class GAT(nn.Module):
                     e = att.leaky_relu(torch.matmul(Wh_cat, att.a).squeeze(-1))
                     zero_vec = -9e15 * torch.ones_like(e)
                     attention = torch.where(adj > 0, e, zero_vec)
-                    return F.softmax(attention, dim=1)
+                    all_attentions.append(F.softmax(attention, dim=1))
+                # 平均所有头（而非只取第一个）
+                return torch.stack(all_attentions).mean(dim=0)
             h = layer(h, adj)
         
         return None

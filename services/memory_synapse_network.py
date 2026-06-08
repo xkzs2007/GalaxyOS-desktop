@@ -22,11 +22,8 @@ from typing import Optional, Dict, List, Any, Tuple
 from dataclasses import dataclass, asdict, field
 from enum import Enum
 import hashlib
-import logging
 
 import torch
-
-logger = logging.getLogger(__name__)
 
 # ═══ NLP 模块（可选导入） ═══
 _NLP_AVAILABLE = False
@@ -328,6 +325,8 @@ class SynapseNetwork:
         self._neurons_cache: Dict[str, MemoryNeuron] = {}
         self._synapses_cache: Dict[str, Synapse] = {}
         self._loaded = False
+        # 自动加载已有数据
+        self._load()
     
     def _load(self):
         """加载数据到缓存"""
@@ -443,7 +442,7 @@ class NeuronManager:
             embedding=embedding or [],
             created_at=self.network._get_timestamp(),
             last_activated=self.network._get_timestamp(),
-            activation_count=0,
+            activation_count=1,
             ltc_cell_params=ltc_params,
             ltc_hidden=0.5 + (importance - 0.5) * 0.3,  # 高重要度→初始兴奋度略高
             # NLP metadata
@@ -872,53 +871,6 @@ class MemorySynapseNetwork:
         """查找关联记忆"""
         return self.activation_spreader.find_associated_memories(neuron_id, top_k)
     
-    def find_or_create_neuron(self, content: str, prefix: str = "",
-                               similarity_threshold: float = 0.4) -> MemoryNeuron:
-        """
-        语义匹配查找已有神经元，找不到则创建
-
-        先精确匹配，再 NLP 语义匹配，最后 fallback 创建
-        similarity_threshold: 语义相似度阈值 [0,1], 高于此值视为同一话题
-        """
-        prefixed = f"{prefix} {content}" if prefix else content
-
-        # 1. 精确匹配
-        exact = self.neuron_manager.find_neuron_by_content(prefixed)
-        if exact:
-            return exact
-
-        # 2. 语义相似匹配
-        self.network._load()
-        from memory_synapse_network import _NLP_AVAILABLE
-        if _NLP_AVAILABLE:
-            # 提取 query 特征
-            try:
-                from nlp_integration import get_nlp_integration
-                nlp = get_nlp_integration()
-                q_kw = nlp.extract_memory_keywords(content, top_k=10)
-                q_ent = nlp.extract_memory_entities(content)
-            except Exception:
-                q_kw, q_ent = [], {}
-
-            best_match = None
-            best_score = 0.0
-            for neuron in self.network._neurons_cache.values():
-                a_kw = json.loads(neuron.nlp_keywords) if neuron.nlp_keywords else []
-                if not a_kw:
-                    continue
-                a_ent = json.loads(neuron.nlp_entities) if neuron.nlp_entities else {}
-                sim = self.neuron_manager._nlp_semantic_similarity(a_kw, a_ent, q_kw, q_ent)
-                if sim > best_score:
-                    best_score = sim
-                    best_match = neuron
-
-            if best_match and best_score >= similarity_threshold:
-                logger.debug(f"语义合并神经元: {best_match.id[:30]}... (sim={best_score:.3f})")
-                return best_match
-
-        # 3. 创建新神经元
-        return self.neuron_manager.create_neuron(prefixed)
-
     def apply_decay(self):
         """应用突触衰减"""
         self.synapse_manager.apply_decay_to_all()

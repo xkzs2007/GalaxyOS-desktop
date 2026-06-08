@@ -325,6 +325,8 @@ class SynapseNetwork:
         self._neurons_cache: Dict[str, MemoryNeuron] = {}
         self._synapses_cache: Dict[str, Synapse] = {}
         self._loaded = False
+        # 自动加载已有数据
+        self._load()
     
     def _load(self):
         """加载数据到缓存"""

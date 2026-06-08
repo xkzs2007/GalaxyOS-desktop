@@ -175,45 +175,9 @@ class BioRhythmSleepConsolidator:
             import sys
             sys.path.insert(0, os.path.join(self.workspace,
                 "skills/xiaoyi-claw-omega-final/skills/llm-memory-integration/core"))
-            sys.path.insert(0, os.path.join(self.workspace,
-                "skills/xiaoyi-claw-omega-final/skills/llm-memory-integration/src"))
             from memory_synapse_network import MemorySynapseNetwork
             self._synapse_network = MemorySynapseNetwork(self.workspace)
         return self._synapse_network
-    
-    def _get_cell(self, neuron, cell_cache):
-        """从缓存取或构建 LTCCell（48参数序列化→重建）"""
-        nid = neuron.id[:16]
-        if nid in cell_cache:
-            return cell_cache[nid]
-        params = getattr(neuron, 'ltc_cell_params', None)
-        if not params:
-            return None
-        try:
-            import torch
-            from ncps.torch import LTCCell
-            wirings = params.get('wiring', {})
-            input_sz = wirings.get('input_dim', 2)
-            hidden_sz = wirings.get('hidden_dim', 1)
-            cell = LTCCell(input_sz, hidden_sz)
-            # 恢复权重
-            state_dict = {}
-            for k, v in params.get('state_dict', {}).items():
-                state_dict[k] = torch.tensor(v)
-            if state_dict:
-                cell.load_state_dict(state_dict, strict=False)
-            cell.eval()
-            cell_cache[nid] = cell
-            return cell
-        except Exception:
-            return None
-    
-    def _get_ltc_hidden(self, neuron):
-        """获取神经元 LTC hidden 值，降级到 potential"""
-        h = getattr(neuron, 'ltc_hidden', None)
-        if h is not None:
-            return h
-        return getattr(neuron, 'potential', 0.05)
     
     def _get_ltd_adapter(self):
         import sys
@@ -273,27 +237,13 @@ class BioRhythmSleepConsolidator:
         
         try:
             synapses = network.network._synapses_cache
-            neurons_dict = network._neurons_cache if hasattr(network, '_neurons_cache') else {}
             
-            # 用 P0 LTCCell h_t 选择神经元（两端优先：高活巩固 + 低活救援）
-            _cell_cache = {}
-            syn_scores = []
-            for sid, s in synapses.items():
-                src = neurons_dict.get(s.source_id, None)
-                dst = neurons_dict.get(s.target_id, None)
-                src_h = self._get_ltc_hidden(src) if src else 0.5
-                dst_h = self._get_ltc_hidden(dst) if dst else 0.5
-                # 两端优先：|h - 0.5| 越大越优先
-                src_extreme = abs(src_h - 0.5)
-                dst_extreme = abs(dst_h - 0.5)
-                # 综合分 = 两端极值均值 * 权重
-                score = ((src_extreme + dst_extreme) / 2.0) * s.weight
-                if s.reinforcement_count > 0:
-                    score *= min(1.0 + s.reinforcement_count * 0.1, 2.0)
-                syn_scores.append((score, sid, s))
-            
-            # 按 LTC 极端度排序（高活巩固 + 低活救援）
-            sorted_syns = [s for _, _, s in sorted(syn_scores, key=lambda x: x[0], reverse=True)]
+            # 按最近激活排序，取 top 高频突触
+            sorted_syns = sorted(
+                synapses.values(),
+                key=lambda s: s.reinforcement_count + s.weight * 10,
+                reverse=True
+            )
             
             # SWR 爆发：每波涟漪回放一个 batch
             for burst_idx in range(self.config.swr_ripple_bursts):
@@ -504,81 +454,54 @@ class BioRhythmSleepConsolidator:
             if len(pool) < 2:
                 return stats
             
-            # 生成多个梦境片段——用 CfC 序列预测替代随机组合
-            try:
-                _src_dir = os.path.join(self.workspace,
-                    "skills/xiaoyi-claw-omega-final/skills/llm-memory-integration/src")
-                if _src_dir not in sys.path:
-                    sys.path.insert(0, _src_dir)
-                from neural_pipeline import NeuralMemoryPipeline
-                from cfc_sequence_predictor import CfCSequencePredictor
+            # 生成多个梦境片段
+            for i in range(self.config.generative_fragment_count):
+                # 随机选取 2-4 条记忆作为"梦境碎片"
+                k = random.randint(2, min(4, len(pool)))
+                fragment_sources = random.sample(pool, k)
                 
-                # 初始化神经网络管道（从记忆库加载）
-                _p = NeuralMemoryPipeline(gnn_type="graphsage", aggregator_type="lstm", use_database=True)
-                _p.initialize()
-                
-                # 构建 pool 索引
-                pool_idx = {m.get("id", m["_id_hash"]): m for m in pool}
-                pool_ids = list(pool_idx.keys())
-                
-                # 为每条记忆生成特征（用内容哈希 embedding）
-                _emb_dim = _p.feature_dim
-                id_to_emb = {}
-                for pid in pool_ids:
-                    m = pool_idx[pid]
-                    _h = hashlib.sha256(m.get("content", "").encode()).hexdigest()
-                    _emb = [int(_h[j:j+2], 16)/255.0 for j in range(0, min(_emb_dim*2, len(_h)), 2)]
-                    while len(_emb) < _emb_dim:
-                        _emb.append(0.5)
-                    id_to_emb[pid] = _emb[:_emb_dim]
-                
-                # 记录到激活历史
-                for pid in pool_ids[:10]:
-                    _p.sequence_predictor.record_activation(pid, id_to_emb.get(pid, [0.5]*_emb_dim))
-                
-                # 生成梦境片段：从 sensory-like 记忆出发，predict_next 走叙事链
-                for i in range(self.config.generative_fragment_count):
-                    # 选一个种子（优先级高 or 内容长）
-                    seed = max(pool[:6], key=lambda m: m.get("confidence", 0.5))
-                    seed_id = seed.get("id", seed["_id_hash"])
-                    seed_content = seed.get("content", "")[:200]
+                # 计算组合的新颖度（碎片间的语义距离）
+                # 用关键词重叠率近似
+                try:
+                    import jieba
+                    all_tokens: Set[str] = set()
+                    source_ids: List[str] = []
+                    for mem in fragment_sources:
+                        tokens = set(jieba.lcut(mem["content"][:200]))
+                        all_tokens.update(tokens)
+                        source_ids.append(mem.get("id", mem["_id_hash"]))
                     
-                    # 用 predict_next 走 3 步叙事链
-                    source_ids = [seed_id]
-                    chain_content = seed_content
-                    current_emb = id_to_emb.get(seed_id, [0.5]*_emb_dim)
-                    
-                    for step in range(3):
-                        # 预测下一个
-                        seq_ctx = [id_to_emb.get(pid, [0.5]*_emb_dim) for pid in source_ids[-3:]]
-                        predicted_emb = _p.sequence_predictor.predict_next(seq_ctx)
-                        # 找 cosine 最近的 pool 记忆
-                        best_sid, best_sim = None, 0.3
-                        for pid in pool_ids:
-                            if pid in source_ids:
+                    # 新颖度 = 1 - 碎片间的平均关键词重叠
+                    overlaps = []
+                    for a in fragment_sources:
+                        ta = set(jieba.lcut(a["content"][:200]))
+                        for b in fragment_sources:
+                            if a is b:
                                 continue
-                            e = id_to_emb.get(pid)
-                            if e is None:
+                            tb = set(jieba.lcut(b["content"][:200]))
+                            if not ta or not tb:
                                 continue
-                            import numpy as _np
-                            a = _np.array(predicted_emb, dtype=_np.float32)
-                            b = _np.array(e, dtype=_np.float32)
-                            sim = float(_np.dot(a, b) / (max(_np.linalg.norm(a)*_np.linalg.norm(b), 1e-8)))
-                            if sim > best_sim:
-                                best_sim = sim
-                                best_sid = pid
-                        if best_sid:
-                            source_ids.append(best_sid)
-                            next_m = pool_idx[best_sid]
-                            chain_content += " ... " + next_m.get("content", "")[:80]
+                            j = len(ta & tb) / len(ta | tb) if len(ta | tb) > 0 else 0
+                            overlaps.append(j)
+                    avg_overlap = sum(overlaps) / len(overlaps) if overlaps else 0.5
+                    novelty = 1.0 - avg_overlap + random.uniform(-0.1, 0.1)
+                    novelty = max(0.0, min(1.0, novelty))
                     
-                    # 梦境内容
-                    novelty = max(0.1, min(0.9, 1.0 - len(set(source_ids))/len(pool_ids)))
-                    dream_content = f"梦境链{i+1}: 叙事序列 (来源: {', '.join(source_ids[:4])})"
-                    if novelty < 0.5:
+                    # 情感标签合并
+                    emotions = list(set(m.get("_emotion", "neutral") for m in fragment_sources))
+                    
+                    # 合成梦境内容摘要
+                    dream_content = ""
+                    if novelty < 0.4:
+                        dream_content = f"梦境碎片{i+1}: 重复出现的模式 (来源: {', '.join(source_ids[:3])})"
                         stats["hidden_patterns_found"] += 1
+                    elif novelty < 0.7:
+                        dream_content = f"梦境碎片{i+1}: 碎片重组 (来源: {', '.join(source_ids[:3])})"
+                    else:
+                        dream_content = f"梦境碎片{i+1}: 新奇组合 (来源: {', '.join(source_ids[:3])})"
+                    
+                    # 梦境巩固增益: 新颖度越高，对源记忆的巩固效果越好
                     consolidation_gain = 0.05 + novelty * 0.1
-                    emotions = list(set(pool_idx[sid].get("_emotion", "neutral") for sid in source_ids if sid in pool_idx))
                     
                     fragment = DreamFragment(
                         id=f"dream_{int(time.time())}_{i}",
@@ -589,22 +512,25 @@ class BioRhythmSleepConsolidator:
                         novelty_score=novelty,
                         consolidation_gain=consolidation_gain,
                     )
+                    
                     stats["dream_fragments"] += 1
                     stats["fragments_detail"].append(asdict(fragment))
                     stats["generative_gain"] += consolidation_gain * len(source_ids)
                     
-                    # 回放后强化突触
+                    # 强化源记忆的突触（梦境回放后，源记忆也受益）
                     network = self._get_synapse_network()
                     for sid in source_ids[:3]:
+                        # 找到对应神经元并激活
                         neuron = network.neuron_manager.find_neuron_by_content(
-                            pool_idx.get(sid, {}).get("content", "")[:200]
+                            next((m["content"][:200] for m in fragment_sources if m.get("id") == sid), "")
                         )
                         if neuron:
                             network.neuron_manager.activate_neuron(neuron.id)
+                            # 梦境也创建碎片间的关联
                             for other_sid in source_ids[:3]:
                                 if other_sid != sid:
                                     other_neuron = network.neuron_manager.find_neuron_by_content(
-                                        pool_idx.get(other_sid, {}).get("content", "")[:200]
+                                        next((m["content"][:200] for m in fragment_sources if m.get("id") == other_sid), "")
                                     )
                                     if other_neuron:
                                         try:
@@ -612,31 +538,10 @@ class BioRhythmSleepConsolidator:
                                                                    weight=consolidation_gain)
                                         except Exception:
                                             pass
-            except Exception as _dream_err:
-                # 降级：jieba 随机组合
-                logger.warning(f"CfC 梦境降级到随机组合: {_dream_err}")
-                import jieba as _jieba
-                for i in range(self.config.generative_fragment_count):
-                    k = random.randint(2, min(4, len(pool)))
-                    fragment_sources = random.sample(pool, k)
-                    try:
-                        source_ids = [m.get("id", m["_id_hash"]) for m in fragment_sources]
-                        new = 0.5 + random.uniform(-0.15, 0.15)
-                        consolidation_gain = 0.05 + new * 0.1
-                        emotions = list(set(m.get("_emotion", "neutral") for m in fragment_sources))
-                        dream_content = f"梦境碎片{i+1}: 随机组合 (来源: {', '.join(source_ids[:3])})"
-                        fragment = DreamFragment(
-                            id=f"dream_{int(time.time())}_{i}",
-                            phase="rem_generative",
-                            content=dream_content, source_ids=source_ids,
-                            emotion_tags=emotions, novelty_score=new,
-                            consolidation_gain=consolidation_gain,
-                        )
-                        stats["dream_fragments"] += 1
-                        stats["fragments_detail"].append(asdict(fragment))
-                        stats["generative_gain"] += consolidation_gain
-                    except Exception:
-                        pass
+                
+                except ImportError:
+                    # jieba 不可用时简化处理
+                    stats["dream_fragments"] += 1
             
         except Exception as e:
             stats["error"] = str(e)
@@ -671,47 +576,13 @@ class BioRhythmSleepConsolidator:
         }
         
         try:
-            # 用 P3 EmotionDetector + _emotion_to_valence 替代 _get_emotion_memory
-            emotion_data = []
-            try:
-                _src_dir = os.path.join(self.workspace,
-                    "skills/xiaoyi-claw-omega-final/skills/llm-memory-integration/src")
-                if _src_dir not in sys.path:
-                    sys.path.insert(0, _src_dir)
-                from retrieval_hub import _emotion_to_valence
-                from emotion_memory import EmotionDetector
-                det = EmotionDetector()
-                _verified = Path(self.workspace) / ".learnings" / "verified_memories.jsonl"
-                if _verified.exists():
-                    with open(_verified) as _f:
-                        for _line in _f:
-                            _line = _line.strip()
-                            if not _line:
-                                continue
-                            try:
-                                _m = json.loads(_line)
-                                _c = _m.get("content", "")[:500]
-                                if len(_c) > 10:
-                                    _r = det.detect(_c)
-                                    _label = _r.get("label", "neutral") if isinstance(_r, dict) else "neutral"
-                                    _intensity = _r.get("intensity", 0.5) if isinstance(_r, dict) else 0.5
-                                    emotion_data.append({
-                                        "intensity": _intensity,
-                                        "emotion_label": _label,
-                                        "content": _c,
-                                        "valence": _emotion_to_valence(_label, _intensity),
-                                    })
-                            except Exception:
-                                continue
-            except Exception:
-                pass
+            # 从情感记忆模块读取
+            emotion_mem = self._get_emotion_memory()
             
-            # 降级：用情感记忆模块
-            if not emotion_data:
-                emotion_mem = self._get_emotion_memory()
-                emotion_data = emotion_mem.get_all_memories() if hasattr(emotion_mem, 'get_all_memories') else []
-                if isinstance(emotion_data, dict):
-                    emotion_data = emotion_data.get("memories", [])
+            # 获取所有情感记忆
+            emotion_data = emotion_mem.get_all_memories() if hasattr(emotion_mem, 'get_all_memories') else []
+            if isinstance(emotion_data, dict):
+                emotion_data = emotion_data.get("memories", [])
             
             for mem in emotion_data:
                 stats["emotion_memories_scanned"] += 1
@@ -800,40 +671,7 @@ class BioRhythmSleepConsolidator:
                                 pass
                         
                         confidence = mem.get("confidence", 0.5)
-                        
-                        # 用 P4 AdaptiveForgettingCurve 预测保留率替代固定阈值
-                        _do_migrate = False
-                        try:
-                            sys.path.insert(0, os.path.join(self.workspace,
-                                "skills/xiaoyi-claw-omega-final/skills/llm-memory-integration/core"))
-                            sys.path.insert(0, os.path.join(self.workspace,
-                                "skills/xiaoyi-claw-omega-final/skills/llm-memory-integration/src"))
-                            from adaptive_ltp_ltd import AdaptiveForgettingCurve
-                            _fc = AdaptiveForgettingCurve()
-                            _ds = 0.0
-                            if timestamp:
-                                try:
-                                    _mt = datetime.fromisoformat(timestamp)
-                                    if _mt.tzinfo is None:
-                                        _mt = _mt.replace(tzinfo=timezone.utc)
-                                    _ds = (now - _mt).total_seconds() / 86400
-                                except Exception:
-                                    pass
-                            _pred = _fc.predict_retention(
-                                days_unused=_ds,
-                                recall_count=mem.get("recall_count", 0),
-                                importance=mem.get("importance", 0.3),
-                                current_weight=confidence,
-                            )
-                            _ret = _pred.get("retention", confidence)
-                            # 保留率 < 0.3 紧急迁移，0.3-0.6 正常，>0.6 跳过
-                            if _ret < 0.6:
-                                _do_migrate = True
-                        except Exception:
-                            # 降级原逻辑
-                            _do_migrate = (confidence >= self.config.promote_confidence_threshold)
-                        
-                        if _do_migrate:
+                        if confidence >= self.config.promote_confidence_threshold:
                             candidates.append(mem)
                     except json.JSONDecodeError:
                         continue

@@ -38,8 +38,6 @@ class SourceType(Enum):
     USER_DIRECT = "user_direct"           # 用户直接陈述
     USER_CORRECTION = "user_correction"   # 用户纠正
     AI_INFERENCE = "ai_inference"         # AI 推断
-    AI_JUDGE = "ai_judge"                 # AI 评判（smart_processor 等流程产出）
-    DC_JUDGE = "dc_judge"                 # DynamicConfidence 评判
     EXTERNAL_DOC = "external_doc"         # 外部文档
     WEB_SEARCH = "web_search"             # 网络搜索
     SYSTEM_RULE = "system_rule"           # 系统规则
@@ -127,8 +125,6 @@ class VerifiedMemory:
             SourceType.EXTERNAL_DOC: 0.75,
             SourceType.WEB_SEARCH: 0.70,
             SourceType.AI_INFERENCE: 0.50,
-            SourceType.AI_JUDGE: 0.55,
-            SourceType.DC_JUDGE: 0.55,
             SourceType.UNKNOWN: 0.30,
         }
         source_factor = source_weights.get(self.source, 0.5)
@@ -1006,26 +1002,14 @@ class HallucinationGuard:
         return memory
     
     def _load_memories(self) -> List[VerifiedMemory]:
-        """加载所有记忆（自动跳过非记忆行）"""
+        """加载所有记忆"""
         memories = []
-        if not self.store_path.exists():
-            return memories
+        
         with open(self.store_path, "r", encoding="utf-8") as f:
             for line in f:
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    raw = json.loads(line)
-                except json.JSONDecodeError:
-                    continue
-                # 跳过非记忆行（如 verify/health 等记录型行：有 id 但无 content）
-                if isinstance(raw, dict) and "content" not in raw and raw.get("type") not in ("memory", None, ""):
-                    continue
-                try:
-                    memories.append(VerifiedMemory.from_dict(raw))
-                except Exception:
-                    continue
+                if line.strip():
+                    memories.append(VerifiedMemory.from_dict(json.loads(line)))
+        
         return memories
     
     def _save_memory(self, memory: VerifiedMemory):
