@@ -41,6 +41,8 @@ class SourceType(Enum):
     EXTERNAL_DOC = "external_doc"         # 外部文档
     WEB_SEARCH = "web_search"             # 网络搜索
     SYSTEM_RULE = "system_rule"           # 系统规则
+    AI_JUDGE = "ai_judge"                 # AI 评价（旧数据兼容）
+    DC_JUDGE = "dc_judge"                 # DC 评价（旧数据兼容）
     UNKNOWN = "unknown"                   # 未知来源
 
 
@@ -1002,13 +1004,18 @@ class HallucinationGuard:
         return memory
     
     def _load_memories(self) -> List[VerifiedMemory]:
-        """加载所有记忆"""
+        """加载所有记忆（跳过不兼容行）"""
         memories = []
         
         with open(self.store_path, "r", encoding="utf-8") as f:
             for line in f:
-                if line.strip():
-                    memories.append(VerifiedMemory.from_dict(json.loads(line)))
+                if not line.strip():
+                    continue
+                try:
+                    data = json.loads(line)
+                    memories.append(VerifiedMemory.from_dict(data))
+                except (json.JSONDecodeError, ValueError, TypeError):
+                    continue  # 跳过格式不兼容或枚举值无效的旧数据
         
         return memories
     

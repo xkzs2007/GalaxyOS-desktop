@@ -655,7 +655,8 @@ def check_and_wizard_config(interactive: bool = True, config_only: bool = False)
     heading("📊 知识图谱状态")
     if KG_DB.exists():
         try:
-            conn = sqlite3.connect(str(KG_DB))
+            import sqlite3 as _s3
+            conn = _s3.connect(str(KG_DB))
             ents = conn.execute("SELECT COUNT(*) FROM entities").fetchone()[0]
             edges = conn.execute("SELECT COUNT(*) FROM temporal_edges").fetchone()[0]
             conn.close()
@@ -1151,7 +1152,7 @@ def generate_report(all_results: Dict[str, Any]) -> Dict[str, Any]:
 
     report = {
         "generated": now,
-        "hostname": platform.uname().nodename,
+        "hostname": platform.node(),
         "python": env.get("python", {}),
         "version": get_core_version(),
         "summary": {

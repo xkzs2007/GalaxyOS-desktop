@@ -289,9 +289,8 @@ class XiaoYiClawLLM:
         """初始化 XiaoyiMemoryV2 底层引擎(作为子模块挂入)"""
         try:
             from xiaoyi_memory import XiaoyiMemoryV2
-            # workspace_path: xiaoyi_claw_api.py 在 core/ 下,上层两层是 workspace
-            ws = str(Path(__file__).parent.parent)
-            self.memory_v2 = XiaoyiMemoryV2(workspace_path=ws)
+            # 不传 workspace_path，让 XiaoyiMemoryV2 使用默认路径 ~/.openclaw/workspace
+            self.memory_v2 = XiaoyiMemoryV2()
             logger.info("XiaoyiMemoryV2 初始化成功")
         except Exception as e:
             logger.warning(f"XiaoyiMemoryV2 初始化失败: {e}")
@@ -2690,11 +2689,14 @@ class XiaoYiClawLLM:
                     _sp = trigger.ALL_SKILL_PATHS.get(_skill)
                 except AttributeError:
                     _sp = None
+                
+                _skill_text = ""
                 if _sp:
                     _fp = f"{_ws_path}/skills/{_sp}"
                     try:
                         with open(_fp, 'r', encoding='utf-8') as _f:
                             _smd = _f.read(6000)[:2000]
+                        _skill_text = _smd
                         state.thinking_skills_content.append(
                             f"【{_cn_name}】\n{_smd}"
                         )
@@ -2702,6 +2704,37 @@ class XiaoYiClawLLM:
                         state.thinking_skills_content.append(f"【{_cn_name}】")
                 else:
                     state.thinking_skills_content.append(f"【{_cn_name}】")
+                
+                # ── MemGAS: SkillCompiler 编译 + AssetRegistry 存储 ──
+                if _skill_text and len(_skill_text) > 50:
+                    try:
+                        from skill_compiler import SkillCompiler, compile_skill
+                        from knowledge_asset import get_asset_registry, create_skill_asset
+                        
+                        _reg = get_asset_registry()
+                        _compiled = compile_skill(
+                            _skill_text,
+                            skill_name=_cn_name or _skill.value if hasattr(_skill, 'value') else str(_skill),
+                        )
+                        if _compiled.optimized_text:
+                            # 用编译后的优化文本替换 raw SKILL.md
+                            state.thinking_skills_content[-1] = (
+                                f"【{_cn_name}·编译优化】\n{_compiled.optimized_text[:2000]}"
+                            )
+                        
+                        # 存储到 AssetRegistry
+                        _asset = create_skill_asset(
+                            skill_id=f"skill_compiled_{_skill.value if hasattr(_skill, 'value') else ''}_{int(time.time())}",
+                            raw_content=_skill_text,
+                            capability_profile=_compiled.profile_footprint if hasattr(_compiled, 'profile_footprint') else {},
+                            tags=[_cn_name.split()[0] if ' ' in str(_cn_name) else str(_cn_name)],
+                            category="thinking_skill",
+                        )
+                        _asset.compiled_artifact = _compiled.to_dict() if hasattr(_compiled, 'to_dict') else {}
+                        _reg.register(_asset)
+                        logger.info(f"SkillCompiler: compiled '{_cn_name}' → AssetRegistry")
+                    except Exception as _ce:
+                        logger.debug(f"SkillCompiler/AssetRegistry skip: {_ce}")
 
             # light 预算：标记预算
             if _budget == "light":
