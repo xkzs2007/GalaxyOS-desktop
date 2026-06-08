@@ -1,7 +1,7 @@
 # 🌌 GalaxyOS — 认知增强引擎
 
 > OpenClaw 的开源认知增强引擎，为 AI Assistant 提供记忆、检索、推理、验证、自进化等全套认知能力
-> 版本: v6.2 · 睡眠巩固5阶段 + 对比学习预训练 + SparseGAT + MemGAS熵路由 + GMM记忆关联 + GAT→RRF融合
+> 版本: v6.3 · 睡眠巩固5阶段 + 对比学习预训练 + SparseGAT + MemGAS熵路由 + GMM记忆关联 + GAT→RRF融合
 
 ## 总览
 
@@ -159,7 +159,7 @@ python3 -m services.xiaoyi_claw_api recall --query "查询"
 
 | 版本 | 文件 | 说明 |
 |------|------|------|
-| **v6.2 (最新)** | — | **睡眠巩固(5阶段+CfC+GAT+LTP) + 对比学习预训练 + SparseGAT + MemGAS熵路由/GMM关联 + GAT→RRF融合** |
+| **v6.3 (最新)** | — | **睡眠巩固(5阶段+CfC+GAT+LTP) + 对比学习预训练 + SparseGAT + MemGAS熵路由/GMM关联 + GAT→RRF融合** |
 | **v5.6** | — | **神经检索全链路集成: neural_rerank → ContextEngine assemble + Galaxy Kernel 认知注入 + _content_type 上下文排序** |
 | **v5.5** | `docs/xiaoyi-claw-core-architecture-v5.0.md` | **IntelligentThinkingTrigger v2.0** 三论文集成 + Cognition Forest 子树修正 |
 | **v5.4** | `docs/xiaoyi-claw-core-architecture-v5.0.md` | **KG as Memory Backbone 4 阶段** + 检索通道 + Cognition 图推理 + 睡眠图维护 |
@@ -175,7 +175,7 @@ python3 -m services.xiaoyi_claw_api recall --query "查询"
 
 **完整架构文档（含 15 层全景图、470+ 功能列表、更新日志）：** 👉 [📖 查看 Skills 文档栏](https://cnb.cool/llm-memory-integrat/GalaxyOS?tabValue=SKILLS-ov-file)
 
-### v6.2 新特性
+### v6.3 新特性
 
 | 特性 | 说明 |
 |------|------|

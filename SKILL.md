@@ -1,12 +1,12 @@
 ---
 name: xiaoyi-claw-omega-final
-description: GalaxyOS v6.2 — BlobArena无损存储 + ONNX bge-small-zh中文嵌入 + RetrievalHub 7通道全链路 + ContextEngine neural_rerank + Galaxy Kernel
+description: GalaxyOS v6.3 — BlobArena无损存储 + ONNX bge-small-zh中文嵌入 + RetrievalHub 7通道全链路 + ContextEngine neural_rerank + Galaxy Kernel
 author: xkzs2007
 license: MIT-0
 tags: [architecture, memory, llm, rccam, dag, kora, knowledge-graph, ncps, neural-synapse-network, context-engine, neural-rerank]
 ---
 
-# GalaxyOS v6.2
+# GalaxyOS v6.3
 
 > **定位**: OpenClaw 的核心底层能力引擎
 > **更新时间**: 2026-06-08 07:45
@@ -37,7 +37,7 @@ GalaxyOS是 OpenClaw 的**核心底层能力引擎**，提供：
 
 ---
 
-| **文档版本**: v6.2 | 2026-06-08 07:45 | BlobArena无损存储 + ONNX bge-small-zh-v1.5 中文嵌入 + RetrievalHub 7通道全链路 |
+| **文档版本**: v6.3 | 2026-06-08 07:45 | BlobArena无损存储 + ONNX bge-small-zh-v1.5 中文嵌入 + RetrievalHub 7通道全链路 |
 
 ---
 

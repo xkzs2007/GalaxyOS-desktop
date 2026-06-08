@@ -2,106 +2,23 @@
 
 GalaxyOS 版本变更记录。
 
-## [6.2.0] — 2026-06-08
+## [6.3.0] — 2026-06-08
 
 ### Added
-- **睡眠巩固 v2 (BioRhythmSleepConsolidator)**: NREM→REM→DeepSleep 5阶段，接入 CfC 序列重放 + GAT 注意力权重建梦 + LTP/LTD 自适应调权 + 情感再关联。空闲 120s 自动触发
-- **对比学习预训练 (synapse_pretrain.py)**: GraphCL 风格自监督对比学习，子图采样/特征掩码/边扰动三增强，InfoNCE loss。预训练权重自动加载到 GAT 初始化
-- **SSparseGAT (gat_layer.py)**: O(E·d) 稀疏注意力替代 O(N²·d) 稠密。全量 3078 节点 ~3MB（原 ~20GB OOM）。`use_sparse` 开关默认 True
-- **MemGAS 熵路由 (entropy_router.py)**: 基于香农熵的自适应通道权重分配，低熵通道高权重
-- **GMM 记忆关联 (memory_consolidation.py)**: 高斯混合模型记忆关联，新记忆→accept/reject 聚类→余弦相似度建边
-- **GAT 注意力权重 → RRF 融合**: `forward_with_attention()` 暴露边级注意力，RRF 融合用 GAT 权重增强评分
-
-### [6.1.0] — 2026-06-07
-
-### Added
-- 测试套件：32 文件, 428 用例, 3706 行测试代码
-- CI/CD：4 GitHub Actions workflows (test, lint, security scan)
-- Docker 支持：Dockerfile + docker-compose.yml + .dockerignore
-- 安全加固：.gitleaks.toml + pre-commit hooks + CI 密钥扫描
-- 安装向导增强：services/ 模块检查 + pip 依赖验证 + --test/--deps 模式
-- **SparseGAT** (`gat_layer.py`): O(E·d) 稀疏注意力替代 O(N²·d) 稠密。全量 3078 节点 → ~3MB，原稠密 ~20GB OOM。`use_sparse` 开关默认 True
-- **GAT+CfC 全链路在线**: 因稠密 OOM 降级的 BFS → 恢复 ONNX→jieba→稀疏 GAT→CfC 全链路。3078 节点 43ms 不 OOM
-- 开发工具：Makefile + pyproject.toml (pytest/coverage/ruff/mypy)
-- CONTRIBUTING.md / CHANGELOG.md / docs/API.md
-
-### Fixed
-- **GAT OOM** (`gat_layer.py/gnn_graph_builder.py`): `adj=zeros(3078,3078)` 稠密邻接矩阵 → 4.6GB/head/layer，峰值为 20GB → 新增 `SparseGAT` 用 `edge_index` + 稀疏 softmax，峰值 ~3MB
-- **突触网络读不到数据** (`memory_synapse_network.py`): `__init__` 没调 `_load()`，3078 神经元在缓存空 → 加 `self._load()`
-- **synapse 检索吞错误** (`retrieval_hub.py`): `_do_synapse_fallback` 残留旧代码 + `except:pass` 吞异常 → 重写为直接读 `SynapseNetwork`
+- **MemGAS-SkVM 融合系统全链路实现** — 6 个新建模块 + 5 个现有文件改造
+  - KnowledgeAsset 统一模型 (knowledge_asset.py): Skill+Memory 统一 Asset 模型, BlobArena 持久化, 按 capability/tag/category 查询
+  - MultiGranularity 四粒度提取 (multi_granularity.py): session/turn/summary/keyword 四级表示 + GMM 聚类关联 (sklearn → KMeans → jieba 三级降级)
+  - Capability Registry (capability_registry.py): 26 维 primitive capability Profile + HarnessProfile 自动检测 + ProfileMatcher 适配评分 + SkillClassifier 自动分类
+  - Skill Compiler (skill_compiler.py): 编译流水线 profile_check → env_bind → skill_prune → optimize_text
+  - Code Solidification (cde_solidifier.py): 参数化模板检测 (curl/requests/shell/fetch) → 直接生成可执行脚本, bypass LLM
+  - Concurrency DAG Extractor (concurrency_extractor.py): 步骤拆分 → 依赖检测 → 关键路径 → 并行分组 → speedup 估算
 
 ### Changed
-- God Object 解耦：xiaoyi_claw_api 4529→4291 行
-- 提取 3 个独立模块：_imports.py / rccam_state.py / claw_helpers.py
-- 导入管理：18 个 try/except 统一为 _imports.py
-- 版本号/许可证对齐：setup.py 6.1.0 / MIT
-- 模块数修正：README/SKILL 与实际计数同步
-- README 新增 Docker 快速开始 + 配置模板说明
+- **retrieval_hub.py**: RRF 融合改为 MemGAS 熵权重 (低熵通道×高权重) + 新增第 6 通道 `graph_walk` (PPR 图漫游 + BFS 关联遍历)
+- **intelligent_thinking_trigger.py**: `SKILL_MAPPING` 硬编码字典替换为 ProfileMatcher profile-based 路由, 保留三论文引擎
+- **xiaoyi_claw_api.py**: `_cognition_phase` 走 SkillCompiler 编译 skill + AssetRegistry 注册, 注入 compiled artifact 而非 raw Markdown
+- **claw_worker.py**: 新增 `compile_skill` / `asset_search` / `asset_register` 三个 UDS 方法
+- **dag_context_manager.py**: `add_node` 自动触发四粒度提取 + GMM 关联建边 + `get_assets_for_session` 方法
 
-## [6.1.0-beta] — 2026-06-06
-
-### Added
-- BlobArena v2 mmap 无损存储
-- ONNX bge-small-zh-v1.5 中文嵌入 (512d, ~42ms)
-- RetrievalHub 7 通道全链路
-- MN-RU siliconflow fallback
-- ANNSelector v2 + FAISS 动态索引
-- GNN Graph Builder (GraphSAGE/GAT/GCN)
-
-## [6.0.0] — 2026-05-21
-
-### Added
-- 五路神经检索 → ContextEngine 全链路
-- ncps 神经电路策略集成 (LTC + CfC + 遗忘曲线)
-- memory_synapse_network.py 神经突触网络
-- NLP 增强神经网络 (依存句法/实体链接/指代消解/对比检测)
-- 防幻觉双向闭环 (LTP/LTD + verified_memories)
-- Galaxy Kernel 认知注入 assemble
-- TKG 事件日志系统
-
-## [5.5.0] — 2026-06-05
-
-### Added
-- IntelligentThinkingTrigger v2.0 (RCR-Router + Springdrift + A-ToM)
-- skill_scorer.py RCR-Router 引擎 (28KB)
-- thinking_memory.py Springdrift CBR 层 (14KB)
-- Cognition Forest 子树内容修正
-
-## [5.4.0] — 2026-05-31
-
-### Added
-- KG as Memory Backbone 4 阶段全链路
-- 实体持久化 + 图检索主通道 + Cognition 图推理 + 睡眠图推理
-- 检索通道升级为 6 路并行
-
-## [5.2.0] — 2026-05-25
-
-### Added
-- KoRa v2 行为模式引擎
-- DAG 上下文持久化修复
-
-## [5.1.0] — 2026-05-20
-
-### Added
-- R-CCAM 延迟优化 (问候快速通路 ~24s→0.1s)
-- FLARE 并行化防幻觉验证
-- 安装向导 6 阶段自检
-- 系统品牌更名 GalaxyOS
-- Galaxy Kernel 扩容 (308 行独立后台线程)
-
-## [4.x] — 2026-05
-
-### Added
-- UDS+ZMQ+mmap IPC 三通道
-- Galaxy DAG 三维绑定
-- Cognition Forest 子树复用
-- Merge Gate 合入门禁
-- 人格视觉 + Rails 增强版
-
-## [3.x] — 2026-04
-
-### Added
-- R-CCAM 认知循环
-- 16 层架构
-- ContextEngine 注册
-- DAG 上下文中继
+### Tests
+- **test_memgas_skvm.py**: 35 个测试用例 (KnowledgeAsset 7 + MultiGranularity 7 + CapabilityRegistry 9 + SkillCompiler 4 + CodeSolidifier 5 + ConcurrencyExtractor 5)

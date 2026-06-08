@@ -321,10 +321,78 @@ class DAGContextManager:
                 ))
                 conn.commit()
                 conn.close()
+                # MemGAS: 为长内容创建 KnowledgeAsset（非阻塞）
+                try:
+                    self._create_asset_for_node(node, data)
+                except Exception:
+                    pass
                 return True
             except Exception as e:
                 logger.error(f"添加节点失败: {e}")
                 return False
+    
+    # ── MemGAS: add_node 后，对长内容创建 KnowledgeAsset ──
+    def _create_asset_for_node(self, node: DAGNode, data: dict):
+        """
+        对长内容（>200 字符）创建 KnowledgeAsset，提取多粒度表示并建立关联边。
+        """
+        content = data.get('content', node.content if hasattr(node, 'content') else '')
+        if not content or len(content) < 200:
+            return
+        try:
+            from knowledge_asset import get_asset_registry, create_memory_asset, AssociationEdge
+            from multi_granularity import MultiGranularityExtractor, GMMAssociator
+            
+            _reg = get_asset_registry()
+            _ext = MultiGranularityExtractor()
+            _assoc = GMMAssociator(n_components=5)
+            
+            # 检查是否已创建过
+            _existing = _reg.search(content[:100], top_k=1, type_filter=None)
+            for _ex in _existing:
+                if _ex.raw_content[:100] == content[:100]:
+                    return  # 已注册
+            
+            # 创建资产
+            _asset = create_memory_asset(
+                memory_id=data.get('node_id', node.node_id if hasattr(node, 'node_id') else f"dag_{int(time.time()*1000)}"),
+                raw_content=content[:2000],
+                tags=node.keywords if hasattr(node, 'keywords') and node.keywords else [],
+                category=node.node_type if hasattr(node, 'node_type') else 'dag',
+                source=f"dag_{node.node_type if hasattr(node, 'node_type') else 'unknown'}",
+            )
+            
+            # 多粒度
+            _asset.multi_granularity = _ext.extract(content)
+            
+            # GMM 关联（与已有资产）
+            _existing_texts = [a.raw_content[:500] for a in _reg.list_ids()[:100] if _reg.get(a)]
+            if _existing_texts:
+                _assoc.fit(_existing_texts + [content[:500]])
+                _edges = _assoc.associate(content[:500])
+                for _target_id, _relation, _weight in _edges:
+                    _asset.association_graph.append(
+                        AssociationEdge(
+                            target_asset_id=_target_id,
+                            relation=_relation,
+                            weight=_weight,
+                        )
+                    )
+                    # 双向边
+                    _target_asset = _reg.get(_target_id)
+                    if _target_asset:
+                        _target_asset.association_graph.append(
+                            AssociationEdge(
+                                target_asset_id=_asset.asset_id,
+                                relation=_relation,
+                                weight=_weight,
+                            )
+                        )
+            
+            _reg.register(_asset)
+            logger.debug(f"KnowledgeAsset created for DAG node: {_asset.asset_id}")
+        except Exception as _ae:
+            logger.debug(f"KnowledgeAsset creation skip: {_ae}")
 
     def add_message(
         self,
@@ -2180,6 +2248,148 @@ class DAGContextManager:
 
         results.sort(key=lambda x: x["similarity"], reverse=True)
         return results[:k]
+
+    # ════════════════════════════════════════════════════
+    # MemGAS: KnowledgeAsset 查询
+    # ════════════════════════════════════════════════════
+
+    def get_assets_for_session(self, session_key: str, limit: int = 20) -> List[Dict]:
+        """
+        获取指定 session 在 AssetRegistry 中对应的知识资产。
+        
+        从 DAG 库读取该 session 的长内容节点（>200 字符），
+        在 AssetRegistry 中搜索对应资产并返回。
+        如果资产不存在，即时创建。
+
+        Args:
+            session_key: DAG 会话 key
+            limit: 最大返回资产数
+
+        Returns:
+            [{asset_dict}, ...]
+        """
+        assets = []
+        try:
+            from knowledge_asset import get_asset_registry, create_memory_asset, AssociationEdge, AssetType
+            from multi_granularity import MultiGranularityExtractor, GMMAssociator
+
+            reg = get_asset_registry()
+            extractor = MultiGranularityExtractor()
+            associator = GMMAssociator(n_components=5)
+
+            # 从 DAG 读该 session 的节点
+            nodes = self.get_session_nodes(session_key, limit=limit * 2)
+            if not nodes:
+                # 再试 rccam_nodes
+                try:
+                    with self._lock:
+                        conn = sqlite3.connect(self.db_path)
+                        conn.row_factory = sqlite3.Row
+                        cursor = conn.execute(
+                            "SELECT node_id, content, keywords, node_type, timestamp "
+                            "FROM rccam_nodes WHERE session_key=? "
+                            "ORDER BY timestamp DESC LIMIT ?",
+                            (session_key, limit * 2)
+                        )
+                        rows = [dict(r) for r in cursor.fetchall()]
+                        conn.close()
+                    for row in rows:
+                        content = row.get('content', '') or ''
+                        if len(content) < 200:
+                            continue
+                        content = self.restore_full_content(DAGNode(
+                            node_id=row['node_id'],
+                            node_type=row.get('node_type', 'rccam'),
+                            session_key=session_key,
+                            content=content,
+                            blob_id='',
+                        )) if hasattr(self, 'restore_full_content') else content
+
+                        # 搜索已注册资产
+                        existing = reg.search(content[:100], top_k=1)
+                        if existing:
+                            assets.append(existing[0].to_dict(include_raw=False))
+                        else:
+                            # 创建新资产
+                            asset = create_memory_asset(
+                                memory_id=row['node_id'],
+                                raw_content=content[:2000],
+                                category='rccam',
+                                source=f'rccam_{row.get("node_type", "")}',
+                            )
+                            asset.multi_granularity = extractor.extract(content)
+
+                            # 关联现有资产
+                            all_ids = reg.list_ids()
+                            existing_texts = [
+                                reg.get(aid).raw_content[:500]
+                                for aid in all_ids[:100] if reg.get(aid)
+                            ]
+                            if existing_texts:
+                                associator.fit(existing_texts + [content[:500]])
+                                edges = associator.associate(content[:500])
+                                for target_id, relation, weight in edges:
+                                    asset.association_graph.append(
+                                        AssociationEdge(
+                                            target_asset_id=target_id,
+                                            relation=relation,
+                                            weight=weight,
+                                        )
+                                    )
+
+                            reg.register(asset)
+                            assets.append(asset.to_dict(include_raw=False))
+
+                except Exception as _re:
+                    logger.debug(f"get_assets_for_session rccam: {_re}")
+                return assets[:limit]
+
+            for node in nodes:
+                content = self.restore_full_content(node) if hasattr(self, 'restore_full_content') else node.content
+                if not content or len(content) < 200:
+                    continue
+
+                # 搜索已注册资产
+                existing = reg.search(content[:100], top_k=1)
+                if existing:
+                    assets.append(existing[0].to_dict(include_raw=False))
+                else:
+                    # 创建新资产
+                    asset = create_memory_asset(
+                        memory_id=node.node_id,
+                        raw_content=content[:2000],
+                        tags=node.keywords if hasattr(node, 'keywords') and node.keywords else [],
+                        category=node.node_type if hasattr(node, 'node_type') else 'dag',
+                        source=f'dag_nodes_{node.node_type if hasattr(node, "node_type") else "unknown"}',
+                    )
+                    asset.multi_granularity = extractor.extract(content)
+
+                    # 关联
+                    all_ids = reg.list_ids()
+                    existing_texts = [
+                        reg.get(aid).raw_content[:500]
+                        for aid in all_ids[:100] if reg.get(aid)
+                    ]
+                    if existing_texts:
+                        associator.fit(existing_texts + [content[:500]])
+                        edges = associator.associate(content[:500])
+                        for target_id, relation, weight in edges:
+                            asset.association_graph.append(
+                                AssociationEdge(
+                                    target_asset_id=target_id,
+                                    relation=relation,
+                                    weight=weight,
+                                )
+                            )
+
+                    reg.register(asset)
+                    assets.append(asset.to_dict(include_raw=False))
+
+            return assets[:limit]
+
+        except Exception as e:
+            logger.warning(f"get_assets_for_session failed: {e}")
+            return []
 
     def close(self):
         """关闭资源"""

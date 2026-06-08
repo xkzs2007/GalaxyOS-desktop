@@ -22,6 +22,20 @@ import os, sys, json, logging, time, re, sqlite3, subprocess, threading, math
 from typing import List, Dict, Optional
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+# MemGAS: EntropyRouter for adaptive channel fusion
+try:
+    from entropy_router import EntropyRouter
+    _ENTROPY_ROUTER = EntropyRouter()
+except ImportError:
+    _ENTROPY_ROUTER = None
+
+# MemGAS: AssetRegistry for graph walk
+try:
+    from knowledge_asset import get_asset_registry
+    _HAS_ASSET_REGISTRY = True
+except ImportError:
+    _HAS_ASSET_REGISTRY = False
+
 logger = logging.getLogger(__name__)
 
 # 共享线程池
@@ -669,16 +683,19 @@ def _get_session_start_time() -> float:
 
 def _rrf_merge(all_results: List[List[Dict]], k: int = 10) -> List[Dict]:
     """
-    RRF 融合 v3：混合排名 + 原始语义相似度，时间感知 + 源权重
+    RRF 融合 v4：MemGAS 熵权重融合
+
+    在标准 RRF 基础上，计算各通道的香农熵（低熵→高确定度→高权重），
+    用熵调整权重替代固定 WEIGHT_MAP。
 
     每个源 3-6 条结果，k=10 比 k=60 更合理。
     最终分数 = RRF_rank_score × 0.4 + raw_similarity × 0.6
     确保分数分布在 0~1 范围，而非压扁到 0.03。
 
-    来源权重：
-    - dag_session: ×3.0（会话级上下文，最高优先级）
-    - dag_mini: ×2.5（增量新节点，大概率当前会话）
-    - dag / dag_msg: ×1.5（DAG 向量检索）
+    来源权重继承（作为熵权重的先验）:
+    - dag_session: ×3.0
+    - dag_mini: ×2.5
+    - dag / dag_msg: ×1.5
     - 当前会话内的节点额外 ×1.5
     - 其他: ×1.0
     """
@@ -692,9 +709,37 @@ def _rrf_merge(all_results: List[List[Dict]], k: int = 10) -> List[Dict]:
         'dag_fallback': DAG_BOOST * 0.6,
     }
     
+    # ── MemGAS: 计算各通道的熵 → 熵调整权重 ──
+    channel_scores: Dict[str, List[float]] = {}  # channel_name -> [scores]
+    for results in all_results:
+        for r in results:
+            src = r.get('source', 'unknown')
+            if src not in channel_scores:
+                channel_scores[src] = []
+            inner_score = r.get('score', r.get('_mn_score', 0))
+            if isinstance(inner_score, (int, float)):
+                channel_scores[src].append(inner_score)
+    
+    entropy_adjusted_weights: Dict[str, float] = {}
+    if _ENTROPY_ROUTER is not None and channel_scores:
+        entropies = _ENTROPY_ROUTER.get_entropies(channel_scores)
+        for ch, h in entropies.items():
+            # 低熵高权重: weight = (1 - h) * WEIGHT_MAP + 1.0
+            prior = WEIGHT_MAP.get(ch, 1.0)
+            entropy_adjusted_weights[ch] = (1.0 - h) * prior + 0.5
+    else:
+        # 回退到固定权重
+        for ch, w in WEIGHT_MAP.items():
+            entropy_adjusted_weights[ch] = w
+        for results in all_results:
+            for r in results:
+                src = r.get('source', 'unknown')
+                if src not in entropy_adjusted_weights:
+                    entropy_adjusted_weights[src] = 1.0
+    
     rrf_scores = {}
     item_map = {}
-    raw_scores = {}  # 保留原始相似度
+    raw_scores = {}
     
     for results in all_results:
         for i, r in enumerate(results):
@@ -707,7 +752,7 @@ def _rrf_merge(all_results: List[List[Dict]], k: int = 10) -> List[Dict]:
                 raw_scores[rid] = []
             
             src = r.get('source', 'unknown')
-            weight = WEIGHT_MAP.get(src, 1.0)
+            weight = entropy_adjusted_weights.get(src, 1.0)
             
             # 当前会话提权
             ts = r.get('timestamp', 0)
@@ -1524,6 +1569,95 @@ def _do_paper(query: str, top_k: int) -> list:
     return _r
 
 
+def _do_graph_walk(query: str, top_k: int) -> list:
+    """
+    6. PPR Walk 图漫游通道
+    
+    从 AssetRegistry 加载关联图（KnowledgeAsset association edges），
+    对查询节点执行 Personal PageRank 游走，获取图相关上下文。
+    
+    降级：无 AssetRegistry 时从 DAG 关联表做图漫游。
+    """
+    _r = []
+    try:
+        if not _HAS_ASSET_REGISTRY:
+            return _r
+        
+        registry = get_asset_registry()
+        if registry.count() < 3:
+            logger.debug("graph_walk: AssetRegistry too small")
+            return _r
+        
+        # 1. 用 query 在 registry 中搜索匹配资产
+        import re as _re
+        try:
+            import jieba as _jb
+            _q_words = set(_jb.lcut(query.lower()))
+        except ImportError:
+            _q_words = set(_re.findall(r'[\w\u4e00-\u9fff]+', query.lower()))
+        _q_words = {w for w in _q_words if len(w) >= 2}
+        
+        if not _q_words:
+            return _r
+        
+        # 2. 找匹配度高的种子资产
+        _seed_assets = []
+        for a_id in registry.list_ids():
+            asset = registry.get(a_id)
+            if not asset or not asset.raw_content:
+                continue
+            try:
+                _a_words = set(_jb.lcut(asset.raw_content[:500].lower()))
+            except ImportError:
+                _a_words = set(_re.findall(r'[\w\u4e00-\u9fff]+', asset.raw_content[:500].lower()))
+            _overlap = len(_q_words & _a_words)
+            if _overlap >= max(1, len(_q_words) // 3):
+                _score = _overlap / max(len(_q_words | _a_words), 1)
+                _seed_assets.append((asset, _score))
+        
+        # 3. 从种子资产出发做 PPR（BFS 遍历关联图）
+        _visited = set()
+        _frontier = []
+        for _asset, _score in _seed_assets[:3]:
+            _visited.add(_asset.asset_id)
+            _frontier.append((_asset, _score, 0))
+        
+        _visited_ids: set = set()
+        _ppr_results = []
+        while _frontier and len(_ppr_results) < top_k * 3:
+            _asset, _score, _depth = _frontier.pop(0)
+            if _asset.asset_id in _visited_ids:
+                continue
+            _visited_ids.add(_asset.asset_id)
+            
+            # 衰减权重：深度每 +1 权重 ×0.6
+            _decayed = _score * (0.6 ** _depth)
+            if _decayed > 0.05:
+                _ppr_results.append({
+                    'content': _asset.raw_content[:1000],
+                    'score': round(_decayed, 4),
+                    'source': 'graph_walk',
+                    'asset_id': _asset.asset_id,
+                    'asset_type': _asset.asset_type.value,
+                })
+            
+            # 遍历邻居
+            if _depth < 2:  # 最多 2 跳
+                _neighbors = registry.get_neighbors(_asset.asset_id, max_depth=1)
+                for _n_asset, _n_rel, _n_w in _neighbors:
+                    if _n_asset.asset_id not in _visited:
+                        _visited.add(_n_asset.asset_id)
+                        _frontier.append((_n_asset, _decayed * _n_w, _depth + 1))
+        
+        _r = _ppr_results[:top_k]
+        logger.info(f"  graph_walk: {len(_r)} results (via {len(_seed_assets)} seeds)")
+        return _r
+        
+    except Exception as e:
+        logger.debug(f"  graph_walk skipped: {e}")
+        return _r
+
+
 def _do_cognitive(query: str, top_k: int, session_id: str = "") -> list:
     """7. 认知地图检索（LASAR 三类认知 query + 空间接近性）"""
     _r = []
@@ -2050,8 +2184,10 @@ def retrieval_hub(
         future_map["synapse"] = pool.submit(_do_synapse, effective_query)
         future_map["paper"] = pool.submit(_do_paper, effective_query, top_k)
         future_map["cognitive"] = pool.submit(_do_cognitive, effective_query, top_k, session_id)
+        future_map["graph_walk"] = pool.submit(_do_graph_walk, effective_query, top_k)
     else:
         future_map["cognitive"] = None
+        future_map["graph_walk"] = None
 
     # web 默认关闭：本地记忆（五路）即可满足大部分查询，web 由调用方按需开启
     should_web = False if include_web is None else include_web
@@ -2063,7 +2199,7 @@ def retrieval_hub(
     all_source_results = []
     name_to_results = {}
 
-    for name in ["kg", "local", "dag", "synapse", "paper", "cognitive", "web"]:
+    for name in ["kg", "local", "dag", "synapse", "paper", "cognitive", "graph_walk", "web"]:
         fut = future_map.get(name)
         if fut is None:
             name_to_results[name] = []
@@ -2132,6 +2268,7 @@ def retrieval_hub(
         "synapse": len(name_to_results.get('synapse', [])),
         "paper": len(name_to_results.get('paper', [])),
         "cognitive": len(name_to_results.get('cognitive', [])),
+        "graph_walk": len(name_to_results.get('graph_walk', [])),
         "web": len(name_to_results.get('web', [])),
         "total": sum(len(r) for r in all_source_results),
         "merged": len(merged),
