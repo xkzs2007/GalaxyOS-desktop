@@ -6,12 +6,12 @@
   3. mmap：控制信令 + 状态同步（flock 锁）
 """
 
-import socket as _socket
-import struct
+import socket
 import json
 import time
 import threading
 import os
+import http.client as http_client
 
 _GATEWAY_UDS = os.path.join(
     os.path.expanduser("~/.openclaw/extensions/claw-core/var"),
@@ -27,90 +27,79 @@ _zmq_dealer = None
 _zmq_lock = threading.Lock()
 
 
-class GatewayClient:
-    """连接到 Gateway 三通道，发送反向 RPC 请求"""
-    _sock = None
-    _lock = threading.Lock()
+class _UnixHTTPConn:
+    """Unix Domain Socket HTTP 连接器（用于 http.client 的 connect）"""
+    def __init__(self, uds_path):
+        self._uds_path = uds_path
 
-    # ────────── UDS 通道 ──────────
+    def connect(self):
+        s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        s.connect(self._uds_path)
+        s.settimeout(None)
+        return s
+
+
+class GatewayClient:
+    """连接到 Gateway 三通道，发送反向 RPC 请求
+
+    UDS 通道：HTTP/JSON over Unix Socket
+    ZMQ 通道：DEALER 异步双向
+    mmap 通道：控制信令
+    """
+    _lock = threading.Lock()
+    _http_conn = None
+
+    # ────────── UDS 通道（HTTP/JSON over Unix Socket） ──────────
 
     @classmethod
     def connect_uds(cls, max_retries=3):
         with cls._lock:
-            if cls._sock is not None:
-                try:
-                    cls._sock.sendall(b"")
-                    return True
-                except Exception:
-                    cls._sock = None
+            if not hasattr(socket, 'AF_UNIX'):
+                import sys
+                sys.stderr.write('[gateway-client] AF_UNIX not available, skipping UDS\n')
+                return False
             for i in range(max_retries):
-                # AF_UNIX 守卫：无 Unix socket 环境则直接回退
-                if not hasattr(_socket, 'AF_UNIX'):
-                    import sys
-                    sys.stderr.write('[gateway-client] AF_UNIX not available, skipping UDS\n')
-                    return False
                 try:
-                    sock = _socket.socket(_socket.AF_UNIX, _socket.SOCK_STREAM)
-                    sock.settimeout(3.0)
-                    sock.connect(_GATEWAY_UDS)
-                    sock.settimeout(None)
-                    cls._sock = sock
+                    conn = http_client.HTTPConnection('localhost', 80)
+                    conn.sock = _UnixHTTPConn(_GATEWAY_UDS).connect()
+                    cls._http_conn = conn
                     import sys
-                    sys.stderr.write(f"[gateway-client] UDS connected to {_GATEWAY_UDS}\n")
+                    sys.stderr.write(f'[gateway-client] HTTP over UDS connected to {_GATEWAY_UDS}\n')
                     return True
                 except Exception:
                     if i < max_retries - 1:
                         time.sleep(1.0)
                     continue
-            # TCP 回退：UDS 全失败时尝试 localhost TCP
             import sys
-            try:
-                sock = _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM)
-                sock.settimeout(3.0)
-                sock.connect(('127.0.0.1', 5560))
-                sock.settimeout(None)
-                cls._sock = sock
-                sys.stderr.write('[gateway-client] TCP fallback connected\n')
-                return True
-            except Exception as _e:
-                sys.stderr.write(f'[gateway-client] TCP fallback failed: {_e}\n')
-                return False
+            sys.stderr.write('[gateway-client] UDS connect failed after %d retries\n' % max_retries)
+            return False
 
     @classmethod
     def call(cls, method, params=None, timeout_ms=10000):
-        """通过 UDS 调用 Gateway 方法（同步 JSON-RPC）"""
+        """通过 HTTP over UDS 调用 Gateway 方法"""
         params = params or {}
         req_id = int(time.time() * 1000) % 1000000
-        payload = json.dumps({"id": req_id, "method": method, "params": params}, ensure_ascii=False)
-        data = payload.encode("utf-8")
-        header = struct.pack(">I", len(data))
+        body = json.dumps({"id": req_id, "method": method, "params": params}, ensure_ascii=False)
 
         with cls._lock:
-            if cls._sock is None:
+            if cls._http_conn is None:
                 if not cls.connect_uds():
                     return {"_error": "gateway UDS not connected"}
             try:
-                cls._sock.sendall(header + data)
-                cls._sock.settimeout(timeout_ms / 1000.0)
-                resp_buf = b""
-                while len(resp_buf) < 4:
-                    chunk = cls._sock.recv(4 - len(resp_buf))
-                    if not chunk:
-                        raise ConnectionError("gateway disconnected")
-                    resp_buf += chunk
-                need = struct.unpack(">I", resp_buf[:4])[0]
-                while len(resp_buf) < 4 + need:
-                    chunk = cls._sock.recv(4 + need - len(resp_buf))
-                    if not chunk:
-                        raise ConnectionError("gateway disconnected")
-                    resp_buf += chunk
-                cls._sock.settimeout(None)
-                msg = json.loads(resp_buf[4:4 + need].decode("utf-8"))
+                conn = cls._http_conn
+                conn.request(
+                    'POST', '/',
+                    body=body.encode('utf-8'),
+                    headers={'Content-Type': 'application/json'}
+                )
+                resp = conn.getresponse()
+                data = resp.read()
+                msg = json.loads(data.decode('utf-8'))
                 if "error" in msg:
                     return {"_error": msg["error"]}
                 return msg.get("result", {})
             except Exception as e:
-                cls._sock = None
+                cls._http_conn = None
                 return {"_error": str(e)}
 
     # ────────── 便捷方法（UDS） ──────────

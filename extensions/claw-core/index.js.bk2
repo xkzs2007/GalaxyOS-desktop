@@ -18,7 +18,6 @@ import { spawn, spawnSync, execSync } from "node:child_process";
 import { createInterface } from "node:readline";
 import fs, { existsSync, mkdirSync, chmodSync, unlinkSync, readFileSync, openSync, writeSync, closeSync, readSync, writeFileSync, renameSync } from "node:fs";
 import net from "node:net";
-import http from "node:http";
 
 const TAG = "[claw-core]";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -79,9 +78,20 @@ function registerGatewayMethod(name, handler) {
 }
 
 // ────────── Gateway RPC 帮助函数 ──────────
-// HTTP over UDS: Gateway UDS server 改用 http.createServer
-// _sendUdsResult/_sendUdsError 已废弃，由 HTTP 响应体替代
-
+function _sendUdsResult(conn, id, result) {
+    const rPayload = JSON.stringify({ id, result });
+    const rData = Buffer.alloc(4 + Buffer.byteLength(rPayload));
+    rData.writeUInt32BE(Buffer.byteLength(rPayload), 0);
+    rData.write(rPayload, 4, "utf-8");
+    try { conn.write(rData); } catch (e) {}
+}
+function _sendUdsError(conn, id, error) {
+    const rPayload = JSON.stringify({ id, error });
+    const rData = Buffer.alloc(4 + Buffer.byteLength(rPayload));
+    rData.writeUInt32BE(Buffer.byteLength(rPayload), 0);
+    rData.write(rPayload, 4, "utf-8");
+    try { conn.write(rData); } catch (e) {}
+}
 
 let _gatewayServer = null;
 let _gatewayServerSock = null;
@@ -319,34 +329,45 @@ function startGatewayUdsServer(api, _ws) {
         }
     }
 
-    const server = http.createServer((req, res) => {
-        let body = '';
-        req.on('data', chunk => body += chunk);
-        req.on('end', async () => {
-            try {
-                const rpc = JSON.parse(body);
-                const id = rpc.id;
-                const method = rpc.method || '';
-                const params = rpc.params || {};
-                const handler = _gatewayMethods[method];
-                if (!handler) {
-                    res.writeHead(404, { 'Content-Type': 'application/json' });
-                    res.end(JSON.stringify({ id, error: 'Unknown gateway method: ' + method }));
-                    return;
-                }
-                const result = await handler(params, { req, res });
-                res.writeHead(200, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({ id, result }));
-            } catch (e) {
-                res.writeHead(500, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({ id: null, error: e.message }));
+    const server = net.createServer((conn) => {
+        let buf = Buffer.alloc(0);
+        conn.on("data", (data) => {
+            buf = Buffer.concat([buf, data]);
+            let offset = 0;
+            while (offset + 4 <= buf.length) {
+                const need = buf.readUInt32BE(offset);
+                const total = 4 + need;
+                if (offset + total > buf.length) break;
+                const payload = buf.slice(offset + 4, offset + total).toString("utf-8");
+                offset += total;
+                try {
+                    const req = JSON.parse(payload);
+                    const id = req.id;
+                    const method = req.method || "";
+                    const params = req.params || {};
+                    (async () => {
+                        try {
+                            const handler = _gatewayMethods[method];
+                            if (!handler) {
+                                _sendUdsError(conn, id, `Unknown gateway method: ${method}`);
+                                return;
+                            }
+                            const result = await handler(params, { conn });
+                            _sendUdsResult(conn, id, result);
+                        } catch (e) {
+                            _sendUdsError(conn, id, e.message);
+                        }
+                    })();
+                } catch (e) { /* malformed */ }
             }
+            buf = buf.slice(offset);
         });
+        conn.on("error", () => {});
     });
 
     server.listen(udsPath, () => {
         try { chmodSync(udsPath, 0o600); } catch (e) {}
-        api.logger.info?.(`${TAG} [gateway-uds] HTTP over UDS listening on ${udsPath} (${Object.keys(_gatewayMethods).length} methods registered)`);
+        api.logger.info?.(`${TAG} [gateway-uds] listening on ${udsPath} (${Object.keys(_gatewayMethods).length} methods registered)`);
     });
 
     _gatewayServer = server;
@@ -625,8 +646,9 @@ class ClawWorkerClient {
     constructor(workspace, id) {
         this.id = id || 'worker:default';
         this.workspace = workspace;
-        this.client = null;          // HTTP mode: null (每次 call 新建连接)
+        this.client = null;
         this.pending = new Map();
+        this._buf = Buffer.alloc(0);
         this._nextId = 1;
         this._ready = false;
         this._fails = 0;
@@ -635,7 +657,6 @@ class ClawWorkerClient {
         this._startPromise = null;
         this._reconnectTimer = null;
         this._udsPath = getUdsPath();
-        this._udsMode = null;        // 'http' | 'raw' | null
     }
 
     async start() {
@@ -652,83 +673,107 @@ class ClawWorkerClient {
         }
     }
 
-    // === HTTP over UDS (替换原始二进制协议) ===
-
-    async _httpCall(method, params, timeoutMs) {
-        const id = this._nextId++;
-        const body = JSON.stringify({ id, method, params });
-        return new Promise((resolve, reject) => {
-            const req = http.request({
-                socketPath: this._udsPath,
-                path: '/',
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Content-Length': Buffer.byteLength(body),
-                },
-                timeout: timeoutMs,
-            }, (res) => {
-                let data = '';
-                res.on('data', chunk => data += chunk);
-                res.on('end', () => {
-                    try {
-                        const msg = JSON.parse(data);
-                        if (msg.event === 'ready') { this._ready = true; this._fails = 0; }
-                        if (msg.error) reject(new Error(typeof msg.error === 'string' ? msg.error : JSON.stringify(msg.error)));
-                        else resolve(msg.result);
-                    } catch (e) { reject(new Error('HTTP parse: ' + e.message)); }
-                });
-            });
-            req.on('error', (err) => { this._udsMode = null; reject(err); });
-            req.on('timeout', () => { req.destroy(); reject(new Error('HTTP timeout: ' + method)); });
-            req.write(body);
-            req.end();
-        });
+    _recv(buf) {
+        let offset = 0;
+        while (offset + 4 <= buf.length) {
+            const need = buf.readUInt32BE(offset);
+            const total = 4 + need;
+            if (offset + total > buf.length) break;
+            const payload = buf.slice(offset + 4, offset + total).toString("utf-8");
+            offset += total;
+            try {
+                const msg = JSON.parse(payload);
+                if (msg.event === "ready") {
+                    this._ready = true;
+                    this._fails = 0;
+                }
+                if (msg.id !== undefined && msg.id !== null) {
+                    const resolver = this.pending.get(msg.id);
+                    if (resolver) {
+                        this.pending.delete(msg.id);
+                        resolver(msg);
+                    }
+                }
+            } catch (e) {}
+        }
+        return buf.slice(offset);
     }
 
     async _doStart() {
         this._cleanup();
-        await this._tryUdsOrSpawn(0);
+
+        // 尝试 UDS → 失败后 spawn(双模自适应:有 supervisor 就走 UDS,没有就 self-contained)
+        await this._tryUdsOrSpawn(/*attempt=*/0);
     }
 
     async _tryUdsOrSpawn(attempt) {
+        // 先试 UDS(只试一次,不浪费轮次)
         try {
             await this._connectUdsDirect();
             return;
         } catch (e) {
-            process.stderr.write(TAG + ' [UDS] connect attempt ' + (attempt+1) + ' failed: ' + e.message + '\n');
+            process.stderr.write(`${TAG} [UDS] connect attempt ${attempt+1} failed: ${e.message}\n`);
         }
+
+        // UDS 失败后短等一次(给 supervisor 重启 Worker 的时间)
         if (attempt < 1) {
-            await new Promise((r) => setTimeout(r, 2000).unref());
+            await new Promise((r) => setTimeout(r, 2000, /*unref*/).unref());
             return this._tryUdsOrSpawn(attempt + 1);
         }
-        process.stderr.write(TAG + ' [UDS] ' + (attempt+1) + ' attempts failed, spawning Worker...\n');
+
+        // UDS 全失败 → spawn Worker(自包含模式,无需 supervisor)
+        process.stderr.write(`${TAG} [UDS] ${attempt+1} attempts failed, spawning Worker...\n`);
         return new Promise((resolve, reject) => this._reconnectViaSpawn(resolve, reject));
     }
 
     async _connectUdsDirect() {
         return new Promise((resolve, reject) => {
             const sock = net.createConnection(this._udsPath, () => {
-                sock.write('POST / HTTP/1.1\r\nHost: localhost\r\nContent-Length: 0\r\n\r\n');
-                let resp = '';
-                sock.on('data', (d) => {
-                    resp += d.toString();
-                    if (resp.includes('HTTP/1.1') || resp.includes('HTTP/1.0')) {
-                        this._udsMode = 'http';
-                        sock.destroy();
-                        this._ready = true;
-                        process.stderr.write(TAG + ' [UDS] HTTP over UDS mode\n');
-                        resolve();
+                this.client = sock;
+                this._buf = Buffer.alloc(0);
+                sock.on("data", (data) => {
+                    this._buf = Buffer.concat([this._buf, data]);
+                    this._buf = this._recv(this._buf);
+                });
+                sock.on("error", (err) => {
+                    process.stderr.write(`${TAG} [UDS] error: ${err.message}\n`);
+                });
+                sock.on("close", () => {
+                    this._ready = false;
+                    for (const [id, resolver] of this.pending) {
+                        this.pending.delete(id);
+                        resolver({ id, error: "UDS connection closed" });
                     }
                 });
-                setTimeout(() => {
-                    this._udsMode = null;
+                this._ready = true;
+                this.ping().then((r) => {
+                    if (r && r.ok !== false) {
+                        process.stderr.write(`${TAG} [UDS] connected to Worker\n`);
+                        resolve();
+                    } else {
+                        this._ready = false;
+                        this.client = null;
+                        sock.destroy();
+                        reject(new Error("UDS ping failed"));
+                    }
+                }).catch(() => {
+                    this._ready = false;
+                    this.client = null;
                     sock.destroy();
-                    reject(new Error('UDS probe: no HTTP response, fallback'));
-                }, 3000).unref();
+                    reject(new Error("UDS ping timeout"));
+                });
             });
-            sock.on('error', (err) => reject(err));
-            setTimeout(() => reject(new Error('UDS connect timeout')), 3000).unref();
+
+            sock.on("error", (err) => {
+                reject(new Error(`UDS connect: ${err.message}`));
+            });
+
+            setTimeout(() => {
+                if (!this.client) {
+                    sock.destroy();
+                    reject(new Error("UDS connect timeout"));
+                }
+            }, 3000).unref();
         });
     }
 
@@ -737,93 +782,181 @@ class ClawWorkerClient {
             this._cleanup();
             this.proc = spawn(_pythonBin, [WORKER_SCRIPT], {
                 cwd: this.workspace,
-                env: { ...process.env, PYTHONIOENCODING: 'utf-8', OPENCLAW_WORKSPACE: this.workspace, WORKER_UDS: '1', WORKER_ID: this.id },
-                stdio: ['pipe', 'pipe', 'pipe'],
+                env: { ...process.env, PYTHONIOENCODING: "utf-8", OPENCLAW_WORKSPACE: this.workspace, WORKER_UDS: "1", WORKER_ID: this.id },
+                stdio: ["pipe", "pipe", "pipe"],
             });
+
             let settled = false;
             const settle = (fn, arg) => { if (!settled) { settled = true; fn(arg); } };
-            const timeout = setTimeout(() => settle(reject, new Error('Worker start timeout (10s)')), 10000);
-            this.proc.on('exit', (code, signal) => { this._ready = false; clearTimeout(timeout); settle(reject, new Error('Worker exited (code=' + code + ', signal=' + signal + ')')); });
-            this.proc.on('error', (err) => { clearTimeout(timeout); settle(reject, new Error('Worker spawn error: ' + err.message)); });
-            this.proc.stderr.on('data', (data) => { const text = data.toString().trim(); if (text) process.stderr.write(TAG + ' [worker stderr] ' + text + '\n'); });
+            const timeout = setTimeout(() => {
+                settle(reject, new Error("Worker start timeout (10s)"));
+            }, 10000);
+
+            this.proc.on("exit", (code, signal) => {
+                this._ready = false;
+                clearTimeout(timeout);
+                settle(reject, new Error(`Worker exited (code=${code}, signal=${signal})`));
+            });
+            this.proc.on("error", (err) => {
+                clearTimeout(timeout);
+                settle(reject, new Error(`Worker spawn error: ${err.message}`));
+            });
+
+            this.proc.stderr.on("data", (data) => {
+                const text = data.toString().trim();
+                if (text) process.stderr.write(`${TAG} [worker stderr] ${text}\n`);
+            });
+
+            // 等 ready 后立即切 UDS
             this._rl = createInterface({ input: this.proc.stdout, crlfDelay: Infinity });
-            this._rl.on('line', (line) => {
+
+            this._rl.on("line", (line) => {
                 if (!line.trim()) return;
                 try {
                     const msg = JSON.parse(line.trim());
-                    if (msg.event === 'ready') {
-                        clearTimeout(timeout); this._ready = true; this._fails = 0;
-                        process.stderr.write(TAG + ' [spawn] Worker ready (pid=' + msg.pid + '), using stdin RPC\n');
+                    if (msg.event === "ready") {
+                        clearTimeout(timeout);
+                        this._ready = true;
+                        this._fails = 0;
+                        // 收到 ready 后直接用 stdin/stdout(不浪费时间重连 UDS)
+                        process.stderr.write(`${TAG} [spawn] Worker ready (pid=${msg.pid}), using stdin RPC\n`);
                         settle(resolve, undefined);
                     }
+                    // 也处理旧 JSON-RPC 响应
                     if (msg.id !== undefined && msg.id !== null) {
                         const resolver = this.pending.get(msg.id);
-                        if (resolver) { this.pending.delete(msg.id); resolver(msg); }
+                        if (resolver) {
+                            this.pending.delete(msg.id);
+                            resolver(msg);
+                        }
                     }
                 } catch (e) {}
             });
+
         } catch (e) {
-            reject(new Error('Worker spawn failed: ' + e.message));
+            reject(new Error(`Worker spawn failed: ${e.message}`));
         }
     }
 
-    async call(method, params, timeoutMs) {
-        if (params === undefined) params = {};
-        if (timeoutMs === undefined) timeoutMs = 30000;
-        if (!this._ready) await this.start();
-        if (this._udsMode === 'http') {
-            return this._httpCall(method, params, timeoutMs);
-        }
-        const id = this._nextId++;
+    async _connectUds(udsPath) {
         return new Promise((resolve, reject) => {
-            const timer = setTimeout(() => { this.pending.delete(id); reject(new Error('Worker call timeout: ' + method)); }, timeoutMs);
+            const sock = net.createConnection(udsPath, () => {
+                this._cleanupSocket();
+                this.client = sock;
+                this._buf = Buffer.alloc(0);
+                sock.on("data", (data) => {
+                    this._buf = Buffer.concat([this._buf, data]);
+                    this._buf = this._recv(this._buf);
+                });
+                sock.on("error", (err) => process.stderr.write(`${TAG} [UDS] error: ${err.message}\n`));
+                sock.on("close", () => { this._ready = false; });
+                resolve();
+            });
+            sock.on("error", (err) => {
+                reject(err);
+            });
+            setTimeout(() => reject(new Error("UDS connect timeout")), 3000).unref();
+        });
+    }
+
+    async _udsSend(data) {
+        // 先尝试 UDS(有连接就走 UDS)
+        if (this.client && this.client.writable && this._ready) {
+            try {
+                return await new Promise((resolve, reject) => {
+                    this.client.write(data, (err) => {
+                        if (err) reject(err);
+                        else resolve();
+                    });
+                });
+            } catch (e) {
+                process.stderr.write(`${TAG} [UDS] write failed, falling to stdin: ${e.message}\n`);
+            }
+        }
+        // 退回到 stdin(spawn 模式,Worker 支持原始 JSON-RPC 行协议)
+        if (this.proc && this.proc.stdin && this.proc.stdin.writable) {
+            try {
+                const msgLen = data.readUInt32BE(0);
+                const jsonLine = data.toString("utf-8", 4, 4 + msgLen);
+                this.proc.stdin.write(jsonLine + "\n");
+            } catch (e) {
+                this.proc.stdin.write(data.toString().trim() + "\n");
+            }
+        }
+    }
+
+    async call(method, params = {}, timeoutMs = 30000) {
+        if (!this._ready) await this.start();
+        const id = this._nextId++;
+        const payload = JSON.stringify({ id, method, params });
+        const data = Buffer.alloc(4 + Buffer.byteLength(payload));
+        data.writeUInt32BE(Buffer.byteLength(payload), 0);
+        data.write(payload, 4, "utf-8");
+
+        return new Promise((resolve, reject) => {
+            const timer = setTimeout(() => {
+                this.pending.delete(id);
+                reject(new Error(`Worker call timeout: ${method}`));
+            }, timeoutMs);
             this.pending.set(id, (msg) => {
                 clearTimeout(timer);
-                if (msg.error) reject(new Error(typeof msg.error === 'string' ? msg.error : JSON.stringify(msg.error)));
-                else resolve(msg.result);
+                if (msg.error) {
+                    reject(new Error(typeof msg.error === "string" ? msg.error : JSON.stringify(msg.error)));
+                } else {
+                    resolve(msg.result);
+                }
             });
             try {
-                const line = JSON.stringify({ id, method, params }) + '\n';
-                if (this.proc && this.proc.stdin && this.proc.stdin.writable) {
-                    this.proc.stdin.write(line);
-                } else {
-                    this.pending.delete(id); clearTimeout(timer);
-                    reject(new Error('Worker not connected'));
-                }
+                this._udsSend(data);
             } catch (e) {
-                this.pending.delete(id); clearTimeout(timer);
-                reject(new Error('Worker send failed: ' + e.message));
+                this.pending.delete(id);
+                clearTimeout(timer);
+                reject(new Error(`Worker send failed: ${e.message}`));
             }
         });
     }
 
     async ping() {
-        try { return await this.call('ping', {}, 5000); }
+        try { return await this.call("ping", {}, 5000); }
         catch (e) { return { ok: false, error: e.message }; }
     }
 
     stop() {
         this._shutdown = true;
-        try { this.call('shutdown', {}, 1000).catch(() => {}); } catch (e) {}
-        setTimeout(() => { this._cleanup(); }, 1500).unref();
+        try {
+            this.call("shutdown", {}, 1000).catch(() => {});
+        } catch (e) {}
+        setTimeout(() => {
+            this._cleanup();
+        }, 1500).unref();
+    }
+
+    _cleanupSocket() {
+        if (this.client) {
+            try { this.client.destroy(); } catch (e) {}
+            this.client = null;
+        }
+        this._buf = Buffer.alloc(0);
     }
 
     _cleanup() {
-        if (this.client) { try { this.client.destroy(); } catch (e) {} this.client = null; }
-        if (this._rl) { try { this._rl.close(); } catch (e) {} this._rl = null; }
+        this._cleanupSocket();
+        if (this._rl) {
+            try { this._rl.close(); } catch (e) {}
+            this._rl = null;
+        }
         if (this.proc) {
-            try { this.proc.stdin?.end(); this.proc.kill('SIGTERM'); } catch (e) {}
-            setTimeout(() => { try { this.proc?.kill('SIGKILL'); } catch (e) {} }, 2000).unref();
+            try { this.proc.kill(); } catch (e) {}
             this.proc = null;
         }
-        if (this._reconnectTimer) { clearTimeout(this._reconnectTimer); this._reconnectTimer = null; }
         this._ready = false;
-        for (const [id, resolver] of this.pending) { resolver({ id, error: 'Worker stopped' }); }
+        for (const [id, resolver] of this.pending) {
+            resolver({ id, error: "Worker stopped" });
+        }
         this.pending.clear();
     }
 
     get ready() { return this._ready; }
-
 }
 
 function runClawScript(workspace, action, args, timeoutMs = 20000) {

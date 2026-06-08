@@ -122,54 +122,44 @@ class _GatewayProxy:
         status = gateway.mmap_read()  # mmap 直接读，不走 UDS
     """
     def __init__(self):
-        self._sock = None
+        self._conn = None
         self._id = 0
 
-    def _connect(self):
-        if self._sock is not None:
-            return
-        try:
-            import socket
-            s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-            s.settimeout(3.0)
-            s.connect(_GATEWAY_UDS_PATH)
-            self._sock = s
-        except Exception as e:
-            raise RuntimeError(f"Gateway UDS connect failed: {e}")
+    def _get_conn(self):
+        """获取或创建 HTTP over UDS 连接"""
+        if self._conn is not None:
+            return self._conn
+        import http.client
+        class _UnixHTTPConn(http.client.HTTPConnection):
+            def __init__(self, path):
+                self._uds_path = path
+                super().__init__('localhost')
+            def connect(self):
+                import socket
+                self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+                self.sock.settimeout(10.0)
+                self.sock.connect(self._uds_path)
+        self._conn = _UnixHTTPConn(_GATEWAY_UDS_PATH)
+        return self._conn
 
     def _call(self, method, params=None, timeout=10.0):
-        """同步 UDS 调用"""
+        """HTTP over UDS 调用"""
         if params is None:
             params = {}
         self._id += 1
         req = {"id": self._id, "method": method, "params": params}
-        payload = json.dumps(req, ensure_ascii=False).encode("utf-8")
+        body = json.dumps(req, ensure_ascii=False).encode('utf-8')
         try:
-            self._connect()
-            header = struct.pack(">I", len(payload))
-            self._sock.sendall(header + payload)
-            # 读回复
-            buf = b""
-            while len(buf) < 4:
-                chunk = self._sock.recv(4096)
-                if not chunk:
-                    break
-                buf += chunk
-            if len(buf) < 4:
-                return {"error": "no response"}
-            need = struct.unpack(">I", buf[:4])[0]
-            resp_buf = buf[4:]
-            while len(resp_buf) < need:
-                chunk = self._sock.recv(4096)
-                if not chunk:
-                    break
-                resp_buf += chunk
-            resp = json.loads(resp_buf[:need].decode("utf-8"))
-            if "error" in resp:
-                raise RuntimeError(f"Gateway RPC error: {resp['error']}")
-            return resp.get("result")
+            conn = self._get_conn()
+            conn.request('POST', '/', body=body, headers={'Content-Type': 'application/json', 'Content-Length': str(len(body))})
+            resp = conn.getresponse()
+            data = resp.read()
+            result = json.loads(data.decode('utf-8'))
+            if 'error' in result and result.get('error'):
+                raise RuntimeError(f"Gateway RPC error: {result.get('error')}")
+            return result.get('result')
         except Exception as e:
-            self._sock = None  # 断线，下次重建
+            self._conn = None  # 断线，下次重建
             raise RuntimeError(f"Gateway call '{method}' failed: {e}")
 
     def __getattr__(self, name):
@@ -1470,86 +1460,58 @@ def _init_methods(worker):
 # 三通道服务端
 # ============================================================
 
-def _uds_handle(conn, methods_map):
-    """处理单条 UDS 连接：4字节大端长度前缀 + JSON"""
-    buf = b""
-    try:
-        while True:
-            data = conn.recv(4096)
-            if not data:
-                break
-            buf += data
-            while len(buf) >= 4:
-                need = struct.unpack(">I", buf[:4])[0]
-                total = 4 + need
-                if len(buf) < total:
-                    break
-                payload = buf[4:total].decode("utf-8")
-                buf = buf[total:]
-                try:
-                    req = json.loads(payload)
-                except json.JSONDecodeError as e:
-                    _uds_send(conn, {"error": f"invalid JSON: {e}", "id": None})
-                    continue
-                req_id = req.get("id")
-                method = req.get("method", "")
-                params = req.get("params", {})
-                if method not in methods_map:
-                    _uds_send(conn, {"id": req_id, "error": f"unknown method: {method}"})
-                    continue
-                t0 = time.time()
-                try:
-                    result = methods_map[method](params)
-                    elapsed = round((time.time() - t0) * 1000, 1)
-                    _uds_send(conn, {"id": req_id, "result": result, "timing_ms": elapsed})
-                except Exception as e:
-                    tb = traceback.format_exc()
-                    _uds_send(conn, {
-                        "id": req_id, "error": str(e),
-                        "traceback": tb[-600:] if len(tb) > 600 else tb
-                    })
-    except Exception:
-        pass
-    finally:
-        try:
-            conn.close()
-        except Exception:
+def _uds_server_thread(methods_map):
+    """HTTP/JSON over Unix socket 服务端"""
+    import http.server
+    import socketserver
+
+    class _Handler(http.server.BaseHTTPRequestHandler):
+        def do_POST(self):
+            length = int(self.headers.get('Content-Length', 0))
+            body = self.rfile.read(length).decode('utf-8')
+            try:
+                req = json.loads(body)
+            except json.JSONDecodeError:
+                self._respond(400, {"error": "invalid JSON"})
+                return
+            req_id = req.get("id")
+            method = req.get("method", "")
+            params = req.get("params", {})
+            if method not in methods_map:
+                self._respond(404, {"id": req_id, "error": f"unknown method: {method}"})
+                return
+            t0 = time.time()
+            try:
+                result = methods_map[method](params)
+                elapsed = round((time.time() - t0) * 1000, 1)
+                self._respond(200, {"id": req_id, "result": result, "timing_ms": elapsed})
+            except Exception as e:
+                tb = traceback.format_exc()
+                self._respond(500, {"id": req_id, "error": str(e), "traceback": tb[-600:] if len(tb) > 600 else tb})
+        def _respond(self, status, data):
+            body = json.dumps(data, ensure_ascii=False).encode('utf-8')
+            self.send_response(status)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Content-Length', str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        def log_message(self, format, *args):
             pass
 
+    class _UDSServer(socketserver.ThreadingUnixStreamServer):
+        allow_reuse_address = True
+        daemon_threads = True
 
-def _uds_send(conn, msg):
-    """通过 UDS 发送 JSON 响应（4字节大端长度前缀）"""
-    payload = json.dumps(msg, ensure_ascii=False)
-    data = payload.encode("utf-8")
-    header = struct.pack(">I", len(data))
-    try:
-        conn.sendall(header + data)
-    except Exception:
-        pass
-
-
-def _uds_server_thread(methods_map):
-    """UDS 服务端线程：接收连接，为每个连接开处理线程"""
     try:
         os.unlink(UDS_PATH)
     except FileNotFoundError:
         pass
     os.makedirs(os.path.dirname(UDS_PATH), exist_ok=True)
-    server = _socket.socket(_socket.AF_UNIX, _socket.SOCK_STREAM)
-    server.setsockopt(_socket.SOL_SOCKET, _socket.SO_REUSEADDR, 1)
-    server.bind(UDS_PATH)
-    server.listen(5)
+    server = _UDSServer(UDS_PATH, _Handler)
     os.chmod(UDS_PATH, 0o600)
-    sys.stderr.write(f"[claw-worker] UDS listening on {UDS_PATH}\n")
+    sys.stderr.write(f"[claw-worker] HTTP UDS listening on {UDS_PATH}\n")
     while not _shutdown_flag:
-        try:
-            conn, _ = server.accept()
-            t = threading.Thread(target=_uds_handle, args=(conn, methods_map), daemon=True)
-            t.start()
-        except Exception:
-            if _shutdown_flag:
-                break
-            time.sleep(0.1)
+        server.handle_request()
     server.close()
 
 
