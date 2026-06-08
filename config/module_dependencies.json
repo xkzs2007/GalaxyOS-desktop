@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "total_modules": 128,
+  "total_modules": 134,
   "layers": {
     "L1_memory_core": 11,
     "L2_retrieval": 12,
@@ -13,7 +13,8 @@
     "L9_session": 3,
     "L10_persona": 7,
     "L11_nlp": 2,
-    "L12_integration": 49
+    "L12_integration": 49,
+    "L13_memgas_skvm": 6
   },
   "modules": {
     "sqlite_vec": {
@@ -1506,7 +1507,7 @@
         "crag_pipeline",
         "hybrid_search",
         "skill_coordinator"
-],
+      ],
       "external_deps": [],
       "provides": [
         "FullIntegration",
@@ -1542,7 +1543,7 @@
       ],
       "file": "skills/llm-memory-integration/core/multimodal_search.py"
     },
-      "tencentdb_memory": {
+    "tencentdb_memory": {
       "description": "腾讯云记忆插件集成 (TencentDB Memory Integration)",
       "depends_on": [],
       "external_deps": [],
@@ -1558,7 +1559,7 @@
         "get_scene_block",
         "get_persona"
       ]
-},
+    },
     "llm_client": {
       "description": "LLM Client - LLM 客户端封装",
       "depends_on": [
@@ -2458,6 +2459,79 @@
         "_check_backup_needed"
       ],
       "file": "skills/llm-memory-integration/core/heartbeat_task_executor.py"
+    },
+    "knowledge_asset": {
+      "description": "MemGAS-SkVM: 统一KowledgeAsset模型 + AssetRegistry",
+      "depends_on": [
+        "blob_arena"
+      ],
+      "external_deps": [],
+      "provides": [
+        "KnowledgeAsset",
+        "AssetRegistry",
+        "to_blob",
+        "from_blob"
+      ],
+      "file": "GalaxyOS/services/knowledge_asset.py"
+    },
+    "multi_granularity": {
+      "description": "MemGAS: 四粒度提取 + GMM聚类关联",
+      "depends_on": [],
+      "external_deps": [
+        "jieba"
+      ],
+      "provides": [
+        "MultiGranularityExtractor",
+        "GMMAssociator",
+        "GranularityPipeline"
+      ],
+      "file": "GalaxyOS/services/multi_granularity.py"
+    },
+    "capability_registry": {
+      "description": "SkVM: 26维primitive capability profile + ProfileMatcher",
+      "depends_on": [],
+      "external_deps": [],
+      "provides": [
+        "CapabilityProfile",
+        "HarnessProfile",
+        "ProfileMatcher",
+        "SkillClassifier",
+        "RegistryManager"
+      ],
+      "file": "GalaxyOS/services/capability_registry.py"
+    },
+    "skill_compiler": {
+      "description": "SkVM: 编译流水线 profile_check→env_bind→skill_prune→optimize",
+      "depends_on": [
+        "capability_registry"
+      ],
+      "external_deps": [],
+      "provides": [
+        "SkillCompiler",
+        "CompiledArtifact"
+      ],
+      "file": "GalaxyOS/services/skill_compiler.py"
+    },
+    "cde_solidifier": {
+      "description": "SkVM: Code Solidification, 参数模板→可执行脚本",
+      "depends_on": [],
+      "external_deps": [],
+      "provides": [
+        "CodeSolidifier",
+        "detect_templates",
+        "solidify"
+      ],
+      "file": "GalaxyOS/services/cde_solidifier.py"
+    },
+    "concurrency_extractor": {
+      "description": "SkVM: 并发DAG抽取 + 关键路径 + 并行分组",
+      "depends_on": [],
+      "external_deps": [],
+      "provides": [
+        "ConcurrencyExtractor",
+        "ConcurrencyDAG"
+      ],
+      "file": "GalaxyOS/services/concurrency_extractor.py"
     }
   },
   "layer_modules": {

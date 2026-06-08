@@ -14,22 +14,6 @@ from typing import Dict, Any, Optional, List, Tuple
 from dataclasses import dataclass
 from enum import Enum
 import re
-import logging
-
-logger = logging.getLogger(__name__)
-
-# MemGAS: ProfileMatcher-based routing
-try:
-    from capability_registry import ProfileMatcher, RegistryManager, HarnessProfile, SkillClassifier
-    _SKVM_MATCHER = ProfileMatcher()
-    _SKVM_REGISTRY = RegistryManager()
-    _SKVM_CLASSIFIER = SkillClassifier()
-    _HAS_SKVM = True
-except ImportError:
-    _SKVM_MATCHER = None
-    _SKVM_REGISTRY = None
-    _SKVM_CLASSIFIER = None
-    _HAS_SKVM = False
 
 
 class ThinkingSkill(Enum):
@@ -145,7 +129,6 @@ class IntelligentThinkingTrigger:
     ]
     
     # 技能映射（含 9 个思考技能 + 10 个 Matt Pocock + 11 个方法论）
-    # [MemGAS] 当 _SKVM_REGISTRY 可用时，此映射仅作为 ProfileMatcher 降级兜底
     SKILL_MAPPING = {
         # ═══════════════════ 思考技能映射 ═══════════════════
         ("high", "problem_solving"): ThinkingSkill.FIRST_PRINCIPLES,
@@ -446,9 +429,6 @@ class IntelligentThinkingTrigger:
         """
         检测是否需要思考技能
         
-        [MemGAS] 当 ProfileMatcher + RegistryManager 可用时，优先使用
-        基于能力画像相似度的 skill 路由，否则回退到 SKILL_MAPPING 查找。
-        
         Args:
             query: 用户查询
             context: 对话上下文
@@ -469,82 +449,11 @@ class IntelligentThinkingTrigger:
         else:
             complexity_level = "low"
         
-        suggested_skill = ThinkingSkill.NONE
-        reasoning = ""
+        # 选择思考技能
+        skill_key = (complexity_level, question_type)
+        suggested_skill = self.SKILL_MAPPING.get(skill_key, ThinkingSkill.NONE)
         
-        # ═══ MemGAS: ProfileMatcher 优先 ═══
-        if _HAS_SKVM and _SKVM_REGISTRY and _SKVM_MATCHER:
-            try:
-                # 扫描所有已注册的 skill profile
-                all_profiles = _SKVM_REGISTRY.list_profiles()
-                
-                # 只保留 ThinkingSkill 类型的 profile
-                skill_names = []
-                for skill in ThinkingSkill:
-                    if skill != ThinkingSkill.NONE:
-                        skill_names.append(skill.value)
-                
-                # 筛选与 question_type 相关的 profile
-                candidate_profiles = {}
-                for name, profile in all_profiles.items():
-                    # 技能名匹配 ThinkingSkill
-                    if name.replace('-', '_').replace(' ', '_') in [s.replace('-', '_') for s in skill_names]:
-                        candidate_profiles[name] = profile
-                    # 如果是思考技能路径名，也加入
-                    for skill_path in self.ALL_SKILL_PATHS.values():
-                        dir_name = skill_path.split('/')[0].replace('-', '_')
-                        if name.replace('-', '_') == dir_name:
-                            candidate_profiles[name] = profile
-                            break
-                
-                if candidate_profiles:
-                    # 获取宿主环境画像
-                    hp = HarnessProfile.auto_detect()
-                    harness_profile = hp.detect_profile()
-                    
-                    # ProfileMatcher 排序
-                    ranked = _SKVM_MATCHER.rank_skills(candidate_profiles, harness_profile)
-                    
-                    if ranked:
-                        best_name = ranked[0][0]
-                        best_score = ranked[0][1]
-                        
-                        # 适配分数足够高时才用 profile 路由
-                        if best_score > 0.3:
-                            # 反向查找 ThinkingSkill
-                            for skill in ThinkingSkill:
-                                s_val = skill.value.replace('-', '_')
-                                bn = best_name.replace('-', '_').replace(' ', '_')
-                                if s_val == bn or bn.endswith(s_val) or s_val.endswith(bn):
-                                    suggested_skill = skill
-                                    reasoning = (
-                                        f"ProfileMatcher 路由: best={best_name} "
-                                        f"score={best_score:.3f} "
-                                        f"complexity={complexity_level} type={question_type}"
-                                    )
-                                    break
-                            
-                            # 如果没精确匹配到 ThinkingSkill，用名称前缀匹配
-                            if suggested_skill == ThinkingSkill.NONE:
-                                best_lower = best_name.lower().replace('-', '_').replace(' ', '_')
-                                for skill in ThinkingSkill:
-                                    s = skill.value.lower().replace('-', '_')
-                                    if s in best_lower or best_lower in s:
-                                        suggested_skill = skill
-                                        reasoning = (
-                                            f"ProfileMatcher 近似匹配: {best_name} → {skill.value} "
-                                            f"score={best_score:.3f}"
-                                        )
-                                        break
-            except Exception as _skvm_err:
-                logger.debug(f"ProfileMatcher 路由跳过: {_skvm_err}")
-        
-        # ═══ 兜底：SKILL_MAPPING 查表 ═══
-        if suggested_skill == ThinkingSkill.NONE:
-            skill_key = (complexity_level, question_type)
-            suggested_skill = self.SKILL_MAPPING.get(skill_key, ThinkingSkill.NONE)
-        
-        # 特殊情况处理（覆盖所有路径）
+        # 特殊情况处理
         if confusion > 0.5:
             # 用户困惑，使用费曼技巧
             suggested_skill = ThinkingSkill.FEYNMAN_TECHNIQUE
@@ -559,13 +468,13 @@ class IntelligentThinkingTrigger:
             reasoning = "评估类问题，使用批判性思维分析证据和谬误"
         elif question_type == "debug" and suggested_skill == ThinkingSkill.NONE:
             suggested_skill = ThinkingSkill.DIAGNOSE
-            reasoning = "调试诊断类问题，走 diagnose 工程诊断流程"
+            reasoning = f"调试诊断类问题，走 diagnose 工程诊断流程"
         elif question_type == "architecture" and suggested_skill == ThinkingSkill.NONE:
             suggested_skill = ThinkingSkill.ZOOM_OUT
-            reasoning = "架构类问题，先 zoom-out 全局视角再分析"
+            reasoning = f"架构类问题，先 zoom-out 全局视角再分析"
         elif suggested_skill == ThinkingSkill.NONE:
             reasoning = "常规查询，不需要特殊思考技能"
-        elif not reasoning:
+        else:
             reasoning = f"复杂度 {complexity_level}，问题类型 {question_type}，建议使用 {suggested_skill.value}"
         
         # 计算置信度
