@@ -2313,6 +2313,38 @@ def main():
     )
     dc_thread.start()
 
+    # 3.7 ZMQ DEALER → Gateway ROUTER（多 Worker 通信）
+    _worker_id = os.environ.get('WORKER_ID', 'worker:unknown')
+    _dealer = None
+    try:
+        import zmq as _zmq
+        _zctx = _zmq.Context.instance()
+        _dealer = _zctx.socket(_zmq.DEALER)
+        _dealer.setsockopt_string(_zmq.IDENTITY, _worker_id)
+        _dealer.connect('tcp://127.0.0.1:5560')
+        _dealer.send_json({'event': 'worker_ready', 'id': _worker_id, 'pid': os.getpid()})
+        sys.stderr.write(f'[claw-worker] ZMQ DEALER connected as {_worker_id}\n')
+
+        def _dealer_recv_loop():
+            while not _shutdown_flag:
+                try:
+                    _msg = _dealer.recv_json(timeout=1000)
+                    if isinstance(_msg, dict):
+                        if _msg.get('worker_send'):
+                            _payload = _msg.get('payload', {})
+                            sys.stderr.write(f'[claw-worker] peer msg from {_msg.get("from","?")}: {str(_payload)[:200]}\n')
+                except _zmq.Again:
+                    continue
+                except Exception:
+                    if not _shutdown_flag:
+                        time.sleep(1)
+
+        _dealer_thread = threading.Thread(target=_dealer_recv_loop, daemon=True, name='dealer-recv')
+        _dealer_thread.start()
+    except Exception as _e:
+        _dealer = None
+        sys.stderr.write(f'[claw-worker] DEALER init skipped: {_e}\n')
+
     # 4. ZMQ PUB
     _zmq_pub_init()
 

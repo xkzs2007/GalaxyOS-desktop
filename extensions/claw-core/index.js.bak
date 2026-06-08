@@ -98,136 +98,6 @@ let _gatewayServerSock = null;
 let _zmqRouter = null;
 let _zmqRouterThread = null;
 
-// ======== Worker 池 + 任务队列（替代单 Worker 架构） ========
-let _workerPool = null;
-let _poolConfig = { size: 2, maxQueue: 20 };
-
-class WorkerPool {
-    constructor(ws, cfg = {}) {
-        this.ws = ws;
-        this.size = cfg.size || 2;
-        this.maxQueue = cfg.maxQueue || 20;
-        this.workers = new Map();           // id → ClawWorkerClient
-        this.busy = new Set();               // id of busy workers
-        this.queue = [];                     // [{priority, run, resolve, reject, label, ts}]
-        this.counter = 0;
-        this._healthTimer = null;
-        this._ready = false;
-        this._init();
-    }
-
-    _init() {
-        // spawn 池中的 Worker
-        for (let i = 0; i < this.size; i++) {
-            this._spawnOne(`worker:${i + 1}`);
-        }
-        // 健康检查：30s 轮询
-        this._healthTimer = setInterval(() => this._healthCheck(), 30000).unref();
-        this._ready = true;
-    }
-
-    _spawnOne(id) {
-        if (this.workers.has(id)) return;
-        const w = new ClawWorkerClient(this.ws, id);
-        w.start().catch((e) => {
-            process.stderr.write(`[claw-core] pool spawn ${id} failed: ${e.message}\n`);
-        });
-        this.workers.set(id, w);
-    }
-
-    // 获取一个空闲 Worker（轮询分配）
-    _getIdleWorker() {
-        for (const [id, w] of this.workers) {
-            if (w.ready && !this.busy.has(id)) return id;
-        }
-        return null;
-    }
-
-    // 主调度入口：执行一个 task，支持优先级排队
-    async execute(method, params, priority = 'normal', timeoutMs = 30000) {
-        const idle = this._getIdleWorker();
-        if (idle) {
-            this.busy.add(idle);
-            try {
-                const w = this.workers.get(idle);
-                if (!w) throw new Error('worker disappeared');
-                return await w.call(method, params, timeoutMs);
-            } finally {
-                this.busy.delete(idle);
-                // 释放后检查队列
-                this._drainQueue();
-            }
-        }
-        // 无空闲 Worker → 排队
-        if (this.queue.length >= this.maxQueue) {
-            throw new Error('pool queue full');
-        }
-        return new Promise((resolve, reject) => {
-            const entry = { priority, run: () => this.execute(method, params, priority, timeoutMs).then(resolve).catch(reject), resolve, reject, label: method, ts: Date.now() };
-            if (priority === 'high') {
-                this.queue.unshift(entry);
-            } else if (priority === 'background') {
-                this.queue.push(entry);
-            } else {
-                // normal：插到最后一个 normal 后面，保持 high 优先
-                const lastNormal = [...this.queue].reverse().find(e => e.priority === 'normal');
-                const idx = lastNormal ? this.queue.lastIndexOf(lastNormal) + 1 : this.queue.length;
-                this.queue.splice(idx, 0, entry);
-            }
-        });
-    }
-
-    // 处理排队任务
-    _drainQueue() {
-        while (this.queue.length > 0) {
-            const idle = this._getIdleWorker();
-            if (!idle) break;
-            const entry = this.queue.shift();
-            if (entry) {
-                this.busy.add(idle);
-                entry.run().finally(() => {
-                    this.busy.delete(idle);
-                    this._drainQueue();
-                });
-            }
-        }
-    }
-
-    _healthCheck() {
-        for (const [id, w] of this.workers) {
-            if (!w.ready || w._fails >= w._maxFails) {
-                process.stderr.write(`[claw-core] pool health: ${id} unhealthy, respawning...\n`);
-                w.stop();
-                this.workers.delete(id);
-                this.busy.delete(id);
-                this._spawnOne(id);
-            }
-        }
-    }
-
-    // 优雅关闭所有 Worker
-    async shutdown() {
-        if (this._healthTimer) clearInterval(this._healthTimer);
-        const promises = [];
-        for (const [id, w] of this.workers) {
-            promises.push(
-                w.call('shutdown', {}, 2000).catch(() => {}).finally(() => w.stop())
-            );
-        }
-        await Promise.allSettled(promises);
-        this.workers.clear();
-        this.busy.clear();
-        this.queue = [];
-        this._ready = false;
-    }
-
-    // 降级：返回包装对象模拟单 Worker
-    getFallback() {
-        const firstWorker = this.workers.values().next().value;
-        return firstWorker || null;
-    }
-}
-
 /**
  * 启动 Gateway UDS 服务端 - Worker 通过此通道 RPC 调 Gateway 能力
  * 使用动态 _gatewayMethods 注册表替代旧 switch-case
@@ -425,23 +295,6 @@ function startZmqRouter(api) {
                     if (msg.method) {
                         const method = msg.method;
                         const params = msg.params || {};
-                        // Worker → Worker 转发
-                        if (method === 'worker_send') {
-                            const target = params.target || '';
-                            const payload = params.payload || {};
-                            if (target && _zmqRouter) {
-                                try {
-                                    _zmqRouter.send([Buffer.from(target), '', Buffer.from(JSON.stringify({ worker_send: true, from: identity.toString(), payload }))]);
-                                    sendReply({ id: msg.id, result: { ok: true, target } });
-                                    api.logger.debug?.(`${TAG} [zmq-router] forwarded ${identity.toString()} → ${target}`);
-                                } catch (e) {
-                                    sendReply({ id: msg.id, error: `forward failed: ${e.message}` });
-                                }
-                            } else {
-                                sendReply({ id: msg.id, error: 'target or router unavailable' });
-                            }
-                            continue;
-                        }
                         const handler = _gatewayMethods[method];
                         if (handler) {
                             try {
@@ -643,8 +496,7 @@ function _startGatewayHeartbeat(api) {
 }
 
 class ClawWorkerClient {
-    constructor(workspace, id) {
-        this.id = id || 'worker:default';
+    constructor(workspace) {
         this.workspace = workspace;
         this.client = null;
         this.pending = new Map();
@@ -782,7 +634,7 @@ class ClawWorkerClient {
             this._cleanup();
             this.proc = spawn(_pythonBin, [WORKER_SCRIPT], {
                 cwd: this.workspace,
-                env: { ...process.env, PYTHONIOENCODING: "utf-8", OPENCLAW_WORKSPACE: this.workspace, WORKER_UDS: "1", WORKER_ID: this.id },
+                env: { ...process.env, PYTHONIOENCODING: "utf-8", OPENCLAW_WORKSPACE: this.workspace, WORKER_UDS: "1" },
                 stdio: ["pipe", "pipe", "pipe"],
             });
 
@@ -1004,33 +856,6 @@ function runClawScript(workspace, action, args, timeoutMs = 20000) {
 let _worker = null;
 
 function getWorker(ws) {
-    // 使用 WorkerPool：先尝试初始化池，失败或单 Worker 时降级
-    if (!_workerPool) {
-        try {
-            const poolCfg = { size: 2, maxQueue: 20 };
-            _workerPool = new WorkerPool(ws, poolCfg);
-            process.stderr.write(`[claw-core] WorkerPool initialized (size=${poolCfg.size})\n`);
-        } catch (e) {
-            process.stderr.write(`[claw-core] WorkerPool init failed, fallback to single worker: ${e.message}\n`);
-        }
-    }
-    // 池可用 → 返回调度包装
-    if (_workerPool && _workerPool._ready) {
-        const pool = _workerPool;
-        const firstIdle = pool._getIdleWorker();
-        const ready = firstIdle !== null || pool.workers.size > 0;
-        return {
-            ready,
-            id: 'pool',
-            call: (method, params, timeoutMs) => {
-                const priority = method === 'rccam' || method === 'health' ? 'high' :
-                                 method === 'recall' || method === 'store' || method === 'verify' ? 'normal' :
-                                 'background';
-                return pool.execute(method, params, priority, timeoutMs);
-            },
-        };
-    }
-    // 兜底：单 Worker（兼容旧代码）
     if (!_worker) _worker = new ClawWorkerClient(ws);
     return _worker;
 }

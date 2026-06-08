@@ -496,22 +496,68 @@ class ClawWorker:
 
     def health(self, _p: dict) -> dict:
         self._ensure()
-        # UnifiedEntry has health_check() not health()
         try:
             result = self._entry.health_check()
+            # 叠加实时系统状态
+            _healthy = True
+            _issues = []
+
+            # 检查 DAG 可用性
+            try:
+                _dag = self._get_dag()
+                _dag_ping = _dag.get_all_session_keys() if _dag else []
+                _dag_ok = len(_dag_ping) > 0
+            except:
+                _dag_ok = False
+                _issues.append('dag_unavailable')
+                _healthy = False
+
+            # 检查最近 R-CCAM 活动（5 分钟内）
+            _rccam_recent = (time.time() - getattr(self, '_last_rccam_ts', 0)) < 300 if hasattr(self, '_last_rccam_ts') else False
+
+            # 检查突触网络
+            _synapse_ok = False
+            _synapse_stats = {'total_neurons': 0, 'total_synapses': 0}
+            try:
+                from memory_synapse_network import SynapseNetwork
+                _sn = SynapseNetwork(workspace_path=WORKSPACE)
+                _nrn = len(_sn._neurons_cache)
+                _syn = len(_sn._synapses_cache)
+                _synapse_stats = {'total_neurons': _nrn, 'total_synapses': _syn}
+                _synapse_ok = _nrn > 0
+            except:
+                pass
+
+            result.update({
+                'healthy': _healthy and not _issues,
+                'issues': _issues,
+                'dag_available': _dag_ok,
+                'rccam_recent_5m': _rccam_recent,
+                'synapse_network': _synapse_stats,
+                'worker_uptime_s': self._uptime_s() if hasattr(self, '_uptime_s') else 0,
+                'pid': os.getpid(),
+            })
             return result
         except AttributeError:
-            # 兜底：直接返回组件状态
+            # 兜底：返回真实组件状态
+            _real_healthy = False
+            _real_issues = ['unified_entry_unavailable']
+            try:
+                _real_healthy = os.path.exists(os.path.join(WORKSPACE, '.learnings'))
+            except:
+                pass
             return {
-                "healthy": True,
-                "components": {
-                    "unified_entry": {"healthy": True},
-                    "worker": {"healthy": True, "uptime_s": self._uptime_s() if hasattr(self, '_uptime_s') else 0}
+                'healthy': _real_healthy and not _real_issues,
+                'issues': _real_issues,
+                'components': {
+                    'unified_entry': {'healthy': False},
+                    'worker': {
+                        'healthy': True,
+                        'uptime_s': self._uptime_s() if hasattr(self, '_uptime_s') else 0,
+                    },
                 },
-                "stats": {
-                    "hallucination_guard": {"total_memories": 0},
-                    "synapse_network": {"total_neurons": 0}
-                }
+                'synapse_network': {'total_neurons': 0},
+                'pid': os.getpid(),
             }
 
     def recall(self, p: dict) -> dict:
@@ -838,8 +884,9 @@ class ClawWorker:
                 image_source=p.get("image_source"),
                 session_key=session_key,
             )
-            # 通知 Galaxy Kernel 进行后处理
-            if _result.get('action_success') and _result.get('answer'):
+            self._last_rccam_ts = time.time()
+            # 通知 Galaxy Kernel 进行后处理（有 answer 就触发，不依赖 action_success）
+            if _result.get('answer'):
                 try:
                     _galaxy_pending.append({
                         'type': 'post_response',
@@ -1358,6 +1405,7 @@ class ClawWorker:
         return {"cleaned": True, "results": results}
 
     def shutdown(self, _p: dict) -> dict:
+        _handle_shutdown()
         return {"ok": True, "message": "shutting down"}
 
 
@@ -1491,7 +1539,7 @@ def _uds_server_thread(methods_map):
     server.setsockopt(_socket.SOL_SOCKET, _socket.SO_REUSEADDR, 1)
     server.bind(UDS_PATH)
     server.listen(5)
-    os.chmod(UDS_PATH, 0o777)
+    os.chmod(UDS_PATH, 0o600)
     sys.stderr.write(f"[claw-worker] UDS listening on {UDS_PATH}\n")
     while not _shutdown_flag:
         try:
@@ -1602,8 +1650,31 @@ def _mmap_write(cache_key, data):
 
 
 _shutdown_flag = False
-# Galaxy Kernel 事件队列（rccam 调用写，_galaxy_kernel_loop 读）
 _galaxy_pending = []
+
+
+def _handle_shutdown(*_args):
+    """优雅关闭：信号处理器"""
+    global _shutdown_flag
+    if _shutdown_flag:
+        return  # 已关闭
+    _shutdown_flag = True
+    sys.stderr.write('[claw-worker] 收到关闭信号，正在保存数据...\n')
+    # 写一条保存标记到共享内存
+    try:
+        _mmap_write('shutdown', {
+            'pid': os.getpid(),
+            'ts': time.time(),
+            'reason': 'signal',
+        })
+    except Exception:
+        pass
+    sys.stderr.write('[claw-worker] 关闭完成\n')
+
+
+# 注册优雅关闭信号处理器
+signal.signal(signal.SIGTERM, _handle_shutdown)
+signal.signal(signal.SIGINT, _handle_shutdown)
 
 # ============================================================
 # HTTP JSON-RPC 服务端
@@ -1729,6 +1800,69 @@ def main():
                 pass
             return False
 
+        # ── 神经信号桥：Galaxy Kernel 产出 → 突触网络 ──
+        _neural_bridge = None
+        _bridge_synapse_cache = {}
+
+        def _get_neural_bridge():
+            nonlocal _neural_bridge
+            if _neural_bridge is not None:
+                return _neural_bridge
+            try:
+                from memory_synapse_network import SynapseNetwork, NeuronManager, SynapseManager
+                _sn = SynapseNetwork(workspace_path=WORKSPACE)
+                _nm = NeuronManager(_sn)
+                _sm = SynapseManager(_sn, use_ltc=hasattr(_sn, '_get_ltc_template'))
+                _neural_bridge = {'net': _sn, 'nm': _nm, 'mgr': _sm}
+            except Exception as _e:
+                sys.stderr.write(f'[galaxy-kernel] 神经桥初始化延迟: {_e}\n')
+                _neural_bridge = False
+            return _neural_bridge
+
+        def _neural_find_or_create(content, confidence=0.5):
+            """按内容找已有神经元，找不到就创建"""
+            b = _get_neural_bridge()
+            if not b: return None
+            try:
+                for nid, n in b['net']._neurons_cache.items():
+                    if n.content and len(n.content) > 5 and (n.content in content or content in n.content):
+                        return nid
+                n = b['nm'].create_neuron(content=content[:300])
+                return n.id
+            except: return None
+
+        def _neural_signal(type_, strength, source_neurons=None, target_neurons=None, content=''):
+            """统一神经信号注入
+
+            type_: 'ltp' | 'ltd' | 'connect' | 'activate'
+            """
+            b = _get_neural_bridge()
+            if not b: return
+            try:
+                if type_ == 'activate':
+                    # 激活一个神经元的兴奋度
+                    _src_id = _neural_find_or_create(content or 'kernel_signal', max(0.1, strength))
+                    if _src_id:
+                        n = b['net']._neurons_cache.get(_src_id)
+                        if n: n.apply_activation_signal(strength=min(1.0, abs(strength)))
+                elif type_ in ('ltp', 'ltd') and source_neurons and target_neurons:
+                    for s in source_neurons:
+                        for t in target_neurons:
+                            syn = b['mgr'].get_synapse(s, t)
+                            if not syn:
+                                syn = b['mgr'].create_synapse(s, t, weight=0.5)
+                            if type_ == 'ltp':
+                                b['mgr'].ltp(syn, strength=min(0.3, abs(strength)))
+                            else:
+                                b['mgr'].ltd(syn, decay_rate=min(0.3, abs(strength)))
+                elif type_ == 'connect' and source_neurons and target_neurons:
+                    for s in source_neurons:
+                        for t in target_neurons:
+                            existing = b['mgr'].get_synapse(s, t)
+                            if not existing:
+                                b['mgr'].create_synapse(s, t, weight=min(1.0, max(0.3, strength)))
+            except: pass
+
         def _lazy_pi():
             nonlocal _pi
             if _pi is None:
@@ -1792,11 +1926,46 @@ def main():
                 if hasattr(_p, 'inject_emotion_context'):
                     _ctx2 = _p.inject_emotion_context(_full_text[:400], 'xiaoyi-claw-dag')
                     if _ctx2: _insights['emotion_context'] = str(_ctx2)[:300]
+                # 🧠 情感强度 → 神经兴奋信号
+                _emotion_type = (_ctx2 or '')[:10] if _ctx2 else ''
+                if _emotion_type and '焦虑' in _emotion_type or '生气' in _emotion_type or '挫败' in _emotion_type:
+                    _neural_signal('activate', 0.6, content=f'emotion:{_emotion_type}')
+                elif _emotion_type and '开心' in _emotion_type or '兴奋' in _emotion_type or '好奇' in _emotion_type:
+                    _neural_signal('activate', 0.4, content=f'emotion:{_emotion_type}')
+
                 # 因果分析：传入完整对话对，user_response 填 answer 本体
                 if hasattr(_p, 'inject_causal_context'):
                     _cau = _p.inject_causal_context(query[:300], user_response=answer[:500])
                     if _cau and (_cau.get('causes') or _cau.get('effects') or _cau.get('links')):
                         _insights['causal_context'] = str({k: _cau[k] for k in ('causes','effects','links','graph') if k in _cau})[:400]
+                        # 🧠 因果链 → 突触初始连接
+                        _causes = _cau.get('causes', [])[:3]
+                        _effects = _cau.get('effects', [])[:3]
+                        _causal_pairs = 0
+                        for _c in _causes:
+                            _src_id = _neural_find_or_create(str(_c)[:150], 0.85)
+                            for _e in _effects:
+                                _tgt_id = _neural_find_or_create(str(_e)[:150], 0.85)
+                                if _src_id and _tgt_id:
+                                    _neural_signal('connect', 0.85,
+                                        source_neurons=[_src_id], target_neurons=[_tgt_id])
+                                    _causal_pairs += 1
+                        # 🧠 高置信度因果模式：多 pair 时批量 LTP 增强
+                        if _causal_pairs >= 2:
+                            try:
+                                _nb = _get_neural_bridge()
+                                if _nb:
+                                    for _c in _causes:
+                                        _sid = _neural_find_or_create(str(_c)[:150], 0.85)
+                                        for _e in _effects:
+                                            _tid = _neural_find_or_create(str(_e)[:150], 0.85)
+                                            if _sid and _tid:
+                                                _s = _nb['mgr'].get_synapse(_sid, _tid)
+                                                if _s:
+                                                    _nb['mgr'].ltp(_s, strength=0.2)
+                                    sys.stderr.write(f'[galaxy-kernel] 因果LTP增强: {_causal_pairs} pairs\n')
+                            except: pass
+
                 # 空间场景：从 AI 回答提取场景标签（回答中提到的地点/空间信息）
                 if hasattr(_p, 'extract_and_register_scene'):
                     _scene_label = _p.extract_and_register_scene(answer[:300], current_session='xiaoyi-claw-dag')
@@ -1812,16 +1981,30 @@ def main():
                 _cove = ChainOfVerificationEngine(llm_flash=_flash_client, llm_pro=_flash_client)
                 _vr = _cove.verify_and_refine(answer=answer, query=query, max_rounds=1)
                 if _vr:
-                    if getattr(_vr, 'contradictions_found', 0) > 0:
-                        _insights['cove_contradictions'] = _vr.contradictions_found
-                        sys.stderr.write(f'[galaxy-kernel] CoVe: {_vr.contradictions_found} contradictions\n')
-                    # 即使没有矛盾，也记录一致性分数
+                    _contra = getattr(_vr, 'contradictions_found', 0)
+                    if _contra > 0:
+                        _insights['cove_contradictions'] = _contra
+                        sys.stderr.write(f'[galaxy-kernel] CoVe: {_contra} contradictions\n')
+                        # 🧠 矛盾 → LTD 惩罚：降低相关突触权重
+                        _neural_signal('activate', 0.0, content=f'cove:contradiction_weight={_contra}')
+                        # 对近期活跃突触做 LTD 惩罚
+                        try:
+                            _snap = _get_neural_bridge()
+                            if _snap:
+                                _all_s = list(_snap['mgr'].network._synapses_cache.values())
+                                _recent = [s for s in _all_s if hasattr(s, 'reinforcement_count') and s.reinforcement_count > 2]
+                                for _s in _recent[:10]:
+                                    _snap['mgr'].ltd(_s, decay_rate=0.05 * _contra)
+                        except: pass
                     _consistency = getattr(_vr, 'consistency_score', None) or getattr(_vr, 'confidence', None)
                     if _consistency is not None:
                         _insights['cove_consistency'] = _consistency
+                        # 🧠 高一致 → LTP 增强
+                        if _consistency > 0.8:
+                            _neural_signal('activate', 0.3, content=f'cove:consistency={_consistency}')
             except Exception:
                 pass
-            # 写 insights 供下一轮 process() 消费
+            # 写 insights 供下一轮 process() 消费（保留旧通道兼容）
             try:
                 _ins_path = os.path.join(WORKSPACE, 'data', 'galaxy_kernel_insights.json')
                 os.makedirs(os.path.dirname(_ins_path), exist_ok=True)
@@ -2129,6 +2312,38 @@ def main():
         target=_dag_compact_loop, daemon=True, name="dag-compact"
     )
     dc_thread.start()
+
+    # 3.7 ZMQ DEALER → Gateway ROUTER（多 Worker 通信）
+    _worker_id = os.environ.get('WORKER_ID', 'worker:unknown')
+    _dealer = None
+    try:
+        import zmq as _zmq
+        _zctx = _zmq.Context.instance()
+        _dealer = _zctx.socket(_zmq.DEALER)
+        _dealer.setsockopt_string(_zmq.IDENTITY, _worker_id)
+        _dealer.connect('tcp://127.0.0.1:5560')
+        _dealer.send_json({'event': 'worker_ready', 'id': _worker_id, 'pid': os.getpid()})
+        sys.stderr.write(f'[claw-worker] ZMQ DEALER connected as {_worker_id}\n')
+
+        def _dealer_recv_loop():
+            while not _shutdown_flag:
+                try:
+                    _msg = _dealer.recv_json(timeout=1000)
+                    if isinstance(_msg, dict):
+                        if _msg.get('worker_send'):
+                            _payload = _msg.get('payload', {})
+                            sys.stderr.write(f'[claw-worker] peer msg from {_msg.get("from","?")}: {str(_payload)[:200]}\n')
+                except _zmq.Again:
+                    continue
+                except Exception:
+                    if not _shutdown_flag:
+                        time.sleep(1)
+
+        _dealer_thread = threading.Thread(target=_dealer_recv_loop, daemon=True, name='dealer-recv')
+        _dealer_thread.start()
+    except Exception as _e:
+        _dealer = None
+        sys.stderr.write(f'[claw-worker] DEALER init skipped: {_e}\n')
 
     # 4. ZMQ PUB
     _zmq_pub_init()
