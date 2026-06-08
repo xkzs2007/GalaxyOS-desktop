@@ -236,7 +236,7 @@ function startGatewayUdsServer(api, _ws) {
     });
 
     server.listen(udsPath, () => {
-        try { chmodSync(udsPath, 0o777); } catch (e) {}
+        try { chmodSync(udsPath, 0o600); } catch (e) {}
         api.logger.info?.(`${TAG} [gateway-uds] listening on ${udsPath} (${Object.keys(_gatewayMethods).length} methods registered)`);
     });
 
@@ -345,7 +345,7 @@ function initMmapControl() {
     const fd = openSync(MMAP_PATH, fs.constants.O_CREAT | fs.constants.O_RDWR, 0o666);
     writeSync(fd, Buffer.alloc(MMAP_SIZE, 0));
     closeSync(fd);
-    try { chmodSync(MMAP_PATH, 0o666); } catch (e) {}
+    try { chmodSync(MMAP_PATH, 0o600); } catch (e) {}
 }
 
 function mmapWriteSignal(signalType, value = 1) {
@@ -395,7 +395,7 @@ function _mmapSyncInit() {
         const fd = openSync(MMAP_SHM, fs.constants.O_CREAT | fs.constants.O_RDWR, 0o666);
         writeSync(fd, Buffer.alloc(MMAP_SIZE, 0));
         closeSync(fd);
-        try { chmodSync(MMAP_SHM, 0o666); } catch (e) {}
+        try { chmodSync(MMAP_SHM, 0o600); } catch (e) {}
     } catch (e) {
         // 降级
     }

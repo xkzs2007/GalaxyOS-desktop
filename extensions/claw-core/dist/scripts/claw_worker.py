@@ -496,22 +496,68 @@ class ClawWorker:
 
     def health(self, _p: dict) -> dict:
         self._ensure()
-        # UnifiedEntry has health_check() not health()
         try:
             result = self._entry.health_check()
+            # 叠加实时系统状态
+            _healthy = True
+            _issues = []
+
+            # 检查 DAG 可用性
+            try:
+                _dag = self._get_dag()
+                _dag_ping = _dag.get_all_session_keys() if _dag else []
+                _dag_ok = len(_dag_ping) > 0
+            except:
+                _dag_ok = False
+                _issues.append('dag_unavailable')
+                _healthy = False
+
+            # 检查最近 R-CCAM 活动（5 分钟内）
+            _rccam_recent = (time.time() - getattr(self, '_last_rccam_ts', 0)) < 300 if hasattr(self, '_last_rccam_ts') else False
+
+            # 检查突触网络
+            _synapse_ok = False
+            _synapse_stats = {'total_neurons': 0, 'total_synapses': 0}
+            try:
+                from memory_synapse_network import SynapseNetwork
+                _sn = SynapseNetwork(workspace_path=WORKSPACE)
+                _nrn = len(_sn._neurons_cache)
+                _syn = len(_sn._synapses_cache)
+                _synapse_stats = {'total_neurons': _nrn, 'total_synapses': _syn}
+                _synapse_ok = _nrn > 0
+            except:
+                pass
+
+            result.update({
+                'healthy': _healthy and not _issues,
+                'issues': _issues,
+                'dag_available': _dag_ok,
+                'rccam_recent_5m': _rccam_recent,
+                'synapse_network': _synapse_stats,
+                'worker_uptime_s': self._uptime_s() if hasattr(self, '_uptime_s') else 0,
+                'pid': os.getpid(),
+            })
             return result
         except AttributeError:
-            # 兜底：直接返回组件状态
+            # 兜底：返回真实组件状态
+            _real_healthy = False
+            _real_issues = ['unified_entry_unavailable']
+            try:
+                _real_healthy = os.path.exists(os.path.join(WORKSPACE, '.learnings'))
+            except:
+                pass
             return {
-                "healthy": True,
-                "components": {
-                    "unified_entry": {"healthy": True},
-                    "worker": {"healthy": True, "uptime_s": self._uptime_s() if hasattr(self, '_uptime_s') else 0}
+                'healthy': _real_healthy and not _real_issues,
+                'issues': _real_issues,
+                'components': {
+                    'unified_entry': {'healthy': False},
+                    'worker': {
+                        'healthy': True,
+                        'uptime_s': self._uptime_s() if hasattr(self, '_uptime_s') else 0,
+                    },
                 },
-                "stats": {
-                    "hallucination_guard": {"total_memories": 0},
-                    "synapse_network": {"total_neurons": 0}
-                }
+                'synapse_network': {'total_neurons': 0},
+                'pid': os.getpid(),
             }
 
     def recall(self, p: dict) -> dict:
@@ -838,6 +884,7 @@ class ClawWorker:
                 image_source=p.get("image_source"),
                 session_key=session_key,
             )
+            self._last_rccam_ts = time.time()
             # 通知 Galaxy Kernel 进行后处理（有 answer 就触发，不依赖 action_success）
             if _result.get('answer'):
                 try:
@@ -1358,6 +1405,7 @@ class ClawWorker:
         return {"cleaned": True, "results": results}
 
     def shutdown(self, _p: dict) -> dict:
+        _handle_shutdown()
         return {"ok": True, "message": "shutting down"}
 
 
@@ -1491,7 +1539,7 @@ def _uds_server_thread(methods_map):
     server.setsockopt(_socket.SOL_SOCKET, _socket.SO_REUSEADDR, 1)
     server.bind(UDS_PATH)
     server.listen(5)
-    os.chmod(UDS_PATH, 0o777)
+    os.chmod(UDS_PATH, 0o600)
     sys.stderr.write(f"[claw-worker] UDS listening on {UDS_PATH}\n")
     while not _shutdown_flag:
         try:
@@ -1602,8 +1650,31 @@ def _mmap_write(cache_key, data):
 
 
 _shutdown_flag = False
-# Galaxy Kernel 事件队列（rccam 调用写，_galaxy_kernel_loop 读）
 _galaxy_pending = []
+
+
+def _handle_shutdown(*_args):
+    """优雅关闭：信号处理器"""
+    global _shutdown_flag
+    if _shutdown_flag:
+        return  # 已关闭
+    _shutdown_flag = True
+    sys.stderr.write('[claw-worker] 收到关闭信号，正在保存数据...\n')
+    # 写一条保存标记到共享内存
+    try:
+        _mmap_write('shutdown', {
+            'pid': os.getpid(),
+            'ts': time.time(),
+            'reason': 'signal',
+        })
+    except Exception:
+        pass
+    sys.stderr.write('[claw-worker] 关闭完成\n')
+
+
+# 注册优雅关闭信号处理器
+signal.signal(signal.SIGTERM, _handle_shutdown)
+signal.signal(signal.SIGINT, _handle_shutdown)
 
 # ============================================================
 # HTTP JSON-RPC 服务端
