@@ -1,7 +1,7 @@
 # 🌌 GalaxyOS — 认知增强引擎
 
 > OpenClaw 的开源认知增强引擎，为 AI Assistant 提供记忆、检索、推理、验证、自进化等全套认知能力
-> 版本: v6.2 · BlobArena无损存储 + ONNX bge-small-zh + 7通道检索Hub + ContextEngine neural_rerank + Galaxy Kernel assemble 注入 + 上下文内容类型排序
+> 版本: v6.2 · 睡眠巩固5阶段 + 对比学习预训练 + SparseGAT + MemGAS熵路由 + GMM记忆关联 + GAT→RRF融合
 
 ## 总览
 
@@ -185,85 +185,6 @@ python3 -m services.xiaoyi_claw_api recall --query "查询"
 | **MemGAS 熵路由 (EntropyRouter)** | 自适应通道权重分配：低熵通道高权重，高熵通道压权重。平滑系数 0.3*熵+0.7*均匀 |
 | **GMM 记忆关联 (GMMMemoryAssociator)** | 新记忆→GMM 聚 2 类(accept/reject)→accept 类建关联边，边权重=余弦相似度 |
 | **GAT 注意力权重 → RRF 融合** | `forward_with_attention()` 暴露边级注意力，RRF 融合用 GAT 权重增强/替代评分 |
-
-### v6.1 新特性
-
-| 特性 | 说明 |
-|------|------|
-| **BlobArena v2 — DAG 无损存储** | mmap-backed append-only blob storage，替代 DAG 节点 512/2000 字符硬截断。O(1) 随机访问 + generational GC |
-| **ONNX bge-small-zh-v1.5 中文嵌入** | 替换 all-MiniLM-L6-v2 (384d 英文) → BAAI/bge-small-zh-v1.5 (512d, 92MB)。ONNX Runtime ~42ms/embed |
-| **RetrievalHub 7通道全链路** | KG + Local + DAG(MN-RU) + Synapse(GNN+CfC) + Paper + Cognitive(MN-RU三通道) + Web。RRF v2 → neural rerank → quality assessment。融合置信度 0.93 |
-| **MN-RU siliconflow fallback** | BAAI/bge-m3 的 dimensions 参数 siliconflow 不支持 → 自动无参重试 fallback，3879 节点 |
-| **ANNSelector v2 + FAISS 动态索引** | <5000 自动 HNSWFlat，延迟选择，unified_vector_store 集成 |
-| **SparseGAT** | O(E·d) 稀疏注意力替代 O(N²·d) 稠密，全量 3078 节点 ~3MB（原 20GB OOM），默认 `use_sparse=True` |
-| **GNN Graph Builder** | GraphSAGE/GAT/GCN 三卷积层，突触网络图推理底层构建 |
-| **~140 模块全同步** | scripts_core / integration / memory / rails / privileged / api → 138 模块全加载 |
-
-### v6.0 新特性
-
-| 特性 | 说明 |
-|------|------|
-| **五路神经检索 → ContextEngine 全链路** | `retrieval_hub` 五路并行（KG/Local/DAG/Synapse/Paper）→ neural_rerank_dedup（LTC h_t 门控 + 激活传播提权 + Content Fingerprint 去重）→ ContextEngine assemble 注入 |
-| **smart_retrieval UDS 方法** | 新增 Worker RPC 方法，走完整 `retrieval_hub()` 管道，15s 超时 + 自动降级到旧 recall |
-| **Galaxy Kernel 认知注入 assemble** | 60s 新鲜期内 `galaxy_kernel_insights.json`（情感/因果/空间/CoVe）自动注入 assemble 上下文，与 R-CCAM 去重 |
-| **_content_type 上下文排序** | 每条检索结果标记 `conversation` / `summary` / `metadata`，ContextEngine smartRecall 按类型重排序，对话历史优先 |
-| **Galaxy Kernel 产出优化** | `_run_paper_post_response` 输入从仅 query 改为完整对话对（query+answer），使情感/因果/空间分析有足够文本上下文 |
-| **ncps 神经电路策略集成** | LTC (Liquid Time-Constant) + CfC (Closed-form Continuous-depth) + 遗忘曲线，每轮对话自动创建神经元/突触，非阻塞 try/except 并行侧效应 |
-| **memory_synapse_network.py** | 全新服务模块：MemoryNeuron（含 LTC 15 参数）/ NeuronManager（去重+激活）/ SynapseManager（LTP/LTD）/ CfCSynapseEngine / ForgettingCurveTrainer |
-| **NLP 增强神经网络** | MemoryNeuron 新增 4 字段 (nlp_keywords/entities/sentiment/importance)，create_neuron 自动 NLP 特征提取，去重支持 Jaccard 语义兜底，突触权重基于关键词/实体重叠动态计算 (0.3+0.4*kw+0.3*ent) |
-| **4 增强 NLP 模块全接入** | 依存句法分析 → 实体链接 → 指代消解 → 对比句检测 结果写入神经元 metadata + 自动创建实体关联神经元 |
-| **防幻觉双向闭环** | 验证结果回流神经网络：置信度 < 0.5 → LTD 削弱突触，> 0.8 → LTP 强化突触。高置信度问答持久化到 verified_memories.jsonl |
-| **biorhythm_sleep_consolidation LTCCell** | 仿生睡眠 REM 阶段可调用 LTC 激活获取真实 hidden state，梦境碎片拼装受 NLP 实体链约束 |
-| **TKG 事件日志系统** | 基于时序知识图谱的事件日志记录 |
-| **ncps 依赖** | requirements.txt + ncps>=1.0.0 |
-
-### v5.5 新特性
-
-| 特性 | 说明 |
-|------|------|
-| **IntelligentThinkingTrigger v2.0** | 三论文集成：RCR-Router 动态评分 + Springdrift CBR 记忆 + A-ToM 认知阶段推断，替换静态关键词匹配 |
-| **skill_scorer.py (28KB) — RCR-Router 引擎** | 30 个 SkillDescriptor 元数据，四维评分 (semantic 0.40 / role 0.20 / stage 0.15 / history 0.10)，贪心路由 top-3 |
-| **thinking_memory.py (14KB) — Springdrift CBR 层** | ThinkingCase 结构 + Sensorium 持续自感知 + 持久化 JSON，支持相似 case 召回 |
-| **A-ToM 认知阶段推断** | 6 阶段 (explore/analyze/verify/breakdown/plan/decide)，pattern 重构：`为什么`→verify, debug 关键词补全 |
-| **Cognition Forest 子树内容修正** | user←用户画像 (IDENTITY/SOUL/USER), self←系统能力 (92技能列表), env/meta 不变 |
-| **core/ 子模块全面同步** | 80 个核心子模块 (api/integration/memory/privileged) 补齐 |
-
-### v5.4 新特性
-
-| 特性 | 说明 |
-|------|------|
-| **KG as Memory Backbone 4 阶段全链路** | 实体自动摄入 + 图检索主通道 + Cognition 图推理 + 睡眠图维护 |
-| **Phase 1 - 实体持久化** | R-CCAM 每轮对话自动提取实体写入 KG，LLM 抽取 + 消歧 + 双向边 |
-| **Phase 2 - 图检索主通道** | `_do_kg()` 第 6 路检索，图遍历 depth 2-3，RRF 自动与向量检索竞争 |
-| **Phase 3 - Cognition 图推理** | 共享目标实体检测 + 时序频率分析，注入 thinking_skills_content |
-| **Phase 4 - 睡眠图推理** | DEEP-SLEEP 阶段实体消歧 + 社区发现 + 30 天低置信度边清理 |
-| **检索通道升级** | 6 路并行（kg + local + dag + synapse + paper + web），KG 优先 |
-
-### v5.2 新特性
-
-| 特性 | 说明 |
-|------|------|
-| **KoRa v2 行为模式引擎** | 时序周期分析 + 自适应参数推荐 + Cognition 阶段主动注入 |
-| **DAG 上下文持久化修复** | dag_shim.py 路径修复 + should_compact 参数修复 |
-
-### v5.1 新特性
-
-| 特性 | 说明 |
-|------|------|
-| **R-CCAM 延迟优化** | 查询改写+分类二合一，问候快速通路 ~24s→0.1s（240×） |
-| **FLARE 并行化** | ThreadPoolExecutor 3 线程并行防幻觉验证，节省 3-5s |
-| **四思考技能管道重架构** | thinking_skills_content 从 skill_guide 分离，budget routing |
-| **DAG 上下文管理器升级** | 时间衰减权重排序 + Cognition Forest 子树 + cycle_summary 追加 |
-| **WorkflowEngine 修复** | claw_worker.py 补 ORCHESTRATION_DIR，健康检查链路正常 |
-| **记忆验证增强** | from_dict 容错、SourceType 补全 |
-| **install_wizard 安装向导** | 7 阶段全自动自检（环境→模块→services 模块→pip 依赖→文件→断路器→配置） |
-| **Heuristic 批量验证** | 规则检查零 LLM 成本，75 条记忆批量处理 |
-| **系统品牌更名 GalaxyOS** | 从小艺 Claw 系统架构升级 |
-| **process() 精简 -70%** | 863→254 行 |
-| **Galaxy Kernel 扩容** | 308 行独立后台线程，6s 轮询 |
-| **异步注入三层兜底** | assemble→before_prompt_build→agent_end |
-| **自进化首次跑通** | 4 条/10min 进化建议产出 |
-| **时空认知集成** | Graphiti/AriGraph/LASAR 三篇论文 |
 
 ### GalaxyOS 管线结构
 
