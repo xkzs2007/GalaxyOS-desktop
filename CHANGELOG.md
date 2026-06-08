@@ -2,6 +2,18 @@
 
 GalaxyOS 版本变更记录。
 
+## [6.3.1] — 2026-06-08
+
+### Fixed
+- **HTTP/JSON over UDS 全通道统一** — 原始 socket 二进制协议全部替换为 HTTP over UDS
+  - Plugin → Worker: `http.request({ socketPath })` 替代 4 字节二进制帧
+  - Gateway UDS 服务端: `http.createServer().listen(udsPath)` 替代 `net.createServer`
+  - Worker Python → Gateway: `HTTPConnection` over UDS (`_UnixHTTPConn`) 替代 `struct.pack/unpack`
+  - `gateway_client.py` 重构: 移除残留的 `struct.pack`/`unpack`，统一走 HTTP
+- **健康检查 `无记忆数据` 误报修复** — 旧数据 `source` 字段（`ai_judge`/`dc_judge`）不在当前 `SourceType` 枚举中
+  - 枚举新增 `AI_JUDGE` 和 `DC_JUDGE`
+  - `_load_memories` 添加 try/except 跳过格式不兼容的旧数据行
+
 ## [6.3.0] — 2026-06-08
 
 ### Added
