@@ -114,12 +114,18 @@ class DAGNode:
     timestamp: float = 0.0           # 时间戳
     metadata: Dict[str, Any] = field(default_factory=dict)  # 额外元数据
     blob_id: str = ""                # v2: BlobArena 引用（完整原文）
+    depth: int = 0                   # v3: 摘要层级（0=原始，1=一次摘要，2=二次摘要...）
+    is_evicted: bool = False         # v3: 已被更高级摘要替代，不参与 assemble
 
     def to_dict(self) -> dict:
         d = asdict(self)
         # 保持向后兼容
         if 'blob_id' not in d:
             d['blob_id'] = ''
+        if 'depth' not in d:
+            d['depth'] = 0
+        if 'is_evicted' not in d:
+            d['is_evicted'] = False
         return d
 
     @classmethod
@@ -162,19 +168,7 @@ class DAGContextManager:
         self.use_blob_arena = use_blob_arena
 
         # BlobArena 实例（v2: 无损存储）
-        # 改为 per-session dict: {session_key: BlobArena}
-        self._blob_arenas: Dict[str, 'BlobArena'] = {}
-        # 初始惰性初始化标记
-        self._blob_arena_init = False
-        if self.use_blob_arena:
-            # 提前导入不报错
-            try:
-                from blob_arena import get_blob_arena
-                self._blob_arena_import_ok = True
-            except ImportError:
-                self._blob_arena_import_ok = False
-        else:
-            self._blob_arena_import_ok = False
+        self._blob_arena = get_blob_arena() if self.use_blob_arena else None
 
         # SQLite 锁（线程安全）
         self._lock = threading.Lock()
@@ -206,30 +200,6 @@ class DAGContextManager:
         logger.info(f"DAG Context Manager v2 初始化: db={self.db_path}, "
                     f"max_tokens={max_context_tokens}, threshold={context_threshold}, "
                     f"blob_arena={self.use_blob_arena}")
-
-    def _get_arena(self, session_key: str) -> Optional['BlobArena']:
-        """
-        获取 session 对应的 BlobArena 实例。
-        每个 session 独立目录，session 结束后可精准回收。
-
-        Args:
-            session_key: 会话 ID
-
-        Returns:
-            BlobArena 实例或 None（未启用时）
-        """
-        if not self.use_blob_arena or not self._blob_arena_import_ok:
-            return None
-        if not session_key:
-            return None
-
-        if session_key not in self._blob_arenas:
-            try:
-                from blob_arena import get_blob_arena
-                self._blob_arenas[session_key] = get_blob_arena(session_id=session_key)
-            except Exception:
-                return None
-        return self._blob_arenas.get(session_key)
 
     def _init_db(self):
         """初始化 SQLite 数据库"""
@@ -308,6 +278,17 @@ class DAGContextManager:
                 except Exception:
                     pass
 
+            # v3: depth + is_evicted 列（层级摘要）
+            for tbl in ('dag_nodes',):
+                try:
+                    conn.execute(f"ALTER TABLE {tbl} ADD COLUMN depth INTEGER DEFAULT 0")
+                except Exception:
+                    pass
+                try:
+                    conn.execute(f"ALTER TABLE {tbl} ADD COLUMN is_evicted INTEGER DEFAULT 0")
+                except Exception:
+                    pass
+
             conn.commit()
             conn.close()
 
@@ -324,13 +305,11 @@ class DAGContextManager:
         _full_content = data.get('content', '')
 
         # v2: 如果有原文且 blob_arena 可用，备份原文到 BlobArena
-        _session_key = data.get('session_key', '')
-        _ba = self._get_arena(_session_key) if _session_key else None
-        if _ba and data.get('content') and len(data['content']) > 200:
+        if self._blob_arena and data.get('content') and len(data['content']) > 200:
             try:
                 # memo 替换全文，原文存 blob
                 _orig = data['content']
-                _blob_id = _ba.append_text(_orig)
+                _blob_id = self._blob_arena.append_text(_orig)
                 _memo = generate_memo(_orig) if generate_memo else _orig[:200]
                 data['content'] = f"[memo] {_memo}"
                 data['blob_id'] = _blob_id
@@ -346,8 +325,8 @@ class DAGContextManager:
                     (node_id, node_type, session_key, content, blob_id, tokens, priority,
                      parent_ids, children_ids, is_summary, summary_of_ids,
                      importance_score, emotion_score, keywords, entities,
-                     timestamp, metadata)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     timestamp, metadata, depth, is_evicted)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     data['node_id'], data['node_type'], data['session_key'],
                     data['content'], _blob_id_val, data['tokens'], data['priority'],
@@ -357,7 +336,9 @@ class DAGContextManager:
                     data['importance_score'], data['emotion_score'],
                     data['keywords'], data['entities'],
                     data['timestamp'] or time.time(),
-                    data['metadata']
+                    data['metadata'],
+                    data.get('depth', 0),
+                    1 if data.get('is_evicted', False) else 0
                 ))
                 conn.commit()
                 conn.close()
@@ -572,6 +553,8 @@ class DAGContextManager:
                 row['metadata'] = {}
 
         row['is_summary'] = bool(row.get('is_summary', False))
+        row['is_evicted'] = bool(row.get('is_evicted', False))
+        row['depth'] = int(row.get('depth', 0))
         return DAGNode.from_dict(row)
 
     def assemble_context(
@@ -597,13 +580,17 @@ class DAGContextManager:
         # 分离各类节点
         critical_nodes = [n for n in all_nodes if n.priority == PriorityLevel.CRITICAL]
         high_nodes = [n for n in all_nodes if n.priority == PriorityLevel.HIGH]
-        summary_nodes = [n for n in all_nodes if n.is_summary and n.priority <= PriorityLevel.NORMAL]
+        # 过滤已淘汰的摘要（被更高级摘要替代）
+        summary_nodes = [n for n in all_nodes 
+                        if n.is_summary and not n.is_evicted 
+                        and n.priority <= PriorityLevel.NORMAL]
         message_nodes = [n for n in all_nodes if not n.is_summary and n.priority >= PriorityLevel.NORMAL]
 
         # 按时间排序
         critical_nodes.sort(key=lambda n: n.timestamp)
         high_nodes.sort(key=lambda n: n.timestamp)
-        summary_nodes.sort(key=lambda n: n.timestamp)
+        # 摘要优先高 depth（更紧凑），同 depth 从旧到新
+        summary_nodes.sort(key=lambda n: (-n.depth, n.timestamp))
         message_nodes.sort(key=lambda n: n.timestamp)
 
         # 第一步：关键节点（人格等）强制包含
@@ -639,7 +626,7 @@ class DAGContextManager:
             result_parts.append(("weighted_old", node))
             used_tokens += node.tokens
 
-        # 第三步：摘要节点（从旧到新）
+        # 第三步：摘要节点（优先高 depth，同 depth 内从旧到新）
         allowed_summary_tokens = max_tokens - used_tokens
         summary_tokens_used = 0
 
@@ -785,12 +772,23 @@ class DAGContextManager:
         if community_summary_available and raw_tokens > _adjusted_leaf * 0.7:
             needs_compact = True
 
+        # v3: 检查摘要节点膨胀 — 当 low-depth（depth<=1）摘要 token 超过阈值时
+        # 触发二次压缩（summary_compact），而不是标记 needs_compact
+        summary_nodes_all = [n for n in all_nodes if n.is_summary and not n.is_evicted]
+        low_depth_summary_tokens = sum(
+            n.tokens for n in summary_nodes_all if n.depth <= 1
+        )
+        summary_overflow = low_depth_summary_tokens > self.max_context_tokens * 0.15
+
         context_usage_ratio = raw_tokens / self.max_context_tokens if self.max_context_tokens else 0
 
         stats = {
             "raw_nodes": len(raw_nodes),
             "raw_tokens": raw_tokens,
-            "summary_nodes": len([n for n in all_nodes if n.is_summary]),
+            "summary_nodes": len(summary_nodes_all),
+            "summary_tokens": sum(n.tokens for n in summary_nodes_all),
+            "low_depth_summary_tokens": low_depth_summary_tokens,
+            "summary_overflow": summary_overflow,
             "threshold_tokens": threshold_tokens,
             "leaf_chunk_tokens": _adjusted_leaf,
             "context_threshold": _adjusted_threshold,
@@ -825,7 +823,18 @@ class DAGContextManager:
         return needs_compact, stats
 
     def ensure_auto_compact(self, session_key: str) -> Dict:
-        """Worker dag_compact handler 调用的兼容入口，包装 auto_summarize"""
+        """Worker dag_compact handler 调用的兼容入口
+
+        v3: 先检查摘要膨胀（summary_overflow），触发 summary_compact；
+        否则走原来的 auto_summarize。
+        """
+        # 先跑 should_compact 拿到摘要膨胀信息
+        _, stats = self.should_compact(session_key)
+        if stats.get('summary_overflow') and stats.get('low_depth_summary_tokens', 0) > 0:
+            result = self.summary_compact(session_key)
+            if result.get('summarized', 0) > 0:
+                return result
+        # 降级到原始 auto_summarize
         return self.auto_summarize(session_key=session_key, batch_size=10)
 
     def auto_summarize(
@@ -857,10 +866,9 @@ class DAGContextManager:
             return {"summarized": 0, "reason": "没有可摘要的节点"}
 
         # v2: 先将原文存到 BlobArena（无损保留），节点只存 memo
-        _ba = self._get_arena(session_key)
-        if _ba:
+        if self._blob_arena:
             combined_text = "\n".join([n.content for n in to_summarize])
-            _blob_id = _ba.append_text(combined_text)
+            _blob_id = self._blob_arena.append_text(combined_text)
             # memo = 轻量检索索引，不做价值判断
             memo_text = generate_memo(combined_text) if generate_memo else combined_text[:200]
             keywords = _extract_keywords(combined_text)
@@ -900,6 +908,7 @@ class DAGContextManager:
             tokens=len(memo_text) // 4,
             priority=PriorityLevel.NORMAL,
             is_summary=True,
+            depth=1,  # 一次摘要
             summary_of_ids=[n.node_id for n in to_summarize],
             timestamp=time.time(),
             keywords=keywords,
@@ -960,27 +969,18 @@ class DAGContextManager:
         Returns:
             str: 完整原文
         """
-        blob_id = getattr(node, 'blob_id', '') if hasattr(node, 'blob_id') else node.get('blob_id', '')
-        if not blob_id:
+        if not self._blob_arena:
             return node.content if hasattr(node, 'content') else node.get('content', '')
 
-        _session_key = getattr(node, 'session_key', '') if hasattr(node, 'session_key') else node.get('session_key', '')
-        _ba = self._get_arena(_session_key) if _session_key else None
-        if _ba:
+        blob_id = getattr(node, 'blob_id', '') if hasattr(node, 'blob_id') else node.get('blob_id', '')
+        if blob_id:
             try:
-                full_text = _ba.read_text(blob_id)
+                full_text = self._blob_arena.read_text(blob_id)
                 if full_text:
                     return full_text
             except Exception:
                 pass
-        else:
-            try:
-                from blob_arena import read_text_blob_compat
-                full_text = read_text_blob_compat(blob_id, session_id=_session_key)
-                if full_text:
-                    return full_text
-            except Exception:
-                pass
+        # 降级：返回节点自身的 content
         return node.content if hasattr(node, 'content') else node.get('content', '')
 
     def restore_batch_content(self, nodes: List[DAGNode]) -> List[Dict]:
@@ -1555,10 +1555,9 @@ class DAGContextManager:
             full_text += f"[{n['phase_name']}]\n{n['content']}\n\n"
 
         # 生成 memo（检索索引用，不丢信息因为 BlobArena 存了全文）
-        _ba = self._get_arena(session_key)
-        if _ba:
+        if self._blob_arena:
             # 全文存到 BlobArena
-            _blob_id = _ba.append_text(full_text)
+            _blob_id = self._blob_arena.append_text(full_text)
             # 生成轻量 memo
             _memo_text = generate_memo(full_text) if generate_memo else full_text[:200]
             _method = "blob_arena_memo"
@@ -1616,9 +1615,9 @@ class DAGContextManager:
 
                 # chunk 级别 blob
                 _chunk_blob_id = ""
-                if _ba:
-                    _chunk_blob_id = _ba.append_text(chunk_full)
-                _chunk_memo = generate_memo(chunk_full) if (generate_memo and _ba) else chunk_full[:200]
+                if self._blob_arena:
+                    _chunk_blob_id = self._blob_arena.append_text(chunk_full)
+                _chunk_memo = generate_memo(chunk_full) if (generate_memo and self._blob_arena) else chunk_full[:200]
 
                 if target_table == "rccam_nodes":
                     # 用 add_rccam_node 但通过 blob 方式
@@ -1659,7 +1658,7 @@ class DAGContextManager:
         conclusions = phase_map.get("action") or phase_map.get("control", "")[:200]
 
         # memo 用 generate_memo（只做检索索引，不做价值判断）
-        memo_for_index = _memo_text if _ba else full_text[:300]
+        memo_for_index = _memo_text if self._blob_arena else full_text[:300]
 
         previous_cycle_id = cycle_id.replace(f"_{cycle_index}", f"_{cycle_index - 1}") if cycle_index and cycle_index > 1 else ""
 
@@ -1691,6 +1690,117 @@ class DAGContextManager:
             )
             self.add_node(summary_node)
             return {"summarized": 1, "node_id": summary_node_id, "method": _method}
+
+    def summary_compact(self, session_key: str,
+                        max_to_compress: int = 40,
+                        reserve_recent_depth: int = 0) -> Dict:
+        """
+        二次摘要压缩：对 depth<=1 的旧摘要执行层级摘要（v3）。
+
+        当 low_depth_summary_tokens > max_context * 0.15 时触发。
+        将最老的 depth<=1 摘要按批次合并为 depth=2 高层摘要，
+        原 depth<=1 摘要标记 is_evicted=True 不参与 assemble。
+
+        Args:
+            session_key: 会话 key
+            max_to_compress: 最多处理多少批
+            reserve_recent_depth: 保留最近 N 批 depth<=1 不压缩
+
+        Returns:
+            {"summarized": 批次, "nodes_evicted": 淘汰数, "depth": 2}
+        """
+        all_nodes = self.get_session_nodes(session_key)
+
+        # 只取 depth<=1、未被淘汰的摘要
+        target = [n for n in all_nodes if n.is_summary
+                  and not n.is_evicted and n.depth <= 1
+                  and n.priority <= PriorityLevel.NORMAL]
+        target.sort(key=lambda n: n.timestamp)
+
+        if len(target) <= reserve_recent_depth + 2:
+            return {"summarized": 0, "nodes_evicted": 0, "reason": "摘要数不够"}
+
+        # 保留最近 N 批不压缩
+        if reserve_recent_depth > 0 and len(target) > reserve_recent_depth * 3:
+            compressible = target[:-(reserve_recent_depth * 3)]
+        else:
+            compressible = target[:-2]  # 至少保留 2 个
+
+        if not compressible:
+            return {"summarized": 0, "nodes_evicted": 0, "reason": "无可压缩摘要"}
+
+        # 每 SUMMARY_BATCH 个摘要合并为一个高层摘要
+        SUMMARY_BATCH = 6
+        batches = [compressible[i:i + SUMMARY_BATCH]
+                   for i in range(0, min(len(compressible), max_to_compress * SUMMARY_BATCH), SUMMARY_BATCH)]
+
+        if not batches:
+            return {"summarized": 0, "nodes_evicted": 0}
+
+        summarized = 0
+        all_evicted = []
+
+        for batch in batches:
+            if not batch or len(batch) < 2:
+                continue
+
+            # 从 BlobArena 还原摘要的原文
+            full_texts = []
+            for n in batch:
+                ft = self.restore_full_content(n)
+                full_texts.append(ft)
+            combined = "\n\n---\n\n".join(full_texts)
+
+            # 生成高层摘要（短一些，强调跨对话主题）
+            high_summary = combined[:2000] + "\n[...]" if len(combined) > 2000 else combined
+            high_summary = f"[高层摘要] 以下 {len(batch)} 个旧讨论的融合概括:\n{high_summary[:1500]}"
+
+            _blob_id = ""
+            try:
+                if self._blob_arena:
+                    _blob_id = self._blob_arena.append_text(combined)
+            except Exception:
+                pass
+
+            summary_id = f"high_summ_{session_key}_{int(time.time()*1000)}_{hashlib.md5(batch[0].node_id.encode()[:16]).hexdigest()[:6]}"
+            summary_node = DAGNode(
+                node_id=summary_id,
+                node_type="high_level_summary",
+                session_key=session_key,
+                content=high_summary,
+                blob_id=_blob_id,
+                tokens=len(high_summary) // 4 or 1,
+                priority=PriorityLevel.NORMAL,
+                is_summary=True,
+                depth=2,  # 二次摘要
+                summary_of_ids=[n.node_id for n in batch],
+                timestamp=time.time(),
+            )
+
+            # 标记原摘要为已淘汰
+            batch_ids = [n.node_id for n in batch]
+            with self._lock:
+                conn = sqlite3.connect(self.db_path)
+                try:
+                    conn.execute(
+                        "UPDATE dag_nodes SET is_evicted=1 WHERE node_id IN ({})".format(
+                            ",".join(["?" for _ in batch_ids])
+                        ),
+                        batch_ids
+                    )
+                    conn.commit()
+                finally:
+                    conn.close()
+
+            self.add_node(summary_node)
+            all_evicted.extend(batch_ids)
+            summarized += 1
+
+        return {
+            "summarized": summarized,
+            "nodes_evicted": len(all_evicted),
+            "depth": 2,
+        }
 
     def cognitive_compress_dag_messages(self, session_key,
                                           max_to_compress=20,
@@ -1757,10 +1867,9 @@ class DAGContextManager:
             # BlobArena 无损存储完整原文，SQLite 只存 memo
             _blob_id = ""
             _memo_text = ""
-            _ba = self._get_arena(session_key)
             try:
-                if _ba:
-                    _blob_id = _ba.append_text(full_combined)
+                if self._blob_arena:
+                    _blob_id = self._blob_arena.append_text(full_combined)
                     _memo_text = generate_memo(full_combined) if generate_memo else full_combined[:200]
                 else:
                     _memo_text = full_combined[:500] + "..." if len(full_combined) > 500 else full_combined
@@ -1781,6 +1890,7 @@ class DAGContextManager:
                 tokens=len(_memo_text) // 4 or 1,
                 priority=PriorityLevel.NORMAL,
                 is_summary=True,
+                depth=1,  # 一次摘要
                 summary_of_ids=[n.node_id for n in group],
                 timestamp=time.time(),
                 keywords=keywords,
@@ -2470,180 +2580,9 @@ class DAGContextManager:
             logger.warning(f"get_assets_for_session failed: {e}")
             return []
 
-    def cross_session_search(self, query, limit=5, exclude_session=None):
-        """跨会话DAG搜索 — 用FTS5全文搜索匹配query的记录，排除当前会话
-
-        Args:
-            query: 搜索关键词
-            limit: 最大返回条数
-            exclude_session: 排除的会话key
-
-        Returns:
-            [{content, session_key, role, timestamp, tokens}, ...]
-        """
-        if not query or not query.strip():
-            return []
-
-        # 尝试FTS5全文搜索
-        fts_worked = False
-        results = []
-        try:
-            with self._lock:
-                conn = sqlite3.connect(self.db_path)
-                conn.row_factory = sqlite3.Row
-                # 用FTS5的MATCH语法
-                # dag_fts表有content/keywords/entities三列
-                # 对中文，需要加*通配符前缀匹配
-                safe_query = query.strip().replace("'", "''")[:100]
-                fts_query = ' OR '.join([f'"{w}"' for w in safe_query.split() if len(w) >= 2])
-                if not fts_query:
-                    fts_query = f'"{safe_query}"'
-                try:
-                    cursor = conn.execute(
-                        """SELECT d.node_id, d.content, d.session_key, d.metadata, d.timestamp, d.tokens
-                           FROM dag_fts f JOIN dag_nodes d ON f.rowid = d.rowid
-                           WHERE dag_fts MATCH ?
-                           ORDER BY d.timestamp DESC
-                           LIMIT ?""",
-                        (fts_query, limit * 3)
-                    )
-                    rows = cursor.fetchall()
-                    fts_worked = len(rows) > 0
-                    for row in rows:
-                        d = dict(row)
-                        meta = d.get('metadata', '{}')
-                        if isinstance(meta, str):
-                            try:
-                                meta = json.loads(meta)
-                            except (json.JSONDecodeError, TypeError):
-                                meta = {}
-                        role = meta.get('role', 'unknown')
-                        session_key = d.get('session_key', '')
-                        if exclude_session and session_key == exclude_session:
-                            continue
-                        results.append({
-                            'content': d.get('content', '')[:500],
-                            'session_key': session_key,
-                            'role': role,
-                            'timestamp': d.get('timestamp', 0),
-                            'tokens': d.get('tokens', 0),
-                        })
-                except Exception:
-                    pass
-                conn.close()
-        except Exception:
-            pass
-
-        # FTS5不可用或未命中 → 降级到LIKE模糊搜索
-        if not fts_worked:
-            try:
-                with self._lock:
-                    conn = sqlite3.connect(self.db_path)
-                    conn.row_factory = sqlite3.Row
-                    like_pattern = f'%{query.strip()[:50]}%'
-                    cursor = conn.execute(
-                        """SELECT node_id, content, session_key, metadata, timestamp, tokens
-                           FROM dag_nodes
-                           WHERE content LIKE ?
-                           ORDER BY timestamp DESC
-                           LIMIT ?""",
-                        (like_pattern, limit * 3)
-                    )
-                    rows = cursor.fetchall()
-                    for row in rows:
-                        d = dict(row)
-                        meta = d.get('metadata', '{}')
-                        if isinstance(meta, str):
-                            try:
-                                meta = json.loads(meta)
-                            except (json.JSONDecodeError, TypeError):
-                                meta = {}
-                        role = meta.get('role', 'unknown')
-                        session_key = d.get('session_key', '')
-                        if exclude_session and session_key == exclude_session:
-                            continue
-                        results.append({
-                            'content': d.get('content', '')[:500],
-                            'session_key': session_key,
-                            'role': role,
-                            'timestamp': d.get('timestamp', 0),
-                            'tokens': d.get('tokens', 0),
-                        })
-                    conn.close()
-            except Exception:
-                pass
-
-        # 按timestamp降序，去重(session_key)，取limit条
-        seen_sessions = set()
-        deduped = []
-        for r in sorted(results, key=lambda x: x.get('timestamp', 0), reverse=True):
-            sk = r.get('session_key', '')
-            if sk and sk not in seen_sessions:
-                seen_sessions.add(sk)
-                deduped.append(r)
-            if len(deduped) >= limit:
-                break
-
-        return deduped[:limit]
-
-    def delete_blob_arena(self, session_key: str) -> bool:
-        """
-        删除 session 的 BlobArena 磁盘数据和内存缓存。
-
-        Args:
-            session_key: 会话 ID
-
-        Returns:
-            bool: 是否成功删除
-        """
-        # 从内存缓存移除
-        if session_key in self._blob_arenas:
-            self._blob_arenas[session_key].close()
-            del self._blob_arenas[session_key]
-        # 删除磁盘文件
-        try:
-            from blob_arena import delete_session_arena
-            return delete_session_arena(session_key)
-        except Exception:
-            return False
-
-    def close_session(self, session_key: str, delete_dag_data: bool = False) -> Dict:
-        """
-        关闭 session，清理 BlobArena。
-
-        Args:
-            session_key: 会话 ID
-            delete_dag_data: 是否同时删除 DAG 数据库中的节点
-
-        Returns:
-            {"blob_arena_deleted": bool, "dag_nodes_deleted": int}
-        """
-        result = {"blob_arena_deleted": False, "dag_nodes_deleted": 0}
-        result["blob_arena_deleted"] = self.delete_blob_arena(session_key)
-
-        if delete_dag_data:
-            with self._lock:
-                try:
-                    conn = sqlite3.connect(self.db_path)
-                    cur = conn.execute("DELETE FROM dag_nodes WHERE session_key=?", (session_key,))
-                    dag_deleted = cur.rowcount
-                    cur = conn.execute("DELETE FROM rccam_nodes WHERE session_key=?", (session_key,))
-                    rccam_deleted = cur.rowcount
-                    conn.commit()
-                    conn.close()
-                    result["dag_nodes_deleted"] = dag_deleted + rccam_deleted
-                except Exception:
-                    pass
-        return result
-
     def close(self):
         """关闭资源"""
-        for sk, ba in self._blob_arenas.items():
-            try:
-                ba.close()
-            except Exception:
-                pass
-        self._blob_arenas.clear()
+        pass
 
     # ====================================================================
     # MemGPT 风格分页 + 中断

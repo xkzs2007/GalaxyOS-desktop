@@ -114,12 +114,18 @@ class DAGNode:
     timestamp: float = 0.0           # 时间戳
     metadata: Dict[str, Any] = field(default_factory=dict)  # 额外元数据
     blob_id: str = ""                # v2: BlobArena 引用（完整原文）
+    depth: int = 0                   # v3: 摘要层级（0=原始，1=一次摘要，2=二次摘要...）
+    is_evicted: bool = False         # v3: 已被更高级摘要替代，不参与 assemble
 
     def to_dict(self) -> dict:
         d = asdict(self)
         # 保持向后兼容
         if 'blob_id' not in d:
             d['blob_id'] = ''
+        if 'depth' not in d:
+            d['depth'] = 0
+        if 'is_evicted' not in d:
+            d['is_evicted'] = False
         return d
 
     @classmethod
@@ -272,6 +278,17 @@ class DAGContextManager:
                 except Exception:
                     pass
 
+            # v3: depth + is_evicted 列（层级摘要）
+            for tbl in ('dag_nodes',):
+                try:
+                    conn.execute(f"ALTER TABLE {tbl} ADD COLUMN depth INTEGER DEFAULT 0")
+                except Exception:
+                    pass
+                try:
+                    conn.execute(f"ALTER TABLE {tbl} ADD COLUMN is_evicted INTEGER DEFAULT 0")
+                except Exception:
+                    pass
+
             conn.commit()
             conn.close()
 
@@ -284,6 +301,8 @@ class DAGContextManager:
                 data[field_name] = json.dumps(data[field_name])
         if isinstance(data.get('metadata'), dict):
             data['metadata'] = json.dumps(data['metadata'])
+
+        _full_content = data.get('content', '')
 
         # v2: 如果有原文且 blob_arena 可用，备份原文到 BlobArena
         if self._blob_arena and data.get('content') and len(data['content']) > 200:
@@ -306,8 +325,8 @@ class DAGContextManager:
                     (node_id, node_type, session_key, content, blob_id, tokens, priority,
                      parent_ids, children_ids, is_summary, summary_of_ids,
                      importance_score, emotion_score, keywords, entities,
-                     timestamp, metadata)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     timestamp, metadata, depth, is_evicted)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     data['node_id'], data['node_type'], data['session_key'],
                     data['content'], _blob_id_val, data['tokens'], data['priority'],
@@ -317,14 +336,111 @@ class DAGContextManager:
                     data['importance_score'], data['emotion_score'],
                     data['keywords'], data['entities'],
                     data['timestamp'] or time.time(),
-                    data['metadata']
+                    data['metadata'],
+                    data.get('depth', 0),
+                    1 if data.get('is_evicted', False) else 0
                 ))
                 conn.commit()
                 conn.close()
+                # MemGAS: 为长内容创建 KnowledgeAsset（非阻塞）
+                if _full_content and len(_full_content) > 200:
+                    try:
+                        self._create_asset_for_node(node, _full_content)
+                    except Exception:
+                        pass
                 return True
             except Exception as e:
                 logger.error(f"添加节点失败: {e}")
                 return False
+    
+    # ── MemGAS: add_node 后，对长内容创建 KnowledgeAsset ──
+    def _create_asset_for_node(self, node: DAGNode, content: str):
+        """
+        对长内容（>200 字符）创建 KnowledgeAsset，提取多粒度表示并建立关联边。
+        """
+        if not content or len(content) < 200:
+            return
+        try:
+            from knowledge_asset import get_asset_registry, create_memory_asset, AssociationEdge
+            from multi_granularity import MultiGranularityExtractor, GMMAssociator
+            
+            _reg = get_asset_registry()
+            _ext = MultiGranularityExtractor()
+            _assoc = GMMAssociator(n_components=5)
+            
+            # 检查是否已创建过
+            _existing = _reg.search(content[:100], top_k=1, type_filter=None)
+            for _ex in _existing:
+                if _ex.raw_content[:100] == content[:100]:
+                    return  # 已注册
+            
+            # 创建资产
+            _asset = create_memory_asset(
+                memory_id=node.node_id,
+                raw_content=content[:2000],
+                tags=node.keywords if hasattr(node, 'keywords') and node.keywords else [],
+                category=node.node_type if hasattr(node, 'node_type') else 'dag',
+                source=f"dag_{node.node_type if hasattr(node, 'node_type') else 'unknown'}",
+            )
+            
+            # 多粒度
+            _asset.multi_granularity = _ext.extract(content)
+            
+            # GMM 关联（与已有资产）
+            _existing_texts = [a.raw_content[:500] for a in _reg.list_ids()[:100] if _reg.get(a)]
+            if _existing_texts:
+                _assoc.fit(_existing_texts + [content[:500]])
+                _edges = _assoc.associate(content[:500])
+                for _target_id, _relation, _weight in _edges:
+                    _asset.association_graph.append(
+                        AssociationEdge(
+                            target_asset_id=_target_id,
+                            relation=_relation,
+                            weight=_weight,
+                        )
+                    )
+                    # 双向边
+                    _target_asset = _reg.get(_target_id)
+                    if _target_asset:
+                        _target_asset.association_graph.append(
+                            AssociationEdge(
+                                target_asset_id=_asset.asset_id,
+                                relation=_relation,
+                                weight=_weight,
+                            )
+                        )
+            
+            _reg.register(_asset)
+
+            # ── 同步到突触网络（双向桥接） ──
+            try:
+                from memory_synapse_network import SynapseNetwork
+                _sn = SynapseNetwork(os.path.expanduser("~/.openclaw/workspace"))
+                _sn._load()
+                # 检查是否已存在相同内容的神经元（幂等）
+                _exists = False
+                for _n in _sn._neurons_cache.values():
+                    if _n.content[:100] == content[:100]:
+                        _n.activation_count += 1
+                        _exists = True
+                        break
+                if not _exists:
+                    from memory_synapse_network import MemoryNeuron
+                    import hashlib as _hl
+                    _neuron = MemoryNeuron(
+                        id=f"NRN-DAG-{_hl.md5(content[:200].encode()).hexdigest()[:16]}",
+                        content=content,
+                        created_at=time.strftime('%Y-%m-%dT%H:%M:%S', time.gmtime()),
+                        activation_count=1,
+                    )
+                    _sn._neurons_cache[_neuron.id] = _neuron
+                    _sn._save_neuron(_neuron)
+            except Exception:
+                pass
+
+            logger.debug(f"KnowledgeAsset created for DAG node: {_asset.asset_id}")
+        except Exception as _ae:
+            logger.debug(f"KnowledgeAsset creation skip: {_ae}")
 
     def add_message(
         self,
@@ -437,6 +553,8 @@ class DAGContextManager:
                 row['metadata'] = {}
 
         row['is_summary'] = bool(row.get('is_summary', False))
+        row['is_evicted'] = bool(row.get('is_evicted', False))
+        row['depth'] = int(row.get('depth', 0))
         return DAGNode.from_dict(row)
 
     def assemble_context(
@@ -462,13 +580,17 @@ class DAGContextManager:
         # 分离各类节点
         critical_nodes = [n for n in all_nodes if n.priority == PriorityLevel.CRITICAL]
         high_nodes = [n for n in all_nodes if n.priority == PriorityLevel.HIGH]
-        summary_nodes = [n for n in all_nodes if n.is_summary and n.priority <= PriorityLevel.NORMAL]
+        # 过滤已淘汰的摘要（被更高级摘要替代）
+        summary_nodes = [n for n in all_nodes 
+                        if n.is_summary and not n.is_evicted 
+                        and n.priority <= PriorityLevel.NORMAL]
         message_nodes = [n for n in all_nodes if not n.is_summary and n.priority >= PriorityLevel.NORMAL]
 
         # 按时间排序
         critical_nodes.sort(key=lambda n: n.timestamp)
         high_nodes.sort(key=lambda n: n.timestamp)
-        summary_nodes.sort(key=lambda n: n.timestamp)
+        # 摘要优先高 depth（更紧凑），同 depth 从旧到新
+        summary_nodes.sort(key=lambda n: (-n.depth, n.timestamp))
         message_nodes.sort(key=lambda n: n.timestamp)
 
         # 第一步：关键节点（人格等）强制包含
@@ -504,7 +626,7 @@ class DAGContextManager:
             result_parts.append(("weighted_old", node))
             used_tokens += node.tokens
 
-        # 第三步：摘要节点（从旧到新）
+        # 第三步：摘要节点（优先高 depth，同 depth 内从旧到新）
         allowed_summary_tokens = max_tokens - used_tokens
         summary_tokens_used = 0
 
@@ -650,12 +772,23 @@ class DAGContextManager:
         if community_summary_available and raw_tokens > _adjusted_leaf * 0.7:
             needs_compact = True
 
+        # v3: 检查摘要节点膨胀 — 当 low-depth（depth<=1）摘要 token 超过阈值时
+        # 触发二次压缩（summary_compact），而不是标记 needs_compact
+        summary_nodes_all = [n for n in all_nodes if n.is_summary and not n.is_evicted]
+        low_depth_summary_tokens = sum(
+            n.tokens for n in summary_nodes_all if n.depth <= 1
+        )
+        summary_overflow = low_depth_summary_tokens > self.max_context_tokens * 0.15
+
         context_usage_ratio = raw_tokens / self.max_context_tokens if self.max_context_tokens else 0
 
         stats = {
             "raw_nodes": len(raw_nodes),
             "raw_tokens": raw_tokens,
-            "summary_nodes": len([n for n in all_nodes if n.is_summary]),
+            "summary_nodes": len(summary_nodes_all),
+            "summary_tokens": sum(n.tokens for n in summary_nodes_all),
+            "low_depth_summary_tokens": low_depth_summary_tokens,
+            "summary_overflow": summary_overflow,
             "threshold_tokens": threshold_tokens,
             "leaf_chunk_tokens": _adjusted_leaf,
             "context_threshold": _adjusted_threshold,
@@ -690,7 +823,18 @@ class DAGContextManager:
         return needs_compact, stats
 
     def ensure_auto_compact(self, session_key: str) -> Dict:
-        """Worker dag_compact handler 调用的兼容入口，包装 auto_summarize"""
+        """Worker dag_compact handler 调用的兼容入口
+
+        v3: 先检查摘要膨胀（summary_overflow），触发 summary_compact；
+        否则走原来的 auto_summarize。
+        """
+        # 先跑 should_compact 拿到摘要膨胀信息
+        _, stats = self.should_compact(session_key)
+        if stats.get('summary_overflow') and stats.get('low_depth_summary_tokens', 0) > 0:
+            result = self.summary_compact(session_key)
+            if result.get('summarized', 0) > 0:
+                return result
+        # 降级到原始 auto_summarize
         return self.auto_summarize(session_key=session_key, batch_size=10)
 
     def auto_summarize(
@@ -764,6 +908,7 @@ class DAGContextManager:
             tokens=len(memo_text) // 4,
             priority=PriorityLevel.NORMAL,
             is_summary=True,
+            depth=1,  # 一次摘要
             summary_of_ids=[n.node_id for n in to_summarize],
             timestamp=time.time(),
             keywords=keywords,
@@ -1546,6 +1691,117 @@ class DAGContextManager:
             self.add_node(summary_node)
             return {"summarized": 1, "node_id": summary_node_id, "method": _method}
 
+    def summary_compact(self, session_key: str,
+                        max_to_compress: int = 40,
+                        reserve_recent_depth: int = 0) -> Dict:
+        """
+        二次摘要压缩：对 depth<=1 的旧摘要执行层级摘要（v3）。
+
+        当 low_depth_summary_tokens > max_context * 0.15 时触发。
+        将最老的 depth<=1 摘要按批次合并为 depth=2 高层摘要，
+        原 depth<=1 摘要标记 is_evicted=True 不参与 assemble。
+
+        Args:
+            session_key: 会话 key
+            max_to_compress: 最多处理多少批
+            reserve_recent_depth: 保留最近 N 批 depth<=1 不压缩
+
+        Returns:
+            {"summarized": 批次, "nodes_evicted": 淘汰数, "depth": 2}
+        """
+        all_nodes = self.get_session_nodes(session_key)
+
+        # 只取 depth<=1、未被淘汰的摘要
+        target = [n for n in all_nodes if n.is_summary
+                  and not n.is_evicted and n.depth <= 1
+                  and n.priority <= PriorityLevel.NORMAL]
+        target.sort(key=lambda n: n.timestamp)
+
+        if len(target) <= reserve_recent_depth + 2:
+            return {"summarized": 0, "nodes_evicted": 0, "reason": "摘要数不够"}
+
+        # 保留最近 N 批不压缩
+        if reserve_recent_depth > 0 and len(target) > reserve_recent_depth * 3:
+            compressible = target[:-(reserve_recent_depth * 3)]
+        else:
+            compressible = target[:-2]  # 至少保留 2 个
+
+        if not compressible:
+            return {"summarized": 0, "nodes_evicted": 0, "reason": "无可压缩摘要"}
+
+        # 每 SUMMARY_BATCH 个摘要合并为一个高层摘要
+        SUMMARY_BATCH = 6
+        batches = [compressible[i:i + SUMMARY_BATCH]
+                   for i in range(0, min(len(compressible), max_to_compress * SUMMARY_BATCH), SUMMARY_BATCH)]
+
+        if not batches:
+            return {"summarized": 0, "nodes_evicted": 0}
+
+        summarized = 0
+        all_evicted = []
+
+        for batch in batches:
+            if not batch or len(batch) < 2:
+                continue
+
+            # 从 BlobArena 还原摘要的原文
+            full_texts = []
+            for n in batch:
+                ft = self.restore_full_content(n)
+                full_texts.append(ft)
+            combined = "\n\n---\n\n".join(full_texts)
+
+            # 生成高层摘要（短一些，强调跨对话主题）
+            high_summary = combined[:2000] + "\n[...]" if len(combined) > 2000 else combined
+            high_summary = f"[高层摘要] 以下 {len(batch)} 个旧讨论的融合概括:\n{high_summary[:1500]}"
+
+            _blob_id = ""
+            try:
+                if self._blob_arena:
+                    _blob_id = self._blob_arena.append_text(combined)
+            except Exception:
+                pass
+
+            summary_id = f"high_summ_{session_key}_{int(time.time()*1000)}_{hashlib.md5(batch[0].node_id.encode()[:16]).hexdigest()[:6]}"
+            summary_node = DAGNode(
+                node_id=summary_id,
+                node_type="high_level_summary",
+                session_key=session_key,
+                content=high_summary,
+                blob_id=_blob_id,
+                tokens=len(high_summary) // 4 or 1,
+                priority=PriorityLevel.NORMAL,
+                is_summary=True,
+                depth=2,  # 二次摘要
+                summary_of_ids=[n.node_id for n in batch],
+                timestamp=time.time(),
+            )
+
+            # 标记原摘要为已淘汰
+            batch_ids = [n.node_id for n in batch]
+            with self._lock:
+                conn = sqlite3.connect(self.db_path)
+                try:
+                    conn.execute(
+                        "UPDATE dag_nodes SET is_evicted=1 WHERE node_id IN ({})".format(
+                            ",".join(["?" for _ in batch_ids])
+                        ),
+                        batch_ids
+                    )
+                    conn.commit()
+                finally:
+                    conn.close()
+
+            self.add_node(summary_node)
+            all_evicted.extend(batch_ids)
+            summarized += 1
+
+        return {
+            "summarized": summarized,
+            "nodes_evicted": len(all_evicted),
+            "depth": 2,
+        }
+
     def cognitive_compress_dag_messages(self, session_key,
                                           max_to_compress=20,
                                           reserve_recent=4):
@@ -1634,6 +1890,7 @@ class DAGContextManager:
                 tokens=len(_memo_text) // 4 or 1,
                 priority=PriorityLevel.NORMAL,
                 is_summary=True,
+                depth=1,  # 一次摘要
                 summary_of_ids=[n.node_id for n in group],
                 timestamp=time.time(),
                 keywords=keywords,
@@ -2180,6 +2437,148 @@ class DAGContextManager:
 
         results.sort(key=lambda x: x["similarity"], reverse=True)
         return results[:k]
+
+    # ════════════════════════════════════════════════════
+    # MemGAS: KnowledgeAsset 查询
+    # ════════════════════════════════════════════════════
+
+    def get_assets_for_session(self, session_key: str, limit: int = 20) -> List[Dict]:
+        """
+        获取指定 session 在 AssetRegistry 中对应的知识资产。
+        
+        从 DAG 库读取该 session 的长内容节点（>200 字符），
+        在 AssetRegistry 中搜索对应资产并返回。
+        如果资产不存在，即时创建。
+
+        Args:
+            session_key: DAG 会话 key
+            limit: 最大返回资产数
+
+        Returns:
+            [{asset_dict}, ...]
+        """
+        assets = []
+        try:
+            from knowledge_asset import get_asset_registry, create_memory_asset, AssociationEdge, AssetType
+            from multi_granularity import MultiGranularityExtractor, GMMAssociator
+
+            reg = get_asset_registry()
+            extractor = MultiGranularityExtractor()
+            associator = GMMAssociator(n_components=5)
+
+            # 从 DAG 读该 session 的节点
+            nodes = self.get_session_nodes(session_key, limit=limit * 2)
+            if not nodes:
+                # 再试 rccam_nodes
+                try:
+                    with self._lock:
+                        conn = sqlite3.connect(self.db_path)
+                        conn.row_factory = sqlite3.Row
+                        cursor = conn.execute(
+                            "SELECT node_id, content, keywords, node_type, timestamp "
+                            "FROM rccam_nodes WHERE session_key=? "
+                            "ORDER BY timestamp DESC LIMIT ?",
+                            (session_key, limit * 2)
+                        )
+                        rows = [dict(r) for r in cursor.fetchall()]
+                        conn.close()
+                    for row in rows:
+                        content = row.get('content', '') or ''
+                        if len(content) < 200:
+                            continue
+                        content = self.restore_full_content(DAGNode(
+                            node_id=row['node_id'],
+                            node_type=row.get('node_type', 'rccam'),
+                            session_key=session_key,
+                            content=content,
+                            blob_id='',
+                        )) if hasattr(self, 'restore_full_content') else content
+
+                        # 搜索已注册资产
+                        existing = reg.search(content[:100], top_k=1)
+                        if existing:
+                            assets.append(existing[0].to_dict(include_raw=False))
+                        else:
+                            # 创建新资产
+                            asset = create_memory_asset(
+                                memory_id=row['node_id'],
+                                raw_content=content[:2000],
+                                category='rccam',
+                                source=f'rccam_{row.get("node_type", "")}',
+                            )
+                            asset.multi_granularity = extractor.extract(content)
+
+                            # 关联现有资产
+                            all_ids = reg.list_ids()
+                            existing_texts = [
+                                reg.get(aid).raw_content[:500]
+                                for aid in all_ids[:100] if reg.get(aid)
+                            ]
+                            if existing_texts:
+                                associator.fit(existing_texts + [content[:500]])
+                                edges = associator.associate(content[:500])
+                                for target_id, relation, weight in edges:
+                                    asset.association_graph.append(
+                                        AssociationEdge(
+                                            target_asset_id=target_id,
+                                            relation=relation,
+                                            weight=weight,
+                                        )
+                                    )
+
+                            reg.register(asset)
+                            assets.append(asset.to_dict(include_raw=False))
+
+                except Exception as _re:
+                    logger.debug(f"get_assets_for_session rccam: {_re}")
+                return assets[:limit]
+
+            for node in nodes:
+                content = self.restore_full_content(node) if hasattr(self, 'restore_full_content') else node.content
+                if not content or len(content) < 200:
+                    continue
+
+                # 搜索已注册资产
+                existing = reg.search(content[:100], top_k=1)
+                if existing:
+                    assets.append(existing[0].to_dict(include_raw=False))
+                else:
+                    # 创建新资产
+                    asset = create_memory_asset(
+                        memory_id=node.node_id,
+                        raw_content=content[:2000],
+                        tags=node.keywords if hasattr(node, 'keywords') and node.keywords else [],
+                        category=node.node_type if hasattr(node, 'node_type') else 'dag',
+                        source=f'dag_nodes_{node.node_type if hasattr(node, "node_type") else "unknown"}',
+                    )
+                    asset.multi_granularity = extractor.extract(content)
+
+                    # 关联
+                    all_ids = reg.list_ids()
+                    existing_texts = [
+                        reg.get(aid).raw_content[:500]
+                        for aid in all_ids[:100] if reg.get(aid)
+                    ]
+                    if existing_texts:
+                        associator.fit(existing_texts + [content[:500]])
+                        edges = associator.associate(content[:500])
+                        for target_id, relation, weight in edges:
+                            asset.association_graph.append(
+                                AssociationEdge(
+                                    target_asset_id=target_id,
+                                    relation=relation,
+                                    weight=weight,
+                                )
+                            )
+
+                    reg.register(asset)
+                    assets.append(asset.to_dict(include_raw=False))
+
+            return assets[:limit]
+
+        except Exception as e:
+            logger.warning(f"get_assets_for_session failed: {e}")
+            return []
 
     def close(self):
         """关闭资源"""

@@ -114,12 +114,18 @@ class DAGNode:
     timestamp: float = 0.0           # 时间戳
     metadata: Dict[str, Any] = field(default_factory=dict)  # 额外元数据
     blob_id: str = ""                # v2: BlobArena 引用（完整原文）
+    depth: int = 0                   # v3: 摘要层级（0=原始，1=一次摘要，2=二次摘要...）
+    is_evicted: bool = False         # v3: 已被更高级摘要替代，不参与 assemble
 
     def to_dict(self) -> dict:
         d = asdict(self)
         # 保持向后兼容
         if 'blob_id' not in d:
             d['blob_id'] = ''
+        if 'depth' not in d:
+            d['depth'] = 0
+        if 'is_evicted' not in d:
+            d['is_evicted'] = False
         return d
 
     @classmethod
@@ -272,6 +278,17 @@ class DAGContextManager:
                 except Exception:
                     pass
 
+            # v3: depth + is_evicted 列（层级摘要）
+            for tbl in ('dag_nodes',):
+                try:
+                    conn.execute(f"ALTER TABLE {tbl} ADD COLUMN depth INTEGER DEFAULT 0")
+                except Exception:
+                    pass
+                try:
+                    conn.execute(f"ALTER TABLE {tbl} ADD COLUMN is_evicted INTEGER DEFAULT 0")
+                except Exception:
+                    pass
+
             conn.commit()
             conn.close()
 
@@ -308,8 +325,8 @@ class DAGContextManager:
                     (node_id, node_type, session_key, content, blob_id, tokens, priority,
                      parent_ids, children_ids, is_summary, summary_of_ids,
                      importance_score, emotion_score, keywords, entities,
-                     timestamp, metadata)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     timestamp, metadata, depth, is_evicted)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     data['node_id'], data['node_type'], data['session_key'],
                     data['content'], _blob_id_val, data['tokens'], data['priority'],
@@ -319,7 +336,9 @@ class DAGContextManager:
                     data['importance_score'], data['emotion_score'],
                     data['keywords'], data['entities'],
                     data['timestamp'] or time.time(),
-                    data['metadata']
+                    data['metadata'],
+                    data.get('depth', 0),
+                    1 if data.get('is_evicted', False) else 0
                 ))
                 conn.commit()
                 conn.close()
@@ -534,6 +553,8 @@ class DAGContextManager:
                 row['metadata'] = {}
 
         row['is_summary'] = bool(row.get('is_summary', False))
+        row['is_evicted'] = bool(row.get('is_evicted', False))
+        row['depth'] = int(row.get('depth', 0))
         return DAGNode.from_dict(row)
 
     def assemble_context(
@@ -559,13 +580,17 @@ class DAGContextManager:
         # 分离各类节点
         critical_nodes = [n for n in all_nodes if n.priority == PriorityLevel.CRITICAL]
         high_nodes = [n for n in all_nodes if n.priority == PriorityLevel.HIGH]
-        summary_nodes = [n for n in all_nodes if n.is_summary and n.priority <= PriorityLevel.NORMAL]
+        # 过滤已淘汰的摘要（被更高级摘要替代）
+        summary_nodes = [n for n in all_nodes 
+                        if n.is_summary and not n.is_evicted 
+                        and n.priority <= PriorityLevel.NORMAL]
         message_nodes = [n for n in all_nodes if not n.is_summary and n.priority >= PriorityLevel.NORMAL]
 
         # 按时间排序
         critical_nodes.sort(key=lambda n: n.timestamp)
         high_nodes.sort(key=lambda n: n.timestamp)
-        summary_nodes.sort(key=lambda n: n.timestamp)
+        # 摘要优先高 depth（更紧凑），同 depth 从旧到新
+        summary_nodes.sort(key=lambda n: (-n.depth, n.timestamp))
         message_nodes.sort(key=lambda n: n.timestamp)
 
         # 第一步：关键节点（人格等）强制包含
@@ -601,7 +626,7 @@ class DAGContextManager:
             result_parts.append(("weighted_old", node))
             used_tokens += node.tokens
 
-        # 第三步：摘要节点（从旧到新）
+        # 第三步：摘要节点（优先高 depth，同 depth 内从旧到新）
         allowed_summary_tokens = max_tokens - used_tokens
         summary_tokens_used = 0
 
@@ -747,12 +772,23 @@ class DAGContextManager:
         if community_summary_available and raw_tokens > _adjusted_leaf * 0.7:
             needs_compact = True
 
+        # v3: 检查摘要节点膨胀 — 当 low-depth（depth<=1）摘要 token 超过阈值时
+        # 触发二次压缩（summary_compact），而不是标记 needs_compact
+        summary_nodes_all = [n for n in all_nodes if n.is_summary and not n.is_evicted]
+        low_depth_summary_tokens = sum(
+            n.tokens for n in summary_nodes_all if n.depth <= 1
+        )
+        summary_overflow = low_depth_summary_tokens > self.max_context_tokens * 0.15
+
         context_usage_ratio = raw_tokens / self.max_context_tokens if self.max_context_tokens else 0
 
         stats = {
             "raw_nodes": len(raw_nodes),
             "raw_tokens": raw_tokens,
-            "summary_nodes": len([n for n in all_nodes if n.is_summary]),
+            "summary_nodes": len(summary_nodes_all),
+            "summary_tokens": sum(n.tokens for n in summary_nodes_all),
+            "low_depth_summary_tokens": low_depth_summary_tokens,
+            "summary_overflow": summary_overflow,
             "threshold_tokens": threshold_tokens,
             "leaf_chunk_tokens": _adjusted_leaf,
             "context_threshold": _adjusted_threshold,
@@ -787,7 +823,18 @@ class DAGContextManager:
         return needs_compact, stats
 
     def ensure_auto_compact(self, session_key: str) -> Dict:
-        """Worker dag_compact handler 调用的兼容入口，包装 auto_summarize"""
+        """Worker dag_compact handler 调用的兼容入口
+
+        v3: 先检查摘要膨胀（summary_overflow），触发 summary_compact；
+        否则走原来的 auto_summarize。
+        """
+        # 先跑 should_compact 拿到摘要膨胀信息
+        _, stats = self.should_compact(session_key)
+        if stats.get('summary_overflow') and stats.get('low_depth_summary_tokens', 0) > 0:
+            result = self.summary_compact(session_key)
+            if result.get('summarized', 0) > 0:
+                return result
+        # 降级到原始 auto_summarize
         return self.auto_summarize(session_key=session_key, batch_size=10)
 
     def auto_summarize(
@@ -861,6 +908,7 @@ class DAGContextManager:
             tokens=len(memo_text) // 4,
             priority=PriorityLevel.NORMAL,
             is_summary=True,
+            depth=1,  # 一次摘要
             summary_of_ids=[n.node_id for n in to_summarize],
             timestamp=time.time(),
             keywords=keywords,
@@ -1643,6 +1691,117 @@ class DAGContextManager:
             self.add_node(summary_node)
             return {"summarized": 1, "node_id": summary_node_id, "method": _method}
 
+    def summary_compact(self, session_key: str,
+                        max_to_compress: int = 40,
+                        reserve_recent_depth: int = 0) -> Dict:
+        """
+        二次摘要压缩：对 depth<=1 的旧摘要执行层级摘要（v3）。
+
+        当 low_depth_summary_tokens > max_context * 0.15 时触发。
+        将最老的 depth<=1 摘要按批次合并为 depth=2 高层摘要，
+        原 depth<=1 摘要标记 is_evicted=True 不参与 assemble。
+
+        Args:
+            session_key: 会话 key
+            max_to_compress: 最多处理多少批
+            reserve_recent_depth: 保留最近 N 批 depth<=1 不压缩
+
+        Returns:
+            {"summarized": 批次, "nodes_evicted": 淘汰数, "depth": 2}
+        """
+        all_nodes = self.get_session_nodes(session_key)
+
+        # 只取 depth<=1、未被淘汰的摘要
+        target = [n for n in all_nodes if n.is_summary
+                  and not n.is_evicted and n.depth <= 1
+                  and n.priority <= PriorityLevel.NORMAL]
+        target.sort(key=lambda n: n.timestamp)
+
+        if len(target) <= reserve_recent_depth + 2:
+            return {"summarized": 0, "nodes_evicted": 0, "reason": "摘要数不够"}
+
+        # 保留最近 N 批不压缩
+        if reserve_recent_depth > 0 and len(target) > reserve_recent_depth * 3:
+            compressible = target[:-(reserve_recent_depth * 3)]
+        else:
+            compressible = target[:-2]  # 至少保留 2 个
+
+        if not compressible:
+            return {"summarized": 0, "nodes_evicted": 0, "reason": "无可压缩摘要"}
+
+        # 每 SUMMARY_BATCH 个摘要合并为一个高层摘要
+        SUMMARY_BATCH = 6
+        batches = [compressible[i:i + SUMMARY_BATCH]
+                   for i in range(0, min(len(compressible), max_to_compress * SUMMARY_BATCH), SUMMARY_BATCH)]
+
+        if not batches:
+            return {"summarized": 0, "nodes_evicted": 0}
+
+        summarized = 0
+        all_evicted = []
+
+        for batch in batches:
+            if not batch or len(batch) < 2:
+                continue
+
+            # 从 BlobArena 还原摘要的原文
+            full_texts = []
+            for n in batch:
+                ft = self.restore_full_content(n)
+                full_texts.append(ft)
+            combined = "\n\n---\n\n".join(full_texts)
+
+            # 生成高层摘要（短一些，强调跨对话主题）
+            high_summary = combined[:2000] + "\n[...]" if len(combined) > 2000 else combined
+            high_summary = f"[高层摘要] 以下 {len(batch)} 个旧讨论的融合概括:\n{high_summary[:1500]}"
+
+            _blob_id = ""
+            try:
+                if self._blob_arena:
+                    _blob_id = self._blob_arena.append_text(combined)
+            except Exception:
+                pass
+
+            summary_id = f"high_summ_{session_key}_{int(time.time()*1000)}_{hashlib.md5(batch[0].node_id.encode()[:16]).hexdigest()[:6]}"
+            summary_node = DAGNode(
+                node_id=summary_id,
+                node_type="high_level_summary",
+                session_key=session_key,
+                content=high_summary,
+                blob_id=_blob_id,
+                tokens=len(high_summary) // 4 or 1,
+                priority=PriorityLevel.NORMAL,
+                is_summary=True,
+                depth=2,  # 二次摘要
+                summary_of_ids=[n.node_id for n in batch],
+                timestamp=time.time(),
+            )
+
+            # 标记原摘要为已淘汰
+            batch_ids = [n.node_id for n in batch]
+            with self._lock:
+                conn = sqlite3.connect(self.db_path)
+                try:
+                    conn.execute(
+                        "UPDATE dag_nodes SET is_evicted=1 WHERE node_id IN ({})".format(
+                            ",".join(["?" for _ in batch_ids])
+                        ),
+                        batch_ids
+                    )
+                    conn.commit()
+                finally:
+                    conn.close()
+
+            self.add_node(summary_node)
+            all_evicted.extend(batch_ids)
+            summarized += 1
+
+        return {
+            "summarized": summarized,
+            "nodes_evicted": len(all_evicted),
+            "depth": 2,
+        }
+
     def cognitive_compress_dag_messages(self, session_key,
                                           max_to_compress=20,
                                           reserve_recent=4):
@@ -1731,6 +1890,7 @@ class DAGContextManager:
                 tokens=len(_memo_text) // 4 or 1,
                 priority=PriorityLevel.NORMAL,
                 is_summary=True,
+                depth=1,  # 一次摘要
                 summary_of_ids=[n.node_id for n in group],
                 timestamp=time.time(),
                 keywords=keywords,
