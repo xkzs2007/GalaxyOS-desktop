@@ -183,6 +183,7 @@ class XiaoYiClawLLM:
         self._init_ocr2()
         self._init_memory_v2()
         self._init_llm_client()
+        self._init_persona_methodology()
         self._init_kora()
         # ── 9个增强模块懒加载初始化 ──
         self._init_consolidation_engine()
@@ -196,6 +197,14 @@ class XiaoYiClawLLM:
         self._init_v4_services()
         self._init_gateway_client()
         self._init_dag_integration()
+
+        # 日志: 当前匹配的人格画像
+        if hasattr(self, 'persona_engine') and self.persona_engine:
+            try:
+                p = self.persona_engine.active_profile
+                logger.info(f"当前人格画像: {p.name}, 默认方法论: {p.default_methodology}")
+            except Exception:
+                pass
 
         logger.info("小艺 Claw 大模型初始化完成")
 
@@ -324,6 +333,16 @@ class XiaoYiClawLLM:
             logger.info("KoRa 行为建模初始化成功")
         except Exception as e:
             logger.warning(f"KoRa 初始化失败: {e}")
+
+    def _init_persona_methodology(self):
+        """初始化人格-方法论匹配引擎"""
+        try:
+            from services.persona_methodology import PersonaMethodologyEngine
+            self.persona_engine = PersonaMethodologyEngine()
+            logger.info(f"人格-方法论引擎初始化成功: {self.persona_engine.active_profile.name}")
+        except Exception as e:
+            logger.warning(f"人格-方法论引擎初始化失败: {e}")
+            self.persona_engine = None
 
     def _init_llm_client(self):
         """初始化 LLM 客户端(DeepSeek V4 Flash + Pro)
@@ -2722,6 +2741,37 @@ class XiaoYiClawLLM:
             if _budget == "light":
                 state.analysis['cognitive_budget'] = _budget
 
+            # ═══ 人格-方法论重排：根据用户人格调整技能优先级 ═══
+            try:
+                if getattr(self, 'persona_engine', None) and self.persona_engine:
+                    _persona_skills = self.persona_engine.get_skills_for_query(
+                        query, top_k=3
+                    )
+                    if _persona_skills:
+                        # 把人格推荐的技能提到前面，已有的保留，新增的追加
+                        _seen = set()
+                        _reordered = []
+                        for _sk in _persona_skills + [s.value if hasattr(s, 'value') else s for s in _skills_result.suggested_skills]:
+                            _sk_str = _sk
+                            if _sk_str not in _seen:
+                                _seen.add(_sk_str)
+                                _reordered.append(_sk_str)
+                        # 重建 thinking_skills_used
+                        _new_used = []
+                        _name_rev = {v: k for k, v in _skill_name_map.items() if v}
+                        for _sk in _reordered[:3]:
+                            _cn = _skill_name_map.get(
+                                ThinkingSkill(_sk) if _sk in [e.value for e in ThinkingSkill] else _sk,
+                                _sk
+                            )
+                            if isinstance(_cn, str) and _cn not in _new_used:
+                                _new_used.append(_cn)
+                        if _new_used:
+                            state.thinking_skills_used = _new_used
+                        logger.debug(f"Persona reorder: {_persona_skills} -> {state.thinking_skills_used}")
+            except Exception as _pe:
+                logger.debug(f"Persona reorder failed (non-critical): {_pe}")
+
         except Exception as e:
             logger.warning(f"Cognition phase - IntelligentThinkingTrigger failed, fallback: {e}")
             state.thinking_skills_used = []
@@ -4452,7 +4502,15 @@ class XiaoYiClawLLM:
             'memory_editor': self.memory_editor is not None,
             'context_layer': self.context_layer is not None,
             'fast_pil': getattr(self, 'fast_pil', None) is not None,
+            'persona_engine': getattr(self, 'persona_engine', None) is not None,
         }
+
+        # 追加人格引擎详情
+        if getattr(self, 'persona_engine', None):
+            try:
+                result['persona_details'] = self.persona_engine.health_check()
+            except Exception as e:
+                result['persona_details'] = str(e)
         # 如果 memory_v2 可用,追加它自己的 health 信息
         if self.memory_v2:
             try:
