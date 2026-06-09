@@ -11,7 +11,13 @@
       "claw_health",
       "claw_store",
       "claw_verify",
-      "claw_rccam"
+      "claw_rccam",
+      "claw_lobster",
+      "claw_events",
+      "claw_save_memory",
+      "claw_compile_skill",
+      "claw_asset_search",
+      "claw_asset_register"
     ]
   },
   "configSchema": {
@@ -91,5 +97,8 @@
     }
   },
   "main": "dist/index.js",
-  "kind": "context-engine"
+  "kind": [
+    "context-engine",
+    "memory"
+  ]
 }
