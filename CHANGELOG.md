@@ -1,5 +1,17 @@
 # Changelog
 
+## [6.6.0] — 2026-06-09
+
+### Added
+- **知识编译引擎** — `services/knowledge_compiler.py`
+  - `KnowledgeCompiler`: 多源碎片→聚类→合成→结构化 .md 写出
+  - `TopicClusterer': 10 个预定义主题的关键词聚类（CPU only）
+  - `GalaxyOSKnowledgeAdapter`: 从惊讶门控/SSM/DAG 自动收集碎片
+  - Obsidian 兼容: frontmatter + backlink + `_index.md` 索引
+- **心跳集成**: `heartbeat_task_executor.py` 第 6 步 `_compile_knowledge()`
+
+
+
 GalaxyOS 版本变更记录。
 
 ## [6.5.1] — 2026-06-09

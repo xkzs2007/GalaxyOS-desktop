@@ -12,7 +12,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="galaxyos",
-    version="6.5.1",
+    version="6.6.0",
 
     description="小艺 Claw 系统 — OpenClaw 核心认知增强引擎",
     long_description=open("README.md", encoding="utf-8").read(),
