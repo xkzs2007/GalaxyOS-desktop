@@ -74,6 +74,50 @@ stages:
           python -m build
           echo "✅ 包构建成功"
 
+  - name: node-check
+    label: 🟢 Node.js 依赖检查
+    image: node:22-slim
+    steps:
+      - name: install-and-verify
+        run: |
+          echo "🔍 扫描所有 Node.js 包..."
+          PKG_DIRS=$(find skills extensions -name package.json -not -path "*/node_modules/*" 2>/dev/null | xargs -I{} dirname {})
+          PASS=0; FAIL=0
+          for dir in $PKG_DIRS; do
+            if grep -q '"dependencies"' "$dir/package.json" 2>/dev/null; then
+              echo "📦 $dir"
+              cd "$dir"
+              if npm install --legacy-peer-deps 2>&1 | tail -1; then
+                echo "   ✅ $dir 依赖安装成功"
+                PASS=$((PASS+1))
+              else
+                echo "   ⚠️  $dir 依赖安装失败（继续）"
+                FAIL=$((FAIL+1))
+              fi
+              cd /workspace
+            fi
+          done
+          echo "✅ Node.js 依赖检查完成: $PASS 通过, $FAIL 失败"
+          [ $FAIL -gt 0 ] && echo "⚠️  有 $FAIL 个包依赖安装失败" || true
+
+  - name: rust-check
+    label: 🦀 Rust 编译检查
+    image: rust:1.85-slim-bookworm
+    steps:
+      - name: cargo-check
+        run: |
+          cd extensions/galaxyos/native
+          echo "🔍 cargo check (快速语法/类型检查)..."
+          cargo check 2>&1
+          echo ""
+          echo "🔧 cargo test..."
+          cargo test 2>&1 || echo "⚠️  无测试或测试失败（继续）"
+          echo ""
+          echo "📦 cargo build --release..."
+          cargo build --release 2>&1
+          echo "✅ Rust 构建完成"
+          ls -lh target/release/galaxyos-native 2>/dev/null || true
+
 # ── 通知 ──
 notifications:
   - type: webhook

@@ -43,6 +43,102 @@ GalaxyOS/
 └── Makefile           # make test / make native
 ```
 
+## 技能包生态系统
+
+> 来源：[llm-memory-integrat/llm](https://cnb.cool/llm-memory-integrat/llm) — 52 个 LLM 技能包，覆盖文档处理、搜索调研、认知方法论、AI 代理、图像、邮件、前端设计等。
+
+### 🧠 认知与思考方法
+
+| 技能 | 说明 |
+|------|------|
+| **arming-thought** | 在每次新对话开始时自动调用，建立"实事求是"总原则，为后续任务选择下游 skill |
+| **concentrate-forces** | 多任务竞争时确定主攻方向、停止分散用力；信号：优先级过多、资源紧张 |
+| **contradiction-analysis** | 问题复杂、存在冲突因素时调用；信号：trade-off、瓶颈、根因不明 |
+| **criticism-self-criticism** | 工作完成/阶段验收/收到批评/反复犯同类错误时系统纠偏；信号：review、retrospective |
+| **investigation-first** | 下判断/决策/提建议前事实不充分时优先调用；信号：unknowns、信息缺口、证据不足 |
+| **mass-line** | 收集多方意见、将零散反馈整合为可执行方案；信号：stakeholder input、user feedback |
+| **overall-planning** | 多目标/利益方/制约指标间动态平衡；信号：trade-offs、目标冲突、系统性约束 |
+| **practice-cognition** | 方案/假设/判断需通过实践验证、试错迭代或复盘升级认知；信号：experiment、prototype |
+| **protracted-strategy** | 目标长期、资源劣势、短期无法速胜但不可放弃；信号：long-term、phased plan、endurance |
+| **spark-prairie-fire** | 从零起步、资源极少，需找最小可行切入口建立根据地；信号：bootstrap、MVP、pilot |
+| **workflows** | 任务明显需要多个思想武器协作时调用；信号：启动新项目、攻坚复杂问题、迭代优化 |
+
+### 📄 文档与格式处理
+
+| 技能 | 说明 |
+|------|------|
+| **docx** | Word 文档创建、读取、编辑、操作。支持 tracked changes、评论、格式保留 |
+| **pdf** | PDF 全套处理：创建、读取、编辑、合并、拆分、表单填写、提取文本/表格 |
+| **pptx** | PowerPoint 演示文稿创建与编辑。支持 pptxgenjs 生成、模板修改 |
+| **xiaoyi-doc-convert** | 专业文档格式转换。Docx/PDF/Xlsx/Pptx/Markdown 互转，自动路径规划 |
+| **markitdown** | 文件与办公文档转为 Markdown。支持 PDF、DOCX、PPTX、XLSX、图片、音频等 |
+| **nano-pdf** | 自然语言指令编辑 PDF，使用 nano-pdf CLI |
+| **excel-analysis** | Excel 电子表格分析：数据透视表、图表生成、数据分析 |
+
+### 🔍 搜索与信息调研
+
+| 技能 | 说明 |
+|------|------|
+| **deep-search-and-insight-synthesize** | 深度调研专用。多层搜索 + 多源交叉验证 + 综合分析，替代普通搜索 |
+| **multi-search-engine** | 17 引擎聚合搜索（8 国内 + 9 全球），支持高级筛选和结果合并 |
+| **xiaoyi-web-search** | 华为云 AI 联网搜索 API，获取实时网络信息 |
+| **news-extractor** | 新闻站点内容提取。支持微信公众号、头条、网易、腾讯、BBC、CNN 等 12 平台 |
+
+### 🖼️ 图像处理
+
+| 技能 | 说明 |
+|------|------|
+| **xiaoyi-image-search** | 图片搜索，返回图链接、缩略图、图片尺寸，适用于文档/PPT 配图 |
+| **xiaoyi-image-understanding** | 小艺图像理解 API，图像内容识别与文字描述 |
+| **seedream-image_gen** | AI 图像生成，支持文生图、图生图、多图融合、图像编辑、组图生成 |
+
+### 📧 邮件通信
+
+| 技能 | 说明 |
+|------|------|
+| **himalaya** | CLI 邮件管理（IMAP/SMTP），支持列表、读取、撰写、回复、转发、附件 |
+| **imap-smtp-email** | IMAP/SMTP 邮件工具。支持 Gmail、Outlook、163/126/188 邮箱 |
+
+### 🤖 AI 代理与自动化
+
+| 技能 | 说明 |
+|------|------|
+| **hz-proactive-agent** | 将 AI Agent 从被动任务执行者转变为主动伙伴，WAL 协议 + 自进化 [v3.1.0] |
+| **autonomous-tasks** | 自驱型 AI 工作器。读取目标 → 生成任务 → 执行 → 记录进度 |
+| **proactive-tasks** | 主动性目标与任务管理系统。目标分解、进度追踪、定时任务 |
+| **self-improving-agent** | 捕获学习、错误与纠偏，实现持续改进。每次出错后自动沉淀经验 |
+| **xiao-gui-agent** | 手机屏幕自动化操作（点击、滑动、输入），模拟人操作 APP |
+| **skill-creator** | AgentSkill 创建与更新。设计、结构化、打包技能 |
+| **skillhub-preference** | skillhub 优先用于技能发现/安装/更新，fallback 到 clawhub |
+| **find-skills** | 技能发现流程。用户寻找/安装/发现技能包时自动触发 |
+| **openclaw-skills-agent-builder** | 端到端构建高性能 OpenClaw Agent。设计、结构化并生成完整 agent |
+| **openclaw-skills-soulcraft** | 通过引导式对话为 OpenClaw Agent 创建/改进 SOUL.md 文件 |
+| **example-skill** | 示例技能，演示 ClawHub 发布流程 [v1.0.0] |
+
+### 🎨 前端与设计
+
+| 技能 | 说明 |
+|------|------|
+| **react-best-practices** | Vercel Engineering 的 React/Next.js 性能优化指南 |
+| **superdesign** | 前端设计专家指南，创建美观现代的 UI |
+| **webapp-testing** | Playwright 本地 Web 应用测试工具包 |
+| **bytedance-deer-flow-vercel-deploy** | 部署应用到 Vercel。触发：用户请求部署网站或应用 |
+| **calcom-web-design-guidelines** | UI 代码 Web Interface Guidelines 合规审查 |
+
+### 🌐 通用工具
+
+| 技能 | 说明 |
+|------|------|
+| **2nd-brain** | 个人知识库，捕获与检索人物、地点、餐厅、设备、事件、媒体等信息 [v1.3.0] |
+| **Humanizer-zh-main** | 去除中文文本 AI 生成痕迹，使其更自然、更像人类书写 |
+| **best-minds** | 模拟器思维：世界上谁最懂这个？TA 会怎么说？触发：最强大脑、顶级专家 |
+| **ontology** | 结构化知识图谱，用于 Agent 记忆与可组合技能 |
+| **ima-skill** | 统一的 IMA OpenAPI 技能，支持知识库操作和笔记管理 |
+| **read-arxiv-paper** | 读取 arXiv 论文，给定 URL 自动解析、总结 |
+| **weather** | 天气查询，通过 wttr.in 或 Open-Meteo 获取当前天气和预报 |
+| **xiaoyi-health** | 小艺健康 CLI 技能索引，健康相关问题入口 |
+| **xiaoyi-file-upload** | 上传本地文件到对象存储（OSMS/NSP），获取共享下载 URL |
+
 ## 安装
 
 ```bash
