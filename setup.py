@@ -12,7 +12,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="galaxyos",
-    version="6.1.0",
+    version="6.4.0",
     description="小艺 Claw 系统 — OpenClaw 核心认知增强引擎",
     long_description=open("README.md", encoding="utf-8").read(),
     long_description_content_type="text/markdown",
@@ -66,6 +66,10 @@ setup(
         "scipy>=1.10.0",
     ],
     extras_require={
+        "torch": [
+            "torch>=2.0.0",
+            "ncps>=1.0.0",
+        ],
         "gpu": [
             "torch>=2.0.0",
             "pyopencl>=2023.0",

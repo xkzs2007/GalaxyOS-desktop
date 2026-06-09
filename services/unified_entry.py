@@ -207,7 +207,7 @@ class UnifiedEntry:
         fused.sort(key=lambda x: x.get("score", 0), reverse=True)
         return fused
 
-    def recall(self, query: str, top_k: int = 10) -> List[Dict[str, Any]]:
+    def recall(self, query: str, top_k: int = 10, session_key: str = "") -> List[Dict[str, Any]]:
         """检索记忆（统一 XiaoyiClawLLM.recall() + 降级 XiaoyiMemoryV2）"""
         main_results = []
         warnings = []
@@ -215,7 +215,7 @@ class UnifiedEntry:
         # 1. 统一 API 检索（主路）
         if self.xiaoyi_claw:
             try:
-                main_results = self.xiaoyi_claw.recall(query, top_k=top_k)
+                main_results = self.xiaoyi_claw.recall(query, top_k=top_k, session_key=session_key)
                 if not isinstance(main_results, list):
                     main_results = []
             except Exception as e:

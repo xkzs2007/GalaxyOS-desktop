@@ -1559,6 +1559,134 @@ export default function register(api) {
     });
 
     // ==========================================
+    // Tool: claw_compile_skill - SkVM 编译技能
+    // ==========================================
+    api.registerTool({
+        name: "claw_compile_skill",
+        label: "Skill Compiler (SkVM)",
+        description: "编译一个 Skill：CapabilityProfile 匹配 → 环境绑定 → 裁剪 → 优化。\n" +
+            "调用 Worker compile_skill UDS，返回 CompiledArtifact。",
+        parameters: {
+            type: "object",
+            properties: {
+                skill_text: { type: "string", description: "Skill 原始 Markdown 内容" },
+                skill_name: { type: "string", description: "Skill 名称（可选）" },
+            },
+            required: ["skill_text"],
+        },
+        async execute(_toolCallId, params) {
+            const startMs = Date.now();
+            const w = getWorker(ws);
+            if (!w || !w.ready) {
+                return { content: [{ type: "text", text: "Worker 未就绪" }], isError: true };
+            }
+            try {
+                const result = await w.call("compile_skill", {
+                    skill_text: String(params.skill_text),
+                    skill_name: String(params.skill_name || ""),
+                }, 30000);
+                const artifact = result.artifact || {};
+                const text = `✅ 编译完成\n` +
+                    `  名称: ${artifact.skill_name || params.skill_name || "(unnamed)"}\n` +
+                    `  文本: ${(artifact.optimized_text || "").length}B (原始 ${(params.skill_text || "").length}B)\n` +
+                    `  环境检查: ${artifact.env_check || "ok"}\n` +
+                    `  裁剪比例: ${artifact.prune_ratio || 0}\n` +
+                    `  Asset ID: ${result.asset_id || "N/A"}`;
+                return { content: [{ type: "text", text }], details: { elapsedMs: Date.now() - startMs } };
+            }
+            catch (err) {
+                return { content: [{ type: "text", text: `编译失败: ${err.message}` }], isError: true };
+            }
+        },
+    });
+
+    // ==========================================
+    // Tool: claw_asset_search - AssetRegistry 查询
+    // ==========================================
+    api.registerTool({
+        name: "claw_asset_search",
+        label: "Asset Registry Search",
+        description: "查询 KnowledgeAsset 注册表。支持按 query/capability/tag/category 搜索。\n" +
+            "MemGAS-SkVM 融合系统的核心查询接口。",
+        parameters: {
+            type: "object",
+            properties: {
+                query: { type: "string", description: "文本查询" },
+                capability_key: { type: "string", description: "按 capability 过滤 (如 web_access, reasoning)" },
+                tag: { type: "string", description: "按标签过滤" },
+                category: { type: "string", description: "按分类过滤 (neuron, memory, skill)" },
+                top_k: { type: "number", default: 10, description: "最大返回条数" },
+            },
+        },
+        async execute(_toolCallId, params) {
+            const startMs = Date.now();
+            const w = getWorker(ws);
+            if (!w || !w.ready) {
+                return { content: [{ type: "text", text: "Worker 未就绪" }], isError: true };
+            }
+            try {
+                const result = await w.call("asset_search", {
+                    query: params.query || "",
+                    capability_key: params.capability_key || "",
+                    tag: params.tag || "",
+                    category: params.category || "",
+                    top_k: Math.min(Number(params.top_k) || 10, 50),
+                }, 15000);
+                const assets = result.assets || [];
+                let text = `📋 AssetRegistry (${assets.length} 条):\n`;
+                for (const a of assets) {
+                    const mg = a.multi_granularity ? Object.keys(a.multi_granularity).join(",") : "-";
+                    text += `  [${a.asset_id?.slice(0, 20) || ""}...] ${a.asset_type || "?"} | mg=${mg} | #${(a.tags || []).slice(0, 3).join(",")}\n`;
+                }
+                if (!assets.length) text = "没有匹配的资产。";
+                return { content: [{ type: "text", text }], details: { elapsedMs: Date.now() - startMs } };
+            }
+            catch (err) {
+                return { content: [{ type: "text", text: `查询失败: ${err.message}` }], isError: true };
+            }
+        },
+    });
+
+    // ==========================================
+    // Tool: claw_asset_register - 注册新 Asset
+    // ==========================================
+    api.registerTool({
+        name: "claw_asset_register",
+        label: "Asset Registry Register",
+        description: "注册一个自定义 KnowledgeAsset 到 AssetRegistry。\n" +
+            "支持带 capability_profile、compiled_artifact 和 tags 的高级注册。",
+        parameters: {
+            type: "object",
+            properties: {
+                content: { type: "string", description: "资产内容" },
+                tags: { type: "array", items: { type: "string" }, description: "标签列表" },
+                category: { type: "string", description: "分类 (neuron/skill/memory/other)" },
+                source: { type: "string", description: "来源名称" },
+            },
+            required: ["content"],
+        },
+        async execute(_toolCallId, params) {
+            const startMs = Date.now();
+            const w = getWorker(ws);
+            if (!w || !w.ready) {
+                return { content: [{ type: "text", text: "Worker 未就绪" }], isError: true };
+            }
+            try {
+                const result = await w.call("asset_register", {
+                    content: String(params.content),
+                    tags: params.tags || [],
+                    category: params.category || "other",
+                    source: params.source || "gateway_tool",
+                }, 15000);
+                return { content: [{ type: "text", text: `✅ Asset 已注册: ${result.asset_id || "N/A"}` }], details: { elapsedMs: Date.now() - startMs } };
+            }
+            catch (err) {
+                return { content: [{ type: "text", text: `注册失败: ${err.message}` }], isError: true };
+            }
+        },
+    });
+
+    // ==========================================
     // ContextEngine - 接管上下文压缩,防止 DAG 炸掉
     // 要求 OpenClaw >= 2026.3.7(registerContextEngine API)
     // ==========================================
@@ -2205,6 +2333,36 @@ export default function register(api) {
                         }
                     }
 
+                    // 4b) 跨会话 DAG 搜索（补充 smartRecall 可能遗漏的旧会话关键记录）
+                    let crossSessionInjection = "";
+                    if (CE_RECALL_ON_ASSEMBLE) {
+                        try {
+                            const lastUserMsg = nonSystemMsgs.filter(m => m.role === "user").slice(-1)[0];
+                            if (lastUserMsg) {
+                                const query = extractText(lastUserMsg);
+                                if (query && query.trim().length >= 5) {
+                                    const w = getWorker(ws);
+                                    if (w && w.ready) {
+                                        const dagResults = await w.call("dag_search", {
+                                            query: query.trim(),
+                                            limit: 3,
+                                            exclude_session: sessionId
+                                        }, 10000).catch(() => null);
+                                        if (dagResults && dagResults.results && dagResults.results.length > 0) {
+                                            crossSessionInjection = "\n[其他会话的相关记录]\n";
+                                            crossSessionInjection += dagResults.results
+                                                .map((r, i) => `[DAG ${i + 1}] [${r.role || "unknown"}] (会话:${(r.session_key || "?").slice(-8)}): ${(r.content || "").slice(0, 300)}`)
+                                                .join("\n");
+                                            crossSessionInjection += "\n";
+                                        }
+                                    }
+                                }
+                            }
+                        } catch (e) {
+                            api.logger.debug?.(`${TAG} [context-engine] cross-session search failed: ${e.message}`);
+                        }
+                    }
+
                     // 5) 人格无条件注入(每次 assemble 都读取,不依赖 Worker/R-CCAM)
                     let personaBlock = "";
                     try {
@@ -2520,7 +2678,7 @@ export default function register(api) {
                             }
                         }
                     }
-                    const additions = [personaBlock, summaryInjection, systemPromptAddition].filter(Boolean);
+                    const additions = [personaBlock, summaryInjection, systemPromptAddition, crossSessionInjection].filter(Boolean);
                     if (additions.length > 0) {
                         systemPromptAddition = additions.join("\n\n");
                     }

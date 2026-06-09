@@ -2420,6 +2420,122 @@ class DAGContextManager:
             logger.warning(f"get_assets_for_session failed: {e}")
             return []
 
+    def cross_session_search(self, query, limit=5, exclude_session=None):
+        """跨会话DAG搜索 — 用FTS5全文搜索匹配query的记录，排除当前会话
+
+        Args:
+            query: 搜索关键词
+            limit: 最大返回条数
+            exclude_session: 排除的会话key
+
+        Returns:
+            [{content, session_key, role, timestamp, tokens}, ...]
+        """
+        if not query or not query.strip():
+            return []
+
+        # 尝试FTS5全文搜索
+        fts_worked = False
+        results = []
+        try:
+            with self._lock:
+                conn = sqlite3.connect(self.db_path)
+                conn.row_factory = sqlite3.Row
+                # 用FTS5的MATCH语法
+                # dag_fts表有content/keywords/entities三列
+                # 对中文，需要加*通配符前缀匹配
+                safe_query = query.strip().replace("'", "''")[:100]
+                fts_query = ' OR '.join([f'"{w}"' for w in safe_query.split() if len(w) >= 2])
+                if not fts_query:
+                    fts_query = f'"{safe_query}"'
+                try:
+                    cursor = conn.execute(
+                        """SELECT d.node_id, d.content, d.session_key, d.metadata, d.timestamp, d.tokens
+                           FROM dag_fts f JOIN dag_nodes d ON f.rowid = d.rowid
+                           WHERE dag_fts MATCH ?
+                           ORDER BY d.timestamp DESC
+                           LIMIT ?""",
+                        (fts_query, limit * 3)
+                    )
+                    rows = cursor.fetchall()
+                    fts_worked = len(rows) > 0
+                    for row in rows:
+                        d = dict(row)
+                        meta = d.get('metadata', '{}')
+                        if isinstance(meta, str):
+                            try:
+                                meta = json.loads(meta)
+                            except (json.JSONDecodeError, TypeError):
+                                meta = {}
+                        role = meta.get('role', 'unknown')
+                        session_key = d.get('session_key', '')
+                        if exclude_session and session_key == exclude_session:
+                            continue
+                        results.append({
+                            'content': d.get('content', '')[:500],
+                            'session_key': session_key,
+                            'role': role,
+                            'timestamp': d.get('timestamp', 0),
+                            'tokens': d.get('tokens', 0),
+                        })
+                except Exception:
+                    pass
+                conn.close()
+        except Exception:
+            pass
+
+        # FTS5不可用或未命中 → 降级到LIKE模糊搜索
+        if not fts_worked:
+            try:
+                with self._lock:
+                    conn = sqlite3.connect(self.db_path)
+                    conn.row_factory = sqlite3.Row
+                    like_pattern = f'%{query.strip()[:50]}%'
+                    cursor = conn.execute(
+                        """SELECT node_id, content, session_key, metadata, timestamp, tokens
+                           FROM dag_nodes
+                           WHERE content LIKE ?
+                           ORDER BY timestamp DESC
+                           LIMIT ?""",
+                        (like_pattern, limit * 3)
+                    )
+                    rows = cursor.fetchall()
+                    for row in rows:
+                        d = dict(row)
+                        meta = d.get('metadata', '{}')
+                        if isinstance(meta, str):
+                            try:
+                                meta = json.loads(meta)
+                            except (json.JSONDecodeError, TypeError):
+                                meta = {}
+                        role = meta.get('role', 'unknown')
+                        session_key = d.get('session_key', '')
+                        if exclude_session and session_key == exclude_session:
+                            continue
+                        results.append({
+                            'content': d.get('content', '')[:500],
+                            'session_key': session_key,
+                            'role': role,
+                            'timestamp': d.get('timestamp', 0),
+                            'tokens': d.get('tokens', 0),
+                        })
+                    conn.close()
+            except Exception:
+                pass
+
+        # 按timestamp降序，去重(session_key)，取limit条
+        seen_sessions = set()
+        deduped = []
+        for r in sorted(results, key=lambda x: x.get('timestamp', 0), reverse=True):
+            sk = r.get('session_key', '')
+            if sk and sk not in seen_sessions:
+                seen_sessions.add(sk)
+                deduped.append(r)
+            if len(deduped) >= limit:
+                break
+
+        return deduped[:limit]
+
     def close(self):
         """关闭资源"""
         pass

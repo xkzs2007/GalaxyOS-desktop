@@ -1406,6 +1406,40 @@ class ClawWorker:
         return {"ok": True, "message": "shutting down"}
 
 
+# ========== 跨会话DAG搜索 ==========
+
+_dag_search_cache = None
+
+def _dag_search(params):
+    """跨会话DAG搜索 — UDS方法
+
+    通过DAGContextManager.cross_session_search查询其他会话的历史记录。
+    供ContextEngine assemble时补充smartRecall遗漏的旧会话关键记录。
+    """
+    global _dag_search_cache
+    query = params.get("query", "")
+    limit = params.get("limit", 5)
+    exclude_session = params.get("exclude_session", None)
+    if not query:
+        return {"results": []}
+    try:
+        if _dag_search_cache is None:
+            from dag_context_manager import DAGContextManager
+            import os
+            dag_db = os.path.expanduser("~/.openclaw/dag_context.db")
+            if not os.path.exists(dag_db):
+                dag_db = os.path.expanduser("~/.openclaw/dag_context.db")
+            _dag_search_cache = DAGContextManager(db_path=dag_db)
+        results = _dag_search_cache.cross_session_search(
+            query=query,
+            limit=limit,
+            exclude_session=exclude_session,
+        )
+        return {"results": results}
+    except Exception as e:
+        return {"results": [], "error": str(e)}
+
+
 # ========== 主循环 ==========
 
 _METHODS = {}
@@ -1458,6 +1492,7 @@ def _init_methods(worker):
         "shutdown": worker.shutdown,
         "get_status": worker.get_status,
         "smart_process": worker.smart_process,
+        "dag_search": _dag_search,
         "smart_retrieval": worker.smart_retrieval,
         "save_memory": worker.save_memory,
     }

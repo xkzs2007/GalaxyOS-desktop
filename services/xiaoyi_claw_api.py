@@ -789,7 +789,8 @@ class XiaoYiClawLLM:
                  content: str,
                  metadata: Optional[Dict] = None,
                  vector: Optional[List[float]] = None,
-                 source: str = 'user') -> str:
+                 source: str = 'user',
+                 session_key: str = "") -> str:
         """
         存储记忆(单写: UnifiedVectorStore 为主 + DAG + Cognition Forest)
 
@@ -798,6 +799,7 @@ class XiaoYiClawLLM:
             metadata: 元数据
             vector: 向量(可选,不传则自动用 embedding API 生成)
             source: 来源标识
+            session_key: 会话标识，用于跨会话隔离
 
         Returns:
             记忆 ID
@@ -807,6 +809,8 @@ class XiaoYiClawLLM:
         metadata['memory_id'] = memory_id
         metadata['source'] = source
         metadata['created_at'] = datetime.now().isoformat()
+        if session_key:
+            metadata['session_key'] = session_key
 
         # 生成向量(如未提供),写入 UnifiedVectorStore
         if self.vector_store:
@@ -928,7 +932,8 @@ class XiaoYiClawLLM:
                query_vector: Optional[List[float]] = None,
                top_k: int = 10,
                source_filter: Optional[str] = None,
-               enhance_with_kg: bool = True) -> List[Dict]:
+               enhance_with_kg: bool = True,
+               session_key: str = "") -> List[Dict]:
         """
         检索记忆(双路融合:向量存储 + XiaoyiMemoryV2 增强检索)
 
@@ -961,7 +966,8 @@ class XiaoYiClawLLM:
             results = self.vector_store.search(
                 query_vector=query_vector,
                 top_k=top_k,
-                source_filter=source_filter
+                source_filter=source_filter,
+                session_key=session_key
             )
             # 归一化向量分数: hnswlib 返回的是内积距离(越小越近),转为相似度(越大越近)
             if results:

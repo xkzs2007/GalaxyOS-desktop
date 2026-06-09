@@ -285,6 +285,8 @@ class DAGContextManager:
         if isinstance(data.get('metadata'), dict):
             data['metadata'] = json.dumps(data['metadata'])
 
+        _full_content = data.get('content', '')
+
         # v2: 如果有原文且 blob_arena 可用，备份原文到 BlobArena
         if self._blob_arena and data.get('content') and len(data['content']) > 200:
             try:
@@ -321,10 +323,105 @@ class DAGContextManager:
                 ))
                 conn.commit()
                 conn.close()
+                # MemGAS: 为长内容创建 KnowledgeAsset（非阻塞）
+                if _full_content and len(_full_content) > 200:
+                    try:
+                        self._create_asset_for_node(node, _full_content)
+                    except Exception:
+                        pass
                 return True
             except Exception as e:
                 logger.error(f"添加节点失败: {e}")
                 return False
+    
+    # ── MemGAS: add_node 后，对长内容创建 KnowledgeAsset ──
+    def _create_asset_for_node(self, node: DAGNode, content: str):
+        """
+        对长内容（>200 字符）创建 KnowledgeAsset，提取多粒度表示并建立关联边。
+        """
+        if not content or len(content) < 200:
+            return
+        try:
+            from knowledge_asset import get_asset_registry, create_memory_asset, AssociationEdge
+            from multi_granularity import MultiGranularityExtractor, GMMAssociator
+            
+            _reg = get_asset_registry()
+            _ext = MultiGranularityExtractor()
+            _assoc = GMMAssociator(n_components=5)
+            
+            # 检查是否已创建过
+            _existing = _reg.search(content[:100], top_k=1, type_filter=None)
+            for _ex in _existing:
+                if _ex.raw_content[:100] == content[:100]:
+                    return  # 已注册
+            
+            # 创建资产
+            _asset = create_memory_asset(
+                memory_id=node.node_id,
+                raw_content=content[:2000],
+                tags=node.keywords if hasattr(node, 'keywords') and node.keywords else [],
+                category=node.node_type if hasattr(node, 'node_type') else 'dag',
+                source=f"dag_{node.node_type if hasattr(node, 'node_type') else 'unknown'}",
+            )
+            
+            # 多粒度
+            _asset.multi_granularity = _ext.extract(content)
+            
+            # GMM 关联（与已有资产）
+            _existing_texts = [a.raw_content[:500] for a in _reg.list_ids()[:100] if _reg.get(a)]
+            if _existing_texts:
+                _assoc.fit(_existing_texts + [content[:500]])
+                _edges = _assoc.associate(content[:500])
+                for _target_id, _relation, _weight in _edges:
+                    _asset.association_graph.append(
+                        AssociationEdge(
+                            target_asset_id=_target_id,
+                            relation=_relation,
+                            weight=_weight,
+                        )
+                    )
+                    # 双向边
+                    _target_asset = _reg.get(_target_id)
+                    if _target_asset:
+                        _target_asset.association_graph.append(
+                            AssociationEdge(
+                                target_asset_id=_asset.asset_id,
+                                relation=_relation,
+                                weight=_weight,
+                            )
+                        )
+            
+            _reg.register(_asset)
+
+            # ── 同步到突触网络（双向桥接） ──
+            try:
+                from memory_synapse_network import SynapseNetwork
+                _sn = SynapseNetwork(os.path.expanduser("~/.openclaw/workspace"))
+                _sn._load()
+                # 检查是否已存在相同内容的神经元（幂等）
+                _exists = False
+                for _n in _sn._neurons_cache.values():
+                    if _n.content[:100] == content[:100]:
+                        _n.activation_count += 1
+                        _exists = True
+                        break
+                if not _exists:
+                    from memory_synapse_network import MemoryNeuron
+                    import hashlib as _hl
+                    _neuron = MemoryNeuron(
+                        id=f"NRN-DAG-{_hl.md5(content[:200].encode()).hexdigest()[:16]}",
+                        content=content,
+                        created_at=time.strftime('%Y-%m-%dT%H:%M:%S', time.gmtime()),
+                        activation_count=1,
+                    )
+                    _sn._neurons_cache[_neuron.id] = _neuron
+                    _sn._save_neuron(_neuron)
+            except Exception:
+                pass
+
+            logger.debug(f"KnowledgeAsset created for DAG node: {_asset.asset_id}")
+        except Exception as _ae:
+            logger.debug(f"KnowledgeAsset creation skip: {_ae}")
 
     def add_message(
         self,
@@ -2180,6 +2277,264 @@ class DAGContextManager:
 
         results.sort(key=lambda x: x["similarity"], reverse=True)
         return results[:k]
+
+    # ════════════════════════════════════════════════════
+    # MemGAS: KnowledgeAsset 查询
+    # ════════════════════════════════════════════════════
+
+    def get_assets_for_session(self, session_key: str, limit: int = 20) -> List[Dict]:
+        """
+        获取指定 session 在 AssetRegistry 中对应的知识资产。
+        
+        从 DAG 库读取该 session 的长内容节点（>200 字符），
+        在 AssetRegistry 中搜索对应资产并返回。
+        如果资产不存在，即时创建。
+
+        Args:
+            session_key: DAG 会话 key
+            limit: 最大返回资产数
+
+        Returns:
+            [{asset_dict}, ...]
+        """
+        assets = []
+        try:
+            from knowledge_asset import get_asset_registry, create_memory_asset, AssociationEdge, AssetType
+            from multi_granularity import MultiGranularityExtractor, GMMAssociator
+
+            reg = get_asset_registry()
+            extractor = MultiGranularityExtractor()
+            associator = GMMAssociator(n_components=5)
+
+            # 从 DAG 读该 session 的节点
+            nodes = self.get_session_nodes(session_key, limit=limit * 2)
+            if not nodes:
+                # 再试 rccam_nodes
+                try:
+                    with self._lock:
+                        conn = sqlite3.connect(self.db_path)
+                        conn.row_factory = sqlite3.Row
+                        cursor = conn.execute(
+                            "SELECT node_id, content, keywords, node_type, timestamp "
+                            "FROM rccam_nodes WHERE session_key=? "
+                            "ORDER BY timestamp DESC LIMIT ?",
+                            (session_key, limit * 2)
+                        )
+                        rows = [dict(r) for r in cursor.fetchall()]
+                        conn.close()
+                    for row in rows:
+                        content = row.get('content', '') or ''
+                        if len(content) < 200:
+                            continue
+                        content = self.restore_full_content(DAGNode(
+                            node_id=row['node_id'],
+                            node_type=row.get('node_type', 'rccam'),
+                            session_key=session_key,
+                            content=content,
+                            blob_id='',
+                        )) if hasattr(self, 'restore_full_content') else content
+
+                        # 搜索已注册资产
+                        existing = reg.search(content[:100], top_k=1)
+                        if existing:
+                            assets.append(existing[0].to_dict(include_raw=False))
+                        else:
+                            # 创建新资产
+                            asset = create_memory_asset(
+                                memory_id=row['node_id'],
+                                raw_content=content[:2000],
+                                category='rccam',
+                                source=f'rccam_{row.get("node_type", "")}',
+                            )
+                            asset.multi_granularity = extractor.extract(content)
+
+                            # 关联现有资产
+                            all_ids = reg.list_ids()
+                            existing_texts = [
+                                reg.get(aid).raw_content[:500]
+                                for aid in all_ids[:100] if reg.get(aid)
+                            ]
+                            if existing_texts:
+                                associator.fit(existing_texts + [content[:500]])
+                                edges = associator.associate(content[:500])
+                                for target_id, relation, weight in edges:
+                                    asset.association_graph.append(
+                                        AssociationEdge(
+                                            target_asset_id=target_id,
+                                            relation=relation,
+                                            weight=weight,
+                                        )
+                                    )
+
+                            reg.register(asset)
+                            assets.append(asset.to_dict(include_raw=False))
+
+                except Exception as _re:
+                    logger.debug(f"get_assets_for_session rccam: {_re}")
+                return assets[:limit]
+
+            for node in nodes:
+                content = self.restore_full_content(node) if hasattr(self, 'restore_full_content') else node.content
+                if not content or len(content) < 200:
+                    continue
+
+                # 搜索已注册资产
+                existing = reg.search(content[:100], top_k=1)
+                if existing:
+                    assets.append(existing[0].to_dict(include_raw=False))
+                else:
+                    # 创建新资产
+                    asset = create_memory_asset(
+                        memory_id=node.node_id,
+                        raw_content=content[:2000],
+                        tags=node.keywords if hasattr(node, 'keywords') and node.keywords else [],
+                        category=node.node_type if hasattr(node, 'node_type') else 'dag',
+                        source=f'dag_nodes_{node.node_type if hasattr(node, "node_type") else "unknown"}',
+                    )
+                    asset.multi_granularity = extractor.extract(content)
+
+                    # 关联
+                    all_ids = reg.list_ids()
+                    existing_texts = [
+                        reg.get(aid).raw_content[:500]
+                        for aid in all_ids[:100] if reg.get(aid)
+                    ]
+                    if existing_texts:
+                        associator.fit(existing_texts + [content[:500]])
+                        edges = associator.associate(content[:500])
+                        for target_id, relation, weight in edges:
+                            asset.association_graph.append(
+                                AssociationEdge(
+                                    target_asset_id=target_id,
+                                    relation=relation,
+                                    weight=weight,
+                                )
+                            )
+
+                    reg.register(asset)
+                    assets.append(asset.to_dict(include_raw=False))
+
+            return assets[:limit]
+
+        except Exception as e:
+            logger.warning(f"get_assets_for_session failed: {e}")
+            return []
+
+    def cross_session_search(self, query, limit=5, exclude_session=None):
+        """跨会话DAG搜索 — 用FTS5全文搜索匹配query的记录，排除当前会话
+
+        Args:
+            query: 搜索关键词
+            limit: 最大返回条数
+            exclude_session: 排除的会话key
+
+        Returns:
+            [{content, session_key, role, timestamp, tokens}, ...]
+        """
+        if not query or not query.strip():
+            return []
+
+        # 尝试FTS5全文搜索
+        fts_worked = False
+        results = []
+        try:
+            with self._lock:
+                conn = sqlite3.connect(self.db_path)
+                conn.row_factory = sqlite3.Row
+                # 用FTS5的MATCH语法
+                # dag_fts表有content/keywords/entities三列
+                # 对中文，需要加*通配符前缀匹配
+                safe_query = query.strip().replace("'", "''")[:100]
+                fts_query = ' OR '.join([f'"{w}"' for w in safe_query.split() if len(w) >= 2])
+                if not fts_query:
+                    fts_query = f'"{safe_query}"'
+                try:
+                    cursor = conn.execute(
+                        """SELECT d.node_id, d.content, d.session_key, d.metadata, d.timestamp, d.tokens
+                           FROM dag_fts f JOIN dag_nodes d ON f.rowid = d.rowid
+                           WHERE dag_fts MATCH ?
+                           ORDER BY d.timestamp DESC
+                           LIMIT ?""",
+                        (fts_query, limit * 3)
+                    )
+                    rows = cursor.fetchall()
+                    fts_worked = len(rows) > 0
+                    for row in rows:
+                        d = dict(row)
+                        meta = d.get('metadata', '{}')
+                        if isinstance(meta, str):
+                            try:
+                                meta = json.loads(meta)
+                            except (json.JSONDecodeError, TypeError):
+                                meta = {}
+                        role = meta.get('role', 'unknown')
+                        session_key = d.get('session_key', '')
+                        if exclude_session and session_key == exclude_session:
+                            continue
+                        results.append({
+                            'content': d.get('content', '')[:500],
+                            'session_key': session_key,
+                            'role': role,
+                            'timestamp': d.get('timestamp', 0),
+                            'tokens': d.get('tokens', 0),
+                        })
+                except Exception:
+                    pass
+                conn.close()
+        except Exception:
+            pass
+
+        # FTS5不可用或未命中 → 降级到LIKE模糊搜索
+        if not fts_worked:
+            try:
+                with self._lock:
+                    conn = sqlite3.connect(self.db_path)
+                    conn.row_factory = sqlite3.Row
+                    like_pattern = f'%{query.strip()[:50]}%'
+                    cursor = conn.execute(
+                        """SELECT node_id, content, session_key, metadata, timestamp, tokens
+                           FROM dag_nodes
+                           WHERE content LIKE ?
+                           ORDER BY timestamp DESC
+                           LIMIT ?""",
+                        (like_pattern, limit * 3)
+                    )
+                    rows = cursor.fetchall()
+                    for row in rows:
+                        d = dict(row)
+                        meta = d.get('metadata', '{}')
+                        if isinstance(meta, str):
+                            try:
+                                meta = json.loads(meta)
+                            except (json.JSONDecodeError, TypeError):
+                                meta = {}
+                        role = meta.get('role', 'unknown')
+                        session_key = d.get('session_key', '')
+                        if exclude_session and session_key == exclude_session:
+                            continue
+                        results.append({
+                            'content': d.get('content', '')[:500],
+                            'session_key': session_key,
+                            'role': role,
+                            'timestamp': d.get('timestamp', 0),
+                            'tokens': d.get('tokens', 0),
+                        })
+                    conn.close()
+            except Exception:
+                pass
+
+        # 按timestamp降序，去重(session_key)，取limit条
+        seen_sessions = set()
+        deduped = []
+        for r in sorted(results, key=lambda x: x.get('timestamp', 0), reverse=True):
+            sk = r.get('session_key', '')
+            if sk and sk not in seen_sessions:
+                seen_sessions.add(sk)
+                deduped.append(r)
+            if len(deduped) >= limit:
+                break
+
+        return deduped[:limit]
 
     def close(self):
         """关闭资源"""

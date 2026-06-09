@@ -614,7 +614,8 @@ class UnifiedVectorStore:
     def search(self, 
                query_vector: List[float], 
                top_k: int = 10,
-               source_filter: Optional[str] = None) -> List[Dict]:
+               source_filter: Optional[str] = None,
+               session_key: str = "") -> List[Dict]:
         """
         搜索相似向量
         
@@ -622,6 +623,7 @@ class UnifiedVectorStore:
             query_vector: 查询向量
             top_k: 返回数量
             source_filter: 来源过滤
+            session_key: 会话标识，仅返回该会话的记忆（空字符串返回全部）
         
         Returns:
             搜索结果列表
@@ -629,16 +631,30 @@ class UnifiedVectorStore:
         filters = {'source': source_filter} if source_filter else None
         results = self.backend.search(query_vector, top_k, filters)
         
-        return [
-            {
+        ret = []
+        for record, score in results:
+            md = record.metadata
+            if session_key:
+                rec_session = None
+                if isinstance(md, dict):
+                    rec_session = md.get('session_key', md.get('session', ''))
+                elif isinstance(md, str):
+                    try:
+                        import json
+                        md_parsed = json.loads(md)
+                        rec_session = md_parsed.get('session_key', md_parsed.get('session', ''))
+                    except:
+                        pass
+                if str(rec_session) != str(session_key):
+                    continue
+            ret.append({
                 'id': record.id,
                 'content': record.content,
                 'metadata': record.metadata,
                 'source': record.source,
                 'score': score
-            }
-            for record, score in results
-        ]
+            })
+        return ret
     
     def delete(self, ids: List[str]) -> int:
         """删除向量"""

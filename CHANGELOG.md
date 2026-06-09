@@ -2,6 +2,21 @@
 
 GalaxyOS 版本变更记录。
 
+## [6.4.0] — 2026-06-09
+
+### Added
+- **MemGAS 融合升级** — DAG ingest 时自动为长内容创建 KnowledgeAsset（多粒度表示 + GMM 关联）
+- **跨会话 DAG 搜索** — 新增 `cross_session_search()`（FTS5 优先，LIKE 降级），通过 UDS `dag_search` 暴露给 Plugin
+- **Plugin 端 3 个新 Tool**：`claw_compile_skill`（SkVM 编译）、`claw_asset_search`（资产查询）、`claw_dag_search`（跨会话 DAG 搜索）
+
+### Changed
+- **session_key 全线穿透** — `unified_entry.recall()` / `UnifiedVectorStore.search()` / `XiaoYiClawLLM.remember()` + `recall()` 新增 `session_key` 参数，支持跨会话隔离检索
+- **Plugin → Worker 连接池化** — `http.Agent` keepAlive + maxSockets=8，消除单连接串行瓶颈
+- **DAG 上下文引擎增强** — MemGAS 自动创建 KnowledgeAsset 和关联边
+
+### Performance
+- UDS 并发：去锁化 + 连接池后，Gateway 调用吞吐提升显著
+
 ## [6.3.2] — 2026-06-08
 
 ### Fixed
