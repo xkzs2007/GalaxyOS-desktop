@@ -70,6 +70,15 @@ feat/*   → 新功能
 fix/*    → Bug 修复
 ```
 
+## 版本管理
+
+版本号格式 `vMAJOR.MINOR.PATCH`，详见 `VERSIONING.md`。
+发布新版本时必须：
+1. 更新 `setup.py` 中的 version
+2. 更新 `CHANGELOG.md`
+3. 打 GPG signed tag (`git tag -s vx.y.z`)
+4. 推送 tag (`git push origin vx.y.z`)
+
 ## 添加新服务模块
 
 1. 在 `services/` 下创建 `your_module.py`
