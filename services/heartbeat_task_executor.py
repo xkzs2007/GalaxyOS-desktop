@@ -100,6 +100,10 @@ class HeartbeatTaskExecutor:
         # 5. 数据备份检查
         backup_result = self._check_backup_needed()
         results.append(("backup_check", backup_result))
+
+        # 6. 知识编译 — 新碎片 → .md 知识库
+        knowledge_result = self._compile_knowledge()
+        results.append(("knowledge_compile", knowledge_result))
         
         # 计算耗时
         end_time = datetime.now()
@@ -271,6 +275,43 @@ class HeartbeatTaskExecutor:
                 "message": "需要备份" if need_backup else "无需备份"
             }
             
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
+
+
+    def _compile_knowledge(self) -> Dict[str, Any]:
+        """知识编译：碎片 → .md 知识库"""
+        try:
+            from services.knowledge_compiler import KnowledgeCompiler
+
+            knowledge_dir = os.path.join(self.workspace_dir, "knowledge")
+            kc = KnowledgeCompiler(knowledge_dir=knowledge_dir)
+
+            # 从 DAG 收集摘要节点（如果有 DAG 管理器的话）
+            try:
+                from services.dag_context_manager import DAGContextManager
+                dag = DAGContextManager(db_path=os.path.join(self.workspace_dir, "..", "dag_context.db"))
+                all_nodes = dag.get_all_nodes()
+                summary_nodes = [n for n in all_nodes if getattr(n, "is_summary", False) and getattr(n, "depth", 0) >= 1]
+                for node in summary_nodes[:20]:
+                    kc.add_dag_node(node)
+            except Exception:
+                pass
+
+            articles = kc.compile()
+            if articles:
+                written = kc.write_all(articles)
+                kc.clear_fragments()
+                return {
+                    "status": "compiled",
+                    "articles": len(articles),
+                    "files": written,
+                }
+            else:
+                return {"status": "no_new", "message": "没有新碎片"}
+
+        except ImportError:
+            return {"status": "skipped", "reason": "knowledge_compiler not available"}
         except Exception as e:
             return {"status": "error", "message": str(e)}
 
