@@ -1,25 +1,21 @@
 ---
-name: xiaoyi-claw-omega-final
-description: GalaxyOS v6.3 — BlobArena无损存储 + ONNX bge-small-zh中文嵌入 + RetrievalHub 7通道全链路 + ContextEngine neural_rerank + Galaxy Kernel
+name: galaxyos
+description: GalaxyOS v7.0 — 统一包架构 (galaxyos/) + WorkerPool 弹性扩缩 + PIL 独立子进程 + Session 粒度上下文 + Rust 原生扩展
 author: xkzs2007
 license: MIT-0
-tags: [architecture, memory, llm, rccam, dag, kora, knowledge-graph, ncps, neural-synapse-network, context-engine, neural-rerank]
+tags: [architecture, memory, llm, rccam, dag, kora, knowledge-graph, ncps, neural-synapse-network, context-engine, neural-rerank, elastic-pool, circuit-breaker, rust-native]
 ---
 
-# GalaxyOS v6.3
+# GalaxyOS v7.0
 
 > **定位**: OpenClaw 的核心底层能力引擎
-> **更新时间**: 2026-06-08 07:45
-> **架构层数**: 16 层（含 Layer 0 安装向导）
+> **更新时间**: 2026-06-09
+> **架构**: 统一包 `galaxyos/` (313 files) + OpenClaw 插件 `extensions/galaxyos/`
 > **总能力项**: 470+ 项
-> **模型更新**: ONNX bge-small-zh-v1.5 (512d, 92MB) + BAAI/bge-m3 (1024d via siliconflow)
-> **IPC 三通道**: UDS RPC（双向互通，动态注册表）+ ZMQ 事件推送（双向回复）+ mmap 结构化状态（4KB JSON段）
-> **默认通信**: UDS RPC，HTTP :8765 二级降级，无 stdin/stdout，无 spawnSync
-> **IPC 演进**: stdin/stdout → UDS RPC（单 Worker 单例） → **Gateway-Worker 全透明互通（UDS注册表 + mmap 结构化 + ZMQ 双向）**
-> **独立服务线程池**: 6 个（Memory/Retrieval/Session/Thinking/Hardware/HTTP-RPC）
-> **Galaxy 增强** ✅: DAG三维绑定 / Cognition Forest 子树复用 / KoRa 主动能力 / Kernel 持续元认知 / **ncps 神经突触网络 (LTC+CfC+遗忘曲线+NLP增强)** + **SparseGAT (O(E·d) 稀疏注意力)**
-> **透明互通** ✅: Gateway `_gatewayMethods` 注册表（14 预注册 + 自动 tool.* 暴露）+ Worker `_GatewayProxy`（__getattr__ 透明 RPC）+ mmap 结构化状态（双向零拷贝 + heartbeat 5s）
-> **神经检索全链路** ✅: retrieval_hub 五路并行 → neural_rerank_dedup (LTC h_t 门控 + Content Fingerprint 去重) → smart_retrieval UDS → ContextEngine assemble 注入
+> **模型**: ONNX bge-small-zh-v1.5 (512d) + BAAI/bge-m3 (1024d via siliconflow)
+> **IPC**: UDS RPC (selectors 串行) + ZMQ 事件推送 + mmap 共享内存
+> **弹性**: WorkerPool 自动扩缩 (2~8) + CircuitBreaker 熔断 + 超时重试
+> **v7.0 新特性** ✅: 统一包 galaxyos/ | PIL 独立子进程 (零 GIL) | SessionContext 粒度隔离 | selectors 单线程串行 UDS | Rust 原生扩展 (pil + 向量) | 记忆链路熔断器
 
 ---
 
@@ -37,7 +33,7 @@ GalaxyOS是 OpenClaw 的**核心底层能力引擎**，提供：
 
 ---
 
-| **文档版本**: v6.3 | 2026-06-08 07:45 | BlobArena无损存储 + ONNX bge-small-zh-v1.5 中文嵌入 + RetrievalHub 7通道全链路 |
+| **文档版本**: v7.0 | 2026-06-09 | 统一包 galaxyos/ + WorkerPool 弹性 + PIL 隔离 + 熔断器 + Rust 扩展 |
 
 ---
 
@@ -601,34 +597,28 @@ GalaxyOS是 OpenClaw 的**核心底层能力引擎**，提供：
 
 ```bash
 # 健康检查
-python3 ~/.openclaw/workspace/skills/xiaoyi-claw-omega-final/scripts/unified_entry.py health
+GALAXYOS_REPO=/workspace python3 -m galaxyos.engine.unified_entry health
 
 # 系统状态
-python3 ~/.openclaw/workspace/skills/xiaoyi-claw-omega-final/scripts/unified_entry.py status
+GALAXYOS_REPO=/workspace python3 -m galaxyos.engine.unified_entry status
 
 # 存储记忆
-python3 ~/.openclaw/workspace/skills/xiaoyi-claw-omega-final/scripts/unified_entry.py store --content "内容"
+GALAXYOS_REPO=/workspace python3 -m galaxyos.engine.unified_entry store --content "内容"
 
 # 检索记忆
-python3 ~/.openclaw/workspace/skills/xiaoyi-claw-omega-final/scripts/unified_entry.py recall --query "查询"
+GALAXYOS_REPO=/workspace python3 -m galaxyos.engine.unified_entry recall --query "查询"
 
 # 执行工作流
-python3 ~/.openclaw/workspace/skills/xiaoyi-claw-omega-final/scripts/unified_entry.py workflow --scenario "名称"
+GALAXYOS_REPO=/workspace python3 -m galaxyos.engine.unified_entry workflow --scenario "名称"
 
-# 心跳执行
-python3 ~/.openclaw/workspace/skills/xiaoyi-claw-omega-final/scripts/run_heartbeat.py
-
-# 会话状态快照
-python3 ~/.openclaw/workspace/scripts/session_state.py capture --topic "话题"
-
-# 会话状态恢复
-python3 ~/.openclaw/workspace/scripts/session_state.py recall
+# 安装向导（自检 + 配置验证）
+GALAXYOS_REPO=/workspace python3 -m galaxyos.scripts.install_wizard --check
 ```
 
 ### API 接口
 
 ```python
-from xiaoyi_claw_api import XiaoYiClawLLM
+from galaxyos.engine.xiaoyi_claw_api import XiaoYiClawLLM
 
 claw = XiaoYiClawLLM()
 
@@ -636,77 +626,31 @@ claw = XiaoYiClawLLM()
 claw.remember("内容")                # 记忆存储
 claw.recall("查询")                   # 记忆检索
 claw.forget(memory_id)                # 智能遗忘
-claw.get_entity("实体名")              # 实体查询
-claw.learn({"feedback": "正面"})      # 学习反馈
-
-
 # R-CCAM 结构化认知循环
 claw.rccam_cycle("用户输入", max_cycles=1)
-
-# 验证
-claw.verify_image_claim("图片路径", "声明内容")
 ```
 
 ## 📊 统计数据
 
 | 指标 | 数值 | 更新时间 |
 |------|------|----------|
-| 架构层数 | **17 层** (含 Layer 0 安装向导 + Layer 5 增强模块层) | 2026-06-06 |
-| 总能力项 | **470+ 项** | 2026-06-07 |
-| IPC 三通道 | **UDS 双向注册表 + ZMQ 双向回复 + mmap 结构化 4KB** | 2026-05-21 |
-| Gateway 注册方法 | **14 预注册 + 自动 tool.* 暴露** | 2026-05-21 |
-| Worker Gateway 代理 | **_GatewayProxy** 透明 RPC | 2026-05-21 |
-| 默认通信 | **UDS RPC** (一级)，HTTP :8765 (二级降级)，无spawnSync | 2026-05-17 |
-| 独立服务线程池 | **6 个** (Memory/Retrieval/Session/Thinking/Hardware/HTTP-RPC) | 2026-05-17 |
-| Python 模块文件 | **880+ 个** | 2026-06-07 |
-| 核心模块目录 | **260 个** (core/) | 2026-06-07 |
-| 弹性系统加载组件 | **57 个** | 2026-04-27 |
-| 技能数 | **93 个** | 2026-05-12 |
-| 工作流 | **44 个** | 2026-05-05 |
-| 思考技能 | **20 个** (IntelligentThinkingTrigger v2.0) | 2026-06-05 |
-| 工程与效率技能 (Matt Pocock) | **10 个** | 2026-05-12 |
-| 插件数 | **2 个** | 2026-05-12 |
-| Core Skills | **5 个** | 2026-05-05 |
-| R-CCAM 循环 | **1 个** | 2026-05-03 |
-| DAG 上下文中继 | **1 个** | 2026-05-05 |
-| ContextEngine 注册 | **1 个** (claw-core-engine) | 2026-05-05 |
-| ACP 持久化通道 | **1 个** | 2026-05-03 |
-| SmartProcessor | **1 个** | 2026-05-03 |
-| llm-memory-integration | **v3.2.0** | 2026-05-03 |
-| DAG 全局窗口比例压缩 | **3 项** | 2026-05-10 |
-| 自进化上下文注入 | **1 项** (evolution_tracker→hook system prompt) | 2026-05-10 |
-| 主动自进化调度器 | **1 项** (10分钟周期) | 2026-05-10 |
-| 决策执行层 | **3 类** (低/中/高风险) | 2026-05-10 |
-| Worker RPC 跨会话恢复 | **1 项** (Flash 开推理) | 2026-05-10 |
-| 自进化决策执行层 | **3 项** | 2026-05-10 |
-| scene_trace 回溯填充 | **330 节点** (旧 268 + old DB 62) | 2026-05-13 |
-| 记忆巩固引擎 | **5 项** (CLS/仿生睡眠5阶段/干扰/预测编码/图推理) | 2026-05-14 |
-| 增强 NLP | **4 项** (依存/链接/消解/对比) | 2026-05-14 |
-| 增强思考 | **3 项** (Reflexion/Self-Refine/MultiPath) | 2026-05-14 |
-| 论文引擎 | **4 个** (RAPTOR/GraphRAG/Reflection/Toolformer) | 2026-05-14 |
-| Flash NLP | **3 项** (指代消解/对比检测/意图分析) | 2026-05-14 |
-| 艾宾浩斯遗忘曲线 | **1 项** (adaptive_ltp_ltd) | 2026-05-14 |
-| Worker 自动重启 | **1 项** (exit handler respawn) | 2026-05-14 |
-| 隐式偏好学习 | **1 项** (implicit_feedback RPC) | 2026-05-14 |
-| 记忆融合 | **单路** (XiaoYiClawLLM) | 2026-05-31 |
-| Merge Gate 门禁 | **5 项** + Continuity Guard | 2026-05-12 |
-| **Merge Gate（增强版五路检索去重合并）** | **1 项** ★v4.4 | 2026-05-20 |
-| **Rails 增强版（敏感凭据扫描+违规建议检测）** | **2 项** ★v4.4 | 2026-05-20 |
-| **人格视觉（Persona Visual）** | **1 项** ★v4.4 | 2026-05-20 |
-| **用户画像驱动内在元认知** | **8 项**（8种分析模式）★v4.4 | 2026-05-20 |
-| **memory_phase 内在元认知触发** | **每10轮触发** ★v4.4 | 2026-05-20 |
-| **activate_callback 惰性激活** | **3 项** (AutoTuner/AutoPersonaUpdater/KnowledgeRefiner) ★v4.4 | 2026-05-20 |
-| Rails 护栏 | **4 个方法** | 2026-05-12 |
-| 系统核心存储 | **~177 MB** (不含工具链) | 2026-05-14 |
-| CNB 仓库 | **989 个文件**（清除废弃模块后精简） | 2026-05-19 |
-| 系统品牌 | **GalaxyOS** | 2026-05-31 |
-| process() 精简 | **70%** (863→254行) | 2026-05-31 |
-| Galaxy Kernel | **308行** | 2026-05-31 |
-| R-CCAM 异步注入 | **3层兜底** | 2026-05-31 |
-| 钩子化工具 | **4 移除** (全部→钩子) | 2026-05-31 |
-| Galaxy Kernel 自进化 | **4条/10min** | 2026-05-28 |
-| 时空认知论文 | **3 篇** (Graphiti/AriGraph/LASAR) | 2026-05-27 |
-| 10论文验证 | **8 编译通过** | 2026-05-27 |
+| 包架构 | **galaxyos/ 统一包 (313 files)** | 2026-06-09 |
+| 架构层数 | **17 层** (含 Layer 0 安装向导) | 2026-06-09 |
+| 总能力项 | **470+ 项** | 2026-06-09 |
+| IPC | **UDS selectors 串行 + ZMQ + mmap** | 2026-06-09 |
+| Worker 弹性 | **2~8 自动扩缩 + CircuitBreaker** | 2026-06-09 |
+| PIL 隔离 | **独立子进程 (Python/Rust)** | 2026-06-09 |
+| Session 粒度 | **SessionContext 独立上下文** | 2026-06-09 |
+| 插件 | **galaxyos** (原 claw-core) | 2026-06-09 |
+| 技能数 | **52 个** | 2026-06-09 |
+| 工作流 | **44 个** | 2026-06-09 |
+| 思考技能 | **20 个** (IntelligentThinkingTrigger v2.0) | 2026-06-09 |
+| R-CCAM 循环 | **1 个** | 2026-06-09 |
+| DAG 上下文中继 | **1 个** | 2026-06-09 |
+| ContextEngine 注册 | **1 个** (galaxyos-engine) | 2026-06-09 |
+| 防幻觉 | **10 重检测 + 突触双向闭环** | 2026-06-09 |
+| 记忆巩固引擎 | **5 项** (CLS/仿生睡眠5阶段/干扰/预测编码/图推理) | 2026-06-09 |
+| Rust 扩展 | **1 项** (PIL + 向量, make native) | 2026-06-09 |
 | 自进化首轮产出 | **4 条进化建议** | 2026-05-28 |
 | IntelligentThinkingTrigger v2.0三论文集成 | **3 模块** (skill_scorer/thinking_memory/trigger) | 2026-06-05 |
 | Cognition Forest 修正 | **4 子树** (user/self/env/meta) | 2026-06-05 |

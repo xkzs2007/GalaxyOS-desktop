@@ -12,10 +12,16 @@ from requests.exceptions import ConnectTimeout, RequestException
 from pathlib import Path
 
 # 忽略不安全请求警告
+import os as _os, sys as _sys
+_ws_root = _os.environ.get("OPENCLAW_WORKSPACE", _os.path.expanduser("~/.openclaw/workspace"))
+for _p in [_ws_root, "/workspace"]:
+    if _p not in _sys.path:
+        _sys.path.insert(0, _p)
+import path_resolver
 requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
 
 # 定义基础路径（移除skill_id层级）
-BASE_DIR = os.path.expanduser("~/.openclaw/workspace/skills")
+BASE_DIR = path_resolver.SKILLS_DIR
 TIMEOUT = 30  # 请求超时时间
 
 

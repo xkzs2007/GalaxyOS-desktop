@@ -20,6 +20,14 @@ from typing import Dict, Any, Optional, List
 from datetime import datetime
 from enum import Enum
 
+
+# ── Centralized path resolution ──
+import os as _os, sys as _sys
+_ws_root = _os.environ.get("OPENCLAW_WORKSPACE", _os.path.expanduser("~/.openclaw/workspace"))
+for _p in [_ws_root, "/workspace"]:
+    if _p not in _sys.path:
+        _sys.path.insert(0, _p)
+import path_resolver
 logger = logging.getLogger('xiaoyi-claw-omega.L5')
 
 
@@ -95,7 +103,7 @@ class GovernanceLayer:
         if not self.audit_logs:
             return
         
-        log_dir = Path.home() / ".openclaw" / "logs" / "audit"
+        log_dir = path_resolver.OPENCLAW_HOME / "logs" / "audit"
         log_dir.mkdir(parents=True, exist_ok=True)
         
         log_file = log_dir / f"audit_{datetime.now().strftime('%Y%m%d')}.json"

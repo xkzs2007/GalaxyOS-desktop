@@ -1,5 +1,11 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
+import os as _os, sys as _sys
+_ws_root = _os.environ.get("OPENCLAW_WORKSPACE", _os.path.expanduser("~/.openclaw/workspace"))
+for _p in [_ws_root, "/workspace"]:
+    if _p not in _sys.path:
+        _sys.path.insert(0, _p)
+import path_resolver
 """
 小艺文件上传 - 将本地文件上传到小艺文件存储服务，获取可访问的文件 URL
 
@@ -78,7 +84,7 @@ def upload_file(file_path, object_type="TEMPORARY_MATERIAL_DOC", debug=False):
             return None
 
         # 读取并校验配置
-        xiaoyi_path = os.path.expanduser("~/.openclaw/.xiaoyienv")
+        xiaoyi_path = path_resolver.XIAOYIENV_FILE
         config = read_xiaoyienv(xiaoyi_path)
 
         required_keys = ['PERSONAL-API-KEY', 'PERSONAL-UID']

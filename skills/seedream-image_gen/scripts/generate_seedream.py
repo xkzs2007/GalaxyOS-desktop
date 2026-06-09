@@ -24,6 +24,12 @@ from urllib.parse import urlparse
 import argparse
 
 # MIME类型映射
+import os as _os, sys as _sys
+_ws_root = _os.environ.get("OPENCLAW_WORKSPACE", _os.path.expanduser("~/.openclaw/workspace"))
+for _p in [_ws_root, "/workspace"]:
+    if _p not in _sys.path:
+        _sys.path.insert(0, _p)
+import path_resolver
 _MIME_TYPE_MAP = {
     '.png': 'image/png',
     '.jpg': 'image/jpeg',
@@ -37,7 +43,7 @@ def read_xiaoyienv():
     """
     读取 ~/.openclaw/.xiaoyienv 文件并返回键值对字典。
     """
-    file_path = os.path.expanduser("~/.openclaw/.xiaoyienv")
+    file_path = path_resolver.XIAOYIENV_FILE
     env_dict = {}
 
     try:
@@ -485,7 +491,7 @@ def main():
         help="Remote image URL (HTTP/HTTPS) or local file path. Repeat for multiple images."
     )
     parser.add_argument("--size", default="2K", choices=["2K", "3K"], help="Output image size (default: 2K)")
-    parser.add_argument("--output", default='~/.openclaw/workspace/generated-images', help="Output file path")
+    parser.add_argument("--output", default=str(path_resolver.GENERATED_IMAGES), help="Output file path")
     parser.add_argument("--watermark", action=argparse.BooleanOptionalAction, default=True,
                     help="Add watermark to generated image")
     parser.add_argument("--max-images", type=int, help="Maximum number of images to generate")

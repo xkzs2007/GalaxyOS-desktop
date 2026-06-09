@@ -12,15 +12,15 @@ from setuptools import setup, find_packages
 
 setup(
     name="galaxyos",
-    version="6.6.0",
+    version="7.0.0",
 
-    description="小艺 Claw 系统 — OpenClaw 核心认知增强引擎",
+    description="GalaxyOS — 小艺 Claw 核心认知增强引擎 (unified package)",
     long_description=open("README.md", encoding="utf-8").read(),
     long_description_content_type="text/markdown",
     author="xiaoyi-claw",
     author_email="dev@xiaoyi-claw.ai",
     url="https://cnb.cool/llm-memory-integrat/GalaxyOS",
-    packages=find_packages(include=["services", "services.*"]),
+    packages=find_packages(include=["galaxyos", "galaxyos.*"]),
     include_package_data=True,
     python_requires=">=3.12",
     install_requires=[

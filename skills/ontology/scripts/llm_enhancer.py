@@ -11,9 +11,17 @@ from typing import Optional, Dict, List, Tuple
 import re
 
 # 配置路径
-ONTOLOGY_DIR = Path.home() / ".openclaw" / "workspace" / "skills" / "ontology"
-ONTOLOGY_DB = Path.home() / ".openclaw" / "ontology" / "ontology.db"
-LLM_CONFIG = Path.home() / ".openclaw" / "workspace" / "skills" "llm-memory-integration" / "config" / "llm_config.json"
+
+# ── Centralized path resolution ──
+import os as _os, sys as _sys
+_ws_root = _os.environ.get("OPENCLAW_WORKSPACE", _os.path.expanduser("~/.openclaw/workspace"))
+for _p in [_ws_root, "/workspace"]:
+    if _p not in _sys.path:
+        _sys.path.insert(0, _p)
+import path_resolver
+ONTOLOGY_DIR = path_resolver.SKILLS_DIR / "ontology"
+ONTOLOGY_DB = path_resolver.OPENCLAW_HOME / "ontology" / "ontology.db"
+LLM_CONFIG = path_resolver.LLM_CONFIG_JSON
 
 class OntologyLLMEnhancer:
     """ontology LLM 增强器"""

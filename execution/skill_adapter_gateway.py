@@ -20,6 +20,14 @@ from typing import Dict, Any, Optional, List, Callable
 from datetime import datetime
 from enum import Enum
 
+
+# ── Centralized path resolution ──
+import os as _os, sys as _sys
+_ws_root = _os.environ.get("OPENCLAW_WORKSPACE", _os.path.expanduser("~/.openclaw/workspace"))
+for _p in [_ws_root, "/workspace"]:
+    if _p not in _sys.path:
+        _sys.path.insert(0, _p)
+import path_resolver
 logger = logging.getLogger('xiaoyi-claw-omega.L4')
 
 
@@ -107,7 +115,7 @@ class ExecutionLayer:
     
     def _load_skills(self):
         """加载技能"""
-        skills_dir = Path.home() / ".openclaw" / "workspace" / "skills"
+        skills_dir = path_resolver.SKILLS_DIR
         
         if not skills_dir.exists():
             logger.warning("  ⚠️ 技能目录不存在")

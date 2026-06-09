@@ -1,82 +1,61 @@
 # 🌌 GalaxyOS — 认知增强引擎
 
 > OpenClaw 的开源认知增强引擎，为 AI Assistant 提供记忆、检索、推理、验证、自进化等全套认知能力
-> 版本: v6.3 · 睡眠巩固5阶段 + 对比学习预训练 + SparseGAT + MemGAS熵路由 + GMM记忆关联 + GAT→RRF融合
+> 版本: v7.0 · 统一包 galaxyos/ + WorkerPool 弹性扩缩 + PIL 独立子进程 + Rust 原生扩展
 
 ## 总览
 
-`GalaxyOS`（前身：小艺 Claw 系统）是 **OpenClaw 的底层认知增强引擎**。提供 **15 层架构、470+ 功能项、160+ 服务模块**，覆盖从记忆管理到认知推理的全链路。
+`GalaxyOS` 是 **OpenClaw 的底层认知增强引擎**。提供 **统一包架构 (313 files)、470+ 功能项**，覆盖从记忆管理到认知推理的全链路。
 
 ### 核心能力
 
 | 能力 | 说明 |
 |------|------|
-| **记忆** | 三层记忆体系 + 记忆巩固引擎（CLS固化 + 仿生睡眠5阶段 + 干扰合并 + KG图推理）+ **神经突触记忆网络（ncps LTC+CfC+遗忘曲线+NLP增强）** + **BlobArena v2 mmap 无损存储** |
-| **检索** | 向量检索 + 知识图谱 + Self-RAG + CRAG 混合检索 + bge-reranker-v2-m3 重排序 + GraphRAG + RAPTOR + **RetrievalHub 7通道 (KG/Local/DAG/MN-RU/Synapse/Paper/Cognitive/Web)** + **ANNSelector v2 动态索引** |
-| **智能处理** | 查询改写（Pro）/ 结果总结（Flash）/ 语义过滤 / 图像理解（SmartProcessor 三模型通道：Flash/Pro/VLM）+ Visual RAG 自动 OCR2 触发 |
-| **认知循环（R-CCAM）** | 五阶段结构化认知循环：Retrieval→Cognition→Control→Action→Memory，元认知 5 种动态策略调节器 + 异步注入三层兜底 |
-| **Galaxy Kernel** | 独立后台元认知线程（6s轮询），持 Reflexion 记录 + 自进化产出，不阻塞主推理。process() 精简 **70%**（863→254行） |
-| **思考方法论** | 20 个思考方法论技能 + **IntelligentThinkingTrigger v2.0**（RCR-Router 动态评分 + Springdrift CBR 记忆 + A-ToM 认知阶段推断） |
-| **防幻觉** | 10 重交叉验证 + 多源证据 + 矛盾检测 + CRAG 动态纠错 + Rails 护栏增强版 + **验证→突触双向闭环（LTP/LTD + verified_memories 持久化）** |
-| **自进化** | 隐式偏好学习 + Galaxy Kernel 自进化（~10分钟/次，4条/轮进化建议）+ 动态锚定（574 条触发词匹配）|
-| **IPC 通信** | UDS RPC（一级主通道注册表，14 预注册方法）+ ZMQ 事件推送（双向回复）+ mmap 共享内存（4KB JSON段，双向零拷贝 + heartbeat 5s）|
+| **记忆** | 三层记忆体系 + 记忆巩固引擎 + 神经突触记忆网络 (ncps LTC+CfC) + BlobArena mmap 无损存储 |
+| **检索** | RetrievalHub 7通道 (KG/Local/DAG/MN-RU/Synapse/Paper/Cognitive/Web) + bge-reranker 重排序 |
+| **智能处理** | SmartProcessor 三模型通道 (Flash/Pro/VLM) + Visual RAG 自动 OCR2 |
+| **认知循环** | R-CCAM 五阶段结构化认知 (Retrieval→Cognition→Control→Action→Memory) |
+| **弹性基础设施** | WorkerPool 自动扩缩 (2~8) + CircuitBreaker 熔断 + SessionContext 粒度隔离 |
+| **PIL 隔离** | 独立子进程图像处理 (Python/Rust)，零 GIL 竞争 |
+| **防幻觉** | 10 重交叉验证 + 多源证据 + 突触双向闭环 (LTP/LTD) |
+| **IPC 通信** | UDS RPC (selectors 串行) + ZMQ 事件推送 + mmap 共享内存 |
 
 ## 目录结构
 
 ```
 GalaxyOS/
-├── services/          # 📦 核心服务模块包 (160+ 模块, pip install 入口)
-│   ├── __init__.py    # 包入口，导出全部工具
-│   ├── xiaoyi_claw_api.py        # 统一 API 接口 (Galaxy Kernel + R-CCAM 核心)
-│   ├── _imports.py               # 选装模块降级导入管理
-│   ├── rccam_state.py            # R-CCAM PhaseState 状态对象
-│   ├── claw_helpers.py           # 模块级便捷 API 函数
-│   ├── retrieval_hub.py          # 统一检索入口 (RRF 融合 + DAG 权重)
-│   ├── memory_consolidation.py   # 记忆巩固引擎
-│   ├── memory_synapse_network.py # 神经突触网络 (ncps LTC/CfC/遗忘曲线)
-│   ├── smart_processor.py        # 智能处理层 (三模型通道)
-│   ├── enhanced_hallucination_guard.py  # 防幻觉守卫
-│   ├── cognitive_map.py          # 认知地图 (AriGraph 空间推理)
-│   ├── temporal_kg.py            # 时序知识图谱 (Graphiti)
-│   ├── self_evolution_engine.py  # 自进化引擎
-│   ├── thinking_enhanced.py      # 增强思考引擎
-│   ├── ... (共 160+ 个模块文件)
-├── tests/             # 🧪 测试套件 (32 文件, 428 用例)
-├── extensions/        # OpenClaw 扩展插件
-│   ├── claw-core/     # 核心插件 (UDS+ZMQ+mmap 三通道 + ContextEngine + Hook)
-│   └── xiaoyi-channel/  # 小艺通道通信插件
-├── scripts/           # 辅助脚本 + 安装向导
-├── config/            # 系统配置文件
-│   └── llm_config.example.json  # API Key 配置模板
-├── docs/              # 架构文档 + API 速查
-├── skills/            # 技能定义 + llm-memory-integration core (260 模块)
-├── .github/           # CI/CD workflows
-├── Makefile           # 开发命令速查
-└── pyproject.toml     # pytest/coverage/ruff/mypy 配置
+├── galaxyos/          # 📦 统一 Python 包 (pip install galaxyos)
+│   ├── engine/        #   核心引擎 (ClawWorker, RetrievalHub, DAG, FastPIL)
+│   ├── privileged/    #   跨平台系统模块 (VectorAPI, PlatformAdapter, GPU/NUMA)
+│   ├── orchestration/ #   工作流调度 (WorkflowEngine, TaskEngine)
+│   ├── config/        #   引擎配置
+│   └── scripts/       #   运维工具
+├── extensions/        # OpenClaw 插件
+│   └── galaxyos/      #   核心插件 (index.js + dist/scripts/ + native/)
+│       ├── index.js               # WorkerPool 弹性 + CircuitBreaker
+│       ├── dist/scripts/          # Python 运行时
+│       └── native/                # Rust 原生扩展
+├── skills/            # 52 个技能包
+├── scripts/           # 运维工具脚本
+├── tests/             # 测试套件
+├── path_resolver.py   # 统一路径定义
+├── setup.py           # pip install 入口
+└── Makefile           # make test / make native
 ```
 
 ## 安装
-
-> GalaxyOS 是 OpenClaw 的底层引擎包，作为 Python 库安装到 OpenClaw 环境中使用。
-
-### pip install（开发者模式）
 
 ```bash
 git clone https://cnb.cool/llm-memory-integrat/GalaxyOS.git
 cd GalaxyOS
 
-# 推荐使用虚拟环境
-python3 -m venv .venv && source .venv/bin/activate
+pip install -e .            # 安装 galaxyos 包
 
-# 安装
-pip install -e .
+# 编译 Rust 原生扩展（可选，需要 Rust 工具链）
+make native
 
-# 配置 API Key
-cp config/llm_config.example.json config/llm_config.json
-# 编辑填入你的 DeepSeek / 硅基流动 API Key
-
-# 运行安装向导（自检 + 配置验证）
-python scripts/install_wizard.py --check
+# 运行安装向导
+GALAXYOS_REPO=. python3 -m galaxyos.scripts.install_wizard --check
 ```
 
 ### 仅安装依赖

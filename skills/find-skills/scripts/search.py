@@ -15,11 +15,17 @@ import argparse
 import requests
 
 
+import os as _os, sys as _sys
+_ws_root = _os.environ.get("OPENCLAW_WORKSPACE", _os.path.expanduser("~/.openclaw/workspace"))
+for _p in [_ws_root, "/workspace"]:
+    if _p not in _sys.path:
+        _sys.path.insert(0, _p)
+import path_resolver
 def read_xiaoyienv():
     """
     读取 ~/.openclaw/.xiaoyienv 文件并返回键值对字典。
     """
-    file_path = os.path.expanduser("~/.openclaw/.xiaoyienv")
+    file_path = path_resolver.XIAOYIENV_FILE
     env_dict = {}
 
     try:
@@ -48,7 +54,7 @@ def get_installed_skills():
     """
     扫描 ~/.openclaw/workspace/skills 目录下的文件夹，返回文件夹名称列表
     """
-    skills_dir = os.path.expanduser("~/.openclaw/workspace/skills")
+    skills_dir = path_resolver.SKILLS_DIR
     installed_skills = []
 
     try:

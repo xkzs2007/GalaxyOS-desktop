@@ -1,5 +1,11 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
+import os as _os, sys as _sys
+_ws_root = _os.environ.get("OPENCLAW_WORKSPACE", _os.path.expanduser("~/.openclaw/workspace"))
+for _p in [_ws_root, "/workspace"]:
+    if _p not in _sys.path:
+        _sys.path.insert(0, _p)
+import path_resolver
 """
 小艺图像理解 - 小艺 AI 图像理解 API
 根据 SKILL.md 说明实现
@@ -70,7 +76,7 @@ def image_understanding(image_url, text="图中讲了什么", debug=False):
         api_url = "https://hag-drcn.op.dbankcloud.com/celia-claw/v1/sse-api/skill/execute"
 
         # 读取并校验配置
-        xiaoyi_path = os.path.expanduser("~/.openclaw/.xiaoyienv")
+        xiaoyi_path = path_resolver.XIAOYIENV_FILE
         config = read_xiaoyienv(xiaoyi_path)
 
         required_keys = ['PERSONAL-API-KEY', 'PERSONAL-UID']
