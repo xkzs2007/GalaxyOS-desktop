@@ -74,36 +74,36 @@ try:
     from dynamic_confidence import DynamicConfidence, get_dynamic_confidence
 except ImportError:
     DynamicConfidence = None
-    get_dynamic_confidence = lambda: None
+    get_dynamic_confidence = lambda *args, **kwargs: None
 
 try:
     from multi_agent_debate import DebateEngine, get_debate_engine
 except ImportError:
     DebateEngine = None
-    get_debate_engine = lambda: None
+    get_debate_engine = lambda *args, **kwargs: None
 
 try:
     from graph_of_thoughts import GraphOfThoughts, get_got_engine
 except ImportError:
     GraphOfThoughts = None
-    get_got_engine = lambda: None
+    get_got_engine = lambda *args, **kwargs: None
 
 try:
     from memory_editor import MemoryEditor, get_memory_editor
 except ImportError:
-    get_memory_editor = lambda: None
+    get_memory_editor = lambda *args, **kwargs: None
 
 try:
     from hierarchical_context import ContextLayer, get_context_layer
 except ImportError:
     ContextLayer = None
-    get_context_layer = lambda: None
+    get_context_layer = lambda *args, **kwargs: None
 
 try:
     from fast_pil import FastPIL, get_fast_pil
 except ImportError:
     FastPIL = None
-    get_fast_pil = lambda: None
+    get_fast_pil = lambda *args, **kwargs: None
 
 
 # ── ncps 神经网络模块 ──
