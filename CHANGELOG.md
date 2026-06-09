@@ -2,6 +2,26 @@
 
 GalaxyOS 版本变更记录。
 
+## [6.5.1] — 2026-06-09
+
+### Added
+- **Titans 惊讶度门控** — `services/neural_memory_gate.py`
+  - `RecallPatternPredictor`: 共现矩阵预测检索模式
+  - `RetrievalSurpriseCalculator`: Jaccard 惊讶度 + 自适应阈值
+  - `NeuralMemoryGate`: 输出 consolidate/decay 信号
+- **SSM 状态预测器** — `services/ssm_state_predictor.py`
+  - `SSMStatePredictor`: 指数衰减 + Hawkes 自激励时序预测
+  - `CompositePredictor`: 融合 SSM(0.4) + 共现(0.6) 的综合惊讶度
+- **A2A DAG 消息总线** — `services/dag_message_bus.py`
+  - `DAGMessageBus`: send/poll/ack/broadcast/reply
+  - `SubscriptionManager`: 消息类型过滤 + 路由匹配
+  - 复用 DAGContextManager 存储，无独立消息队列
+- **版本管理规范** — `VERSIONING.md`
+
+### Changed
+- `neural_pipeline.py`: `_get_memory_gate()` 切换为 `CompositePredictor`
+- `adaptive_ltp_ltd.py`: `calculate_ltp_strength()` 新增 `modulator` 参数
+
 ## [6.5.0] — 2026-06-09
 
 ### Added
