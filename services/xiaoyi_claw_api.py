@@ -103,15 +103,6 @@ except ImportError:
     FastPIL = None; get_fast_pil = lambda *args, **kwargs: None
 # ── 9个增强模块导入（统一API全集成） ──
 
-# ── 核心模块路径(13层/44工作流/129模块) ──
-import sys as _sys2
-_CORE_PATH = os.path.join(WORKSPACE, "skills", "xiaoyi-claw-omega-final", "skills", "llm-memory-integration", "core")
-_SRC_PATH = os.path.join(WORKSPACE, "skills", "llm-memory-integration", "src")
-for _p in [_CORE_PATH, _SRC_PATH]:
-    if os.path.isdir(_p) and _p not in _sys2.path:
-        _sys2.path.insert(0, _p)
-        logger.debug(f"核心模块路径已加入 sys.path: {_p}")
-
 # ── ncps 神经网络模块（可选导入） ──
 try:
     from services.memory_synapse_network import (
@@ -2062,8 +2053,6 @@ class XiaoYiClawLLM:
         _avg_ltc = 0.5
         try:
             _ws = getattr(self, '_workspace', os.path.expanduser("~/.openclaw/workspace"))
-            _core_dir = os.path.join(_ws, "GalaxyOS/skills/llm-memory-integration/core")
-            sys.path.insert(0, _core_dir)
             from services.memory_consolidation import ConsolidationEngine
             _ce = ConsolidationEngine(_ws)
             _sn = _ce._get_synapse_network()
@@ -2214,7 +2203,6 @@ class XiaoYiClawLLM:
 
         # ═══ KG as Memory Backbone: 实体提取 & 图写入 ═══
         try:
-            sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
             from services.temporal_kg import get_temporal_kg
             _tkg = get_temporal_kg()
             _session = getattr(state, 'session_key', 'xiaoyi-channel')
@@ -2843,7 +2831,6 @@ class XiaoYiClawLLM:
             # 只在非 greeting/light 预算或已有图推理结果时执行
             _kg_hidden = state.analysis.get('kg_hidden_relations', [])
             if not _kg_hidden:
-                sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
                 from services.temporal_kg import get_temporal_kg
                 _tkg = get_temporal_kg()
                 _session = getattr(state, 'session_key', 'xiaoyi-channel')
