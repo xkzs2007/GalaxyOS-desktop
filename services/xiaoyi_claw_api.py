@@ -27,78 +27,78 @@ WORKSPACE = os.environ.get(
 
 # ── 10论文方向模块集成 (R-CCAM 五阶段调用) ──
 try:
-    from retrieval_hub import retrieval_hub, _decompose_query, classify_query_complexity
+    from services.retrieval_hub import retrieval_hub, _decompose_query, classify_query_complexity
     _HAS_RETRIEVAL_HUB = True
 except ImportError:
     _HAS_RETRIEVAL_HUB = False
 try:
-    from paper_integration import get_integration, PaperIntegration
+    from services.paper_integration import get_integration, PaperIntegration
     _HAS_PAPER_INT = True
 except ImportError:
     _HAS_PAPER_INT = False
 try:
-    from adaptive_classifier import AdaptiveClassifier
+    from services.adaptive_classifier import AdaptiveClassifier
     _HAS_ADAPTIVE = True
 except ImportError:
     _HAS_ADAPTIVE = False
 try:
-    from tree_of_thought import TreeOfThought
+    from services.tree_of_thought import TreeOfThought
     _HAS_TOT = True
 except ImportError:
     _HAS_TOT = False
 try:
-    from memory_editor import MemoryEditor
+    from services.memory_editor import MemoryEditor
     _HAS_MEMEDITOR = True
 except ImportError:
     _HAS_MEMEDITOR = False
 try:
-    from causal_reasoning import CausalReasoning
+    from services.causal_reasoning import CausalReasoning
     _HAS_CAUSAL = True
 except ImportError:
     _HAS_CAUSAL = False
 try:
-    from cognitive_load import CognitiveLoad
+    from services.cognitive_load import CognitiveLoad
     _HAS_COGLOAD = True
 except ImportError:
     _HAS_COGLOAD = False
 try:
-    from hyper_routing import HyperRouter, extract_features as hyper_features
+    from services.hyper_routing import HyperRouter, extract_features as hyper_features
     _HAS_HYPER = True
 except ImportError:
     _HAS_HYPER = False
 try:
-    from plan_solve import PlanSolve
+    from services.plan_solve import PlanSolve
     _HAS_PLAN = True
 except ImportError:
     _HAS_PLAN = False
 
 # ── 增强模块导入（降级导入：不可用时设为 None） ──
 try:
-    from four_advancements import FourAdvancements as PaperEngines
+    from services.four_advancements import FourAdvancements as PaperEngines
 except ImportError:
     PaperEngines = None
 try:
-    from dynamic_confidence import DynamicConfidence, get_dynamic_confidence
+    from services.dynamic_confidence import DynamicConfidence, get_dynamic_confidence
 except ImportError:
     DynamicConfidence = None; get_dynamic_confidence = lambda *args, **kwargs: None
 try:
-    from multi_agent_debate import DebateEngine, get_debate_engine
+    from services.multi_agent_debate import DebateEngine, get_debate_engine
 except ImportError:
     DebateEngine = None; get_debate_engine = lambda *args, **kwargs: None
 try:
-    from graph_of_thoughts import GraphOfThoughts, get_got_engine
+    from services.graph_of_thoughts import GraphOfThoughts, get_got_engine
 except ImportError:
     GraphOfThoughts = None; get_got_engine = lambda *args, **kwargs: None
 try:
-    from memory_editor import MemoryEditor, get_memory_editor
+    from services.memory_editor import MemoryEditor, get_memory_editor
 except ImportError:
     MemoryEditor = None; get_memory_editor = lambda *args, **kwargs: None
 try:
-    from hierarchical_context import ContextLayer, get_context_layer
+    from services.hierarchical_context import ContextLayer, get_context_layer
 except ImportError:
     ContextLayer = None; get_context_layer = lambda *args, **kwargs: None
 try:
-    from fast_pil import FastPIL, get_fast_pil
+    from services.fast_pil import FastPIL, get_fast_pil
 except ImportError:
     FastPIL = None; get_fast_pil = lambda *args, **kwargs: None
 # ── 9个增强模块导入（统一API全集成） ──
@@ -114,7 +114,7 @@ for _p in [_CORE_PATH, _SRC_PATH]:
 
 # ── ncps 神经网络模块（可选导入） ──
 try:
-    from memory_synapse_network import (
+    from services.memory_synapse_network import (
         MemorySynapseNetwork, SynapseNetwork, NeuronManager, SynapseManager
     )
     _HAS_NEURAL = True
@@ -202,7 +202,7 @@ class XiaoYiClawLLM:
     def _init_vector_store(self):
         """初始化向量存储(sqllite, 128维, 与 text-embedding-v1.0 一致)"""
         try:
-            from unified_vector_store import UnifiedVectorStore
+            from services.unified_vector_store import UnifiedVectorStore
             # 数据已迁移为 128 维 text-embedding-v1.0，使用 SQLite 后端
             self.vector_store = UnifiedVectorStore(
                 backend='sqlite',
@@ -215,7 +215,7 @@ class XiaoYiClawLLM:
     def _init_ontology_bridge(self):
         """初始化知识图谱桥接"""
         try:
-            from memory_ontology_bridge import MemoryOntologyBridge
+            from services.memory_ontology_bridge import MemoryOntologyBridge
             self.ontology_bridge = MemoryOntologyBridge()
         except Exception as e:
             logger.warning(f"知识图谱桥接初始化失败: {e}")
@@ -224,7 +224,7 @@ class XiaoYiClawLLM:
     def _init_brain_sync(self):
         """初始化知识库同步"""
         try:
-            from brain_memory_sync import BrainMemorySync
+            from services.brain_memory_sync import BrainMemorySync
             self.brain_sync = BrainMemorySync()
         except Exception as e:
             logger.warning(f"知识库同步初始化失败: {e}")
@@ -233,7 +233,7 @@ class XiaoYiClawLLM:
     def _init_multimodal(self):
         """初始化多模态存储"""
         try:
-            from multimodal_memory import MultimodalMemoryStore
+            from services.multimodal_memory import MultimodalMemoryStore
             self.multimodal_store = MultimodalMemoryStore()
         except Exception as e:
             logger.warning(f"多模态存储初始化失败: {e}")
@@ -242,7 +242,7 @@ class XiaoYiClawLLM:
     def _init_scorer(self):
         """初始化重要性评分器"""
         try:
-            from importance_scorer import ImportanceScorer
+            from services.importance_scorer import ImportanceScorer
             self.scorer = ImportanceScorer()
         except Exception as e:
             logger.warning(f"重要性评分器初始化失败: {e}")
@@ -251,7 +251,7 @@ class XiaoYiClawLLM:
     def _init_forgetter(self):
         """初始化智能遗忘"""
         try:
-            from smart_forgetter import SmartForgetter
+            from services.smart_forgetter import SmartForgetter
             self.forgetter = SmartForgetter()
         except Exception as e:
             logger.warning(f"智能遗忘初始化失败: {e}")
@@ -260,7 +260,7 @@ class XiaoYiClawLLM:
     def _init_learner(self):
         """初始化自主学习"""
         try:
-            from auto_learner import AutoLearner
+            from services.auto_learner import AutoLearner
             self.learner = AutoLearner()
         except Exception as e:
             logger.warning(f"自主学习初始化失败: {e}")
@@ -269,7 +269,7 @@ class XiaoYiClawLLM:
     def _init_task_bridge(self):
         """初始化任务桥接"""
         try:
-            from task_memory_bridge import TaskMemoryBridge
+            from services.task_memory_bridge import TaskMemoryBridge
             self.task_bridge = TaskMemoryBridge()
         except Exception as e:
             logger.warning(f"任务桥接初始化失败: {e}")
@@ -278,7 +278,7 @@ class XiaoYiClawLLM:
     def _init_ocr2(self):
         """初始化 DeepSeek-OCR-2 适配器"""
         try:
-            from deepseek_ocr2_adapter import get_adapter
+            from services.deepseek_ocr2_adapter import get_adapter
             self.ocr2 = get_adapter()
             logger.info("DeepSeek-OCR-2 初始化成功")
         except Exception as e:
@@ -288,7 +288,7 @@ class XiaoYiClawLLM:
     def _init_memory_v2(self):
         """初始化 XiaoyiMemoryV2 底层引擎(作为子模块挂入)"""
         try:
-            from xiaoyi_memory import XiaoyiMemoryV2
+            from services.xiaoyi_memory import XiaoyiMemoryV2
             # workspace_path: xiaoyi_claw_api.py 在 core/ 下,上层两层是 workspace
             ws = str(Path(__file__).parent.parent)
             self.memory_v2 = XiaoyiMemoryV2(workspace_path=ws)
@@ -303,7 +303,7 @@ class XiaoYiClawLLM:
         """初始化 DAG 上下文管理器"""
         self.dag = None
         try:
-            from dag_context_manager import DAGContextManager
+            from services.dag_context_manager import DAGContextManager
             dag_db = os.path.expanduser("~/.openclaw/dag_context.db")
             self.dag = DAGContextManager(
                 db_path=dag_db,
@@ -319,7 +319,7 @@ class XiaoYiClawLLM:
         """初始化 KoRa 行为建模"""
         self._kora = None
         try:
-            from kora_behavior import KoRaBehaviorEngine
+            from services.kora_behavior import KoRaBehaviorEngine
             self._kora = KoRaBehaviorEngine()
             logger.info("KoRa 行为建模初始化成功")
         except Exception as e:
@@ -458,7 +458,7 @@ class XiaoYiClawLLM:
             # 增强思考引擎(Reflexion + Self-Refine + MultiPath + Flash NLP)
             self.thinking_enhanced = None
             try:
-                from thinking_enhanced import ThinkingEnhanced
+                from services.thinking_enhanced import ThinkingEnhanced
                 self.thinking_enhanced = ThinkingEnhanced(self.llm_flash)
                 logger.info("增强思考引擎已加载")
             except Exception as e:
@@ -521,7 +521,7 @@ class XiaoYiClawLLM:
 
     def _init_consolidation_engine(self):
         try:
-            from memory_consolidation import ConsolidationEngine
+            from services.memory_consolidation import ConsolidationEngine
             self._consolidation_engine = ConsolidationEngine()
             logger.info("ConsolidationEngine 加载成功")
         except Exception as e:
@@ -645,7 +645,7 @@ class XiaoYiClawLLM:
 
     def _init_self_evolution(self):
         try:
-            from self_evolution_engine import SelfEvolutionEngine
+            from services.self_evolution_engine import SelfEvolutionEngine
             self._self_evolution = SelfEvolutionEngine()
             logger.info("SelfEvolutionEngine 加载成功")
         except Exception as e:
@@ -654,7 +654,7 @@ class XiaoYiClawLLM:
 
     def _init_spatial_topology(self):
         try:
-            from spatial_topology import SpatialTopologyGraph
+            from services.spatial_topology import SpatialTopologyGraph
             self._spatial_graph = SpatialTopologyGraph()
             self.spatial_scene = None
             logger.info("SpatialTopologyGraph 加载成功")
@@ -664,7 +664,7 @@ class XiaoYiClawLLM:
 
     def _init_nlp_enhanced(self):
         try:
-            from nlp_enhanced import EnhancedNLP
+            from services.nlp_enhanced import EnhancedNLP
             self._nlp_enhanced = EnhancedNLP()
             logger.info("EnhancedNLP 加载成功")
         except Exception as e:
@@ -673,7 +673,7 @@ class XiaoYiClawLLM:
 
     def _init_hallucination_guard(self):
         try:
-            from enhanced_hallucination_guard import EnhancedHallucinationGuard
+            from services.enhanced_hallucination_guard import EnhancedHallucinationGuard
             self._hallucination_guard = EnhancedHallucinationGuard()
             logger.info("HallucinationGuard 加载成功")
         except Exception as e:
@@ -682,7 +682,7 @@ class XiaoYiClawLLM:
 
     def _init_smart_processor(self):
         try:
-            from smart_processor import SmartProcessor
+            from services.smart_processor import SmartProcessor
             self._smart_processor = SmartProcessor(
                 llm_flash=getattr(self, 'llm_flash', None),
                 llm_pro=getattr(self, 'llm_pro', None),
@@ -694,7 +694,7 @@ class XiaoYiClawLLM:
 
     def _init_v4_services(self):
         try:
-            from v4_services import TtlMmapCache, HardwareFallback
+            from services.v4_services import TtlMmapCache, HardwareFallback
             self._v4_mmap = TtlMmapCache()
             self._v4_hardware = HardwareFallback()
             logger.info("V4Services 加载成功")
@@ -705,7 +705,7 @@ class XiaoYiClawLLM:
 
     def _init_gateway_client(self):
         try:
-            from gateway_client import GatewayClient
+            from services.gateway_client import GatewayClient
             self._gateway = GatewayClient()
             logger.info("GatewayClient 加载成功")
         except Exception as e:
@@ -714,7 +714,7 @@ class XiaoYiClawLLM:
 
     def _init_dag_integration(self):
         try:
-            from DAGIntegration_addon import DAGIntegration
+            from services.DAGIntegration_addon import DAGIntegration
             _dag = getattr(self, 'dag', None)
             self._dag_integration = DAGIntegration(dag=_dag) if _dag else None
             if self._dag_integration:
@@ -1356,7 +1356,7 @@ class XiaoYiClawLLM:
                 'latency_ms': 0
             }
 
-        from deepseek_ocr2_adapter import ImageUnderstandingMode
+        from services.deepseek_ocr2_adapter import ImageUnderstandingMode
 
         # 映射模式字符串到枚举
         mode_map = {
@@ -1681,7 +1681,7 @@ class XiaoYiClawLLM:
     def _get_optimization_integration(self):
         """懒加载 OptimizationIntegration"""
         if not hasattr(self, '_opt_integration') or self._opt_integration is None:
-            from optimization_integration import OptimizationIntegration
+            from services.optimization_integration import OptimizationIntegration
             self._opt_integration = OptimizationIntegration()
         return self._opt_integration
 
@@ -1695,7 +1695,7 @@ class XiaoYiClawLLM:
 
     def optimize_memory_synapse(self, synapse_state, operation: str = "ltp") -> Dict[str, Any]:
         """优化记忆突触"""
-        from optimization_integration import SynapseState
+        from services.optimization_integration import SynapseState
         if not isinstance(synapse_state, SynapseState):
             synapse_state = SynapseState(weight=float(synapse_state))
         return self._get_optimization_integration().optimize_memory_synapse(synapse_state, operation)
@@ -1771,7 +1771,7 @@ class XiaoYiClawLLM:
     def _get_autonomous_integrator(self):
         """懒加载 AutonomousTasksIntegrator"""
         if not hasattr(self, '_auto_integrator') or self._auto_integrator is None:
-            from autonomous_integrator import AutonomousTasksIntegrator
+            from services.autonomous_integrator import AutonomousTasksIntegrator
             self._auto_integrator = AutonomousTasksIntegrator()
         return self._auto_integrator
 
@@ -1792,7 +1792,7 @@ class XiaoYiClawLLM:
     def _get_full_integration(self):
         """懒加载 FullIntegration"""
         if not hasattr(self, '_full_integration') or self._full_integration is None:
-            from full_integration import FullIntegration
+            from services.full_integration import FullIntegration
             self._full_integration = FullIntegration()
         return self._full_integration
 
@@ -1809,7 +1809,7 @@ class XiaoYiClawLLM:
     def _get_resilience_system(self):
         """懒加载 ResilienceSystem"""
         if not hasattr(self, '_resilience') or self._resilience is None:
-            from resilience_system import get_resilience_system
+            from services.resilience_system import get_resilience_system
             self._resilience = get_resilience_system()
         return self._resilience
 
@@ -1829,7 +1829,7 @@ class XiaoYiClawLLM:
 
     def check_recovery_status(self) -> Dict:
         """检查恢复状态"""
-        from full_recovery import check_status
+        from services.full_recovery import check_status
         return check_status()
 
     # ==================== 增强检索集成(从 XiaoyiMemoryV2 enhanced_* 融合,走统一API)====================
@@ -1856,7 +1856,7 @@ class XiaoYiClawLLM:
 
         # 确保 SmartHybridGenerator 可导入
         try:
-            from speculative_hybrid import SmartHybridGenerator
+            from services.speculative_hybrid import SmartHybridGenerator
         except ImportError as e:
             logger.warning(f"投机解码不可用,回退到基础 recall: {e}")
             memories = self.recall(query, top_k=top_k)
@@ -2036,7 +2036,7 @@ class XiaoYiClawLLM:
             _ws = getattr(self, '_workspace', os.path.expanduser("~/.openclaw/workspace"))
             _core_dir = os.path.join(_ws, "GalaxyOS/skills/llm-memory-integration/core")
             sys.path.insert(0, _core_dir)
-            from memory_consolidation import ConsolidationEngine
+            from services.memory_consolidation import ConsolidationEngine
             _ce = ConsolidationEngine(_ws)
             _sn = _ce._get_synapse_network()
             if _sn:
@@ -2187,7 +2187,7 @@ class XiaoYiClawLLM:
         # ═══ KG as Memory Backbone: 实体提取 & 图写入 ═══
         try:
             sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-            from temporal_kg import get_temporal_kg
+            from services.temporal_kg import get_temporal_kg
             _tkg = get_temporal_kg()
             _session = getattr(state, 'session_key', 'xiaoyi-channel')
             _ingest = _tkg.ingest_text(raw_query, session_key=_session)
@@ -2218,7 +2218,7 @@ class XiaoYiClawLLM:
             pass
 
         try:
-            from retrieval_hub import retrieval_hub
+            from services.retrieval_hub import retrieval_hub
             _hub_session = getattr(state, 'session_key', 'xiaoyi-channel')
             hub_result = retrieval_hub(query, top_k=8, session_id=_hub_session)
 
@@ -2418,7 +2418,7 @@ class XiaoYiClawLLM:
                     # 如果检索到实体，尝试图遍历获取邻居
                     _tkg = None
                     try:
-                        from temporal_kg import get_temporal_kg
+                        from services.temporal_kg import get_temporal_kg
                         _tkg = get_temporal_kg()
                     except Exception:
                         pass
@@ -2629,7 +2629,7 @@ class XiaoYiClawLLM:
 
         # non-minimal 预算：用 IntelligentThinkingTrigger 做智能分类
         try:
-            from intelligent_thinking_trigger import IntelligentThinkingTrigger, ThinkingSkill
+            from services.intelligent_thinking_trigger import IntelligentThinkingTrigger, ThinkingSkill
             trigger = IntelligentThinkingTrigger()
             analysis = trigger.detect_thinking_need(query)
 
@@ -2785,7 +2785,7 @@ class XiaoYiClawLLM:
             _kg_hidden = state.analysis.get('kg_hidden_relations', [])
             if not _kg_hidden:
                 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-                from temporal_kg import get_temporal_kg
+                from services.temporal_kg import get_temporal_kg
                 _tkg = get_temporal_kg()
                 _session = getattr(state, 'session_key', 'xiaoyi-channel')
                 _kg_hidden = _tkg.find_hidden_relations(session_key=_session)
@@ -2853,7 +2853,7 @@ class XiaoYiClawLLM:
 
             if (has_image_msg or has_media) and self.ocr2:
                 # 调用 OCR2 提取图片文字/结构化数据
-                from deepseek_ocr2_adapter import ImageUnderstandingMode, get_adapter
+                from services.deepseek_ocr2_adapter import ImageUnderstandingMode, get_adapter
                 ocr2 = get_adapter()
 
                 # 尝试从 state 获取图片路径
@@ -3451,7 +3451,7 @@ class XiaoYiClawLLM:
             results = self.recall(rewritten, top_k=16)
             if results and len(results) > 1:
                 try:
-                    from reranker import rerank_results
+                    from services.reranker import rerank_results
                     # rerank_results 接收 [{"content":...}, ...] 格式
                     reranked = rerank_results(rewritten, results, top_k=8)
                     if reranked:
@@ -3467,7 +3467,7 @@ class XiaoYiClawLLM:
                 try:
                     # 优先从 retrieval_hub 统一入口获取五路融合结果
                     try:
-                        from retrieval_hub import retrieval_hub
+                        from services.retrieval_hub import retrieval_hub
                         _hub_session2 = getattr(state, 'session_key', 'xiaoyi-channel') if hasattr(state, 'session_key') else 'xiaoyi-channel'
                         hub_result = retrieval_hub(rewritten, top_k=12, include_web=False, session_id=_hub_session2)
                         hub_results = hub_result.get("results", [])
