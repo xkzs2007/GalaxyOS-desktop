@@ -339,11 +339,20 @@ class XiaoYiClawLLM:
         self.llm_pro = None
         try:
             # ===== 第一源:自有 llm_config.json(不受 OpenClaw 影响) =====
-            config_path = Path(__file__).parent.parent / "config" / "llm_config.json"
+            config_paths = [
+                Path(__file__).parent.parent / "config" / "llm_config.json",
+                Path(WORKSPACE) / "skills" / "llm-memory-integration" / "config" / "llm_config.json",
+                Path(WORKSPACE) / "GalaxyOS" / "skills" / "llm-memory-integration" / "config" / "llm_config.json",
+            ]
             fallback_flash = None
             fallback_pro = None
+            config_path = None
+            for _cp in config_paths:
+                if _cp.exists():
+                    config_path = _cp
+                    break
 
-            if config_path.exists():
+            if config_path and config_path.exists():
                 import json
                 with open(config_path, "r", encoding="utf-8") as f:
                     llm_cfg = json.load(f)
