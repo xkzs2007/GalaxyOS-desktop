@@ -63,11 +63,11 @@ _MEMORY_GATE = None
 
 
 def _get_memory_gate():
-    """全局单例，懒加载"""
+    """全局单例，懒加载 — 优先用 CompositePredictor 融合 SSM + 共现"""
     global _MEMORY_GATE
     if _MEMORY_GATE is None:
-        from services.neural_memory_gate import NeuralMemoryGate
-        _MEMORY_GATE = NeuralMemoryGate()
+        from services.ssm_state_predictor import CompositePredictor
+        _MEMORY_GATE = CompositePredictor(w_ssm=0.4, w_cooc=0.6)
     return _MEMORY_GATE
 
 
@@ -386,24 +386,33 @@ class NeuralMemoryPipeline:
         )
         t2 = time.time()
 
-        # ── v3: 神经记忆门控 — 记录检索模式 + 计算惊讶度 ──
+        # ── v3: 神经记忆门控（CompositePredictor: SSM + 共现融合） ──
         try:
             gate = _get_memory_gate()
             recalled_ids = [r[0] for r in results] if results else []
             if recalled_ids:
                 gate.record_recall(recalled_ids)
-                predicted = gate.predict_recall([neuron_id])
-                if predicted:
-                    gate_result = gate.compute_surprise(predicted, recalled_ids)
-                    if gate_result["action"] == "consolidate":
-                        logger.info(
-                            f"[Titans] 惊讶度={gate_result['surprise']:.3f}, "
-                            f"consolidate {len(gate_result['novel_ids'])} 个新颖记忆"
-                        )
-                    elif gate_result["action"] == "decay":
-                        logger.debug(
-                            f"[Titans] 惊讶度={gate_result['surprise']:.3f}, decay"
-                        )
+                # CompositePredictor.predict() 返回融合惊讶度 + 时序趋势
+                gate_result = gate.predict([neuron_id], recalled_ids)
+                surprise = gate_result.get("surprise", 0.0)
+                ssm_surprise = gate_result.get("ssm_surprise", 0.0)
+                cooc_surprise = gate_result.get("cooc_surprise", 0.0)
+                ssm_mod = gate_result.get("ssm_modulator", 0.0)
+
+                if surprise > 0.6:
+                    logger.info(
+                        f"[Titans] 融合惊讶度={surprise:.3f} "
+                        f"(SSM={ssm_surprise:.3f}, 共现={cooc_surprise:.3f}), "
+                        f"consolidate"
+                    )
+                elif surprise > 0.3:
+                    logger.debug(
+                        f"[Titans] 融合惊讶度={surprise:.3f}, medium"
+                    )
+                elif ssm_mod < -0.2:
+                    logger.debug(
+                        f"[Titans] SSM调制器={ssm_mod:.3f}, decay"
+                    )
         except Exception as e:
             logger.debug(f"memory gate skipped: {e}")
 
