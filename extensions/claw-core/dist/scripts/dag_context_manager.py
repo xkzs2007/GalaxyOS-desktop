@@ -162,7 +162,19 @@ class DAGContextManager:
         self.use_blob_arena = use_blob_arena
 
         # BlobArena 实例（v2: 无损存储）
-        self._blob_arena = get_blob_arena() if self.use_blob_arena else None
+        # 改为 per-session dict: {session_key: BlobArena}
+        self._blob_arenas: Dict[str, 'BlobArena'] = {}
+        # 初始惰性初始化标记
+        self._blob_arena_init = False
+        if self.use_blob_arena:
+            # 提前导入不报错
+            try:
+                from blob_arena import get_blob_arena
+                self._blob_arena_import_ok = True
+            except ImportError:
+                self._blob_arena_import_ok = False
+        else:
+            self._blob_arena_import_ok = False
 
         # SQLite 锁（线程安全）
         self._lock = threading.Lock()
@@ -194,6 +206,30 @@ class DAGContextManager:
         logger.info(f"DAG Context Manager v2 初始化: db={self.db_path}, "
                     f"max_tokens={max_context_tokens}, threshold={context_threshold}, "
                     f"blob_arena={self.use_blob_arena}")
+
+    def _get_arena(self, session_key: str) -> Optional['BlobArena']:
+        """
+        获取 session 对应的 BlobArena 实例。
+        每个 session 独立目录，session 结束后可精准回收。
+
+        Args:
+            session_key: 会话 ID
+
+        Returns:
+            BlobArena 实例或 None（未启用时）
+        """
+        if not self.use_blob_arena or not self._blob_arena_import_ok:
+            return None
+        if not session_key:
+            return None
+
+        if session_key not in self._blob_arenas:
+            try:
+                from blob_arena import get_blob_arena
+                self._blob_arenas[session_key] = get_blob_arena(session_id=session_key)
+            except Exception:
+                return None
+        return self._blob_arenas.get(session_key)
 
     def _init_db(self):
         """初始化 SQLite 数据库"""
@@ -288,11 +324,13 @@ class DAGContextManager:
         _full_content = data.get('content', '')
 
         # v2: 如果有原文且 blob_arena 可用，备份原文到 BlobArena
-        if self._blob_arena and data.get('content') and len(data['content']) > 200:
+        _session_key = data.get('session_key', '')
+        _ba = self._get_arena(_session_key) if _session_key else None
+        if _ba and data.get('content') and len(data['content']) > 200:
             try:
                 # memo 替换全文，原文存 blob
                 _orig = data['content']
-                _blob_id = self._blob_arena.append_text(_orig)
+                _blob_id = _ba.append_text(_orig)
                 _memo = generate_memo(_orig) if generate_memo else _orig[:200]
                 data['content'] = f"[memo] {_memo}"
                 data['blob_id'] = _blob_id
@@ -819,9 +857,10 @@ class DAGContextManager:
             return {"summarized": 0, "reason": "没有可摘要的节点"}
 
         # v2: 先将原文存到 BlobArena（无损保留），节点只存 memo
-        if self._blob_arena:
+        _ba = self._get_arena(session_key)
+        if _ba:
             combined_text = "\n".join([n.content for n in to_summarize])
-            _blob_id = self._blob_arena.append_text(combined_text)
+            _blob_id = _ba.append_text(combined_text)
             # memo = 轻量检索索引，不做价值判断
             memo_text = generate_memo(combined_text) if generate_memo else combined_text[:200]
             keywords = _extract_keywords(combined_text)
@@ -921,18 +960,27 @@ class DAGContextManager:
         Returns:
             str: 完整原文
         """
-        if not self._blob_arena:
+        blob_id = getattr(node, 'blob_id', '') if hasattr(node, 'blob_id') else node.get('blob_id', '')
+        if not blob_id:
             return node.content if hasattr(node, 'content') else node.get('content', '')
 
-        blob_id = getattr(node, 'blob_id', '') if hasattr(node, 'blob_id') else node.get('blob_id', '')
-        if blob_id:
+        _session_key = getattr(node, 'session_key', '') if hasattr(node, 'session_key') else node.get('session_key', '')
+        _ba = self._get_arena(_session_key) if _session_key else None
+        if _ba:
             try:
-                full_text = self._blob_arena.read_text(blob_id)
+                full_text = _ba.read_text(blob_id)
                 if full_text:
                     return full_text
             except Exception:
                 pass
-        # 降级：返回节点自身的 content
+        else:
+            try:
+                from blob_arena import read_text_blob_compat
+                full_text = read_text_blob_compat(blob_id, session_id=_session_key)
+                if full_text:
+                    return full_text
+            except Exception:
+                pass
         return node.content if hasattr(node, 'content') else node.get('content', '')
 
     def restore_batch_content(self, nodes: List[DAGNode]) -> List[Dict]:
@@ -1507,9 +1555,10 @@ class DAGContextManager:
             full_text += f"[{n['phase_name']}]\n{n['content']}\n\n"
 
         # 生成 memo（检索索引用，不丢信息因为 BlobArena 存了全文）
-        if self._blob_arena:
+        _ba = self._get_arena(session_key)
+        if _ba:
             # 全文存到 BlobArena
-            _blob_id = self._blob_arena.append_text(full_text)
+            _blob_id = _ba.append_text(full_text)
             # 生成轻量 memo
             _memo_text = generate_memo(full_text) if generate_memo else full_text[:200]
             _method = "blob_arena_memo"
@@ -1567,9 +1616,9 @@ class DAGContextManager:
 
                 # chunk 级别 blob
                 _chunk_blob_id = ""
-                if self._blob_arena:
-                    _chunk_blob_id = self._blob_arena.append_text(chunk_full)
-                _chunk_memo = generate_memo(chunk_full) if (generate_memo and self._blob_arena) else chunk_full[:200]
+                if _ba:
+                    _chunk_blob_id = _ba.append_text(chunk_full)
+                _chunk_memo = generate_memo(chunk_full) if (generate_memo and _ba) else chunk_full[:200]
 
                 if target_table == "rccam_nodes":
                     # 用 add_rccam_node 但通过 blob 方式
@@ -1610,7 +1659,7 @@ class DAGContextManager:
         conclusions = phase_map.get("action") or phase_map.get("control", "")[:200]
 
         # memo 用 generate_memo（只做检索索引，不做价值判断）
-        memo_for_index = _memo_text if self._blob_arena else full_text[:300]
+        memo_for_index = _memo_text if _ba else full_text[:300]
 
         previous_cycle_id = cycle_id.replace(f"_{cycle_index}", f"_{cycle_index - 1}") if cycle_index and cycle_index > 1 else ""
 
@@ -1708,9 +1757,10 @@ class DAGContextManager:
             # BlobArena 无损存储完整原文，SQLite 只存 memo
             _blob_id = ""
             _memo_text = ""
+            _ba = self._get_arena(session_key)
             try:
-                if self._blob_arena:
-                    _blob_id = self._blob_arena.append_text(full_combined)
+                if _ba:
+                    _blob_id = _ba.append_text(full_combined)
                     _memo_text = generate_memo(full_combined) if generate_memo else full_combined[:200]
                 else:
                     _memo_text = full_combined[:500] + "..." if len(full_combined) > 500 else full_combined
@@ -2536,9 +2586,64 @@ class DAGContextManager:
 
         return deduped[:limit]
 
+    def delete_blob_arena(self, session_key: str) -> bool:
+        """
+        删除 session 的 BlobArena 磁盘数据和内存缓存。
+
+        Args:
+            session_key: 会话 ID
+
+        Returns:
+            bool: 是否成功删除
+        """
+        # 从内存缓存移除
+        if session_key in self._blob_arenas:
+            self._blob_arenas[session_key].close()
+            del self._blob_arenas[session_key]
+        # 删除磁盘文件
+        try:
+            from blob_arena import delete_session_arena
+            return delete_session_arena(session_key)
+        except Exception:
+            return False
+
+    def close_session(self, session_key: str, delete_dag_data: bool = False) -> Dict:
+        """
+        关闭 session，清理 BlobArena。
+
+        Args:
+            session_key: 会话 ID
+            delete_dag_data: 是否同时删除 DAG 数据库中的节点
+
+        Returns:
+            {"blob_arena_deleted": bool, "dag_nodes_deleted": int}
+        """
+        result = {"blob_arena_deleted": False, "dag_nodes_deleted": 0}
+        result["blob_arena_deleted"] = self.delete_blob_arena(session_key)
+
+        if delete_dag_data:
+            with self._lock:
+                try:
+                    conn = sqlite3.connect(self.db_path)
+                    cur = conn.execute("DELETE FROM dag_nodes WHERE session_key=?", (session_key,))
+                    dag_deleted = cur.rowcount
+                    cur = conn.execute("DELETE FROM rccam_nodes WHERE session_key=?", (session_key,))
+                    rccam_deleted = cur.rowcount
+                    conn.commit()
+                    conn.close()
+                    result["dag_nodes_deleted"] = dag_deleted + rccam_deleted
+                except Exception:
+                    pass
+        return result
+
     def close(self):
         """关闭资源"""
-        pass
+        for sk, ba in self._blob_arenas.items():
+            try:
+                ba.close()
+            except Exception:
+                pass
+        self._blob_arenas.clear()
 
     # ====================================================================
     # MemGPT 风格分页 + 中断

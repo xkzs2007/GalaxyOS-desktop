@@ -1127,7 +1127,7 @@ def _do_dag_fallback(query: str, top_k: int) -> list:
 
 
 # ── synapse 检索三个规模阈值 ──
-SYNAPSE_FULL_THRESHOLD = 200     # ≤ 200: 全链路 ONNX+GAT+CfC
+SYNAPSE_FULL_THRESHOLD = 5000   # ≤ 5000: 全链路 ONNX+GAT+CfC
 SYNAPSE_GAT_THRESHOLD = 2000     # 201-2000: GAT 嵌入相似度（无 CfC，轻量）
                                   # > 2000: jieba 关键词 fallback
 
@@ -1171,15 +1171,11 @@ def _do_synapse(query: str) -> list:
 
 def _do_synapse_full(query: str, _ws: str) -> list:
     """Tier 1: 全链路 ONNX+GAT+CfC（≤ 200 神经元）"""
-    _core_dir = os.path.join(_ws, "GalaxyOS/extensions/claw-core/dist/scripts")
-    if _core_dir not in sys.path:
-        sys.path.insert(0, _core_dir)
-
-    from onnx_embedding import get_onnx_embedding
+    from services.onnx_embedding import get_onnx_embedding
     _onnx = get_onnx_embedding()
     _onnx.initialize()
 
-    from neural_pipeline import NeuralMemoryPipeline
+    from services.neural_pipeline import NeuralMemoryPipeline
     _pipe = NeuralMemoryPipeline(
         feature_dim=64, hidden_dim=64, gnn_heads=4,
         gnn_layers=2, cfc_hidden_size=64,
@@ -1337,7 +1333,7 @@ def _do_synapse_gat(query: str, _ws: str, _neuron_count: int) -> list:
         if _core_dir not in sys.path:
             sys.path.insert(0, _core_dir)
 
-        from onnx_embedding import get_onnx_embedding
+        from services.onnx_embedding import get_onnx_embedding
         _onnx = get_onnx_embedding()
         _onnx.initialize()
 

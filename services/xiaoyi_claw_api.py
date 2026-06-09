@@ -289,9 +289,8 @@ class XiaoYiClawLLM:
         """初始化 XiaoyiMemoryV2 底层引擎(作为子模块挂入)"""
         try:
             from services.xiaoyi_memory import XiaoyiMemoryV2
-            # workspace_path: xiaoyi_claw_api.py 在 core/ 下,上层两层是 workspace
-            ws = str(Path(__file__).parent.parent)
-            self.memory_v2 = XiaoyiMemoryV2(workspace_path=ws)
+            # workspace_path 使用模块级 WORKSPACE（稳定指向 ~/.openclaw/workspace）
+            self.memory_v2 = XiaoyiMemoryV2(workspace_path=WORKSPACE)
             logger.info("XiaoyiMemoryV2 初始化成功")
         except Exception as e:
             logger.warning(f"XiaoyiMemoryV2 初始化失败: {e}")

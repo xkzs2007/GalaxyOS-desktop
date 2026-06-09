@@ -1353,17 +1353,17 @@ class ClawWorker:
             return {"saved": False, "error": str(e)}
 
     def dag_clear_session(self, p: dict) -> dict:
-        """清空指定 session 在 DAG 中的节点（新会话时调用）"""
+        """清空指定 session 在 DAG 中的节点 + BlobArena（新会话或 session 结束时调用）"""
         session_id = p.get("sessionId", "")
         if not session_id:
             return {"cleared": False, "reason": "missing sessionId"}
+        delete_arena = p.get("deleteArena", False)
         try:
             dag = self._get_dag()
+            deleted = 0
             if dag and dag.dag:
-                # 清空 dag_nodes 表中该 session 的全部节点
                 import sqlite3
                 conn = sqlite3.connect(dag.dag.db_path)
-                deleted = 0
                 try:
                     c = conn.execute(
                         "DELETE FROM dag_nodes WHERE session_key=?",
@@ -1382,8 +1382,20 @@ class ClawWorker:
                     pass
                 conn.commit()
                 conn.close()
-                return {"cleared": True, "deleted_nodes": deleted}
-            return {"cleared": False, "reason": "dag not ready"}
+
+            # 清理 BlobArena（per-session 目录 rm -rf）
+            blob_deleted = False
+            if delete_arena:
+                try:
+                    if dag and dag.dag:
+                        blob_deleted = dag.dag.delete_blob_arena(session_id)
+                    else:
+                        from blob_arena import delete_session_arena
+                        blob_deleted = delete_session_arena(session_id)
+                except Exception:
+                    pass
+
+            return {"cleared": True, "deleted_nodes": deleted, "blob_arena_deleted": blob_deleted}
         except Exception as e:
             return {"cleared": False, "error": str(e)}
 

@@ -70,14 +70,16 @@ class GraphAttentionLayer(nn.Module):
     def forward(
         self,
         h: torch.Tensor,
-        adj: torch.Tensor
+        edge_index: torch.Tensor
     ) -> torch.Tensor:
         """
-        前向传播
+        前向传播（稀疏 edge_index 版本）
+        
+        只对实际存在的边计算注意力，O(N*d + E) 内存而非 O(N²)
         
         Args:
             h: 节点特征 (N, in_features)
-            adj: 邻接矩阵 (N, N)，可以是稀疏或稠密
+            edge_index: 边索引 (2, E)，int64 COO 格式
             
         Returns:
             更新后的节点特征 (N, out_features)
@@ -87,32 +89,52 @@ class GraphAttentionLayer(nn.Module):
         # 线性变换
         Wh = torch.mm(h, self.W)  # (N, out_features)
         
-        # 计算注意力分数
-        # 拼接所有节点对的特征
-        Wh1 = Wh.unsqueeze(1).expand(-1, N, -1)  # (N, N, out_features)
-        Wh2 = Wh.unsqueeze(0).expand(N, -1, -1)  # (N, N, out_features)
+        # 只对实际存在的边计算注意力
+        src_idx = edge_index[0]  # (E,)
+        dst_idx = edge_index[1]  # (E,)
         
-        # 拼接
-        Wh_cat = torch.cat([Wh1, Wh2], dim=-1)  # (N, N, 2*out_features)
+        # 边两端节点的特征
+        Wh_src = Wh[src_idx]  # (E, out_features)
+        Wh_dst = Wh[dst_idx]  # (E, out_features)
         
-        # 计算注意力
-        e = self.leaky_relu(torch.matmul(Wh_cat, self.a).squeeze(-1))  # (N, N)
+        # 拼接 [Wh_i || Wh_j]
+        Wh_cat = torch.cat([Wh_src, Wh_dst], dim=-1)  # (E, 2*out_features)
         
-        # 应用邻接矩阵掩码
-        zero_vec = -9e15 * torch.ones_like(e)
-        attention = torch.where(adj > 0, e, zero_vec)
+        # 计算每条边的注意力分数
+        e = self.leaky_relu(torch.matmul(Wh_cat, self.a).squeeze(-1))  # (E,)
         
-        # Softmax
-        attention = F.softmax(attention, dim=1)
-        attention = F.dropout(attention, self.dropout, training=self.training)
+        # 按目标节点分组 softmax
+        # 生成稀疏 COO 注意力矩阵 (E,) → scatter 到 (N, N)
+        # 等价于 edge_weight 形式的 softmax
+        # 使用 max + exp + sum scatter 做 segment softmax
+        ones_for_N = torch.zeros(N, dtype=torch.bool, device=h.device)
         
-        # 聚合
-        h_prime = torch.matmul(attention, Wh)  # (N, out_features)
+        # segment softmax: 对每个 dst 节点的入边做 softmax
+        # 先找每个 dst 节点的最大值
+        max_vals = torch.full((N,), float('-inf'), device=h.device)
+        max_vals = max_vals.scatter_reduce_(0, dst_idx, e, reduce='amax')  # (N,)
+        
+        # exp(score - max)
+        e_sub = e - max_vals[dst_idx]  # (E,)
+        exp_e = torch.exp(e_sub)  # (E,)
+        
+        # 求和每个 dst 节点的 exp 总和
+        sum_exp = torch.zeros(N, device=h.device)
+        sum_exp = sum_exp.scatter_add_(0, dst_idx, exp_e)  # (N,)
+        
+        # softmax = exp / sum
+        alpha = exp_e / (sum_exp[dst_idx] + 1e-16)  # (E,)
+        alpha = F.dropout(alpha, self.dropout, training=self.training)
+        
+        # 聚合：按目标节点加权求和邻居特征
+        # h_i' = Σ α_ij * W * h_j
+        Wh_weighted = Wh_src * alpha.unsqueeze(-1)  # (E, out_features)
+        h_prime = torch.zeros(N, self.out_features, device=h.device)
+        h_prime = h_prime.scatter_add_(0, dst_idx.unsqueeze(-1).expand(-1, self.out_features), Wh_weighted)
         
         if self.bias is not None:
             h_prime = h_prime + self.bias
         
-        # 激活
         if self.concat:
             return F.elu(h_prime)
         else:
@@ -265,26 +287,23 @@ class MultiHeadGraphAttentionLayer(nn.Module):
     def forward(
         self,
         h: torch.Tensor,
-        adj: torch.Tensor
+        edge_index: torch.Tensor
     ) -> torch.Tensor:
         """
-        前向传播
+        前向传播（稀疏 edge_index 版本）
         
         Args:
             h: 节点特征 (N, in_features)
-            adj: 邻接矩阵 (N, N)
+            edge_index: 边索引 (2, E)，int64 COO 格式
             
         Returns:
             更新后的节点特征
         """
         if self.concat:
-            # 拼接所有头的输出
-            return torch.cat([att(h, adj) for att in self.attentions], dim=1)
+            return torch.cat([att(h, edge_index) for att in self.attentions], dim=1)
         else:
-            # 平均所有头的输出
-            heads_output = torch.stack([att(h, adj) for att in self.attentions], dim=0)
+            heads_output = torch.stack([att(h, edge_index) for att in self.attentions], dim=0)
             avg_output = heads_output.mean(dim=0)
-            
             if self.average and self.out_proj is not None:
                 return self.out_proj(avg_output)
             return avg_output
@@ -337,20 +356,19 @@ class GATLayer(nn.Module):
     def forward(
         self,
         h: torch.Tensor,
-        adj: torch.Tensor
+        edge_index: torch.Tensor
     ) -> torch.Tensor:
         """
-        前向传播
+        前向传播（稀疏 edge_index 版本）
         
         Args:
             h: 节点特征 (N, in_features)
-            adj: 邻接矩阵 (N, N)
+            edge_index: 边索引 (2, E)，int64 COO 格式
             
         Returns:
             更新后的节点特征 (N, out_features)
         """
-        # 多头注意力
-        h_attn = self.multi_head(h, adj)
+        h_attn = self.multi_head(h, edge_index)
         
         # 残差连接
         if self.residual and self.residual_proj is not None:
@@ -442,22 +460,21 @@ class GAT(nn.Module):
     def forward(
         self,
         features: torch.Tensor,
-        adj: torch.Tensor
+        edge_index: torch.Tensor
     ) -> torch.Tensor:
         """
-        前向传播
+        前向传播（稀疏 edge_index 版本）
         
         Args:
             features: 节点特征 (N, input_dim)
-            adj: 邻接矩阵 (N, N)
+            edge_index: 边索引 (2, E)，int64 COO 格式
             
         Returns:
             节点嵌入 (N, output_dim)
         """
         h = features
-        
         for i, layer in enumerate(self.layers):
-            h = layer(h, adj)
+            h = layer(h, edge_index)
             
             # 除最后一层外，使用 ELU 激活
             if i < len(self.layers) - 1:
@@ -468,38 +485,42 @@ class GAT(nn.Module):
     def get_attention_weights(
         self,
         features: torch.Tensor,
-        adj: torch.Tensor,
+        edge_index: torch.Tensor,
         layer_idx: int = 0
     ) -> torch.Tensor:
         """
-        获取注意力权重（用于可视化 / 检索排序加权）
-
-        对所有注意力头取平均，而非只返回第一个头。
+        获取注意力权重（稀疏 edge_index 版本）
         
         Args:
             features: 节点特征 (N, input_dim)
-            adj: 邻接矩阵 (N, N)
+            edge_index: 边索引 (2, E)
             layer_idx: 层索引
             
         Returns:
-            注意力权重矩阵 (N, N)，所有头 softmax 后的平均值
+            all_head_avg: (E,) 所有头平均后的边注意力权重
+            edge_index: 对应的边 (2, E)，保持不变
         """
         h = features
         for i, layer in enumerate(self.layers):
             if i == layer_idx:
-                all_attentions = []
+                src_idx = edge_index[0]
+                dst_idx = edge_index[1]
+                head_weights = []
                 for att in layer.multi_head.attentions:
                     Wh = torch.mm(h, att.W)
-                    N = h.size(0)
-                    Wh1 = Wh.unsqueeze(1).expand(-1, N, -1)
-                    Wh2 = Wh.unsqueeze(0).expand(N, -1, -1)
-                    Wh_cat = torch.cat([Wh1, Wh2], dim=-1)
+                    Wh_src = Wh[src_idx]
+                    Wh_dst = Wh[dst_idx]
+                    Wh_cat = torch.cat([Wh_src, Wh_dst], dim=-1)
                     e = att.leaky_relu(torch.matmul(Wh_cat, att.a).squeeze(-1))
-                    zero_vec = -9e15 * torch.ones_like(e)
-                    attention = torch.where(adj > 0, e, zero_vec)
-                    all_attentions.append(F.softmax(attention, dim=1))
-                # 平均所有头（而非只取第一个）
-                return torch.stack(all_attentions).mean(dim=0)
+                    # segment softmax
+                    N = h.size(0)
+                    max_vals = torch.full((N,), float('-inf'), device=h.device)
+                    max_vals = max_vals.scatter_reduce_(0, dst_idx, e, reduce='amax')
+                    exp_e = torch.exp(e - max_vals[dst_idx])
+                    sum_exp = torch.zeros(N, device=h.device).scatter_add_(0, dst_idx, exp_e)
+                    alpha = exp_e / (sum_exp[dst_idx] + 1e-16)
+                    head_weights.append(alpha)
+                return torch.stack(head_weights).mean(dim=0)
             h = layer(h, adj)
         
         return None
@@ -518,15 +539,15 @@ if __name__ == '__main__':
     
     features = torch.randn(num_nodes, input_dim)
     
-    # 创建随机邻接矩阵
-    adj = torch.rand(num_nodes, num_nodes)
-    adj = (adj > 0.9).float()
-    adj = adj + torch.eye(num_nodes)  # 添加自环
+    # 创建随机稀疏边索引
+    src = torch.randint(0, num_nodes, (300,))
+    dst = torch.randint(0, num_nodes, (300,))
+    edge_index = torch.stack([src, dst], dim=0)  # (2, E)
     
     # 测试单头注意力层
     print("测试单头注意力层...")
     single_head = GraphAttentionLayer(input_dim, hidden_dim)
-    out_single = single_head(features, adj)
+    out_single = single_head(features, edge_index)
     print(f"单头输出形状: {out_single.shape}")
     
     # 测试多头注意力层
@@ -534,7 +555,7 @@ if __name__ == '__main__':
     multi_head = MultiHeadGraphAttentionLayer(
         input_dim, hidden_dim, num_heads=num_heads, concat=True
     )
-    out_multi = multi_head(features, adj)
+    out_multi = multi_head(features, edge_index)
     print(f"多头输出形状: {out_multi.shape}")
     
     # 测试完整 GAT 模型
@@ -547,11 +568,11 @@ if __name__ == '__main__':
         num_layers=2
     )
     
-    embeddings = model(features, adj)
+    embeddings = model(features, edge_index)
     print(f"GAT 输出形状: {embeddings.shape}")
     print(f"GAT 参数量: {sum(p.numel() for p in model.parameters())}")
     
     # 测试注意力可视化
-    attn_weights = model.get_attention_weights(features, adj, layer_idx=0)
+    attn_weights = model.get_attention_weights(features, edge_index, layer_idx=0)
     if attn_weights is not None:
         print(f"注意力权重形状: {attn_weights.shape}")

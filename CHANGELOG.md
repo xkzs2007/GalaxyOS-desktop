@@ -2,6 +2,22 @@
 
 GalaxyOS 版本变更记录。
 
+## [6.5.0] — 2026-06-09
+
+### Added
+- **CfC + GAT 全链路激活** — 阈值从 200 调至 5000，3093 神经元走 ONNX→GAT→CfC 完整推理
+  - `cfc_inference.py`、`cfc_sequence_predictor.py`、`neural_pipeline.py`、`onnx_embedding.py`、`gnn_graph_builder.py` 迁入 `services/` 包
+  - 导入路径全部改为 `from services.xxx import`，消除 `sys.path` 依赖
+- **BlobArena per-session 隔离** — 全局单例改为 `{session_id}/arena_X.blob` 独立目录
+  - `delete_session_arena()` 精准回收结束 session 的 mmap 磁盘文件
+  - `read_blob_compat()` 向后兼容旧全局 arena 数据
+  - `dag_clear_session` 新增 `deleteArena` 参数
+
+### Changed
+- **SYNAPSE_FULL_THRESHOLD** 200 → 5000，激活 GAT 全链路
+- **GAT 全局稀疏化** — `GraphAttentionLayer.forward()` 从稠密 `adj` 改为 `edge_index` COO 格式，segment softmax 替代全展开，300× 内存缩减
+- **SynapseGATEncoder** — `gnn_graph_builder.py` 不再构建 N×N 稠密矩阵，直接透传 `edge_index`
+
 ## [6.4.0] — 2026-06-09
 
 ### Added

@@ -170,12 +170,13 @@ class KnowledgeGraphGNN(nn.Module):
         self._get_relation_id(relation)
     
     def build_graph(self) -> None:
-        """构建图数据结构"""
-        # 获取邻接矩阵和特征矩阵
-        adj_matrix, id_to_idx = self.graph_constructor.get_adjacency_matrix()
+        """构建图数据结构（稀疏 edge_index 版本）"""
+        # 获取稀疏边索引和特征矩阵
+        edge_index, edge_weight, id_to_idx = self.graph_constructor.get_edge_index()
         feature_matrix, _ = self.graph_constructor.get_feature_matrix()
         
-        self._adj_matrix = torch.tensor(adj_matrix, dtype=torch.float32)
+        self._edge_index = torch.tensor(edge_index, dtype=torch.long)
+        self._edge_weight = torch.tensor(edge_weight, dtype=torch.float32)
         self._feature_matrix = torch.tensor(feature_matrix, dtype=torch.float32)
         self._id_to_idx = id_to_idx
         self._idx_to_id = {v: k for k, v in id_to_idx.items()}
@@ -183,61 +184,57 @@ class KnowledgeGraphGNN(nn.Module):
     def forward(
         self,
         entity_ids: Optional[torch.Tensor] = None,
-        adj_matrix: Optional[torch.Tensor] = None,
+        edge_index: Optional[torch.Tensor] = None,
         feature_matrix: Optional[torch.Tensor] = None
     ) -> torch.Tensor:
         """
-        前向传播
+        前向传播（稀疏 edge_index 版本，O(E) 内存）
         
         Args:
             entity_ids: 实体ID张量（可选）
-            adj_matrix: 邻接矩阵（可选）
+            edge_index: 边索引 (2, E)，int64 COO 格式（可选）
             feature_matrix: 特征矩阵（可选）
             
         Returns:
             实体嵌入
         """
-        # 使用缓存的数据或提供的输入
-        if adj_matrix is None:
-            adj_matrix = getattr(self, '_adj_matrix', None)
+        if edge_index is None:
+            edge_index = getattr(self, '_edge_index', None)
         if feature_matrix is None:
             feature_matrix = getattr(self, '_feature_matrix', None)
         
-        if adj_matrix is None or feature_matrix is None:
-            raise ValueError("Please call build_graph() first or provide adj_matrix and feature_matrix")
+        if edge_index is None or feature_matrix is None:
+            raise ValueError("Please call build_graph() first or provide edge_index and feature_matrix")
         
-        # 移动到正确的设备
         device = next(self.parameters()).device
-        adj_matrix = adj_matrix.to(device)
+        edge_index = edge_index.to(device)
         feature_matrix = feature_matrix.to(device)
         
-        # 特征投影
         h = self.feature_proj(feature_matrix)
         
-        # GNN 前向传播
         if self.gnn_type == 'hybrid':
-            h_gat = self.gnn_gat(h, adj_matrix)
-            h_sage = self.gnn_sage(h, self._get_adj_list(adj_matrix))
+            h_gat = self.gnn_gat(h, edge_index)
+            h_sage = self.gnn_sage(h, self._get_adj_list(edge_index))
             h = torch.cat([h_gat, h_sage], dim=-1)
             h = self.combine(h)
         elif self.gnn_type == 'graphsage':
-            h = self.gnn(h, self._get_adj_list(adj_matrix))
+            h = self.gnn(h, self._get_adj_list(edge_index))
         else:
-            h = self.gnn(h, adj_matrix)
+            h = self.gnn(h, edge_index)
         
-        # 输出层
         output = self.output_layer(h)
-        
         return output
     
-    def _get_adj_list(self, adj_matrix: torch.Tensor) -> List[List[int]]:
-        """从邻接矩阵获取邻接表"""
-        adj_np = adj_matrix.cpu().numpy()
-        n = adj_np.shape[0]
-        adj_list = []
-        for i in range(n):
-            neighbors = np.where(adj_np[i] > 0)[0].tolist()
-            adj_list.append(neighbors)
+    def _get_adj_list(self, edge_index: torch.Tensor) -> List[List[int]]:
+        """从稀疏 edge_index 构建邻接表（GraphSAGE 回退用）"""
+        ei = edge_index.cpu().numpy()
+        n_nodes = max(ei[0].max(), ei[1].max()) + 1 if ei.shape[1] > 0 else 0
+        adj_list = [[] for _ in range(n_nodes)]
+        for i in range(ei.shape[1]):
+            src = int(ei[0, i])
+            dst = int(ei[1, i])
+            if dst not in adj_list[src]:
+                adj_list[src].append(dst)
         return adj_list
     
     def get_entity_embedding(

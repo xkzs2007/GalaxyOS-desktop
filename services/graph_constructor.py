@@ -367,10 +367,10 @@ class GraphConstructor:
     
     def get_adjacency_matrix(self) -> Tuple[np.ndarray, Dict[str, int]]:
         """
-        获取邻接矩阵
+        获取稠密邻接矩阵（O(n²) 内存，仅用于 GraphSAGE 回退）
         
         Returns:
-            adjacency_matrix: 邻接矩阵
+            adjacency_matrix: 邻接矩阵 (n, n), float32
             id_to_idx: 实体ID到索引的映射
         """
         n = len(self.entities)
@@ -383,10 +383,31 @@ class GraphConstructor:
             i = id_to_idx[rel.source_id]
             j = id_to_idx[rel.target_id]
             adj_matrix[i, j] = rel.weight
-            # 对于无向图，也设置反向边
-            # adj_matrix[j, i] = rel.weight
         
         return adj_matrix, id_to_idx
+
+    def get_edge_index(self) -> Tuple[np.ndarray, np.ndarray, Dict[str, int]]:
+        """
+        获取稀疏边索引（COO 格式），O(E) 内存
+        
+        Returns:
+            edge_index: (2, E) int64, 边连接关系
+            edge_weight: (E,) float32, 边权重
+            id_to_idx: 实体ID到索引的映射
+        """
+        entity_ids = list(self.entities.keys())
+        id_to_idx = {eid: i for i, eid in enumerate(entity_ids)}
+        E = len(self.relations)
+        
+        edge_index = np.zeros((2, E), dtype=np.int64)
+        edge_weight = np.zeros(E, dtype=np.float32)
+        
+        for k, rel in enumerate(self.relations):
+            edge_index[0, k] = id_to_idx[rel.source_id]
+            edge_index[1, k] = id_to_idx[rel.target_id]
+            edge_weight[k] = rel.weight
+        
+        return edge_index, edge_weight, id_to_idx
     
     def get_feature_matrix(self) -> Tuple[np.ndarray, Dict[str, int]]:
         """
