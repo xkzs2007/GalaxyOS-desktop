@@ -58,6 +58,24 @@ def _import_deps():
         from services.ltc_synapse import PRESETS, evaluate_preset
         _LTC_SYNAPSE = (PRESETS, evaluate_preset)
 
+# v3: 神经记忆门控（Titans 惊讶度驱动）
+_MEMORY_GATE = None
+
+
+def _get_memory_gate():
+    """全局单例，懒加载"""
+    global _MEMORY_GATE
+    if _MEMORY_GATE is None:
+        from services.neural_memory_gate import NeuralMemoryGate
+        _MEMORY_GATE = NeuralMemoryGate()
+    return _MEMORY_GATE
+
+
+def _reset_memory_gate():
+    """重置门控（测试用）"""
+    global _MEMORY_GATE
+    _MEMORY_GATE = None
+
 
 @dataclass
 class PipelineResult:
@@ -367,6 +385,27 @@ class NeuralMemoryPipeline:
             activation_strength=activation_strength,
         )
         t2 = time.time()
+
+        # ── v3: 神经记忆门控 — 记录检索模式 + 计算惊讶度 ──
+        try:
+            gate = _get_memory_gate()
+            recalled_ids = [r[0] for r in results] if results else []
+            if recalled_ids:
+                gate.record_recall(recalled_ids)
+                predicted = gate.predict_recall([neuron_id])
+                if predicted:
+                    gate_result = gate.compute_surprise(predicted, recalled_ids)
+                    if gate_result["action"] == "consolidate":
+                        logger.info(
+                            f"[Titans] 惊讶度={gate_result['surprise']:.3f}, "
+                            f"consolidate {len(gate_result['novel_ids'])} 个新颖记忆"
+                        )
+                    elif gate_result["action"] == "decay":
+                        logger.debug(
+                            f"[Titans] 惊讶度={gate_result['surprise']:.3f}, decay"
+                        )
+        except Exception as e:
+            logger.debug(f"memory gate skipped: {e}")
 
         # ── CfC 序列预测器：记录激活事件 + 预测下一个 ──
         predicted_ids = []

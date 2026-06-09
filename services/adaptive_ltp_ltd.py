@@ -75,7 +75,8 @@ class AdaptiveLTP_LTD:
     def calculate_ltp_strength(
         self,
         synapse: SynapseState,
-        context: Optional[Dict] = None
+        context: Optional[Dict] = None,
+        modulator: float = 0.0,
     ) -> float:
         """
         动态计算 LTP 强度
@@ -84,10 +85,12 @@ class AdaptiveLTP_LTD:
         1. 当前权重（接近上限时减弱增强）
         2. 激活频率（高频激活时增强效果）
         3. 时间间隔（短间隔内重复激活时增强）
+        4. 惊讶度调制器 (v3: Titans 门控): modulator > 0 增强LTP，< 0 削弱
         
         Args:
             synapse: 突触状态
             context: 额外上下文
+            modulator: 惊讶度调制器（-1~1），来自 NeuralMemoryGate
         
         Returns:
             LTP 强度
@@ -117,13 +120,18 @@ class AdaptiveLTP_LTD:
         # 4. 重要性因子：重要记忆增强更多
         importance_factor = 1.0 + synapse.importance * 0.3
         
+        # 5. 惊讶度调制器 (v3, Titans 门控)
+        # modulator > 0 → 增强（惊讶，新知识），< 0 → 削弱（可预测，已掌握）
+        modulator_factor = 1.0 + modulator * 0.5  # [-1, 1] → [0.5, 1.5]
+        
         # 综合计算
         ltp_strength = (
             base_strength *
             weight_factor *
             freq_factor *
             time_factor *
-            importance_factor
+            importance_factor *
+            modulator_factor
         )
         
         # 确保不超过最大权重
@@ -138,6 +146,7 @@ class AdaptiveLTP_LTD:
             "freq_factor": freq_factor,
             "time_factor": time_factor,
             "importance_factor": importance_factor,
+            "modulator_factor": modulator_factor,
             "final_strength": ltp_strength
         })
         
