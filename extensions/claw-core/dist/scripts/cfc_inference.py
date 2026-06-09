@@ -16,6 +16,7 @@ Version: 1.0.0
 Created: 2026-06-05
 """
 
+import os
 import json
 import math
 import logging
@@ -282,6 +283,38 @@ class NeuronStateManager:
             nid: torch.tensor(vec, device=self.device)
             for nid, vec in data.items()
         }
+
+    def save_to_jsonl(self, path: str):
+        """持久化状态到 JSONL（覆盖写入）"""
+        dirname = os.path.dirname(path)
+        if dirname:
+            os.makedirs(dirname, exist_ok=True)
+        import json
+        with open(path, 'w') as f:
+            for nid, state in self.states.items():
+                line = json.dumps({"neuron_id": nid, "state": state.tolist()}, ensure_ascii=False)
+                f.write(line + '\n')
+
+    def load_from_jsonl(self, path: str) -> int:
+        """从 JSONL 加载持久化状态，返回加载的神经元数"""
+        import json
+        if not os.path.exists(path):
+            return 0
+        count = 0
+        with open(path, 'r') as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    data = json.loads(line)
+                    self.states[data["neuron_id"]] = torch.tensor(
+                        data["state"], device=self.device
+                    )
+                    count += 1
+                except (json.JSONDecodeError, KeyError):
+                    continue
+        return count
 
 
 # ==================== CfC 推理引擎 ====================
@@ -923,7 +956,7 @@ if __name__ == "__main__":
 
     # 测试 4: 与预设对比
     print("4. 单条突触权重 vs 预设")
-    from ltc_synapse import PRESETS
+    from services.ltc_synapse import PRESETS
     test_syn = {"source_id": "n0", "target_id": "n1",
                 "last_reinforced": "", "weight": 0.5}
     w_cfc = engine.get_weight_for_synapse(test_syn)

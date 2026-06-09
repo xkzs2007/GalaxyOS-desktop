@@ -1170,7 +1170,11 @@ def _do_synapse(query: str) -> list:
 
 
 def _do_synapse_full(query: str, _ws: str) -> list:
-    """Tier 1: 全链路 ONNX+GAT+CfC（≤ 200 神经元）"""
+    """Tier 1: 全链路 ONNX+GAT+CfC（≤ 200 神经元）
+
+    每次调用会更新 CfC 状态并持久化到磁盘，形成时间序列学习。
+    状态文件：{_ws}/.learnings/synapse_network/neuron_states.jsonl
+    """
     from services.onnx_embedding import get_onnx_embedding
     _onnx = get_onnx_embedding()
     _onnx.initialize()
@@ -1181,6 +1185,18 @@ def _do_synapse_full(query: str, _ws: str) -> list:
         gnn_layers=2, cfc_hidden_size=64,
     )
     _pipe.initialize()
+
+    # ── 从磁盘加载上次持久化的 CfC 状态 → 形成时间序列学习 ──
+    _state_path = os.path.join(_ws, ".learnings", "synapse_network", "neuron_states.jsonl")
+    if os.path.exists(_state_path) and hasattr(_pipe, 'cfc_engine') and _pipe.cfc_engine is not None:
+        try:
+            _sm = _pipe.cfc_engine.state_manager
+            if hasattr(_sm, 'load_from_jsonl'):
+                _loaded = _sm.load_from_jsonl(_state_path)
+                if _loaded > 0:
+                    logger.debug(f"  CfC state loaded: {_loaded} neurons from {_state_path}")
+        except Exception:
+            pass
 
     _neurons = []
     if hasattr(_pipe, '_cached_neurons') and _pipe._cached_neurons:
@@ -1267,7 +1283,19 @@ def _do_synapse_full(query: str, _ws: str) -> list:
                 _entry['gat_weight'] = round(_gw, 4)
             _r.append(_entry)
 
-    logger.info(f"  synapse (ONNX+GAT+CfC): {len(_r)} results")
+    # ── 持久化 CfC 状态到磁盘（积累时间序列学习）──
+    _cfc_state_saved = False
+    if hasattr(_pipe, 'cfc_engine') and _pipe.cfc_engine is not None:
+        try:
+            _sm = _pipe.cfc_engine.state_manager
+            if hasattr(_sm, 'save_to_jsonl'):
+                _sm.save_to_jsonl(_state_path)
+                _cfc_state_saved = True
+        except Exception:
+            pass
+
+    logger.info(f"  synapse (ONNX+GAT+CfC): {len(_r)} results"
+                f" | cfc_state_saved={_cfc_state_saved}")
     return _r
 
 
