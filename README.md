@@ -177,10 +177,12 @@ cp config/llm_config.example.json config/llm_config.json
 
 ### 环境要求
 
-- **OS**: Linux x86_64
+- **OS**: Linux (x86_64 / ARM64) · macOS (x86_64 / ARM64) · Windows (x86_64)
 - **Python**: 3.12+
 - **内存**: ≥ 2 GB
 - **磁盘**: ≥ 1 GB
+
+> **跨平台兼容**: 通过 `PlatformAdapter` 自动检测平台与架构，适配 AVX-512 / AVX2 / FMA (x64) / NEON (ARM) / CUDA / MKL 等硬件加速特性，自动注入对应环境变量 (`LD_LIBRARY_PATH` / `DYLD_LIBRARY_PATH`)。详见 `galaxyos/privileged/platform_adapter.py`。
 
 ### 依赖总览
 
