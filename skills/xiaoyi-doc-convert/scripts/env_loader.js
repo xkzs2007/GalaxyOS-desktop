@@ -8,7 +8,7 @@ const fs = require('fs');
 // 固定值
 const FIXED_VALUES = {
     ACP2SERVICE_ENV_KEY: 'ACP2SERVICE_ENV',
-    DEFAULT_ENV: '/home/sandbox/.openclaw/.xiaoyienv',
+    DEFAULT_ENV: (process.env.HOME || '/home/sandbox') + '/.openclaw/.xiaoyienv',
 };
 
 /**

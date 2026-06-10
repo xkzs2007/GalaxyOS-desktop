@@ -23,6 +23,7 @@ import time
 import socket
 import struct
 import shutil
+import sqlite3
 import subprocess
 import importlib
 import inspect

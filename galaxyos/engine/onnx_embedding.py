@@ -32,9 +32,27 @@ logger = logging.getLogger("onnx_embedding")
 
 _EMBEDDING_DIM = 512           # bge-small-zh 输出维度
 _BATCH_SIZE = 50               # 推理批次
-_MODEL_DIR = os.path.expanduser(
-    "~/.openclaw/workspace/GalaxyOS/models/embeddings"
-)
+
+# 模型目录：三重自发现（repo → cwd-repo → user）
+_repo_root = os.environ.get("GALAXYOS_REPO", "")
+_candidates = []
+if _repo_root:
+    _candidates.append(os.path.join(_repo_root, "models", "embeddings"))
+# 从 cwd 推断 repo（常见于在 repo root 运行）
+_cwd = os.getcwd()
+_candidates.append(os.path.join(_cwd, "models", "embeddings"))
+_candidates.append(os.path.join(_cwd, "..", "models", "embeddings"))
+# user 目录兜底
+_candidates.append(os.path.expanduser("~/.openclaw/workspace/GalaxyOS/models/embeddings"))
+
+_MODEL_DIR = ""
+for _c in _candidates:
+    _c = os.path.abspath(_c)
+    if os.path.isdir(_c) and os.path.exists(os.path.join(_c, "bge-small-zh.onnx")):
+        _MODEL_DIR = _c
+        break
+if not _MODEL_DIR:
+    _MODEL_DIR = _candidates[-1]  # fallback to user dir for error message
 _CACHE_DIR = os.path.expanduser(
     "~/.openclaw/workspace/.neural_cache"
 )

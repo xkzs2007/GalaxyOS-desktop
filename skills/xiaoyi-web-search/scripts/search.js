@@ -62,7 +62,7 @@ function readXiaoyiEnv(filePath) {
 async function webSearch(query, count = 10) {
   try {
 	// 读取并校验请求的key
-	const xiaoyiPath = "/home/sandbox/.openclaw/.xiaoyienv";
+	const xiaoyiPath = (process.env.HOME || "/home/sandbox") + "/.openclaw/.xiaoyienv";
 	const result = readXiaoyiEnv(xiaoyiPath)  
 	const configString = JSON.stringify(result, null, 2);
     const requiredKeys = ['SERVICE_URL', 'PERSONAL-API-KEY', 'PERSONAL-UID'];

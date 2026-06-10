@@ -162,7 +162,9 @@ class ANNSelector:
         top_k: int
     ) -> Tuple[np.ndarray, np.ndarray]:
         """HNSW 搜索（暴力搜索）"""
-        query_norm = query / (np.linalg.norm(query) + 1e-10)
+        # squeeze 处理 (1, dim) 和 (dim,) 两种输入
+        query_1d = query.squeeze()
+        query_norm = query_1d / (np.linalg.norm(query_1d) + 1e-10)
         scores = np.dot(self.vectors_norm, query_norm)
 
         if top_k >= len(scores):

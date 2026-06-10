@@ -67,7 +67,8 @@ const handler = async (event) => {
 
   const sessionKey = event.context?.sessionKey || "default";
   const WS = event.context?.workspaceDir ||
-    "/home/sandbox/.openclaw/workspace";
+    process.env.OPENCLAW_WORKSPACE ||
+    (process.env.HOME || process.env.USERPROFILE || "/home/sandbox") + "/.openclaw/workspace";
 
   // ===== 1. 人格注入（V5 逻辑） =====
   let personaContent = "";

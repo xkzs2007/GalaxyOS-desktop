@@ -2,7 +2,8 @@
 """调查 Galaxy Kernel 引用的所有模块，输出实际可用的类和函数"""
 import sys, importlib, inspect, os
 
-SCRIPTS = '/home/sandbox/.openclaw/workspace/skills/xiaoyi-claw-omega-final/scripts'
+_ws = os.environ.get("OPENCLAW_WORKSPACE", os.path.expanduser("~/.openclaw/workspace"))
+SCRIPTS = os.path.join(_ws, "skills", "xiaoyi-claw-omega-final", "scripts")
 sys.path.insert(0, SCRIPTS)
 
 checks = {

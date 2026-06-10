@@ -2174,7 +2174,7 @@ function resolveClawArgs(opts) {
   }
   return { date: opts.date ?? "today" };
 }
-var OPENCLAW_ENV_FILE = "/home/sandbox/.openclaw/.xiaoyienv";
+var OPENCLAW_ENV_FILE = (process.env.HOME || "/home/sandbox") + "/.openclaw/.xiaoyienv";
 function loadOpenclawEnv(verbose) {
   const env = {};
   try {

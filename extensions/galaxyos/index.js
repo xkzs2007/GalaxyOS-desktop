@@ -16,7 +16,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn, spawnSync, execSync } from "node:child_process";
 import { createInterface } from "node:readline";
-import fs, { existsSync, mkdirSync, chmodSync, unlinkSync, readFileSync, openSync, writeSync, closeSync, readSync, writeFileSync, renameSync } from "node:fs";
+import fs, { existsSync, mkdirSync, chmodSync, unlinkSync, readFileSync, openSync, writeSync, closeSync, readSync, writeFileSync, renameSync, copyFileSync } from "node:fs";
 import net from "node:net";
 import http from "node:http";
 
@@ -45,14 +45,49 @@ const _nativeBinaryCandidates = [
     path.join(process.env.HOME || "/home/sandbox", ".cargo", "bin", "galaxyos-native"),
 ];
 let _nativeBinary = null;
-for (const p of _nativeBinaryCandidates) {
-    if (existsSync(p)) { _nativeBinary = p; break; }
-}
-if (!_nativeBinary) {
+let _nativeAutoBuilt = false;
+
+function _detectNativeBinary() {
+    if (_nativeBinary && existsSync(_nativeBinary)) return true;
+    for (const p of _nativeBinaryCandidates) {
+        if (existsSync(p)) { _nativeBinary = p; return true; }
+    }
     try {
         const p = execSync("which galaxyos-native 2>/dev/null || echo ''", { encoding: "utf-8" }).trim();
-        if (p && existsSync(p)) _nativeBinary = p;
+        if (p && existsSync(p)) { _nativeBinary = p; return true; }
     } catch {}
+    return false;
+}
+
+_detectNativeBinary();
+
+// ═══ 自动编译 Rust native binary（启动时 cargo build 一把梭）═══
+if (!_nativeBinary && !_nativeAutoBuilt) {
+    const nativeDir = path.join(__dirname, "native");
+    const cargoToml = path.join(nativeDir, "Cargo.toml");
+    if (existsSync(cargoToml)) {
+        try {
+            execSync("which cargo 2>/dev/null", { encoding: "utf-8" });
+            process.stderr.write(`[galaxyos] auto-building Rust native binary in ${nativeDir}...\n`);
+            const result = execSync("cargo build --release 2>&1", {
+                cwd: nativeDir,
+                encoding: "utf-8",
+                timeout: 120000,
+                maxBuffer: 1024 * 1024,
+            });
+            _nativeAutoBuilt = true;
+            // 复制到 scripts/ 方便 JS 侧发现
+            const src = path.join(nativeDir, "target", "release", "galaxyos-native");
+            const dst = path.join(__dirname, "scripts", "galaxyos-native");
+            if (existsSync(src)) {
+                try { copyFileSync(src, dst); chmodSync(dst, 0o755); } catch (_) {}
+                _nativeBinary = dst;
+                process.stderr.write(`[galaxyos] Rust native auto-built: ${dst}\n`);
+            }
+        } catch (e) {
+            process.stderr.write(`[galaxyos] auto-build skipped (cargo not found or build failed): ${e.message?.slice(0, 80)}\n`);
+        }
+    }
 }
 
 // 解析 python3 可执行路径(兼容 sandbox 环境下 PATH 缺失的情况)
@@ -72,6 +107,70 @@ function resolveWorkspace(api) {
     if (ws)
         return ws;
     return process.env.OPENCLAW_WORKSPACE || "/home/sandbox/.openclaw/workspace";
+}
+
+// ======== Rust native binary spawn helper (stdin/stdout JSON-RPC) ========
+let _nativeProc = null;
+let _nativeRl = null;
+let _nativePending = new Map();
+let _nativeNextId = 10000;
+
+function _ensureNativeProc() {
+    if (_nativeProc && !_nativeProc.killed && _nativeProc.exitCode === null) return true;
+    if (!_nativeBinary) return false;
+    try {
+        _nativeProc = spawn(_nativeBinary, [], {
+            stdio: ['pipe', 'pipe', 'pipe'],
+            env: { ...process.env, RUST_LOG: 'warn' },
+        });
+        _nativeProc.stderr.on('data', (d) => {
+            const t = d.toString().trim();
+            if (t) process.stderr.write('[galaxyos-native] ' + t + '\n');
+        });
+        _nativeProc.on('exit', () => { _nativeProc = null; _nativeRl = null; });
+        _nativeRl = createInterface({ input: _nativeProc.stdout, crlfDelay: Infinity });
+        _nativeRl.on('line', (line) => {
+            try {
+                const msg = JSON.parse(line.trim());
+                if (msg.id !== undefined && msg.id !== null) {
+                    const r = _nativePending.get(msg.id);
+                    if (r) { _nativePending.delete(msg.id); r(msg); }
+                }
+            } catch (e) {}
+        });
+        return true;
+    } catch (e) {
+        process.stderr.write(`[galaxyos-native] spawn failed: ${e.message}\n`);
+        return false;
+    }
+}
+
+function callNative(method, params, timeoutMs = 15000) {
+    return new Promise((resolve, reject) => {
+        if (!_ensureNativeProc()) {
+            reject(new Error('native binary not available'));
+            return;
+        }
+        const id = _nativeNextId++;
+        const timer = setTimeout(() => { _nativePending.delete(id); reject(new Error('native call timeout: ' + method)); }, timeoutMs);
+        _nativePending.set(id, (msg) => {
+            clearTimeout(timer);
+            if (msg.error) reject(new Error(msg.error));
+            else resolve(msg.result);
+        });
+        const line = JSON.stringify({ id, method, params }) + '\n';
+        _nativeProc.stdin.write(line);
+    });
+}
+
+function _stopNativeProc() {
+    if (_nativeProc && !_nativeProc.killed) {
+        try { _nativeProc.stdin.write(JSON.stringify({ id: 99999, method: 'shutdown', params: {} }) + '\n'); } catch (e) {}
+        setTimeout(() => { try { _nativeProc?.kill('SIGTERM'); } catch (e) {} }, 2000).unref();
+        _nativeProc = null;
+        _nativeRl = null;
+        _nativePending.clear();
+    }
 }
 
 // ==========================================
@@ -165,9 +264,57 @@ function _getWorkerAgent(workerId) {
     return _workerAgents.get(workerId);
 }
 
+// ======== Python Worker mmap 读取（大 payload 解引用）========
+const WORKER_MMAP_PATH = path.join(
+    process.env.HOME || "/home/sandbox",
+    ".openclaw/extensions/claw-core/var/claw_worker_mmap"
+);
+const WORKER_MMAP_BACKCOMPAT = path.join(
+    process.env.HOME || "/home/sandbox",
+    ".openclaw/extensions/galaxyos/var/claw_worker_mmap"
+);
+function _readWorkerMmap(key) {
+    // 读取 Python Worker 写的 mmap（4 字节大端长度前缀 + JSON）
+    for (const p of [WORKER_MMAP_PATH, WORKER_MMAP_BACKCOMPAT]) {
+        try {
+            if (!existsSync(p)) continue;
+            const fd = openSync(p, "r");
+            try {
+                const header = Buffer.alloc(4);
+                if (readSync(fd, header, 0, 4, 0) < 4) { closeSync(fd); continue; }
+                const len = header.readUInt32BE(0);
+                if (len < 10 || len > 10 * 1024 * 1024) { closeSync(fd); continue; }
+                const body = Buffer.alloc(len);
+                if (readSync(fd, body, 0, len, 4) < len) { closeSync(fd); continue; }
+                closeSync(fd);
+                const data = JSON.parse(body.toString("utf-8"));
+                if (data && data[key] !== undefined) return data[key];
+            } catch (e) { try { closeSync(fd); } catch (_) {} }
+        } catch (e) { /* file not found */ }
+    }
+    return null;
+}
+
+// ======== R-CCAM 会话级去重：同一 sessionKey 不重复提交 ========
+const _rccamFlying = new Map(); // sessionKey → { promise: Promise, ts: number }
+const _rccamProgress = new Map(); // sessionKey → { phase, status, cycle, ts, elapsedMs }
+const _rccamFlyingMaxAgeMs = 300000; // 5 分钟过期（防止内存泄漏）
+const _rccamProgressMaxAgeMs = 120000; // 2 分钟过期
+function _rccamCleanStale() {
+    const now = Date.now();
+    for (const [k, v] of _rccamFlying) {
+        if (now - v.ts > _rccamFlyingMaxAgeMs) _rccamFlying.delete(k);
+    }
+    for (const [k, v] of _rccamProgress) {
+        if (now - v.ts > _rccamProgressMaxAgeMs) _rccamProgress.delete(k);
+    }
+}
+setInterval(_rccamCleanStale, 60000).unref();
+
 // ======== Worker 池 + 任务队列（替代单 Worker 架构） ========
 let _workerPool = null;
 let _poolConfig = { minSize: 2, maxSize: 8, size: 2, maxQueue: 20 };
+let _galaxyPool = null;  // 统一系统管理器（GalaxyPool）
 
 class WorkerPool {
     constructor(ws, cfg = {}) {
@@ -207,11 +354,20 @@ class WorkerPool {
         this.workers.set(id, w);
     }
 
+    // ═══ 负载感知调度：选择最健康的空闲 Worker ═══
     _getIdleWorker() {
+        let bestId = null, bestScore = -Infinity;
         for (const [id, w] of this.workers) {
-            if (w.ready && !this.busy.has(id)) return id;
+            if (!w.ready || this.busy.has(id)) continue;
+            // 评分：fail 少 > latency 低 > 最近活跃
+            const fails = (w._fails || 0);
+            const latency = w._lastLatencyMs || 100;  // 上次调用耗时
+            const ageMs = Date.now() - (w._lastActiveTs || 0);
+            // score = -fails*100 - latency/10 + ageMs/1000  (偏好低失败、低延迟、近期使用过的)
+            const score = -fails * 100 - latency / 10 + Math.min(ageMs / 1000, 30);
+            if (score > bestScore) { bestScore = score; bestId = id; }
         }
-        return null;
+        return bestId;
     }
 
     _getOtherWorker(id) {
@@ -219,6 +375,14 @@ class WorkerPool {
             if (oid !== id && w.ready && !this.busy.has(oid)) return oid;
         }
         return null;
+    }
+
+    // ═══ Worker 延迟追踪 ═══
+    _trackLatency(workerId, ms) {
+        const w = this.workers.get(workerId);
+        if (!w) return;
+        w._lastLatencyMs = ms;
+        w._lastActiveTs = Date.now();
     }
 
     // ═══ 弹性扩缩 ═══
@@ -298,12 +462,40 @@ class WorkerPool {
         });
     }
 
+    // ═══ 批量 RPC：一次请求发送多个方法调用，单个 Worker 串行执行 ═══
+    async batch(calls, timeoutMs = 30000) {
+        if (!Array.isArray(calls) || calls.length === 0) return [];
+        const idle = this._getIdleWorker();
+        if (idle) {
+            this.busy.add(idle);
+            try {
+                const w = this.workers.get(idle);
+                if (!w) throw new Error('worker disappeared');
+                const params = { calls: calls.map(c => ({ method: c.method, params: c.params || {} })) };
+                const t0 = Date.now();
+                const result = await w.call('batch', params, timeoutMs * calls.length);
+                this._trackLatency(idle, Date.now() - t0);
+                return Array.isArray(result) ? result : (result?.results || []);
+            } finally {
+                this.busy.delete(idle);
+                this._drainQueue();
+            }
+        }
+        if (this.queue.length >= this.maxQueue) throw new Error('pool queue full');
+        return new Promise((resolve, reject) => {
+            this.queue.push({ priority: 'normal', run: () => this.batch(calls, timeoutMs).then(resolve).catch(reject), resolve, reject, label: 'batch:' + calls.length, ts: Date.now() });
+        });
+    }
+
     async _callWithRetry(w, method, params, timeoutMs, workerId) {
         const MAX_RETRIES = 1;
         let lastError = null;
+        const t0 = Date.now();
         for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
             try {
-                return await w.call(method, params, timeoutMs);
+                const result = await w.call(method, params, timeoutMs);
+                this._trackLatency(workerId, Date.now() - t0);
+                return result;
             } catch (e) {
                 lastError = e;
                 w._fails = (w._fails || 0) + 1;
@@ -381,6 +573,195 @@ class WorkerPool {
     }
 }
 
+// ═══════════════════════════════════════════════════════════════
+// GalaxyPool — 统一兜住整个 GalaxyOS 系统的组件管理器
+// 单入口启动/停止/健康检查，6 类组件全生命周期托管：
+//   workers | gateway_uds | zmq_router | mmap_control | native_binary | gateway_heartbeat
+// ═══════════════════════════════════════════════════════════════
+const _componentDefaults = {
+    workers:           { order: 5, critical: true,  restartMax: 10 },
+    gateway_uds:       { order: 1, critical: true,  restartMax: 5  },
+    zmq_router:        { order: 2, critical: false, restartMax: 5  },
+    mmap_control:      { order: 0, critical: true,  restartMax: 3  },
+    native_binary:     { order: 3, critical: false, restartMax: 3  },
+    gateway_heartbeat: { order: 4, critical: false, restartMax: 0  },
+};
+
+class GalaxyPool {
+    constructor(api, ws, cfg = {}) {
+        this.api = api;
+        this.ws = ws;
+        this.status = 'init';  // init → starting → running → degraded → stopping → stopped
+        this.cfg = cfg;
+        // 内部组件注册表：name → { status, start, stop, health, order, critical, restartCount, restartMax }
+        this._comps = new Map();
+        // 内嵌 WorkerPool
+        this._poolCfg = cfg.workers || { minSize: 2, maxSize: 8, size: 2, maxQueue: 20 };
+        this._workerPool = null;
+        this._healthTimer = null;
+        this._ready = false;
+        // 所有模块级 global 统一从这取
+        this._refs = {};  // 存 zmq router / gateway server / native proc 等句柄
+    }
+
+    // ═══ 组件注册 ═══
+    _reg(name, opts) {
+        const def = _componentDefaults[name] || {};
+        this._comps.set(name, {
+            status: 'stopped',
+            start:  opts.start  || (() => Promise.resolve()),
+            stop:   opts.stop   || (() => Promise.resolve()),
+            health: opts.health || (() => ({ ok: true })),
+            order:  def.order,
+            critical: def.critical,
+            restartMax: def.restartMax,
+            restartCount: 0,
+            dependsOn: opts.dependsOn || [],
+        });
+    }
+
+    // ═══ 单入口启动（依赖拓扑排序） ═══
+    async start() {
+        if (this.status === 'running' || this.status === 'degraded') return;
+        this.status = 'starting';
+        const ordered = [...this._comps.entries()]
+            .sort(([, a], [, b]) => a.order - b.order)
+            .map(([name]) => name);
+
+        for (const name of ordered) {
+            const comp = this._comps.get(name);
+            if (!comp) continue;
+            try {
+                const r = comp.start();
+                const result = r instanceof Promise ? await r : r;
+                if (result && typeof result === 'object') Object.assign(this._refs, result);
+                comp.status = 'running';
+                comp.restartCount = 0;
+                this.api.logger?.info?.(`${TAG} [galaxy-pool] ${name} started`);
+            } catch (e) {
+                comp.status = 'failed';
+                comp.restartCount++;
+                this.api.logger?.warn?.(`${TAG} [galaxy-pool] ${name} start failed: ${e.message}`);
+                if (comp.critical) {
+                    this.status = 'degraded';
+                }
+            }
+        }
+        this._ready = true;
+        if (this.status !== 'degraded') this.status = 'running';
+        this._startHealthLoop();
+    }
+
+    // ═══ 单入口停止（逆序） ═══
+    async stop() {
+        this.status = 'stopping';
+        if (this._healthTimer) { clearInterval(this._healthTimer); this._healthTimer = null; }
+        const ordered = [...this._comps.entries()]
+            .sort(([, a], [, b]) => b.order - a.order)
+            .map(([name]) => name);
+
+        // Worker pool first (internal)
+        if (this._workerPool) {
+            try { await this._workerPool.shutdown(); } catch (e) {}
+            this._workerPool = null;
+        }
+
+        for (const name of ordered) {
+            const comp = this._comps.get(name);
+            if (comp && comp.status === 'running') {
+                try { await comp.stop(); } catch (e) {}
+                comp.status = 'stopped';
+            }
+        }
+        this._ready = false;
+        this.status = 'stopped';
+        this.api.logger?.info?.(`${TAG} [galaxy-pool] all components stopped`);
+    }
+
+    // ═══ 统一健康检查（每 10s） ═══
+    _startHealthLoop() {
+        this._healthTimer = setInterval(() => {
+            for (const [name, comp] of this._comps) {
+                if (comp.status !== 'running') continue;
+                try {
+                    const h = comp.health();
+                    if (h && typeof h === 'object' && h.ok === false) {
+                        this._handleUnhealthy(name, comp, h.error || 'health check failed');
+                    }
+                } catch (e) {
+                    this._handleUnhealthy(name, comp, e.message);
+                }
+            }
+            // 也检查 WorkerPool 内部
+            if (this._workerPool) {
+                this._workerPool._healthCheck();
+            }
+        }, 10000).unref();
+    }
+
+    _handleUnhealthy(name, comp, reason) {
+        comp.restartCount++;
+        this.api.logger?.warn?.(`${TAG} [galaxy-pool] ${name} unhealthy (${comp.restartCount}/${comp.restartMax}): ${reason}`);
+        if (comp.restartCount > comp.restartMax) {
+            comp.status = 'dead';
+            if (comp.critical) this.status = 'degraded';
+            return;
+        }
+        comp.status = 'restarting';
+        try {
+            comp.stop();
+        } catch (_) {}
+        try {
+            const r = comp.start();
+            if (r instanceof Promise) { r.then(() => { comp.status = 'running'; }).catch(() => { comp.status = 'failed'; }); }
+            else { comp.status = 'running'; }
+        } catch (_) {
+            comp.status = 'failed';
+        }
+    }
+
+    // ═══ 状态快照 ═══
+    getStatus() {
+        const comps = {};
+        for (const [name, c] of this._comps) {
+            comps[name] = { status: c.status, restartCount: c.restartCount, critical: c.critical };
+        }
+        if (this._workerPool) {
+            comps.worker_pool = {
+                total: this._workerPool.workers.size,
+                busy: this._workerPool.busy.size,
+                queue: this._workerPool.queue.length,
+            };
+        }
+        // R-CCAM 实时进度
+        const activeProgress = [];
+        for (const [k, v] of _rccamProgress) {
+            if (Date.now() - v.ts < _rccamProgressMaxAgeMs) {
+                activeProgress.push({ session: k.slice(0, 40), ...v });
+            }
+        }
+        return { status: this.status, components: comps, pid: process.pid, rccam_active: activeProgress.length, rccam_progress: activeProgress };
+    }
+
+    // ═══ Worker 请求调度（透传到内嵌 WorkerPool） ═══
+    execute(method, params, priority = 'normal', timeoutMs = 28000) {
+        if (!this._workerPool && this._ready && this._comps.get('workers')?.status === 'running') {
+            // 懒创建 WorkerPool
+            this._workerPool = new WorkerPool(this.ws, this._poolCfg);
+        }
+        if (!this._workerPool) {
+            return Promise.reject(new Error('GalaxyPool: worker pool not available'));
+        }
+        return this._workerPool.execute(method, params, priority, timeoutMs);
+    }
+
+    // ═══ 组件引用访问 ═══
+    getGatewayServer() { return this._refs._gatewayServer; }
+    getZmqRouter()    { return this._refs._zmqRouter; }
+    getNativeProc()   { return this._refs._nativeProc; }
+    get isReady()     { return this._ready && this.status === 'running'; }
+}
+
 /**
  * 启动 Gateway UDS 服务端 - Worker 通过此通道 RPC 调 Gateway 能力
  * 使用动态 _gatewayMethods 注册表替代旧 switch-case
@@ -388,7 +769,14 @@ class WorkerPool {
 function startGatewayUdsServer(api, _ws) {
     const _workspace = _ws;
     const udsPath = getGatewayUdsPath();
-    try { unlinkSync(udsPath); } catch (e) {}
+    // 强制清理：多次 unlink + 短暂的等待确保内核释放 socket inode
+    for (let i = 0; i < 3; i++) {
+        try { unlinkSync(udsPath); } catch (e) {}
+    }
+    // 同时清理可能遗留的 Worker UDS（旧进程残留）
+    for (const p of getUdsProbePaths()) {
+        try { unlinkSync(p); } catch (e) {}
+    }
     const dir = path.dirname(udsPath);
     if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
 
@@ -458,12 +846,30 @@ function startGatewayUdsServer(api, _ws) {
     registerGatewayMethod("mmap_read", async (params, ctx) => {
         return _mmapSyncRead();
     });
+    // ── GalaxyPool 状态查询（供 Worker / 外部监控）──
+    registerGatewayMethod("galaxy_pool_status", async (params, ctx) => {
+        if (_galaxyPool) return _galaxyPool.getStatus();
+        return { status: 'not_initialized' };
+    });
     registerGatewayMethod("channel_send", async (params, ctx) => {
         // 通过 api.emit 或 hook 触发消息发送
         // 实际发送由 OpenClaw 通道处理
         api.logger.info?.(`${TAG} [gateway-uds] channel_send requested: ${JSON.stringify(params).slice(0, 200)}`);
         // 通过 api 的 event 触发--这里先做 stub
         return { ok: true, note: "channel_send noted - handled by OpenClaw pipeline" };
+    });
+    // ── Rust native 向量计算（Gateway 代理 → galaxyos-native 二进制）──
+    registerGatewayMethod("vector_batch_cosine", async (params, ctx) => {
+        const result = await callNative("vector_batch_cosine", params, 10000);
+        return result;
+    });
+    registerGatewayMethod("vector_topk", async (params, ctx) => {
+        const result = await callNative("vector_topk", params, 15000);
+        return result;
+    });
+    registerGatewayMethod("vector_cosine", async (params, ctx) => {
+        const result = await callNative("vector_cosine", params, 5000);
+        return result;
     });
     // 自动从注册的工具列表暴露
     if (api.tools && api.tools.list) {
@@ -839,7 +1245,18 @@ class ClawWorkerClient {
                         const msg = JSON.parse(data);
                         if (msg.event === 'ready') { this._ready = true; this._fails = 0; }
                         if (msg.error) reject(new Error(typeof msg.error === 'string' ? msg.error : JSON.stringify(msg.error)));
-                        else resolve(msg.result);
+                        else {
+                            let result = msg.result;
+                            // ═══ mmap 大 payload 解引用：Worker 只回了 _mmap_key，从这里读 ═══
+                            if (result && result._mmap_key) {
+                                const mmapData = _readWorkerMmap(result._mmap_key);
+                                if (mmapData !== null) {
+                                    result = mmapData;
+                                }
+                                // 读不到就原样返回（含 _mmap_key，调用方能感知降级）
+                            }
+                            resolve(result);
+                        }
                     } catch (e) { reject(new Error('HTTP parse: ' + e.message)); }
                 });
             });
@@ -1055,22 +1472,28 @@ function runClawScript(workspace, action, args, timeoutMs = 20000) {
 }
 
 // ==========================================
-// Worker 单例 + 智能调用(优先 Worker,降级 spawnSync)
+// Worker 单例 + 智能调用(优先 GalaxyPool,降级单 Worker,再降级 spawnSync)
 // ==========================================
 let _worker = null;
 
 function getWorker(ws) {
-    // 使用 WorkerPool：先尝试初始化池，失败或单 Worker 时降级
-    if (!_workerPool) {
-        try {
-            const poolCfg = { size: 2, maxQueue: 20 };
-            _workerPool = new WorkerPool(ws, poolCfg);
-            process.stderr.write(`[galaxyos] WorkerPool initialized (size=${poolCfg.size})\n`);
-        } catch (e) {
-            process.stderr.write(`[galaxyos] WorkerPool init failed, fallback to single worker: ${e.message}\n`);
-        }
+    // GalaxyPool 优先（统一管理 WorkerPool + 所有组件）
+    if (_galaxyPool && _galaxyPool.isReady) {
+        const wp = _galaxyPool._workerPool;
+        const firstIdle = wp ? wp._getIdleWorker() : null;
+        const ready = firstIdle !== null || (wp && wp.workers.size > 0);
+        return {
+            ready,
+            id: 'galaxy-pool',
+            call: (method, params, timeoutMs) => {
+                const priority = method === 'rccam' || method === 'health' ? 'high' :
+                                 method === 'recall' || method === 'store' || method === 'verify' ? 'normal' :
+                                 'background';
+                return _galaxyPool.execute(method, params, priority, timeoutMs);
+            },
+        };
     }
-    // 池可用 → 返回调度包装
+    // 旧 WorkerPool（GalaxyPool 未就绪时的降级）
     if (_workerPool && _workerPool._ready) {
         const pool = _workerPool;
         const firstIdle = pool._getIdleWorker();
@@ -1241,112 +1664,148 @@ export default function register(api) {
     }
 
     // ==========================================
-    // Worker 生命周期管理
-    // ==========================================
+    // ═══════════════════════════════════════════════════════════════
+    // GalaxyPool — 统一兜住整个 GalaxyOS 系统
+    // 6 类组件：mmap_control → gateway_uds → zmq_router → native_binary → gateway_heartbeat → workers
+    // 单入口启动/停止/健康检查，电路断路器防级联崩溃
+    // ═══════════════════════════════════════════════════════════════
     const pluginConfig = api.getConfig?.() || {};
     const workerEnabled = pluginConfig.worker?.enabled !== false;
 
-    // 启动三通道双向服务端
-    const gwServer = startGatewayUdsServer(api, ws);
-    initMmapControl();
-    _mmapSyncInit();  // mmap 共享状态(仅 R-CCAM 持久化,心跳已分离)
-    _startGatewayHeartbeat(api);
-    startZmqRouter(api);
-    api.logger.info?.(`${TAG} REST API available via Worker TCP: GET/POST http://127.0.0.1:8765/<method>`);
+    if (!_galaxyPool) {
+        _galaxyPool = new GalaxyPool(api, ws, {
+            workers: { minSize: 2, maxSize: 8, size: 2, maxQueue: 20 },
+        });
 
-    // 双模自适应:优先连 UDS(supervisor 管理的 Worker),连不上自动 spawn
-    // 心跳检测到 Worker 挂了也是:先 UDS 重连 → 失败后 respawn
-    if (workerEnabled) {
-        const _connectOrSpawn = () => {
-            const w = getWorker(ws);
-            // WorkerPool 模式返回裸对象(无 start),池初始化即就绪
-            if (typeof w.start !== 'function') {
-                api.logger.info?.(`${TAG} Worker pool ready (auto-managed)`);
-                return;
-            }
-            w.start().then(() => {
-                api.logger.info?.(`${TAG} Worker ready (UDS or spawned)`);
-                w._fails = 0;
-            }).catch((e) => {
-                api.logger.warn?.(`${TAG} Worker start failed: ${e.message}, will retry on next call`);
+        // —— 组件注册（按依赖拓扑排序） ——
+
+        // 0. mmap 控制（最底层，其他组件依赖）
+        _galaxyPool._reg('mmap_control', {
+            start: () => { initMmapControl(); _mmapSyncInit(); },
+            stop:  () => {},
+            health: () => { try { return existsSync(MMAP_PATH) ? { ok: true } : { ok: false, error: 'mmap file missing' }; } catch (e) { return { ok: false, error: e.message }; } },
+        });
+
+        // 1. Gateway UDS server（Worker ↔ Gateway 反向 RPC）
+        _galaxyPool._reg('gateway_uds', {
+            start: () => { const srv = startGatewayUdsServer(api, ws); return { _gatewayServer: srv }; },
+            stop:  () => stopGatewayUdsServer(),
+            health: () => { try { return _gatewayServer?.listening ? { ok: true } : { ok: false, error: 'gateway not listening' }; } catch (e) { return { ok: false, error: 'gateway dead' }; } },
+        });
+
+        // 2. ZMQ Router（Worker ↔ Gateway 异步双向）
+        _galaxyPool._reg('zmq_router', {
+            start: () => { const r = startZmqRouter(api); return { _zmqRouter: r }; },
+            stop:  () => stopZmqRouter(),
+            health: () => { try { return _zmqRouter ? { ok: true } : { ok: false, error: 'zmq router null' }; } catch (e) { return { ok: false, error: 'zmq dead' }; } },
+        });
+
+        // 3. Rust native binary（向量/图像计算）
+        _galaxyPool._reg('native_binary', {
+            start: () => { const ok = _ensureNativeProc(); return { _nativeProc: ok ? _nativeProc : null }; },
+            stop:  () => _stopNativeProc(),
+            health: () => { try { return _nativeProc && !_nativeProc.killed && _nativeProc.exitCode === null ? { ok: true } : { ok: false, error: 'native proc dead' }; } catch (e) { return { ok: false, error: 'native dead' }; } },
+        });
+
+        // 4. Gateway heartbeat（独立 mmap 心跳文件）
+        _galaxyPool._reg('gateway_heartbeat', {
+            start: () => { _startGatewayHeartbeat(api); },
+            stop:  () => { if (_gatewayHbTimer) { clearInterval(_gatewayHbTimer); _gatewayHbTimer = null; } },
+            health: () => { try { return existsSync(GATEWAY_HB_PATH) ? { ok: true } : { ok: false, error: 'heartbeat file missing' }; } catch (e) { return { ok: false, error: e.message }; } },
+        });
+
+        // 5. Workers（Python worker 池，依赖 gateway_uds）
+        if (workerEnabled) {
+            _galaxyPool._reg('workers', {
+                start: () => {
+                    if (!_galaxyPool._workerPool) {
+                        _galaxyPool._workerPool = new WorkerPool(ws, _galaxyPool._poolCfg);
+                    }
+                },
+                stop: async () => {
+                    if (_galaxyPool._workerPool) {
+                        await _galaxyPool._workerPool.shutdown();
+                        _galaxyPool._workerPool = null;
+                    }
+                },
+                health: () => {
+                    const wp = _galaxyPool._workerPool;
+                    if (!wp || !wp._ready) return { ok: false, error: 'worker pool not ready' };
+                    const alive = [...wp.workers.values()].filter(w => w.ready).length;
+                    return alive > 0 ? { ok: true, alive, total: wp.workers.size } : { ok: false, error: 'no alive workers', alive: 0 };
+                },
+                dependsOn: ['gateway_uds'],
             });
-        };
-        process.nextTick(_connectOrSpawn);
+        }
     }
 
-    // ═══ 多通道独立健康检查 ═══
-    // mmap 心跳 → 进程存活 | ZMQ 心跳 → PUB/SUB 通道 | UDS ping → RPC 通道
-    // 不再走 UDS ping,UDS 只处理业务请求(但有独立 UDS ping 间隔，避免假活)
-    const _workerHealthCheck = setInterval(() => {
-        // ── 1. mmap 心跳(进程级存活) ──
-        const hb = _readWorkerHeartbeat();
-        if (!hb.alive) {
-            api.logger.warn?.(`${TAG} [health] Worker mmap heartbeat stale (${hb.age_ms}ms), 触发重连`);
-            const w = getWorker(ws);
-            if (w._ready) {
-                w._ready = false;
-                w._cleanup?.();
-                w.start?.().catch(() => {});
-            }
-            return; // 进程都不活了，跳过后续通道检查
-        }
+    // 统一启动
+    _galaxyPool.start().then(() => {
+        api.logger?.info?.(`${TAG} GalaxyPool running: ${JSON.stringify(_galaxyPool.getStatus())}`);
+    }).catch((e) => {
+        api.logger?.warn?.(`${TAG} GalaxyPool start error: ${e.message}`);
+    });
+    api.logger.info?.(`${TAG} REST API available via Worker TCP: GET/POST http://127.0.0.1:8765/<method>`);
 
-        // ── 2. ZMQ PUB/SUB 通道可达性(独立心跳事件) ──
-        const zmqAge = Date.now() - _zmqLastEventTs;
-        if (_zmqLastEventTs > 0 && zmqAge > 30000) {
-            api.logger.warn?.(`${TAG} [health] ZMQ SUB 通道无事件 ${Math.round(zmqAge/1000)}s, 可能断连`);
-            // 不立即重连 — _zmqPersistentLoop 会自动检测并恢复
-            // 仅记录告警
-        }
-
-        // ── 3. UDS RPC 通道可达性(ping，每 60s 一次) ──
-        if (!_lastUdsPing || Date.now() - _lastUdsPing > 60000) {
-            _lastUdsPing = Date.now();
-            const w = getWorker(ws);
-            if (w && w.ready) {
-                w.call("ping", {}, 5000).then((result) => {
-                    if (result?.ok !== true && result?.ok !== undefined) {
-                        api.logger.warn?.(`${TAG} [health] UDS ping 响应异常: ${JSON.stringify(result)}`);
-                    }
-                }).catch((e) => {
-                    api.logger.warn?.(`${TAG} [health] UDS ping 失败: ${e.message}, 触发重连`);
-                    if (w._ready !== false) {
-                        w._ready = false;
-                        w._cleanup?.();
-                        w.start?.().catch(() => {});
-                    }
-                });
-            }
-        }
-    }, 15000).unref();
-    let _lastUdsPing = 0;
-
-    // Gateway stop:清理所有通道
+    // ═══ Gateway stop：统一关闭所有组件 ═══
     api.on("gateway_stop", async () => {
-        // 停止 ZMQ SUB 持久重连循环
-        if (_zmqSub) {
-            try { _zmqSub.close(); } catch (e) {}
-            _zmqSub = null;
-        }
+        if (_zmqSub) { try { _zmqSub.close(); } catch (e) {} _zmqSub = null; }
         _zmqSubActive = false;
-
-        // 停止 Worker 池
-        if (_workerPool) {
-            await _workerPool.shutdown();
-            _workerPool = null;
+        if (_galaxyPool) {
+            await _galaxyPool.stop();
         }
-
+        // 兜底：单 worker 清理
         if (_worker) {
-            const w = _worker;
-            _worker = null;
-            if (w.proc) {
-                w.stop(); // spawned Worker → kill
-            } else {
-                w._cleanup(); // UDS-only → 只清理连接
-            }
+            const w = _worker; _worker = null;
+            if (w.proc) { w.stop(); } else { w._cleanup(); }
         }
-        stopGatewayUdsServer();
-        stopZmqRouter();
+    });
+    // ═══ 暴露 GalaxyPool 运行时状态给 AI Agent ═══
+    api.registerTool({
+        name: "galaxy_pool",
+        label: "GalaxyPool 系统状态",
+        description: "查询 GalaxyOS 全系统运行状态：各组件的 alive/dead/degraded, Worker 池负载, 队列深度",
+        parameters: { type: "object", properties: {}, required: [] },
+        async execute() {
+            const status = _galaxyPool ? _galaxyPool.getStatus() : { status: 'not_initialized' };
+            const text = JSON.stringify(status, null, 2);
+            return { content: [{ type: "text", text }], details: status };
+        },
+    });
+    // ═══ R-CCAM 实时进度查询 ═══
+    api.registerTool({
+        name: "claw_rccam_progress",
+        label: "R-CCAM 进度",
+        description: "查询当前正在执行的 R-CCAM 认知循环的实时进度（Retrieval→Cognition→Control→Action→Memory）",
+        parameters: {
+            type: "object",
+            properties: {
+                session_key: { type: "string", description: "可选：指定 session 查询，不传则返回所有活跃进度" },
+            },
+            required: [],
+        },
+        async execute(_toolCallId, params) {
+            const sk = params.session_key;
+            if (sk) {
+                const p = _rccamProgress.get(sk);
+                if (p && Date.now() - p.ts < _rccamProgressMaxAgeMs) {
+                    const text = `${p.status} ${p.phase} (cycle ${p.cycle}, ${p.elapsedMs}ms)`;
+                    return { content: [{ type: "text", text }], details: p };
+                }
+                return { content: [{ type: "text", text: `session ${sk}: 无活跃 R-CCAM 进度` }] };
+            }
+            const active = [];
+            for (const [k, v] of _rccamProgress) {
+                if (Date.now() - v.ts < _rccamProgressMaxAgeMs) {
+                    active.push({ session: k.slice(0, 40), ...v });
+                }
+            }
+            if (active.length === 0) {
+                return { content: [{ type: "text", text: "当前无活跃 R-CCAM 认知循环" }] };
+            }
+            const text = active.map(p => `${p.status} ${p.phase} cycle=${p.cycle} ${p.elapsedMs}ms [${p.session}]`).join('\n');
+            return { content: [{ type: "text", text }], details: { active, count: active.length } };
+        },
     });
 
     // ==========================================
@@ -1733,20 +2192,36 @@ export default function register(api) {
             const userInput = String(params.user_input ?? "");
             const maxCycles = Math.min(Number(params.max_cycles) || 1, 3);
             const storeMem = params.store_memory !== false;
+            // R-CCAM 会话级去重：同一用户输入 5 分钟内不重复提交
+            const dedupKey = params.session_key || userInput.slice(0, 200);
+            const existing = _rccamFlying.get(dedupKey);
+            if (existing && Date.now() - existing.ts < _rccamFlyingMaxAgeMs) {
+                process.stderr.write(TAG + ' [rccam] dedup: reusing in-flight for key=' + dedupKey.slice(0, 60) + '\n');
+                try {
+                    return await existing.promise;
+                } catch (e) {
+                    // 上次失败了，不清除缓存，直接返回失败状态
+                    return { content: [{ type: "text", text: `认知循环已在执行中(前次失败:${e.message})` }], isError: true };
+                }
+            }
             const startMs = Date.now();
+            let rccamPromise;
             try {
                 const w = getWorker(ws);
                 let result;
                 let fromWorker = false;
                 try {
-                    result = await w.call("rccam", {
+                    rccamPromise = w.call("rccam", {
                         user_input: userInput,
                         max_cycles: maxCycles,
                         store_memory: storeMem,
                     }, 120000);
+                    _rccamFlying.set(dedupKey, { promise: rccamPromise, ts: Date.now() });
+                    result = await rccamPromise;
                     fromWorker = true;
                 } catch (_workerErr) {
                     // Worker 不可用,降级到 unified_entry
+                    rccamPromise = Promise.reject(_workerErr);
                     const r = runClawScript(ws, "process", {
                         input: JSON.stringify({
                             user_input: userInput,
@@ -1754,12 +2229,15 @@ export default function register(api) {
                             store_memory: storeMem,
                         }),
                     }, 120000);
+                    _rccamFlying.set(dedupKey, { promise: rccamPromise, ts: Date.now() });
                     const elapsedMs = Date.now() - startMs;
                     if (r.error) {
                         return { content: [{ type: "text", text: `认知循环执行失败:${r.message}` }], isError: true };
                     }
                     const text = typeof r === "object" ? JSON.stringify(r, null, 2).slice(0, 4000) : String(r);
                     return { content: [{ type: "text", text }], details: { elapsedMs } };
+                } finally {
+                    _rccamFlying.delete(dedupKey);
                 }
                 const elapsedMs = Date.now() - startMs;
                 const text = typeof result === "object" ? JSON.stringify(result, null, 2).slice(0, 4000) : String(result);
@@ -2149,14 +2627,27 @@ export default function register(api) {
                             // 仅更新 _zmqLastEventTs，上面已更新
                         }
 
-                        // ── R-CCAM 阶段事件 ──
+                        // ── R-CCAM 阶段事件 → 实时进度追踪 ──
                         if (evt.event === "rccam_phase") {
                             const phase = evt.phase || "?";
                             const status = evt.status || "?";
                             const cycle = evt.data?.cycle ?? "?";
-                            if (api.logger.info) {
-                                api.logger.info(`${TAG} [rccam-events] phase=${phase} status=${status} cycle=${cycle}`);
+                            const sessionKey = evt.session_key || evt.data?.session_key || "?";
+                            if (sessionKey !== "?") {
+                                _rccamProgress.set(sessionKey, {
+                                    phase, status, cycle,
+                                    ts: Date.now(),
+                                    elapsedMs: evt.elapsed_ms || 0,
+                                });
                             }
+                            if (api.logger.info) {
+                                api.logger.info(`${TAG} [rccam-events] session=${sessionKey} phase=${phase} status=${status} cycle=${cycle}`);
+                            }
+                        }
+                        // ── mmap 大结果通知（Worker 侧写完后推送）──
+                        if (evt.event === "mmap_result_ready") {
+                            // 已在 _httpCall 中通过 _readWorkerMmap 解引用，
+                            // 此处仅记录用于调试
                         }
                     } catch (e) {}
                 }

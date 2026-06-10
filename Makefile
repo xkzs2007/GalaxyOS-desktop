@@ -1,17 +1,28 @@
 # GalaxyOS — 开发命令速查
-# make test | make coverage | make lint | make clean | make sync | make native
+# make all | make test | make coverage | make lint | make clean | make sync | make native
 
-.PHONY: test coverage lint clean install deps sync sync-dist bench native native-py
+.PHONY: all install test coverage lint clean install deps sync sync-dist bench native native-py
 
 PYTHON := python3
 VENV := .venv
 PIP := $(VENV)/bin/pip
 PYTEST := $(VENV)/bin/pytest
 
+# ═══ 一键构建：Python deps + Rust native + PyO3 ═══
+all: install native native-py
+	@echo "✅ GalaxyOS full build complete (Python + Rust native + PyO3)"
+
 install: $(VENV)
 	$(PIP) install --upgrade pip
 	$(PIP) install -r requirements.txt
 	$(PIP) install pytest pytest-cov ruff mypy
+	@# 自动编译 Rust（有 cargo 就编译，无 cargo 跳过）
+	@if command -v cargo >/dev/null 2>&1; then \
+		$(MAKE) native; \
+		$(MAKE) native-py; \
+	else \
+		echo "⏭ cargo not found, skipping Rust native (run 'make native' after installing Rust)"; \
+	fi
 
 $(VENV):
 	$(PYTHON) -m venv $(VENV)
@@ -44,12 +55,16 @@ clean:
 	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
 	find . -type f -name '*.pyc' -delete 2>/dev/null || true
 
-# ── sync: 从 galaxyos/engine/ 同步到 extensions/galaxyos/scripts/ ──
+# ── sync: 从 galaxyos/engine/ 同步到 extensions/galaxyos/scripts/ + 自动编译 Rust ──
 sync:
 	@echo "🔁 Syncing galaxyos/engine/ → extensions/galaxyos/scripts/"
 	@mkdir -p extensions/galaxyos/scripts
 	@cp galaxyos/engine/*.py extensions/galaxyos/scripts/
 	@cp galaxyos/engine/pil_worker.py extensions/galaxyos/scripts/ 2>/dev/null || true
+	@if command -v cargo >/dev/null 2>&1; then \
+		$(MAKE) native; \
+		$(MAKE) native-py; \
+	fi
 	@echo "✅ Sync complete"
 
 # ── sync+dist: 同时复制并构建 JS dist ──

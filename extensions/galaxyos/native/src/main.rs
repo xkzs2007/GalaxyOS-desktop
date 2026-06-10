@@ -5,7 +5,7 @@
 
 use galaxyos_native::{
     resize_core, enhance_core, ocr_preprocess_core,
-    vector_dot_core, vector_cosine_core,
+    vector_dot_core, vector_cosine_core, vector_batch_cosine_core,
 };
 use base64::Engine;
 use serde::{Deserialize, Serialize};
@@ -103,6 +103,37 @@ fn handle_vector_cosine(params: &serde_json::Value) -> Result<serde_json::Value,
     Ok(serde_json::json!({"cosine": cosine}))
 }
 
+/// 批量余弦相似度: query 与 candidates 列表中每个向量的余弦相似度
+fn handle_vector_batch_cosine(params: &serde_json::Value) -> Result<serde_json::Value, String> {
+    let query = parse_f32_vec(&params["query"])?;
+    let candidates_raw = params["candidates"].as_array()
+        .ok_or_else(|| "expected candidates array".to_string())?;
+    let candidates: Vec<Vec<f32>> = candidates_raw.iter()
+        .map(|v| parse_f32_vec(v))
+        .collect::<Result<Vec<_>, _>>()?;
+    let scores = vector_batch_cosine_core(&query, &candidates);
+    Ok(serde_json::json!({"scores": scores}))
+}
+
+/// Top-K 搜索: 在 candidates 中找到与 query 最相似的 top_k 个索引和分数
+fn handle_vector_topk(params: &serde_json::Value) -> Result<serde_json::Value, String> {
+    let query = parse_f32_vec(&params["query"])?;
+    let candidates_raw = params["candidates"].as_array()
+        .ok_or_else(|| "expected candidates array".to_string())?;
+    let top_k = params["top_k"].as_u64().unwrap_or(10) as usize;
+    let candidates: Vec<Vec<f32>> = candidates_raw.iter()
+        .map(|v| parse_f32_vec(v))
+        .collect::<Result<Vec<_>, _>>()?;
+    let scores = vector_batch_cosine_core(&query, &candidates);
+    // 收集 (index, score) 并排序取 top_k
+    let mut indexed: Vec<(usize, f32)> = scores.into_iter().enumerate().collect();
+    indexed.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+    let top: Vec<serde_json::Value> = indexed.into_iter().take(top_k).map(|(idx, score)| {
+        serde_json::json!({"index": idx, "score": score})
+    }).collect();
+    Ok(serde_json::json!({"top_k": top, "total": candidates_raw.len()}))
+}
+
 // ── 主循环 ──
 
 fn main() {
@@ -178,6 +209,8 @@ fn main() {
                         "ocr_preprocess" => handle_ocr_preprocess,
                         "vector_dot" => handle_vector_dot,
                         "vector_cosine" => handle_vector_cosine,
+                        "vector_batch_cosine" => handle_vector_batch_cosine,
+                        "vector_topk" => handle_vector_topk,
                         _ => {
                             let resp = Response {
                                 id: req.id,

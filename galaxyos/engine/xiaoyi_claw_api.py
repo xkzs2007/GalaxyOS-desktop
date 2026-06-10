@@ -2673,7 +2673,7 @@ class XiaoYiClawLLM:
                 ThinkingSkill.WORKFLOWS: "工作流",
                 ThinkingSkill.NONE: None,
             }
-            _ws_path = getattr(state, 'workspace_path', '/home/sandbox/.openclaw/workspace')
+            _ws_path = getattr(state, 'workspace_path', WORKSPACE)
 
             for _skill in _skills_result.suggested_skills:
                 _cn_name = _skill_name_map.get(_skill, _skill.value if hasattr(_skill, 'value') else _skill)

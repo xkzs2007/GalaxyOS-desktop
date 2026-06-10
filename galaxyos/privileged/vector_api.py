@@ -372,12 +372,30 @@ class VectorAPI:
         norm = np.linalg.norm(a_c)
         return a_c / (norm + 1e-10)
 
+    # ── Rust PyO3 零拷贝桥梁（GIL-free SIMD）──
+    _has_native_vec = None
+
+    @classmethod
+    def _try_native_vec(cls):
+        """惰性检测 galaxyos_native PyO3 模块"""
+        if cls._has_native_vec is None:
+            try:
+                from galaxyos_native import vector_cosine, vector_batch_cosine
+                cls._native_cosine = vector_cosine
+                cls._native_batch_cosine = vector_batch_cosine
+                cls._has_native_vec = True
+            except ImportError:
+                cls._has_native_vec = False
+        return cls._has_native_vec
+
     def cosine_similarity(self, a: np.ndarray, b: np.ndarray) -> float:
         """
         余弦相似度: cos(a, b) = (a·b) / (||a|| * ||b||)
 
-        向量检索中的核心度量。通过合并归一化和点积减少遍历次数。
+        优先走 Rust PyO3 SIMD（GIL-free），回退 numpy。
         """
+        if self._try_native_vec():
+            return float(self._native_cosine(a.ravel().tolist(), b.ravel().tolist()))
         a_c = self._allocator.align(a.astype(np.float32))
         b_c = self._allocator.align(b.astype(np.float32))
         a_norm = a_c / (np.linalg.norm(a_c) + 1e-10)
@@ -427,8 +445,18 @@ class VectorAPI:
         """
         批量余弦相似度: (n, dim) × (m, dim) → (n, m)
 
-        先预归一化再批量点积，比逐行 cosine_similarity 快 10-100x。
+        优先走 Rust SIMD（逐行调用 vector_batch_cosine），回退 numpy。
         """
+        if self._try_native_vec() and A.shape[0] <= 100:
+            # 小批量：直接调用 Rust batch（一行 query vs 多行 candidates）
+            results = np.empty((A.shape[0], B.shape[0]), dtype=np.float32)
+            for i in range(A.shape[0]):
+                scores = self._native_batch_cosine(
+                    A[i].ravel().tolist(),
+                    [B[j].ravel().tolist() for j in range(B.shape[0])]
+                )
+                results[i] = np.array(scores, dtype=np.float32)
+            return results
         A_c = self._allocator.align(A.astype(np.float32))
         B_c = self._allocator.align(B.astype(np.float32))
 

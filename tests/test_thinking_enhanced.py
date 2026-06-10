@@ -51,8 +51,8 @@ class TestReflexionEngine:
 
     def test_init_with_tmp(self, tmp_path, monkeypatch):
         monkeypatch.setenv("OPENCLAW_WORKSPACE", str(tmp_path))
-        import importlib
-        import services.thinking_enhanced as te
+        # 直接 reload 底层模块（绕过 services shim），确保 _WORKSPACE 重新求值
+        import importlib, galaxyos.engine.thinking_enhanced as te
         importlib.reload(te)
 
         engine = te.ReflexionEngine()

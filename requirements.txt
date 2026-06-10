@@ -52,5 +52,12 @@ openai>=1.0.0
 # === 神经电路策略 (NCPs) ===
 ncps>=1.0.0
 
+# === Tokenizer（ONNX 文字编码）===
+tokenizers>=0.20.0
+
 # === 数据校验 ===
 pydantic>=2.0.0
+
+# === 测试 ===
+pytest>=9.0.0
+pytest-cov>=5.0.0

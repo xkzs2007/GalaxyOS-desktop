@@ -79,7 +79,12 @@ def _unpack_vector(data: bytes, dim: int) -> np.ndarray:
 
 
 def _cosine_similarity(a: np.ndarray, b: np.ndarray) -> float:
-    """余弦相似度"""
+    """余弦相似度 — 优先 Rust PyO3 SIMD（零 GIL 竞争），回退 numpy"""
+    try:
+        from galaxyos_native import vector_cosine
+        return vector_cosine(a.tolist(), b.tolist())
+    except (ImportError, Exception):
+        pass
     a_norm = np.linalg.norm(a) + 1e-10
     b_norm = np.linalg.norm(b) + 1e-10
     return float(np.dot(a, b) / (a_norm * b_norm))

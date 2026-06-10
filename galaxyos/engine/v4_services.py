@@ -20,7 +20,8 @@ from typing import Optional, Dict, Any, List
 WORKSPACE = os.environ.get("OPENCLAW_WORKSPACE",
     os.path.expanduser("~/.openclaw/workspace"))
 DAG_DB = os.path.expanduser("~/.openclaw/dag_context.db")
-MMAP_PATH = "/dev/shm/claw_worker_mmap"
+MMAP_PATH = os.environ.get("GALAXYOS_MMAP_PATH",
+    os.path.join(os.environ.get("XDG_RUNTIME_DIR", "/dev/shm"), "claw_worker_mmap"))
 MMAP_SIZE = 10485760
 
 logger = __import__('logging').getLogger(__name__)

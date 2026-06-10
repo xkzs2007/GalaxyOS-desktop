@@ -1606,6 +1606,32 @@ class ClawWorker:
         return {"ok": True, "message": "shutting down"}
 
 
+# ========== 批量 RPC 独立函数（注册到 _METHODS） ==========
+
+def _handle_batch(p: dict) -> dict:
+    """批量 RPC：一次请求执行多个方法，返回结果数组
+    
+    params: { calls: [{method, params}, ...] }
+    返回: { results: [{result}, ...], count: N }
+    """
+    calls = p.get("calls", [])
+    if not calls:
+        return {"results": [], "error": "empty calls"}
+    results = []
+    for call in calls:
+        method = call.get("method", "")
+        cparams = call.get("params", {})
+        handler = _METHODS.get(method)
+        if handler is None:
+            results.append({"_error": f"unknown method: {method}"})
+            continue
+        try:
+            results.append(handler(cparams))
+        except Exception as e:
+            results.append({"_error": str(e)})
+    return {"results": results, "count": len(results)}
+
+
 # ========== 跨会话DAG搜索 ==========
 
 _dag_search_cache = None
@@ -1690,6 +1716,7 @@ def _init_methods(worker):
         "expand_rccam_cycle": worker.expand_rccam_cycle,
         "cognitive_compress_dag": worker.cognitive_compress_dag,
         "shutdown": worker.shutdown,
+        "batch": _handle_batch,
         "get_status": worker.get_status,
         "smart_process": worker.smart_process,
         "dag_search": _dag_search,
@@ -1901,7 +1928,18 @@ def _handle_one_http_request(conn, raw_data, methods_map):
         try:
             result = methods_map[method](params)
             elapsed = round((time.time() - t0) * 1000, 1)
-            _send_http_reply(conn, 200, {"id": req_id, "result": result, "timing_ms": elapsed})
+            # ═══ mmap 大 payload 路由：结果 >50KB 时走 mmap，UDS 只回引用 ═══
+            result_json = json.dumps(result, ensure_ascii=False)
+            if len(result_json) > 50000 and method in ("rccam", "recall", "store", "verify"):
+                _mmap_key = f"resp_{method}_{req_id}_{int(time.time()*1000)}"
+                _mmap_write(_mmap_key, result)
+                _zmq_pub_event("mmap_result_ready", {"key": _mmap_key, "method": method, "size": len(result_json)})
+                _send_http_reply(conn, 200, {
+                    "id": req_id, "result": {"_mmap_key": _mmap_key, "_mmap_size": len(result_json)},
+                    "timing_ms": elapsed
+                })
+            else:
+                _send_http_reply(conn, 200, {"id": req_id, "result": result, "timing_ms": elapsed})
         except Exception as e:
             tb = traceback.format_exc()
             _send_http_reply(conn, 500, {
@@ -1929,6 +1967,7 @@ _REST_ROUTES = {
     "/store":                  ("store",            ["POST"]),
     "/verify":                 ("verify",           ["POST"]),
     "/rccam":                  ("rccam",            ["POST"]),
+    "/batch":                  ("batch",            ["POST"]),
     "/smart_process":          ("smart_process",    ["POST"]),
     "/implicit_feedback":      ("implicit_feedback",["POST"]),
     "/dag_ingest":             ("dag_ingest",       ["POST"]),
@@ -2004,7 +2043,18 @@ def _handle_rest_request(conn, http_method, http_path, body_str, methods_map):
     try:
         result = handler(params)
         elapsed = round((time.time() - t0) * 1000, 1)
-        _send_http_reply(conn, 200, {"ok": True, "result": result, "timing_ms": elapsed})
+        # ═══ mmap 大 payload 路由：结果 >50KB 时走 mmap ═══
+        result_json = json.dumps(result, ensure_ascii=False)
+        if len(result_json) > 50000 and rpc_key in ("rccam", "recall", "store", "verify"):
+            _mmap_key = f"rest_{rpc_key}_{int(time.time()*1000)}"
+            _mmap_write(_mmap_key, result)
+            _zmq_pub_event("mmap_result_ready", {"key": _mmap_key, "method": rpc_key, "size": len(result_json)})
+            _send_http_reply(conn, 200, {
+                "ok": True, "result": {"_mmap_key": _mmap_key, "_mmap_size": len(result_json)},
+                "timing_ms": elapsed
+            })
+        else:
+            _send_http_reply(conn, 200, {"ok": True, "result": result, "timing_ms": elapsed})
     except Exception as e:
         tb = traceback.format_exc()
         _send_http_reply(conn, 500, {

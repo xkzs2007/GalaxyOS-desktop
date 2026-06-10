@@ -1,0 +1,44 @@
+{
+  "id": "cli-anything",
+  "name": "CLI-Anything (Lite)",
+  "description": "赋予 GalaxyOS Agent 完整的 workspace 自运维能力: Shell,Git,Make,测试,文件读写。灵感源于 HKUDS/CLI-Anything (Apache 2.0, 42.6k stars, github.com/HKUDS/CLI-Anything)。上游专注软件 Agent-Native 化(50+ harness),本插件专注 workspace 命令执行,互补。",
+  "contracts": {
+    "tools": [
+      "shell_run",
+      "shell_git",
+      "shell_git_commit",
+      "shell_make",
+      "shell_test",
+      "shell_file_read",
+      "shell_file_write"
+    ]
+  },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "enabled": {
+        "type": "boolean",
+        "default": true,
+        "description": "是否启用 CLI-Anything (Lite) 插件"
+      },
+      "maxOutputChars": {
+        "type": "number",
+        "default": 8000,
+        "description": "stdout/stderr 最大输出字符数"
+      },
+      "timeoutMs": {
+        "type": "number",
+        "default": 30000,
+        "description": "默认命令超时（毫秒）"
+      },
+      "allowGitCommit": {
+        "type": "boolean",
+        "default": false,
+        "description": "是否允许 git commit（需显式开启）"
+      }
+    }
+  },
+  "main": "index.js",
+  "kind": ["utility", "devtools"]
+}
