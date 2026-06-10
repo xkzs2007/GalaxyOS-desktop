@@ -1,7 +1,7 @@
 # 🌌 GalaxyOS — 认知增强引擎
 
 > OpenClaw 的开源认知增强引擎，为 AI Assistant 提供记忆、检索、推理、验证、自进化等全套认知能力
-> 版本: v7.1 · 三论文集成（RLM+SKILL0+MemoryOS）+ 10+1 论文引擎 + RLM REPL 沙箱
+> 版本: v7.2 · GalaxyPool 统一管理 + 通信增强 + 神经网络全量修复 + 硬编码路径清零
 
 ## 总览
 
@@ -15,10 +15,10 @@
 | **检索** | RetrievalHub 7通道 (KG/Local/DAG/MN-RU/Synapse/Paper/Cognitive/Web) + bge-reranker 重排序 |
 | **智能处理** | SmartProcessor 三模型通道 (Flash/Pro/VLM) + Visual RAG 自动 OCR2 |
 | **认知循环** | R-CCAM 五阶段结构化认知 (Retrieval→Cognition→Control→Action→Memory) |
-| **弹性基础设施** | WorkerPool 自动扩缩 (2~8) + CircuitBreaker 熔断 + SessionContext 粒度隔离 |
-| **PIL 隔离** | 独立子进程图像处理 (Python/Rust)，零 GIL 竞争 |
+| **弹性基础设施** | GalaxyPool 统一管理 6 类组件 + WorkerPool 负载感知调度 + CircuitBreaker 熔断 |
+| **PIL 隔离** | 独立子进程图像处理 (Python/Rust/PyO3)，零 GIL 竞争 |
 | **防幻觉** | 10 重交叉验证 + 多源证据 + 突触双向闭环 (LTP/LTD) |
-| **IPC 通信** | UDS RPC (selectors 串行) + ZMQ 事件推送 + mmap 共享内存 |
+| **IPC 通信** | UDS RPC + ZMQ PUB/SUB + mmap 大 payload 路由 + batch RPC + R-CCAM 流式进度 |
 
 ## 目录结构
 
@@ -249,6 +249,23 @@ python3 -m services.xiaoyi_claw_api recall --query "查询"
 | v3.0.0 | `docs/xiaoyi-claw-core-architecture-v3.0.0.md` | 16 层架构、R-CCAM 认知循环 |
 
 **完整架构文档（含 15 层全景图、470+ 功能列表、更新日志）：** 👉 [📖 查看 Skills 文档栏](https://cnb.cool/llm-memory-integrat/GalaxyOS?tabValue=SKILLS-ov-file)
+
+### v7.2 新特性
+
+| 特性 | 说明 |
+|------|------|
+| **GalaxyPool 统一管理** | 6 类组件 (mmap/gateway/zmq/native/heartbeat/workers) 单入口 start/stop + 拓扑排序 + 统一健康检查 + 电路断路器 |
+| **负载感知调度** | WorkerPool 按 fail count + latency + recency 三维评分选择最优 Worker |
+| **批量 RPC** | 一次 HTTP 请求执行多个方法调用，减少 round-trip |
+| **R-CCAM 会话互斥** | 同一 sessionKey 5 分钟内不重复提交，防止 Worker 抢占 |
+| **R-CCAM 流式进度** | ZMQ 实时推送 phase 变化 → Agent 可查询 `claw_rccam_progress` |
+| **mmap 大 payload 路由** | result >50KB 自动走 mmap + ZMQ 通知，UDS 只回引用 |
+| **Rust PyO3 桥梁** | VectorAPI + VectorStore 优先走 `galaxyos_native` (GIL-free SIMD) |
+| **Rust 自动编译** | `make all` 一键编译 + JS 启动时 auto cargo build |
+| **神经网络全量修复** | ONNX 路径自发现 + 5 个 services shim + 6 类模型验证通过 (31 神经元 + 25 突触) |
+| **硬编码路径清零** | 10 处 `/home/sandbox` → `OPENCLAW_WORKSPACE` / `os.path.expanduser` |
+| **CLI-Anything 插件** | 7 工具 (shell_run/git/make/test/file) Agent 自运维 |
+| **安装向导修复** | 补 `sqlite3` import + KG 检查恢复正常 |
 
 ### v7.1 新特性
 

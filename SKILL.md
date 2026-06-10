@@ -1,21 +1,21 @@
 ---
 name: galaxyos
-description: GalaxyOS v7.0 — 统一包架构 (galaxyos/) + WorkerPool 弹性扩缩 + PIL 独立子进程 + Session 粒度上下文 + Rust 原生扩展
+description: GalaxyOS v7.2 — GalaxyPool统一管理 + 负载感知调度 + 通信增强 + 神经网络全量修复 + 硬编码路径清零
 author: xkzs2007
 license: MIT-0
-tags: [architecture, memory, llm, rccam, dag, kora, knowledge-graph, ncps, neural-synapse-network, context-engine, neural-rerank, elastic-pool, circuit-breaker, rust-native]
+tags: [architecture, memory, llm, rccam, dag, kora, knowledge-graph, ncps, neural-synapse-network, context-engine, galaxy-pool, load-aware-scheduling, batch-rpc, cli-anything, rust-pyo3, vector-api]
 ---
 
-# GalaxyOS v7.0
+# GalaxyOS v7.2
 
 > **定位**: OpenClaw 的核心底层能力引擎
-> **更新时间**: 2026-06-09
-> **架构**: 统一包 `galaxyos/` (313 files) + OpenClaw 插件 `extensions/galaxyos/`
+> **更新时间**: 2026-06-10
+> **架构**: 统一包 `galaxyos/` + GalaxyPool 统一管理 + OpenClaw 插件 `extensions/galaxyos/`
 > **总能力项**: 470+ 项
-> **模型**: ONNX bge-small-zh-v1.5 (512d) + BAAI/bge-m3 (1024d via siliconflow)
-> **IPC**: UDS RPC (selectors 串行) + ZMQ 事件推送 + mmap 共享内存
-> **弹性**: WorkerPool 自动扩缩 (2~8) + CircuitBreaker 熔断 + 超时重试
-> **v7.0 新特性** ✅: 统一包 galaxyos/ | PIL 独立子进程 (零 GIL) | SessionContext 粒度隔离 | selectors 单线程串行 UDS | Rust 原生扩展 (pil + 向量) | 记忆链路熔断器
+> **模型**: ONNX bge-small-zh-v1.5 (512d) + LTC 液态神经网络 + CfC 序列预测 + Synapse 预训练 + 4 GNN 模型
+> **IPC**: UDS RPC + ZMQ PUB/SUB + mmap 大 payload 路由 + batch RPC + R-CCAM 流式进度
+> **弹性**: GalaxyPool 统一管理 6 类组件 + WorkerPool 负载感知调度 + CircuitBreaker 断路器
+> **v7.2 新特性** ✅: GalaxyPool | 负载感知调度 | batch RPC | R-CCAM 会话互斥 | mmap 大payload路由 | Rust PyO3桥梁 | 神经网络修复 | 硬编码路径清零 | CLI-Anything | Rust auto-build
 
 ---
 
@@ -33,12 +33,13 @@ GalaxyOS是 OpenClaw 的**核心底层能力引擎**，提供：
 
 ---
 
-| **文档版本**: v7.0 | 2026-06-09 | 统一包 galaxyos/ + WorkerPool 弹性 + PIL 隔离 + 熔断器 + Rust 扩展 |
+| **文档版本**: v7.2 | 2026-06-10 | GalaxyPool统一管理 + 负载感知调度 + 通信增强 + 神经网络修复 + 路径清零 |
+| **上次版本**: v7.0 | 2026-06-09 | 统一包 galaxyos/ + WorkerPool 弹性 + PIL 隔离 + 熔断器 + Rust 扩展 |
 
 ---
 
 *GalaxyOS — OpenClaw 的核心底层能力引擎*
-*文档版本: v6.1 | 最后更新: 2026-06-08 07:45 | BlobArena无损存储 + ONNX bge-small-zh-v1.5 中文嵌入 + RetrievalHub 7通道全链路*
+*文档版本: v7.2 | 最后更新: 2026-06-10 | GalaxyPool + 负载感知调度 + 通信增强 + 神经网络修复*
 
 ---
 
