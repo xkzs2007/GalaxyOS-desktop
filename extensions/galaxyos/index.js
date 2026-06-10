@@ -23,6 +23,26 @@ import http from "node:http";
 const TAG = "[galaxyos]";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const WORKER_SCRIPT = path.join(__dirname, "scripts", "claw_worker.py");
+const PIL_WORKER_SCRIPT = path.join(__dirname, "scripts", "pil_worker.py");
+
+// Rust 原生扩展二进制（替代 pil_worker.py，零 GIL，SIMD 加速）
+const _nativeBinaryCandidates = [
+    path.join(__dirname, "scripts", "galaxyos-native"),
+    path.join(__dirname, "native", "target", "release", "galaxyos-native"),
+    path.join(__dirname, "..", "..", "native", "target", "release", "galaxyos-native"),
+    path.join(process.env.HOME || "/home/sandbox", ".cargo", "bin", "galaxyos-native"),
+];
+let _nativeBinary = null;
+for (const p of _nativeBinaryCandidates) {
+    if (existsSync(p)) { _nativeBinary = p; break; }
+}
+// Fallback: 检查 PATH
+if (!_nativeBinary) {
+    try {
+        const p = execSync("which galaxyos-native 2>/dev/null || echo ''", { encoding: "utf-8" }).trim();
+        if (p && existsSync(p)) _nativeBinary = p;
+    } catch {}
+}
 
 // 解析 python3 可执行路径(兼容 sandbox 环境下 PATH 缺失的情况)
 let _pythonBin = "python3";
@@ -475,7 +495,7 @@ function stopGatewayUdsServer() {
 function startZmqRouter(api) {
     const zmqPath = path.join(
         process.env.HOME || "/home/sandbox",
-        ".openclaw/extensions/claw-core/var/claw-router.ipc"
+        ".openclaw/extensions/galaxyos/var/claw-router.ipc"
     );
     try { unlinkSync(zmqPath); } catch (e) {}
 
@@ -567,7 +587,7 @@ function stopZmqRouter() {
 // ────────── mmap 结构化共享状态 ──────────
 const MMAP_PATH = path.join(
     process.env.HOME || "/home/sandbox",
-    ".openclaw/extensions/claw-core/var/claw_mmap_control"
+    ".openclaw/extensions/galaxyos/var/claw_mmap_control"
 );
 const MMAP_SIZE = 4096; // 4KB shared state
 // 固定偏移:
@@ -620,7 +640,7 @@ function mmapReadSignal() {
  */
 const MMAP_SHM = path.join(
     process.env.HOME || "/home/sandbox",
-    ".openclaw/extensions/claw-core/var/claw_shared_state"
+    ".openclaw/extensions/galaxyos/var/claw_shared_state"
 );
 
 function _mmapSyncInit() {
@@ -678,7 +698,7 @@ function _mmapSyncRead() {
 // ────────── 心跳 mmap(Worker 端写入,只读 8 字节 float64 时间戳)──────────
 const HB_PATH = path.join(
     process.env.HOME || "/home/sandbox",
-    ".openclaw/extensions/claw-core/var/claw_worker_heartbeat"
+    ".openclaw/extensions/galaxyos/var/claw_worker_heartbeat"
 );
 
 /**
@@ -708,7 +728,7 @@ function _readWorkerHeartbeat() {
 // Gateway 心跳写入独立 8 字节文件(与 Worker 心跳分离,mmap 仅用于 R-CCAM 持久化)
 const GATEWAY_HB_PATH = path.join(
     process.env.HOME || "/home/sandbox",
-    ".openclaw/extensions/claw-core/var/claw_gateway_heartbeat"
+    ".openclaw/extensions/galaxyos/var/claw_gateway_heartbeat"
 );
 let _gatewayHbTimer = null;
 function _startGatewayHeartbeat(api) {
@@ -1156,6 +1176,13 @@ export default function register(api) {
     const ws = resolveWorkspace(api);
     api.logger.info?.(`${TAG} v2 plugin initialized, workspace=${ws}`);
 
+    // 原生扩展状态报告
+    if (_nativeBinary) {
+        api.logger.info?.(`${TAG} Rust native extension detected: ${_nativeBinary}`);
+    } else {
+        api.logger.warn?.(`${TAG} Rust native extension NOT found — image/vector ops fall back to Python PIL (slower, GIL-bound). Run \`make native\` to build.`);
+    }
+
     // ==========================================
     // Worker 生命周期管理
     // ==========================================
@@ -1168,6 +1195,7 @@ export default function register(api) {
     _mmapSyncInit();  // mmap 共享状态(仅 R-CCAM 持久化,心跳已分离)
     _startGatewayHeartbeat(api);
     startZmqRouter(api);
+    api.logger.info?.(`${TAG} REST API available via Worker TCP: GET/POST http://127.0.0.1:8765/<method>`);
 
     // 双模自适应:优先连 UDS(supervisor 管理的 Worker),连不上自动 spawn
     // 心跳检测到 Worker 挂了也是:先 UDS 重连 → 失败后 respawn
@@ -1403,6 +1431,40 @@ export default function register(api) {
                 }
                 api.logger.debug?.(`${TAG} [tool] claw_health completed via fallback (${elapsedMs}ms)`);
                 return { content: [{ type: "text", text }] };
+            }
+        },
+    });
+    // ==========================================
+    // Tool: claw_vector_info - 跨平台 SIMD 向量计算能力查询
+    // ==========================================
+    api.registerTool({
+        name: "claw_vector_info",
+        label: "Vector Compute Capability",
+        description: "查询当前平台向量计算的硬件加速能力。\n" +
+            "返回 SIMD 架构(如 AVX-512/AVX2/NEON/SVE)、lane 并行数、FMA 支持等。\n" +
+            "用于判断向量搜索是否启用硬件加速路径。",
+        parameters: {
+            type: "object",
+            properties: {},
+        },
+        async execute() {
+            try {
+                const w = getWorker(ws);
+                const result = await w.call("vector_info", {}, 5000);
+                if (!result.available) {
+                    return { content: [{ type: "text", text: "⚠️ VectorAPI 未初始化，向量计算使用纯 Python numpy (无 SIMD 加速)" }] };
+                }
+                const text = [
+                    `🖥️ 向量计算后端: ${result.arch}`,
+                    `   SIMD lane 数 (float32): ${result.lane_count}`,
+                    `   寄存器位宽: ${result.register_width_bits} bit`,
+                    `   FMA 融合乘加: ${result.supports_fma ? "✅ 支持" : "❌ 不支持"}`,
+                    `   遮蔽运算: ${result.supports_masking ? "✅ 支持" : "❌ 不支持"}`,
+                    `   ${result.description || ""}`,
+                ].join("\n");
+                return { content: [{ type: "text", text }], details: result };
+            } catch (err) {
+                return { content: [{ type: "text", text: `vector_info 失败: ${err.message}` }], isError: true };
             }
         },
     });

@@ -1730,18 +1730,12 @@ def _dispatch_request(methods_map, req_id, method, params):
 
 
 def _send_http_reply(conn, status, data):
-    """发送 HTTP JSON 响应（支持 CORS，兼容 REST 客户端）"""
-    status_text = {200: "OK", 400: "Bad Request", 404: "Not Found",
-                   405: "Method Not Allowed", 500: "Internal Server Error"}
-    reason = status_text.get(status, "OK" if 200 <= status < 300 else "ERROR")
+    """发送 HTTP JSON 响应"""
     body = json.dumps(data, ensure_ascii=False).encode("utf-8")
     resp = (
-        f"HTTP/1.1 {status} {reason}\r\n"
-        f"Content-Type: application/json; charset=utf-8\r\n"
+        f"HTTP/1.1 {status} {'OK' if status == 200 else 'ERROR'}\r\n"
+        f"Content-Type: application/json\r\n"
         f"Content-Length: {len(body)}\r\n"
-        f"Access-Control-Allow-Origin: *\r\n"
-        f"Access-Control-Allow-Methods: GET, POST, OPTIONS\r\n"
-        f"Access-Control-Allow-Headers: Content-Type\r\n"
         f"Connection: close\r\n"
         f"\r\n"
     ).encode("utf-8") + body
@@ -1822,23 +1816,12 @@ def _uds_server_thread(methods_map):
 
 
 def _handle_one_http_request(conn, raw_data, methods_map):
-    """解析 HTTP 请求 → 串行执行 → 返回 JSON 响应
-
-    支持两种模式：
-    1. JSON-RPC: POST /  body={{"id":1, "method":"recall", "params":{{...}}}}
-    2. REST:     GET/POST /<method>  (params 从 query string 或 JSON body 读取)
-    """
+    """解析 HTTP 请求 → 串行执行 → 返回 JSON 响应"""
     try:
         raw = raw_data if isinstance(raw_data, bytes) else raw_data.encode()
         parts = raw.split(b"\r\n\r\n", 1)
         headers_part = parts[0].decode("utf-8", errors="replace")
         body_bytes = parts[1] if len(parts) > 1 else b""
-
-        # 解析 HTTP 方法和路径
-        first_line = headers_part.split("\r\n")[0] if headers_part else ""
-        http_parts = first_line.split(" ")
-        http_method = http_parts[0].upper() if len(http_parts) > 0 else "POST"
-        http_path = http_parts[1] if len(http_parts) > 1 else "/"
 
         # 解析 Content-Length
         content_length = 0
@@ -1855,34 +1838,6 @@ def _handle_one_http_request(conn, raw_data, methods_map):
 
         body_str = body_bytes.decode("utf-8", errors="replace")
 
-        # ═══ CORS 预检 ═══
-        if http_method == "OPTIONS":
-            _send_http_reply(conn, 200, {"ok": True})
-            return
-
-        # ═══ REST API 路由 ═══
-        if http_path.startswith("/") and http_path != "/":
-            _handle_rest_request(conn, http_method, http_path, body_str, methods_map)
-            return
-
-        # ═══ GET / — REST API 索引 ═══
-        if http_method == "GET" and http_path == "/":
-            _send_http_reply(conn, 200, {
-                "service": "GalaxyOS ClawWorker",
-                "version": "7.0.0",
-                "endpoints": {
-                    "REST": "GET|POST /<method>  (see /rest for full list)",
-                    "JSON-RPC": "POST /  with {id, method, params}",
-                },
-                "usage": {
-                    "GET /health": "系统健康检查",
-                    "GET /vector_info": "SIMD 向量计算能力",
-                    "POST /recall": "记忆检索 (body: {query, top_k})",
-                    "POST /store": "记忆存储 (body: {content, source})",
-                    "POST /verify": "幻觉验证 (body: {claim})",
-                }
-            })
-            return
         try:
             req = json.loads(body_str)
         except json.JSONDecodeError:
@@ -1913,104 +1868,6 @@ def _handle_one_http_request(conn, raw_data, methods_map):
             _send_http_reply(conn, 500, {"id": None, "error": str(e)})
         except Exception:
             pass
-
-
-# ═══ REST API 路由表 ═══
-# 映射 URL path → (methods_map_key, allowed_http_methods)
-_REST_ROUTES = {
-    "/health":                 ("health",           ["GET"]),
-    "/ping":                   ("ping",             ["GET"]),
-    "/vector_info":            ("vector_info",      ["GET"]),
-    "/get_status":             ("get_status",       ["GET"]),
-    "/persona_snapshot":       ("persona_snapshot", ["GET"]),
-    "/dag_status":             ("dag_status",       ["GET"]),
-    "/hardinfo":               ("hardinfo",         ["GET"]),
-    "/recall":                 ("recall",           ["POST"]),
-    "/store":                  ("store",            ["POST"]),
-    "/verify":                 ("verify",           ["POST"]),
-    "/rccam":                  ("rccam",            ["POST"]),
-    "/smart_process":          ("smart_process",    ["POST"]),
-    "/implicit_feedback":      ("implicit_feedback",["POST"]),
-    "/dag_ingest":             ("dag_ingest",       ["POST"]),
-    "/dag_assemble":           ("dag_assemble",     ["POST"]),
-    "/dag_compact":            ("dag_compact",      ["POST"]),
-    "/save_memory":            ("save_memory",      ["POST"]),
-    "/smart_retrieval":        ("smart_retrieval",  ["POST"]),
-    "/build_system_prompt":    ("build_system_prompt",["POST"]),
-    "/restore_context":        ("restore_context",  ["POST"]),
-    "/answer":                 ("answer",           ["POST"]),
-    "/remember":               ("remember",         ["POST"]),
-    "/learn":                  ("learn",            ["POST"]),
-    "/learn_preference":       ("learn_preference", ["POST"]),
-    "/learn_correction":       ("learn_correction", ["POST"]),
-    "/forget":                 ("forget",           ["POST"]),
-    "/execute_workflow":       ("execute_workflow", ["POST"]),
-    "/call_module":            ("call_module",      ["POST"]),
-    "/rccam_compact_cycle":    ("rccam_compact_cycle",["POST"]),
-    "/expand_rccam_cycle":     ("expand_rccam_cycle",["POST"]),
-    "/cognitive_compress_dag": ("cognitive_compress_dag",["POST"]),
-    "/verify_reply_style":     ("verify_reply_style",["POST"]),
-}
-
-
-def _handle_rest_request(conn, http_method, http_path, body_str, methods_map):
-    """处理 REST 风格请求：GET /health, POST /recall 等"""
-    # GET /rest — 列出所有 REST 端点
-    if http_path == "/rest":
-        routes_list = {
-            path: {"method": allowed[0], "rpc": rpc_key}
-            for path, (rpc_key, allowed) in sorted(_REST_ROUTES.items())
-        }
-        _send_http_reply(conn, 200, {"ok": True, "routes": routes_list, "total": len(routes_list)})
-        return
-
-    route = _REST_ROUTES.get(http_path)
-    if route is None:
-        _send_http_reply(conn, 404, {"error": f"unknown endpoint: {http_path}"})
-        return
-
-    rpc_key, allowed_methods = route
-    if http_method not in allowed_methods:
-        _send_http_reply(conn, 405, {
-            "error": f"method {http_method} not allowed for {http_path}",
-            "allowed": allowed_methods
-        })
-        return
-
-    # 解析参数：GET 从 query string，POST 从 JSON body
-    if http_method == "GET":
-        params = {}
-        if "?" in http_path:
-            try:
-                qs = http_path.split("?", 1)[1]
-                from urllib.parse import parse_qs
-                for k, v in parse_qs(qs).items():
-                    params[k] = v[0] if len(v) == 1 else v
-            except Exception:
-                pass
-    else:
-        try:
-            params = json.loads(body_str) if body_str.strip() else {}
-        except json.JSONDecodeError:
-            _send_http_reply(conn, 400, {"error": "invalid JSON body"})
-            return
-
-    handler = methods_map.get(rpc_key)
-    if handler is None:
-        _send_http_reply(conn, 500, {"error": f"RPC handler not found: {rpc_key}"})
-        return
-
-    t0 = time.time()
-    try:
-        result = handler(params)
-        elapsed = round((time.time() - t0) * 1000, 1)
-        _send_http_reply(conn, 200, {"ok": True, "result": result, "timing_ms": elapsed})
-    except Exception as e:
-        tb = traceback.format_exc()
-        _send_http_reply(conn, 500, {
-            "ok": False, "error": str(e),
-            "traceback": tb[-600:] if len(tb) > 600 else tb
-        })
 
 
 def _zmq_pub_init():
@@ -2165,9 +2022,7 @@ def _http_serve(methods_map):
     sel = _sel_mod.DefaultSelector()
     sel.register(server, _sel_mod.EVENT_READ, data=None)
 
-    sys.stderr.write(f"[claw-worker] HTTP JSON-RPC + REST API on http://127.0.0.1:{HTTP_PORT}\n")
-    sys.stderr.write(f"[claw-worker]   REST endpoints: {len(_REST_ROUTES)} routes (GET /health, POST /recall, ...)\n")
-    sys.stderr.write(f"[claw-worker]   API index: curl http://127.0.0.1:{HTTP_PORT}/\n")
+    sys.stderr.write(f"[claw-worker] HTTP TCP (serial) on http://127.0.0.1:{HTTP_PORT}\n")
 
     while not _shutdown_flag:
         events = sel.select(timeout=0.5)

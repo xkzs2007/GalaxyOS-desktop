@@ -32,14 +32,36 @@ from collections import OrderedDict
 logger = logging.getLogger(__name__)
 
 PIL_WORKER_SCRIPT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "pil_worker.py")
-# Rust 原生扩展（更快，无 GIL）
-_RUST_BINARY = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)),
-    "..", "..", "native", "target", "release", "galaxyos-native"
-)
-_USE_RUST = os.path.exists(_RUST_BINARY)
+
+# Rust 原生扩展（更快，无 GIL）— 多路径搜索
+def _find_rust_binary():
+    """按优先级搜索 galaxyos-native 二进制"""
+    _ENGINE_DIR = os.path.dirname(os.path.abspath(__file__))
+    _GALAXYOS_DIR = os.path.dirname(_ENGINE_DIR)
+    _REPO_ROOT = os.path.dirname(_GALAXYOS_DIR)
+    candidates = [
+        # 1. 与 pil_worker 同目录（部署目录）
+        os.path.join(_ENGINE_DIR, "galaxyos-native"),
+        # 2. extensions/galaxyos/native 构建产物
+        os.path.join(_REPO_ROOT, "extensions", "galaxyos", "native", "target", "release", "galaxyos-native"),
+        # 3. 仓库根 native/ (Makefile 复制目标)
+        os.path.join(_REPO_ROOT, "native", "target", "release", "galaxyos-native"),
+        # 4. $HOME/.cargo/bin (通过 cargo install 安装)
+        os.path.expanduser("~/.cargo/bin/galaxyos-native"),
+        # 5. 系统 PATH
+        "galaxyos-native",
+    ]
+    for p in candidates:
+        if os.path.exists(p):
+            return p
+    return None
+
+_RUST_BINARY = _find_rust_binary()
+_USE_RUST = _RUST_BINARY is not None
 if _USE_RUST:
     logger.info(f"[fast-pil] using Rust native extension: {_RUST_BINARY}")
+else:
+    logger.info("[fast-pil] Rust native extension not found, using Python pil_worker (PIL)")
 PIL_TIMEOUT = 8.0  # 单操作超时
 
 
