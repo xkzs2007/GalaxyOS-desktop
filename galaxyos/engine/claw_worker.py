@@ -3,9 +3,9 @@
 claw_worker — 小艺 Claw 常驻 Python Worker 进程
 
 三通道 JSON-RPC 2.0:
-  1. UDS socket:   ~/.openclaw/extensions/claw-core/var/claw-worker.sock (主通道)
+  1. UDS socket:   ~/.openclaw/extensions/galaxyos/var/claw-worker.sock (主通道, fallback: claw-core/var)
   2. ZMQ PUB:      tcp://127.0.0.1:5559 (事件推送)
-  3. Shared mmap:  ~/.openclaw/extensions/claw-core/var/claw_worker_mmap (缓存快读)
+  3. Shared mmap:  ~/.openclaw/extensions/galaxyos/var/claw_worker_mmap (缓存快读, fallback: claw-core/var)
   4. Fallback:     stdin/stdout (兼容旧版 Plugin)
 
 Request:  {"id":1, "method":"<name>", "params":{...}}
@@ -84,7 +84,7 @@ def _ensure_retrieval_hub():
     if _RETRIEVAL_HUB_IMPORTED:
         return True
     try:
-        sys.path.insert(0, os.path.expanduser("~/.openclaw/extensions/claw-core/dist/scripts"))
+        sys.path.insert(0, os.path.join(_OPENCLAW_HOME, "extensions", "galaxyos", "dist", "scripts"))
         from retrieval_hub import _get_hnsw_mn, _update_session_history
         global _MN_HNSW, _UPDATE_SESSION
         _MN_HNSW = _get_hnsw_mn()
@@ -115,29 +115,40 @@ def _push_to_session_index(session_node: dict):
         pass
 
 # ========== 三通道路径 ==========
-UDS_PATH = os.path.join(
-    os.path.expanduser("~/.openclaw/extensions/claw-core/var"),
-    "claw-worker.sock"
-)
+# v7.0: 统一使用 galaxyos/var/ 路径（claw-core/var 仅作为 fallback）
+_OPENCLAW_HOME = os.path.expanduser(
+    os.environ.get("OPENCLAW_HOME", "~/.openclaw"))
+_GALAXYOS_VAR = os.path.join(_OPENCLAW_HOME, "extensions", "galaxyos", "var")
+_CLAW_CORE_VAR = os.path.join(_OPENCLAW_HOME, "extensions", "claw-core", "var")
+
+def _resolve_var_path(subpath, mkdirs=True):
+    """解析 var 路径：优先 galaxyos/var，fallback claw-core/var"""
+    primary = os.path.join(_GALAXYOS_VAR, subpath)
+    fallback = os.path.join(_CLAW_CORE_VAR, subpath)
+    if os.path.isdir(os.path.dirname(primary)):
+        return primary
+    if mkdirs:
+        try:
+            os.makedirs(os.path.dirname(primary), exist_ok=True)
+            return primary
+        except Exception:
+            pass
+    if os.path.isdir(os.path.dirname(fallback)):
+        return fallback
+    # 最后尝试：创建 galaxyos/var/
+    return primary
+
+UDS_PATH = _resolve_var_path("claw-worker.sock")
 ZMQ_PUB_PORT = 5559
-MMAP_PATH = os.path.join(
-    os.path.expanduser("~/.openclaw/extensions/claw-core/var"),
-    "claw_worker_mmap"
-)
+MMAP_PATH = _resolve_var_path("claw_worker_mmap")
 
 # 心跳专用 mmap（独立文件，插件只读 8 字节时间戳 float64，不跟 GIL 抢锁）
-HB_PATH = os.path.join(
-    os.path.expanduser("~/.openclaw/extensions/claw-core/var"),
-    "claw_worker_heartbeat"
-)
+HB_PATH = _resolve_var_path("claw_worker_heartbeat")
 _zmq_pub = None  # ZMQ socket (optional)
 
 # ========== Gateway UDS 代理（Worker → Gateway 透明 RPC） ==========
-_GATEWAY_UDS_PATH = os.path.join(
-    os.path.expanduser("~/.openclaw/extensions/claw-core/var"),
-    "claw-gateway.sock"
-)
-_MMAP_SHM_PATH = os.path.expanduser("~/.openclaw/extensions/claw-core/var/claw_shared_state")
+_GATEWAY_UDS_PATH = _resolve_var_path("claw-gateway.sock")
+_MMAP_SHM_PATH = _resolve_var_path("claw_shared_state")
 _MMAP_SHM_SIZE = 4096
 
 class _GatewayProxy:

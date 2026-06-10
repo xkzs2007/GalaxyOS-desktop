@@ -1,5 +1,21 @@
 import sys, os, struct, json, tempfile, time as _t
 
+def _resolve_rci_mmap():
+    """解析 RCI shared state mmap 路径：优先 galaxyos/var"""
+    _home = os.path.expanduser(os.environ.get("OPENCLAW_HOME", "~/.openclaw"))
+    primary = os.path.join(_home, "extensions", "galaxyos", "var", "rci_shared_state")
+    fallback = os.path.join(_home, "extensions", "claw-core", "var", "rci_shared_state")
+    if os.path.isdir(os.path.dirname(primary)):
+        return primary
+    try:
+        os.makedirs(os.path.dirname(primary), exist_ok=True)
+        return primary
+    except Exception:
+        pass
+    if os.path.isdir(os.path.dirname(fallback)):
+        return fallback
+    return primary
+
 def _rci_async_criticism(self, state):
     sys.stderr.write("[rci-bg] THREAD STARTED\n")
     sys.stderr.flush()
@@ -11,7 +27,7 @@ def _rci_async_criticism(self, state):
         "final_action": "pass",
         "final_answer": (getattr(state, 'generated_answer', '') or '')[:200],
     }
-    _rci_mmap = os.path.expanduser("~/.openclaw/extensions/claw-core/var/rci_shared_state")
+    _rci_mmap = _resolve_rci_mmap()
     _raw = json.dumps(_rci_results, ensure_ascii=False).encode("utf-8")
     try:
         with tempfile.NamedTemporaryFile(dir=os.path.dirname(_rci_mmap), delete=False, suffix=".tmp") as _tmpf:

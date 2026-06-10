@@ -35,11 +35,18 @@ PIL_WORKER_SCRIPT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "pi
 
 # ── Rust 原生扩展检测（3 级优先级） ──
 # 1. PyO3 编译的 Python 扩展（最优：零序列化开销，直接内存共享）
+#    也支持 embedded pure-Python shim 作为 fallback
 _try_galaxyos_native_module = None
 try:
+    # 确保 embedded shim 路径可被 import 发现
+    _scripts_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+                               "extensions", "galaxyos", "scripts")
+    if _scripts_dir not in sys.path:
+        sys.path.insert(0, _scripts_dir)
     import galaxyos_native
     _try_galaxyos_native_module = galaxyos_native
-    logger.info(f"[fast-pil] using PyO3 native module galaxyos_native v{getattr(galaxyos_native, '__version__', '?')}")
+    _backend_label = "shim (pure-Python)" if getattr(galaxyos_native, '_BACKEND', 'rust') == 'python' else "PyO3 (Rust)"
+    logger.info(f"[fast-pil] using {_backend_label} galaxyos_native v{getattr(galaxyos_native, '__version__', '?')}")
 except ImportError:
     pass
 

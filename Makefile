@@ -1,14 +1,14 @@
 # GalaxyOS — 开发命令速查
 # make all | make test | make coverage | make lint | make clean | make sync | make native
 
-.PHONY: all install test coverage lint clean install deps sync sync-dist bench native native-py
+.PHONY: all install test coverage lint clean install deps sync sync-dist bench native native-py native-libs
 
 PYTHON := python3
 VENV := .venv
 PIP := $(VENV)/bin/pip
 PYTEST := $(VENV)/bin/pytest
 
-# ═══ 一键构建：Python deps + Rust native + PyO3 ═══
+# ═══ 一键构建：Python deps + (Rust native + PyO3) 或 pre-built libs ═══
 all: install native native-py
 	@echo "✅ GalaxyOS full build complete (Python + Rust native + PyO3)"
 
@@ -16,12 +16,13 @@ install: $(VENV)
 	$(PIP) install --upgrade pip
 	$(PIP) install -r requirements.txt
 	$(PIP) install pytest pytest-cov ruff mypy
-	@# 自动编译 Rust（有 cargo 就编译，无 cargo 跳过）
+	@# 优先编译 Rust；无 cargo 则从 libs/ 解包预编译版本
 	@if command -v cargo >/dev/null 2>&1; then \
 		$(MAKE) native; \
 		$(MAKE) native-py; \
 	else \
-		echo "⏭ cargo not found, skipping Rust native (run 'make native' after installing Rust)"; \
+		echo "⏭ cargo not found — extracting pre-built libs/ instead"; \
+		$(MAKE) native-libs; \
 	fi
 
 $(VENV):
@@ -79,10 +80,15 @@ bench:
 	$(PYTHON) tests/cognitive_ablation.py
 
 # ── native: 编译 Rust 原生扩展（二进制）──
+#    使用 native/.cargo/config.toml 中的 rsproxy 镜像源
 native:
 	@echo "🦀 Building GalaxyOS native extension..."
 	@if [ ! -d extensions/galaxyos/native ]; then \
 		echo "❌ extensions/galaxyos/native not found"; \
+		exit 1; \
+	fi
+	@if ! command -v cargo >/dev/null 2>&1; then \
+		echo "❌ cargo not found — run: make rustup-cn"; \
 		exit 1; \
 	fi
 	cd extensions/galaxyos/native && cargo build --release
@@ -95,11 +101,60 @@ native:
 	@echo "✅ Copied to native/target/release/ + extensions/galaxyos/scripts/"
 
 # ── native-py: 编译 PyO3 Python 扩展（pip 安装后直接 import galaxyos_native）──
+#    使用 native/.cargo/config.toml 中的 rsproxy 镜像源
 native-py:
 	@echo "🦀 Building PyO3 Python extension..."
+	@if ! command -v cargo >/dev/null 2>&1; then \
+		echo "❌ cargo not found — run: make rustup-cn"; \
+		exit 1; \
+	fi
 	@if ! command -v maturin >/dev/null 2>&1; then \
 		echo "📦 Installing maturin..."; \
 		pip install maturin; \
 	fi
 	cd extensions/galaxyos/native && maturin develop --release
 	@echo "✅ PyO3 extension installed — Python can now: import galaxyos_native"
+
+# ── rustup-cn: 一键安装 Rust 工具链（国内镜像加速）──
+rustup-cn:
+	@echo "🦀 Installing Rust via Chinese mirrors..."
+	@if command -v cargo >/dev/null 2>&1; then \
+		echo "✅ Rust already installed: $$(rustc --version)"; \
+	else \
+		echo "  → Downloading rustup-init from TUNA mirror..."; \
+		curl --proto '=https' --tlsv1.2 -sSf https://mirrors.tuna.tsinghua.edu.cn/rustup/rustup/archive/1.28.1/x86_64-unknown-linux-gnu/rustup-init -o /tmp/rustup-init; \
+		chmod +x /tmp/rustup-init; \
+		RUSTUP_DIST_SERVER=https://mirrors.tuna.tsinghua.edu.cn/rustup \
+		RUSTUP_UPDATE_ROOT=https://mirrors.tuna.tsinghua.edu.cn/rustup/rustup \
+		/tmp/rustup-init -y --default-toolchain stable; \
+		rm -f /tmp/rustup-init; \
+		echo "  → Rust installed: $$($$HOME/.cargo/bin/rustc --version)"; \
+		echo "  → Run: source $$HOME/.cargo/env"; \
+	fi
+	@echo "✅ Cargo mirror configured: extensions/galaxyos/native/.cargo/config.toml → rsproxy.cn"
+
+# ── native-libs: 从 libs/ 解包安装预编译扩展（无 cargo 时的 fallback）──
+#    当 Rust 不可用时，使用 libs/ 中的预编译包：
+#    - hnswlib-*.tar.gz  → 原生向量检索 .so
+#    - galaxyos_native-*.tar.gz → 图像/向量计算（纯 Python shim 或编译 .so）
+#    - mkl-core-*.tar.gz / tbb-*.tar.gz → Intel 数学库（提取到 openclaw 扩展目录）
+native-libs:
+	@echo "📦 Extracting pre-built native libs..."
+	@mkdir -p $(VENV)/lib/python3.12/site-packages/galaxyos_native
+	@for f in libs/galaxyos_native-*.tar.gz; do \
+		if [ -f "$$f" ]; then \
+			echo "  → $$f"; \
+			tar xzf "$$f" -C $(VENV)/lib/python3.12/site-packages/; \
+		fi; \
+	done
+	@# hnswlib: 向量检索加速
+	@for f in libs/hnswlib-*.tar.gz; do \
+		if [ -f "$$f" ]; then \
+			echo "  → $$f"; \
+			tar xzf "$$f" -C $(VENV)/lib/python3.12/site-packages/; \
+		fi; \
+	done
+	@# 同步到 extensions/galaxyos/scripts/ 供 JS 端 import
+	@mkdir -p extensions/galaxyos/scripts
+	@cp $(VENV)/lib/python3.12/site-packages/galaxyos_native/__init__.py extensions/galaxyos/scripts/galaxyos_native.py 2>/dev/null || true
+	@echo "✅ Pre-built libs installed — import galaxyos_native ready"

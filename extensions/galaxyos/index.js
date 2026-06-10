@@ -27,14 +27,29 @@ const PIL_WORKER_SCRIPT = path.join(__dirname, "scripts", "pil_worker.py");
 
 // Rust 原生扩展 — 三级检测
 // 1. PyO3 Python 模块（最优：零序列化，直接 import）
+//    支持：编译的 .so 扩展 或 embedded pure-Python shim（galaxyos_native.py）
 let _pyo3Native = false;
+let _pyo3Shim = false;  // true if using pure-Python shim (no Rust)
 try {
+    const pyEnv = { ...process.env };
+    // 确保 scripts/ 在 PYTHONPATH 中以发现 embedded galaxyos_native.py
+    const scriptsDir = path.join(__dirname, "scripts");
+    pyEnv.PYTHONPATH = [scriptsDir, pyEnv.PYTHONPATH].filter(Boolean).join(":");
     const r = spawnSync(_pythonBin, ["-c", "import galaxyos_native; print(galaxyos_native.__version__)"], {
-        encoding: "utf-8", timeout: 5000, stdio: ["pipe", "pipe", "ignore"]
+        encoding: "utf-8", timeout: 5000, stdio: ["pipe", "pipe", "ignore"],
+        env: pyEnv,
     });
     if (r.status === 0 && r.stdout?.trim()) {
         _pyo3Native = true;
-        process.stderr.write(`[galaxyos] PyO3 galaxyos_native v${r.stdout.trim()} detected (zero-copy)\n`);
+        // 检测是否为 embedded pure-Python shim（检查 _BACKEND 属性）
+        try {
+            const r2 = spawnSync(_pythonBin, ["-c", "import galaxyos_native; print(getattr(galaxyos_native, '_BACKEND', 'rust'))"], {
+                encoding: "utf-8", timeout: 3000, stdio: ["pipe", "pipe", "ignore"],
+                env: pyEnv,
+            });
+            _pyo3Shim = (r2.stdout?.trim() || "rust") === "python";
+        } catch {}
+        process.stderr.write(`[galaxyos] galaxyos_native v${r.stdout.trim()} detected${_pyo3Shim ? ' (pure-Python shim)' : ' (Rust/PyO3)'}\n`);
     }
 } catch {}
 // 2. 独立二进制（stdin/stdout JSON-RPC）
@@ -265,13 +280,14 @@ function _getWorkerAgent(workerId) {
 }
 
 // ======== Python Worker mmap 读取（大 payload 解引用）========
+// v7.0: galaxyos/var 为主路径，claw-core/var 为 fallback
 const WORKER_MMAP_PATH = path.join(
     process.env.HOME || "/home/sandbox",
-    ".openclaw/extensions/claw-core/var/claw_worker_mmap"
+    ".openclaw/extensions/galaxyos/var/claw_worker_mmap"
 );
 const WORKER_MMAP_BACKCOMPAT = path.join(
     process.env.HOME || "/home/sandbox",
-    ".openclaw/extensions/galaxyos/var/claw_worker_mmap"
+    ".openclaw/extensions/claw-core/var/claw_worker_mmap"
 );
 function _readWorkerMmap(key) {
     // 读取 Python Worker 写的 mmap（4 字节大端长度前缀 + JSON）
@@ -1656,7 +1672,7 @@ export default function register(api) {
 
     // 原生扩展状态报告
     if (_pyo3Native) {
-        api.logger.info?.(`${TAG} Rust native: PyO3 module (galaxyos_native) — zero-copy, no GIL`);
+        api.logger.info?.(`${TAG} galaxyos_native: ${_pyo3Shim ? 'pure-Python shim (PIL/numpy)' : 'Rust/PyO3 compiled — zero-copy, no GIL'}`);
     } else if (_nativeBinary) {
         api.logger.info?.(`${TAG} Rust native: subprocess binary (${_nativeBinary})`);
     } else {
@@ -1704,7 +1720,15 @@ export default function register(api) {
         _galaxyPool._reg('native_binary', {
             start: () => { const ok = _ensureNativeProc(); return { _nativeProc: ok ? _nativeProc : null }; },
             stop:  () => _stopNativeProc(),
-            health: () => { try { return _nativeProc && !_nativeProc.killed && _nativeProc.exitCode === null ? { ok: true } : { ok: false, error: 'native proc dead' }; } catch (e) { return { ok: false, error: 'native dead' }; } },
+            health: () => {
+                try {
+                    if (_pyo3Native) return { ok: true };
+                    if (!_nativeBinary) return { ok: false, error: 'binary not found' };
+                    return _nativeProc && !_nativeProc.killed && _nativeProc.exitCode === null
+                        ? { ok: true }
+                        : { ok: false, error: 'native proc dead' };
+                } catch (e) { return { ok: false, error: 'native dead' }; }
+            },
         });
 
         // 4. Gateway heartbeat（独立 mmap 心跳文件）

@@ -80,8 +80,8 @@ GALAXYOS_EXT_VAR  = GALAXYOS_EXT_DIR / "var"
 # claw-core (deprecated backward compat)
 CLAW_CORE_DIST    = GALAXYOS_ENGINE
 CLAW_CORE_VAR     = EXTENSIONS_DIR / "claw-core" / "var"
-CLAW_SHARED_STATE = CLAW_CORE_VAR / "claw_shared_state"
-RCI_SHARED_STATE  = CLAW_CORE_VAR / "rci_shared_state"
+CLAW_SHARED_STATE = GALAXYOS_EXT_VAR / "claw_shared_state"    # v7.0: galaxyos/var 优先
+RCI_SHARED_STATE  = GALAXYOS_EXT_VAR / "rci_shared_state"      # v7.0: galaxyos/var 优先
 
 # ── Scripts ─────────────────────────────────────────────────────────────
 SCRIPTS_DIR       = OPENCLAW_HOME / "scripts"

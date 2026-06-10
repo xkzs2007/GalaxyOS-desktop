@@ -1,0 +1,30 @@
+# ═══════════════════════════════════════════════════════════════
+# GalaxyOS Rust 编译镜像源 — 国内加速
+#
+# 默认使用字节跳动 rsproxy（延迟最低）,
+# 备选清华 TUNA / 中科大 USTC / 上海交大 SJTUG.
+#
+# 运行 `make native` 或 `make native-py` 时 cargo 自动
+# 从这里拉取依赖和 git index, 无需手动改 ~/.cargo/config.
+# ═══════════════════════════════════════════════════════════════
+
+[source.crates-io]
+replace-with = 'rsproxy'
+
+[source.rsproxy]
+registry = "https://rsproxy.cn/crates.io-index"
+
+# ── 备选镜像源（取消注释即可切换）────
+# [source.tuna]
+# registry = "https://mirrors.tuna.tsinghua.edu.cn/git/crates.io-index.git"
+#
+# [source.ustc]
+# registry = "https://mirrors.ustc.edu.cn/crates.io-index"
+#
+# [source.sjtug]
+# registry = "https://mirrors.sjtug.sjtu.edu.cn/git/crates.io-index.git"
+
+# ── Rustup 镜像提示（首次安装 rustup 时设置）────
+# 装完 rustup 后可选运行:
+#   export RUSTUP_DIST_SERVER=https://mirrors.tuna.tsinghua.edu.cn/rustup
+#   rustup install stable

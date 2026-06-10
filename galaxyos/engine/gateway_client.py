@@ -13,15 +13,29 @@ import threading
 import os
 import http.client as http_client
 
-_GATEWAY_UDS = os.path.join(
-    os.path.expanduser("~/.openclaw/extensions/claw-core/var"),
-    "claw-gateway.sock"
-)
+# ── 统一 var 路径解析（v7.0: galaxyos 优先，claw-core fallback）────
+_OPENCLAW_HOME = os.path.expanduser(
+    os.environ.get("OPENCLAW_HOME", "~/.openclaw"))
+_GALAXYOS_VAR = os.path.join(_OPENCLAW_HOME, "extensions", "galaxyos", "var")
+_CLAW_CORE_VAR = os.path.join(_OPENCLAW_HOME, "extensions", "claw-core", "var")
+
+def _resolve_var_path(subpath):
+    primary = os.path.join(_GALAXYOS_VAR, subpath)
+    fallback = os.path.join(_CLAW_CORE_VAR, subpath)
+    if os.path.isdir(os.path.dirname(primary)):
+        return primary
+    try:
+        os.makedirs(os.path.dirname(primary), exist_ok=True)
+        return primary
+    except Exception:
+        pass
+    if os.path.isdir(os.path.dirname(fallback)):
+        return fallback
+    return primary
+
+_GATEWAY_UDS = _resolve_var_path("claw-gateway.sock")
 _GATEWAY_ZMQ_DEALER = "tcp://127.0.0.1:5560"
-_GATEWAY_MMAP = os.path.join(
-    os.path.expanduser("~/.openclaw/extensions/claw-core/var"),
-    "claw_mmap_control"
-)
+_GATEWAY_MMAP = _resolve_var_path("claw_mmap_control")
 
 _zmq_dealer = None
 _zmq_lock = threading.Lock()

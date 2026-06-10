@@ -17,6 +17,27 @@ import uuid
 import re
 import threading as _th_mod
 
+# ── 统一 var 路径解析（v7.0: galaxyos 优先，claw-core fallback）────
+_OPENCLAW_HOME_API = os.path.expanduser(
+    os.environ.get("OPENCLAW_HOME", "~/.openclaw"))
+_GALAXYOS_VAR_API = os.path.join(_OPENCLAW_HOME_API, "extensions", "galaxyos", "var")
+_CLAW_CORE_VAR_API = os.path.join(_OPENCLAW_HOME_API, "extensions", "claw-core", "var")
+
+def _resolve_rci_mmap():
+    """解析 RCI shared state mmap 路径：优先 galaxyos/var"""
+    primary = os.path.join(_GALAXYOS_VAR_API, "rci_shared_state")
+    fallback = os.path.join(_CLAW_CORE_VAR_API, "rci_shared_state")
+    if os.path.isdir(os.path.dirname(primary)):
+        return primary
+    try:
+        os.makedirs(os.path.dirname(primary), exist_ok=True)
+        return primary
+    except Exception:
+        pass
+    if os.path.isdir(os.path.dirname(fallback)):
+        return fallback
+    return primary
+
 logger = logging.getLogger(__name__)
 
 # ── 工作区路径(确保整个模块统一可访问)─────────────────────────
@@ -733,7 +754,7 @@ class XiaoYiClawLLM:
 
     def _rci_publish(self, results: dict):
         """RCI 三通道发布: ThreadPool -> mmap + ZMQ 异步"""
-        _RCI_MMAP = os.path.expanduser("~/.openclaw/extensions/claw-core/var/rci_shared_state")
+        _RCI_MMAP = _resolve_rci_mmap()
         try:
             import struct as _s, tempfile as _tf
             _raw = json.dumps(results, ensure_ascii=False).encode("utf-8")
@@ -4572,7 +4593,7 @@ def _rci_async_criticism(self, state):
         "final_action": getattr(state, 'consistency_action', 'pass'),
         "final_answer": (getattr(state, 'generated_answer', '') or '')[:500],
     }
-    _rci_mmap = _os.path.expanduser("~/.openclaw/extensions/claw-core/var/rci_shared_state")
+    _rci_mmap = _resolve_rci_mmap()
     try:
         _raw = _j.dumps(_rci_results, ensure_ascii=False).encode("utf-8")
         with _tf.NamedTemporaryFile(dir=_os.path.dirname(_rci_mmap), delete=False, suffix=".tmp") as _tmpf:
