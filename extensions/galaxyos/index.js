@@ -1259,6 +1259,11 @@ export default function register(api) {
     if (workerEnabled) {
         const _connectOrSpawn = () => {
             const w = getWorker(ws);
+            // WorkerPool 模式返回裸对象(无 start),池初始化即就绪
+            if (typeof w.start !== 'function') {
+                api.logger.info?.(`${TAG} Worker pool ready (auto-managed)`);
+                return;
+            }
             w.start().then(() => {
                 api.logger.info?.(`${TAG} Worker ready (UDS or spawned)`);
                 w._fails = 0;
