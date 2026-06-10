@@ -53,8 +53,8 @@ GalaxyOS是 OpenClaw 的**核心底层能力引擎**，提供：
                                     │
                                     ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                      GalaxyOS v6.0 — 神经检索全链路: retrieval_hub → neural_rerank → ContextEngine assemble        │
-│                         (核心底层能力引擎 · 16层)                            │
+│                      GalaxyOS v7.2 — GalaxyPool统一管理 + 负载感知调度 + 通信增强 + 神经网络修复 + 路径清零        │
+│                         (核心底层能力引擎 · 17层)                            │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
 │  ┌─────────────────────────────────────────────────────────────────────┐   │
@@ -662,6 +662,50 @@ claw.rccam_cycle("用户输入", max_cycles=1)
 | 思考内容截断 | **500→2000** | 2026-06-02 |
 | DAG 上下文排序 | **时间衰减权重重排序** | 2026-06-02 |
 | install_wizard.py | **6 阶段全自动自检 + `--kg-test` 专项测试** | 2026-06-02 |
+
+### v7.2 (2026-06-10) — GalaxyPool 统一管理 + 负载感知调度 + 通信增强 + 神经网络全量修复 + 硬编码路径清零
+
+- ⭐ **GalaxyPool 统一管理** — 6 类组件 (mmap/gateway/zmq/native/heartbeat/workers) 单入口 start/stop + 拓扑排序 + 统一健康检查 + 电路断路器
+- ⭐ **负载感知调度** — WorkerPool 按 fail count + latency + recency 三维评分选择最优 Worker
+- ⭐ **批量 RPC** — 一次 HTTP 请求执行多个方法调用，减少 round-trip
+- ⭐ **R-CCAM 会话互斥** — 同一 sessionKey 5 分钟内不重复提交，防止 Worker 抢占
+- ⭐ **R-CCAM 流式进度** — ZMQ 实时推送 phase 变化 → Agent 可查询 claw_rccam_progress
+- ⭐ **mmap 大 payload 路由** — result >50KB 自动走 mmap + ZMQ 通知，UDS 只回引用
+- ⭐ **Rust PyO3 桥梁** — VectorAPI + VectorStore 优先走 galaxyos_native (GIL-free SIMD)
+- ⭐ **Rust 自动编译** — make all 一键编译 + JS 启动时 auto cargo build
+- ⭐ **神经网络全量修复** — ONNX 路径自发现 + 5 个 services shim + 6 类模型验证通过 (31 神经元 + 25 突触)
+- ⭐ **CLI-Anything 插件** — 7 工具 (shell_run/git/make/test/file) Agent 自运维
+- ⭐ **硬编码路径清零** — 10 处 `/home/sandbox` → `OPENCLAW_WORKSPACE` / `os.path.expanduser`
+- ⭐ **安装向导修复** — 补 sqlite3 import + KG 检查恢复正常
+- 📊 **统计数据更新**：总能力项 470+，新增 v7.2 12 项指标
+
+### v7.1 (2026-06-10) — RLM 递归环境 + SKILL0 技能课程 + MemoryOS 记忆操作系统 + 10+1 论文集成 + GalaxyOS 插件
+
+- ⭐ **RLM 递归环境 (arXiv:2512.24601)** — `rlm_env.py`，安全沙箱，模型写 Python 递归处理超长 prompt
+- ⭐ **SKILL0 技能课程 (arXiv:2604.02268)** — `skill_curriculum.py`，47 技能 5 阶段逐步内化
+- ⭐ **MemoryOS 记忆操作系统 (arXiv:2506.06326)** — `memory_os.py`，热度跟踪 + 分段管理
+- ⭐ **10+1 论文集成层** — `paper_integration.py`，12 模块预加载到 R-CCAM 各阶段
+- ⭐ **四论文管线** — `four_advancements.py`，RAPTOR + GraphRAG + Generative Agents + Toolformer
+- ⭐ **GalaxyOS OpenClaw 插件注册** — 11 个 UDS 工具 + ContextEngine 接管 ingest/compact
+- 📊 **统计数据更新**：总能力项 460+，新增 v7.1 6 项指标
+
+### v7.0 (2026-06-09) — 统一包 galaxyos/ + WorkerPool 弹性 + PIL 隔离 + 熔断器 + Rust 扩展
+
+- ⭐ **统一包架构 galaxyos/** — 313 files 整合为单一 pip install galaxyos 入口
+- ⭐ **WorkerPool 弹性扩缩** — 2~8 Worker 自动扩缩 + 负载感知调度
+- ⭐ **PIL 子进程隔离** — 独立子进程图像处理 (Python/Rust/PyO3)，零 GIL 竞争
+- ⭐ **CircuitBreaker 断路器** — 故障检测 + 自动熔断 + 半开恢复
+- ⭐ **Rust 原生扩展** — galaxyos_native，make native 编译
+- ⭐ **知识编译引擎** — KnowledgeCompiler 多源碎片→聚类→合成→结构化 .md
+- ⭐ **MemGAS-SkVM 融合** — KnowledgeAsset 统一模型 + 四粒度提取 + Capability Registry + Skill Compiler
+- ⭐ **Titans 惊讶门控 + SSM 预测器** — RecallPatternPredictor + CompositePredictor 综合惊讶度
+- ⭐ **A2A DAG 消息总线** — DAGMessageBus send/poll/ack/broadcast/reply
+- ⭐ **CfC + GAT 全链路激活** — ONNX→GAT→CfC 完整推理，SparseGAT 300× 内存缩减
+- ⭐ **BlobArena per-session 隔离** — 全局单例→{session_id}/arena_X.blob 独立目录
+- ⭐ **session_key 全线穿透** — unified_entry/XiaoYiClawLLM/UnifiedVectorStore 支持跨会话隔离
+- ⭐ **UDS 并发去锁化** — threading.local() 每线程独立连接 + http.Agent 连接池
+- ⭐ **HTTP/JSON over UDS 全通道统一** — 原始 socket 二进制协议→HTTP over UDS
+- 📊 **统计数据更新**：总能力项 450+，新增 v7.0 15+ 项指标
 
 ### v6.0 (2026-06-06) — 神经检索全链路集成: neural_rerank → ContextEngine assemble + Galaxy Kernel 认知注入 + _content_type 上下文排序
 

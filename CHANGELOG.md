@@ -1,5 +1,23 @@
 # Changelog
 
+## [7.2.0] — 2026-06-10
+
+### Added
+- **GalaxyPool 统一管理** — 6 类组件 (mmap/gateway/zmq/native/heartbeat/workers) 单入口 start/stop + 拓扑排序 + 统一健康检查 + 电路断路器
+- **负载感知调度** — WorkerPool 按 fail count + latency + recency 三维评分选择最优 Worker
+- **批量 RPC** — 一次 HTTP 请求执行多个方法调用，减少 round-trip
+- **R-CCAM 会话互斥** — 同一 sessionKey 5 分钟内不重复提交，防止 Worker 抢占
+- **R-CCAM 流式进度** — ZMQ 实时推送 phase 变化
+- **mmap 大 payload 路由** — result >50KB 自动走 mmap + ZMQ 通知，UDS 只回引用
+- **Rust PyO3 桥梁** — VectorAPI + VectorStore 优先走 `galaxyos_native` (GIL-free SIMD)
+- **Rust 自动编译** — `make all` 一键编译 + JS 启动时 auto cargo build
+- **CLI-Anything 插件** — 7 工具 (shell_run/git/make/test/file) Agent 自运维
+
+### Fixed
+- **神经网络全量修复** — ONNX 路径自发现 + 5 个 services shim + 6 类模型验证通过 (31 神经元 + 25 突触)
+- **硬编码路径清零** — 10 处 `/home/sandbox` → `OPENCLAW_WORKSPACE` / `os.path.expanduser`
+- **安装向导修复** — 补 `sqlite3` import + KG 检查恢复正常
+
 ## [7.1.0] — 2026-06-10
 
 ### Added

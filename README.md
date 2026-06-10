@@ -200,7 +200,7 @@ cp config/llm_config.example.json config/llm_config.json
 ### 作为 Python 库
 
 ```python
-from services.xiaoyi_claw_api import XiaoYiClawLLM
+from galaxyos.engine.xiaoyi_claw_api import XiaoYiClawLLM
 
 claw = XiaoYiClawLLM()
 
@@ -209,7 +209,7 @@ claw.remember("内容")           # → str (memory_id)
 results = claw.recall("查询关键词")  # → List[Dict]
 
 # R-CCAM 认知循环（含 Galaxy Kernel 后台处理）
-output = claw.process("用户输入")   # → str
+output = claw.rccam_cycle("用户输入")   # → str
 
 # 系统状态
 status = claw.health_check()    # → Dict
@@ -219,13 +219,13 @@ status = claw.health_check()    # → Dict
 
 ```bash
 # 健康检查
-python3 -m services.xiaoyi_claw_api health
+GALAXYOS_REPO=. python3 -m galaxyos.engine.unified_entry health
 
 # 存储记忆
-python3 -m services.xiaoyi_claw_api store --content "内容"
+GALAXYOS_REPO=. python3 -m galaxyos.engine.unified_entry store --content "内容"
 
 # 检索记忆
-python3 -m services.xiaoyi_claw_api recall --query "查询"
+GALAXYOS_REPO=. python3 -m galaxyos.engine.unified_entry recall --query "查询"
 ```
 
 ## 架构
@@ -234,7 +234,11 @@ python3 -m services.xiaoyi_claw_api recall --query "查询"
 
 | 版本 | 文件 | 说明 |
 |------|------|------|
-| **v6.3 (最新)** | — | **睡眠巩固(5阶段+CfC+GAT+LTP) + 对比学习预训练 + SparseGAT + MemGAS熵路由/GMM关联 + GAT→RRF融合** |
+| **v7.2 (最新)** | — | **GalaxyPool 统一管理 + 负载感知调度 + batch RPC + Rust PyO3 + 神经网络全量修复 + CLI-Anything** |
+| **v7.1** | — | **RLM 递归环境 + SKILL0 技能课程 + MemoryOS 记忆操作系统 + 10+1 论文集成 + GalaxyOS 插件** |
+| **v7.0** | — | **统一包 galaxyos/ + WorkerPool 弹性扩缩 + PIL 子进程隔离 + CircuitBreaker 断路器 + Rust 原生扩展** |
+| **v6.5** | — | **CfC+GAT 全链路激活 + BlobArena per-session + Titans 惊讶门控 + SSM 预测器 + A2A DAG 总线 + MemGAS-SkVM 融合** |
+| **v6.3** | — | **睡眠巩固(5阶段+CfC+GAT+LTP) + 对比学习预训练 + SparseGAT + MemGAS熵路由/GMM关联 + GAT→RRF融合** |
 | **v5.6** | — | **神经检索全链路集成: neural_rerank → ContextEngine assemble + Galaxy Kernel 认知注入 + _content_type 上下文排序** |
 | **v5.5** | `docs/xiaoyi-claw-core-architecture-v5.0.md` | **IntelligentThinkingTrigger v2.0** 三论文集成 + Cognition Forest 子树修正 |
 | **v5.4** | `docs/xiaoyi-claw-core-architecture-v5.0.md` | **KG as Memory Backbone 4 阶段** + 检索通道 + Cognition 图推理 + 睡眠图维护 |
@@ -248,7 +252,7 @@ python3 -m services.xiaoyi_claw_api recall --query "查询"
 | v3.1.0 | `docs/xiaoyi-claw-core-architecture-v3.1.0.md` | ContextEngine 注册、DAG 上下文中继 |
 | v3.0.0 | `docs/xiaoyi-claw-core-architecture-v3.0.0.md` | 16 层架构、R-CCAM 认知循环 |
 
-**完整架构文档（含 15 层全景图、470+ 功能列表、更新日志）：** 👉 [📖 查看 Skills 文档栏](https://cnb.cool/llm-memory-integrat/GalaxyOS?tabValue=SKILLS-ov-file)
+**完整架构文档（含 17 层全景图、470+ 功能列表、更新日志）：** 👉 [📖 查看 Skills 文档栏](https://cnb.cool/llm-memory-integrat/GalaxyOS?tabValue=SKILLS-ov-file)
 
 ### v7.2 新特性
 
@@ -309,25 +313,27 @@ Galaxy Kernel（后台，6s 轮询）
   ┗ 自进化（~50 轮 ≈ 10 分钟）
 ```
 
-### 架构概览（15 层）
+### 架构概览（17 层）
 
 | 层 | 名称 | 说明 |
 |----|------|------|
 | L1 | 记忆核心层 | 三层记忆 + 记忆巩固 + 情感驱动 + 艾宾浩斯遗忘曲线 + **ncps 神经突触网络 (LTC/CfC)** |
-| L2 | 上下文层 | DAG SQLite + 摘要回溯 + scene_trace + ContextEngine |
-| L3 | 检索增强层 | CRAG + GraphRAG + RAPTOR + Self-RAG + Merge Gate |
-| L4 | 防幻觉层 | 10 重交叉验证 + 多源证据 + 矛盾检测 + **LTP/LTD 神经元闭环** |
-| L5 | 知识图谱层 | 实体链接 + 关系抽取 + 三元组 + 时序KG (Graphiti) |
-| L6 | 智能处理层 | SmartProcessor (Flash/Pro/VLM) + Visual RAG |
-| L7 | 缓存优化层 | KV Cache 硬件磁盘复用 + 语义缓存 + ACP 持久化 |
-| L8 | 思考技能层 | **IntelligentThinkingTrigger v2.0** (RCR-Router + Springdrift + A-ToM) + 20方法论 + Reflexion + 10论文引擎 |
-| L9 | 认知循环层 (R-CCAM) | 五阶段循环 + Galaxy Kernel 异步 + 三层兜底注入 |
-| L10 | Persona 层 | 人格七重防线 + 自进化上下文注入 |
-| L11 | Agent 层 | 9 思考技能 + 11 方法论技能 + 技能协调器 |
-| L12 | 系统能力层 | IPC 三通道 + Worker 自动重启 + 硬件加速 |
-| L13 | 多模态层 | OCR2 自动触发 + Visual RAG + 图像理解 |
-| L14 | 安全护栏层 | Rails + AIGC 标记 + 脱敏 + 隐式偏好学习 |
-| L15 | 自进化层 | Galaxy Kernel 元认知 + 主动进化 + 静态固化 |
+| L2 | 检索增强层 | CRAG + GraphRAG + RAPTOR + Self-RAG + Merge Gate + **neural_rerank_dedup** |
+| L3 | 向量存储层 | 四级搜索降级链 (sqlite-vec/hnswlib/内置HNSW/numpy暴力) |
+| L4 | 统一路由层 | SmartProcessor (Flash/Pro/VLM) + R-CCAM 统一路由 |
+| L5 | 增强优化层 | 六大自适应模块 (防幻觉参数/CRAG阈值/RRF权重/思考触发/心跳/优化集成) |
+| L6 | 缓存优化层 | KV Cache 硬件磁盘复用 + 语义缓存 + ACP 持久化 |
+| L7 | 硬件优化层 | AVX-512/MKL/FMA3/NUMA 拓扑检测 |
+| L8 | 系统可靠性层 | 故障转移 + 自动恢复 + 弹性系统 (57组件) |
+| L9 | 会话管理层 | DAG ContextEngine + 上下文压缩 + 跨8层联动 |
+| L10 | Persona 层 | 人格七重防线 + 人格视觉 + 自进化上下文注入 |
+| L11 | NLP 能力层 | 中文分词/NER/依存句法/指代消解 + Flash NLP 路由 |
+| L12 | 思考技能层 | **IntelligentThinkingTrigger v2.0** (RCR-Router + Springdrift + A-ToM) + 20方法论 + Reflexion + 10论文引擎 |
+| L13 | 多模态层 | OCR2 自动触发 + Visual RAG + VLM 三引擎图像理解 |
+| L14 | 工作流+R-CCAM层 | 44工作流 + R-CCAM 五阶段循环 + Galaxy Kernel 后台 (6s轮询) |
+| L15 | 统一入口层 | CLI入口 + Rails护栏 + API接口 + ACP通道 |
+| L16 | 自进化层 | Galaxy Kernel 元认知 + 主动进化 + 隐式偏好学习 + 静态固化 |
+| L17 | GalaxyPool 弹性层 | 6类组件统一管理 + WorkerPool 负载感知调度 + CircuitBreaker + batch RPC + mmap大payload |
 
 ## 生态
 
