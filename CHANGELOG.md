@@ -1,5 +1,19 @@
 # Changelog
 
+## [7.1.0] — 2026-06-10
+
+### Added
+- **RLM REPL 环境 (arXiv:2512.24601)** — `rlm_env.py`，安全沙箱，模型写 Python 递归处理超长 prompt
+- **SKILL0 技能课程 (arXiv:2604.02268)** — `skill_curriculum.py`，47 技能 5 阶段逐步内化
+- **MemoryOS 记忆操作系统 (arXiv:2506.06326)** — `memory_os.py`，热度跟踪 + 分段管理
+- **10+1 论文集成层** — `paper_integration.py`，12 模块预加载到 R-CCAM 各阶段
+- **四论文管线** — `four_advancements.py`，RAPTOR + GraphRAG + Generative Agents + Toolformer
+- **GalaxyOS OpenClaw 插件** — 11 个 UDS 工具 + ContextEngine 接管 ingest/compact
+
+### Fixed
+- **RLM 递归参数**: `_rlm_func` 签名修正，支持 `rlm(name, sub_prompt)` 调用
+- **路由决策默认值**: `decide_routing` 的 `is_followup` 添加默认值 `False`
+
 ## [6.6.0] — 2026-06-09
 
 ### Added

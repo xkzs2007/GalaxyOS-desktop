@@ -170,12 +170,16 @@ class RLMEnvironment:
         end = max(start, min(end, self.prompt_len))
         return self.prompt[start:end]
     
-    def _rlm_func(self, sub_prompt: str) -> str:
-        """递归调用 — 返回处理结果"""
-        # 默认实现：存为变量等上层处理
+    def _rlm_func(self, name: str, sub_prompt: str) -> str:
+        """递归调用 — 按 name 查找回调，处理子 prompt"""
+        if name in self._callbacks:
+            # 有注册的回调，调用它
+            result = self._callbacks[name](sub_prompt)
+            return json.dumps({"ok": True, "result": str(result), "len": len(sub_prompt)})
+        # 默认：存为变量
         key = f"_rlm_seg_{self._exec_count}_{int(time.time() * 1000) % 10000}"
         self._variables[key] = sub_prompt
-        return json.dumps({"stored_as": key, "len": len(sub_prompt)})
+        return json.dumps({"ok": True, "stored_as": key, "len": len(sub_prompt)})
     
     def get_var(self, name: str, default=None):
         return self._variables.get(name, default)

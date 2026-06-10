@@ -1,7 +1,7 @@
 # 🌌 GalaxyOS — 认知增强引擎
 
 > OpenClaw 的开源认知增强引擎，为 AI Assistant 提供记忆、检索、推理、验证、自进化等全套认知能力
-> 版本: v7.0 · 统一包 galaxyos/ + WorkerPool 弹性扩缩 + PIL 独立子进程 + Rust 原生扩展
+> 版本: v7.1 · 三论文集成（RLM+SKILL0+MemoryOS）+ 10+1 论文引擎 + RLM REPL 沙箱
 
 ## 总览
 
@@ -249,6 +249,17 @@ python3 -m services.xiaoyi_claw_api recall --query "查询"
 | v3.0.0 | `docs/xiaoyi-claw-core-architecture-v3.0.0.md` | 16 层架构、R-CCAM 认知循环 |
 
 **完整架构文档（含 15 层全景图、470+ 功能列表、更新日志）：** 👉 [📖 查看 Skills 文档栏](https://cnb.cool/llm-memory-integrat/GalaxyOS?tabValue=SKILLS-ov-file)
+
+### v7.1 新特性
+
+| 特性 | 说明 |
+|------|------|
+| **RLM 递归环境 (2512.24601)** | `rlm_env.py` — REPL 沙箱，模型写 Python 递归处理超长 prompt，安全受限环境 |
+| **SKILL0 技能课程 (2604.02268)** | `skill_curriculum.py` — 47 技能分 5 阶段逐步内化，训练时注入、推理时零开销 |
+| **MemoryOS 记忆操作系统 (2506.06326)** | `memory_os.py` — HeatTracker 热度跟踪 + SegmentedPageOrganizer 分段管理 |
+| **10+1 论文集成层** | `paper_integration.py` — 预加载 12 模块（语义熵/因果推理/情感/路由/认知负荷/记忆修正/时序KG/认知地图/空间拓扑） |
+| **四论文管线** | `four_advancements.py` — RAPTOR 摘要树 + GraphRAG 社区检测 + Generative Agents 反思 + Toolformer 路由 |
+| **GalaxyOS 插件注册** | 11 个 UDS 工具 + ContextEngine 接管 OpenClaw ingest/compact |
 
 ### v6.3 新特性
 

@@ -182,7 +182,7 @@ class PaperIntegration:
     # ────────── Phase 3: 路由决策 (Hypernetwork) ──────────
 
     def decide_routing(self, query: str, semantic_entropy: float,
-                       is_followup: bool) -> str:
+                       is_followup: bool = False) -> str:
         """决定走什么路由策略"""
         strategy = self.get_search_strategy(query, semantic_entropy, is_followup)
         return strategy.get("name", "quick_recall")
