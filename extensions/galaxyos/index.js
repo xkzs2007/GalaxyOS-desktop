@@ -1530,10 +1530,10 @@ function getWorker(ws) {
     return _worker;
 }
 
-function recallFallback(ws, text, topK = 3) {
+function recallFallback(ws, text, topK = 3, sessionId = "") {
     const result = runClawScript(ws, "workflow", {
         scenario: "smart_recall",
-        input: JSON.stringify({ query: text, top_k: topK }),
+        input: JSON.stringify({ query: text, top_k: topK, session_id: sessionId }),
     }, 15000);
     if (result.error) return [];
     if (Array.isArray(result)) return result;
@@ -2450,6 +2450,19 @@ export default function register(api) {
     const ceConfig = pluginConfig.contextEngine || {};
     const CE_MAX_RECENT = ceConfig.maxRecentMessages || 20;
     const CE_RECALL_ON_ASSEMBLE = ceConfig.recallOnAssemble !== false;
+    const CE_TOKEN_BUDGET = ceConfig.tokenBudget || 12000;
+    const CE_COMPACT_THRESHOLD = ceConfig.compactThreshold || 0.6;
+    const CE_EMERGENCY_CEILING = ceConfig.emergencyCeiling || 0.88;
+
+    // ==========================================
+    // Memory Slots — 多层级记忆容量/策略配置
+    // ==========================================
+    const memSlots = pluginConfig.memorySlots || {};
+    const MEM_DAG = { maxNodes: 10000, retentionDays: 90, ...(memSlots.dag || {}) };
+    const MEM_VERIFIED = { minConfidence: 0.8, maxEntries: 5000, ...(memSlots.verified || {}) };
+    const MEM_NEURAL = { hnswM: 16, hnswEfConstruction: 200, hnswEfSearch: 100, ...(memSlots.neural || {}) };
+    const MEM_SYNAPSE = { baseWeight: 0.5, ltpRate: 0.05, ltdRate: 0.03, ...(memSlots.synapse || {}) };
+    const MEM_TEMPORAL = { decayHalfLife: 30, ...(memSlots.temporal || {}) };
 
     // 维护计数器(afterTurn 使用)
     let _maintenanceCounter = 0;
@@ -2482,18 +2495,19 @@ export default function register(api) {
     }
 
     // --- 辅助函数:智能存储(Worker 优先,降级 spawnSync) ---
-    async function smartStore(content, source) {
+    // v7.1: sessionId 参与存储 & 检索范围限定（HAConvDR + ChatRetriever 会话隔离）
+    async function smartStore(content, source, sessionId = "") {
         if (!content || content.trim().length < 5) return false;
         try {
             const w = getWorker(ws);
             if (w.ready) {
-                await w.call("store", { content, source }, 5000);
+                await w.call("store", { content, source, session_id: sessionId }, 5000);
                 return true;
             }
         } catch (e) { /* fall through */ }
         // Worker 不可用,降级 spawnSync
         try {
-            const result = runClawScript(ws, "store", { content, source }, 8000);
+            const result = runClawScript(ws, "store", { content, source, session_id: sessionId }, 8000);
             return !result.error;
         } catch (e) {
             return false;
@@ -2501,16 +2515,17 @@ export default function register(api) {
     }
 
     // --- 辅助函数:智能检索(Worker 优先,降级 spawnSync) ---
-    async function smartRecall(query, topK = 3) {
+    // v7.1: sessionId 限定检索范围（HAConvDR 上下文去噪 + ChatRetriever 会话级索引）
+    async function smartRecall(query, topK = 3, sessionId = "") {
         try {
             const w = getWorker(ws);
             if (w.ready) {
-                const result = await w.call("recall", { query, top_k: topK }, 10000);
+                const result = await w.call("recall", { query, top_k: topK, session_id: sessionId }, 10000);
                 if (result?.results) return Array.isArray(result.results) ? result.results : [];
                 if (Array.isArray(result)) return result;
             }
         } catch (e) { /* fall through */ }
-        return recallFallback(ws, query, topK);
+        return recallFallback(ws, query, topK, sessionId);
     }
 
     // --- 会话级摘要缓存(compact 生成后暂存,assemble 可引用) ---
@@ -2861,8 +2876,8 @@ export default function register(api) {
     async function _compactInner(sessionId, force, tokenBudget, currentTokenCount) {
         api.logger.info?.(`${TAG} [context-engine] compact called (force=${force}, budget=${tokenBudget}, current=${currentTokenCount})`);
 
-        // CMV 风格全局阈值:token 使用 ≥ 60% 就触发强制压缩
-        const FORCE_RATIO = 0.60;  // 比之前的 70% 更激进
+        // CMV 风格全局阈值:token 使用 ≥ compactThreshold 就触发强制压缩
+        const FORCE_RATIO = CE_COMPACT_THRESHOLD;
         if (!force && currentTokenCount > 0 && tokenBudget > 0 && currentTokenCount > tokenBudget * FORCE_RATIO) {
             api.logger.info?.(`${TAG} [context-engine] compact FORCED: current(${currentTokenCount}) > ${Math.round(FORCE_RATIO * 100)}% of budget(${tokenBudget})`);
             force = true;
@@ -3044,7 +3059,7 @@ export default function register(api) {
 
                     // 并行:smartStore 知识库索引 + DAG 节点存储
                     const [stored, dagResult] = await Promise.all([
-                        smartStore(content, source).catch(() => false),
+                        smartStore(content, source, sessionId).catch(() => false),
                         dagCall("dag_ingest", {
                             sessionId,
                             role: message?.role || source,
@@ -3140,7 +3155,16 @@ export default function register(api) {
             async assemble({ sessionId, messages, tokenBudget, availableTools, citationsMode }) {
                 api.logger.debug?.(`${TAG} [context-engine] assemble: session=${sessionId}, msgs=${messages?.length}, budget=${tokenBudget}`);
                 try {
-                    const systemMsgs = messages.filter(m => m.role === "system");
+                    // v7.1: 系统消息去重 + 上限（防 Gateway 被塞爆）
+                    const dedupedSystem = [];
+                    const seenSystem = new Set();
+                    for (const m of (messages || []).filter(m => m.role === "system")) {
+                        const key = (m.content || "").slice(0, 100);
+                        if (!seenSystem.has(key)) { seenSystem.add(key); dedupedSystem.push(m); }
+                    }
+                    // 系统消息上限：最多保留 5 条（核心 prompt），超出的丢弃
+                    const MAX_SYSTEM_MSGS = 5;
+                    const systemMsgs = dedupedSystem.slice(-MAX_SYSTEM_MSGS);
                     const nonSystemMsgs = messages.filter(m => m.role !== "system");
 
                     // 1) 计算系统提示的实际 token 开销
@@ -3169,24 +3193,42 @@ export default function register(api) {
 
                     // 3.5) 全局天花板检查:估算总 token 是否接近窗口上限
                     // 临时估算(不含 systemPromptAddition 实际长度),等完整拼接后复查
-                    const CRITICAL_USAGE_RATIO = 0.88;
+                    const CRITICAL_USAGE_RATIO = CE_EMERGENCY_CEILING;
                     let needsEmergencyTrim = false;
                     let estimateBeforeAdditions = systemTokens + usedTokens;
                     // 如果系统消息+最近消息已经接近 88%,强制压缩
                     if (estimateBeforeAdditions > tokenBudget * CRITICAL_USAGE_RATIO) {
                         api.logger.info?.(`${TAG} [context-engine] assemble CRITICAL: ${estimateBeforeAdditions} tokens > ${Math.round(CRITICAL_USAGE_RATIO * 100)}% of budget (${tokenBudget}), forcing emergency trim`);
                         needsEmergencyTrim = true;
-                        _sessionSummaries.set(sessionId, `[上下文全局天花板触发 - 保留最近 ${recentMsgs.length} 条消息中的后 4 轮]`);
+                        // v7.1: RLM 递归压缩 → 替代简单截断
+                        let rlmSummary = "";
+                        try {
+                            const w = getWorker(ws);
+                            if (w.ready) {
+                                const rlmResult = await w.call("rlm_compress", {
+                                    messages: recentMsgs.slice(0, -8).map(m => ({role: m.role, content: extractText(m)})),
+                                    max_tokens: 500
+                                }, 8000);
+                                if (rlmResult?.compressed) {
+                                    rlmSummary = rlmResult.compressed;
+                                }
+                            }
+                        } catch (e) { /* fall through */ }
+                        _sessionSummaries.set(sessionId,
+                            rlmSummary
+                                ? `[RLM递归压缩 ${recentMsgs.length - 8} 条历史消息] ${rlmSummary.slice(0, 300)}`
+                                : `[上下文全局天花板触发 - 保留最近 ${recentMsgs.length} 条消息中的后 4 轮]`);
                         // 只保留最近 4 轮(8条,user+assistant 各4)
                         const emergencyKeep = 8;
                         while (recentMsgs.length > emergencyKeep) {
                             const evicted = recentMsgs.shift();
                             usedTokens -= estimateTokens(evicted);
                         }
-                        api.logger.info?.(`${TAG} [context-engine] assemble emergency trim: kept ${recentMsgs.length} msgs, ~${systemTokens + usedTokens} tokens`);
+                        api.logger.info?.(`${TAG} [context-engine] assemble emergency trim: kept ${recentMsgs.length} msgs, ~${systemTokens + usedTokens} tokens, rlm=${rlmSummary ? 'compressed' : 'truncated'}`);
                     }
 
-                    // 4) 增强检索:基于最后一条用户消息
+                    // 4) 增强检索: 全论文模块编排 (MemGPT+MemoryOS+HAConvDR+AriGraph+RAPTOR)
+                    //    优先调 context_assemble，降级到 smartRecall
                     let systemPromptAddition = "";
                     if (CE_RECALL_ON_ASSEMBLE) {
                         try {
@@ -3194,13 +3236,31 @@ export default function register(api) {
                             if (lastUserMsg) {
                                 const query = extractText(lastUserMsg);
                                 if (query && query.trim().length >= 5) {
-                                    const items = await smartRecall(query, 3);
-                                    if (items.length > 0) {
-                                        systemPromptAddition = items
-                                            .slice(0, 3)
-                                            .map((m, i) => `[Claw Recall ${i + 1}] ${m.content || ""}`)
-                                            .join("\n");
+                                    // v7.1: 优先走全论文模块编排
+                                    let injection = "";
+                                    try {
+                                        const w = getWorker(ws);
+                                        if (w.ready) {
+                                            const ctxResult = await w.call("context_assemble", {
+                                                query, session_id: sessionId, top_k: 5
+                                            }, 15000);
+                                            if (ctxResult?.success && ctxResult?.injection) {
+                                                injection = ctxResult.injection;
+                                                api.logger.debug?.(`${TAG} [context-engine] context_assemble layers: ${Object.keys(ctxResult.layers || {}).filter(k => !k.endsWith('_error')).join(',')}`);
+                                            }
+                                        }
+                                    } catch (e) { /* 降级 */ }
+                                    // 降级: smartRecall
+                                    if (!injection) {
+                                        const items = await smartRecall(query, 3, sessionId);
+                                        if (items.length > 0) {
+                                            injection = items
+                                                .slice(0, 3)
+                                                .map((m, i) => `[Claw Recall ${i + 1}] ${m.content || ""}`)
+                                                .join("\n");
+                                        }
                                     }
+                                    systemPromptAddition = injection;
                                 }
                             }
                         } catch (e) {
@@ -3558,7 +3618,9 @@ export default function register(api) {
                         systemPromptAddition = additions.join("\n\n");
                     }
 
-                    const finalMessages = [...systemMsgs, ...recentMsgs];
+                    // v7.1: 最终消息 — 系统消息上限 + 注入合并为单个 system 消息
+                    const finalSystemMsgs = systemMsgs.slice(0, MAX_SYSTEM_MSGS);
+                    const finalMessages = [...finalSystemMsgs, ...recentMsgs];
                     const totalEstimate = systemTokens + usedTokens;
 
                     // 最终复查:如果算上 systemPromptAddition 仍然溢出,丢弃 addition 中的非人格内容
@@ -3731,7 +3793,7 @@ export default function register(api) {
                 _sessionSummaries.clear();
             },
         }));
-    api.logger.info?.(`${TAG} ContextEngine "claw-core-engine" registered (ownsCompaction=true, maxRecent=${CE_MAX_RECENT}, recallOnAssemble=${CE_RECALL_ON_ASSEMBLE}, dag=${dagEnabled}, circuitBreaker=${_dagCB.threshold}fails/${_dagCB.resetTimeout / 1000}s)`);
+    api.logger.info?.(`${TAG} ContextEngine "claw-core-engine" registered (ownsCompaction=true, tokenBudget=${CE_TOKEN_BUDGET}, compactThreshold=${CE_COMPACT_THRESHOLD}, emergencyCeiling=${CE_EMERGENCY_CEILING}, maxRecent=${CE_MAX_RECENT}, recallOnAssemble=${CE_RECALL_ON_ASSEMBLE}, dag=${dagEnabled}(${MEM_DAG.maxNodes}nodes/${MEM_DAG.retentionDays}d), verified≥${MEM_VERIFIED.minConfidence}/${MEM_VERIFIED.maxEntries}max, neural(HNSW M${MEM_NEURAL.hnswM}/ef${MEM_NEURAL.hnswEfConstruction}/efSearch${MEM_NEURAL.hnswEfSearch}), circuitBreaker=${_dagCB.threshold}fails/${_dagCB.resetTimeout / 1000}s)`);
 
     // --- L0 日志异步批写(debounce 2 秒,不阻塞 agent_end) ---
     const _l0LogBuffer = [];

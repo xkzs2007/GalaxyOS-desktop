@@ -48,7 +48,7 @@ AUTO_MERGE_THRESHOLD = 0.82  # 两条记忆相似度高于此值自动合并
 
 @dataclass
 class MemoryEntry:
-    """记忆条目"""
+    """记忆条目 (v7.1: session_id 字段用于会话隔离)"""
     id: str = ""
     content: str = ""
     importance: float = 5.0        # 1-10
@@ -57,6 +57,7 @@ class MemoryEntry:
     access_count: int = 0
     level: str = "working"         # working / recent / archive
     source: str = ""               # conversation / reflection / consolidated
+    session_id: str = ""           # v7.1: 所属会话 ID
     embedding: List[float] = field(default_factory=list)
     tags: List[str] = field(default_factory=list)
     merged_from: List[str] = field(default_factory=list)
@@ -131,9 +132,10 @@ class HierarchicalMemoryManager:
         content: str,
         importance: Optional[float] = None,
         source: str = "conversation",
-        tags: Optional[List[str]] = None
+        tags: Optional[List[str]] = None,
+        session_id: str = "",
     ) -> str:
-        """添加新记忆"""
+        """添加新记忆 (v7.1: session_id 分区)"""
         # 自动评估重要性
         if importance is None:
             importance = self._estimate_importance(content)
@@ -147,6 +149,7 @@ class HierarchicalMemoryManager:
             access_count=1,
             level="working",
             source=source,
+            session_id=session_id,
             tags=tags or [],
         )
 
@@ -173,20 +176,28 @@ class HierarchicalMemoryManager:
         self,
         query: str,
         top_k: int = 5,
+        session_id: str = "",
     ) -> List[Dict]:
         """
-        按层次检索记忆
+        按层次检索记忆 (v7.1: session_id 过滤)
 
         检索顺序:
           1. 工作集 (高优先级)
           2. 近期集 (中优先级)
           3. 归档集 (低优先级)
+        session_id="" 时不过滤（向后兼容）
         """
+        def _by_session(mems):
+            if not session_id:
+                return mems
+            return [m for m in mems if not m.session_id or m.session_id == session_id]
+
         results = []
 
         # 1. 工作集
-        if self.working_set:
-            scored = self._score_memories(query, self.working_set)
+        ws = _by_session(self.working_set)
+        if ws:
+            scored = self._score_memories(query, ws)
             for mem, score in scored[:top_k]:
                 mem.access_count += 1
                 mem.last_accessed = time.time()
@@ -202,7 +213,7 @@ class HierarchicalMemoryManager:
             return results[:top_k]
 
         # 2. 近期集 + 归档集
-        candidates = self.recent_set + self.archive_set
+        candidates = _by_session(self.recent_set + self.archive_set)
         if candidates:
             scored = self._score_memories(query, candidates)
             for mem, score in scored:

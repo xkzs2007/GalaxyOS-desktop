@@ -42,33 +42,62 @@ CORE_CONTEXT = [
 
 
 class ContextLayer:
-    """分层上下文"""
+    """MemGPT 分层上下文 — v7.1: per-session 分区
+
+    三层虚拟上下文窗口:
+    - Working Context (当前轮次): 最近对话 + 当前检索结果
+    - Episodic Buffer (场景记忆): 相关历史对话摘要
+    - Semantic Storage (语义索引): 持久化向量索引，按需调入
+
+    v7.1: working_context / episodic_buffer 改为 session_id → list 映射，
+    杜绝多会话上下文串扰。
+    """
 
     def __init__(self, llm_flash=None):
         self.llm_flash = llm_flash
-        # Working Context: 最近 N 轮（内存中，不序列化）
-        self.working_context: List[Dict] = []
+        # Working Context: session_id → List[Dict]（每会话独立）
+        self._working: Dict[str, List[Dict]] = {}
         self.max_working_turns: int = 6
-        # Episodic Buffer: 摘要后的场景记忆
-        self.episodic_buffer: List[Dict] = []
+        # Episodic Buffer: session_id → List[Dict]（每会话独立）
+        self._episodic: Dict[str, List[Dict]] = {}
         self.max_episodic_items: int = 10
 
-    def add_turn(self, role: str, content: str, metadata: Optional[Dict] = None):
-        """添加一轮对话到 Working Context"""
+    @property
+    def working_context(self):
+        """向后兼容：取第一个 session 的 working context"""
+        return next(iter(self._working.values()), []) if self._working else []
+
+    @property
+    def episodic_buffer(self):
+        """向后兼容：取第一个 session 的 episodic buffer"""
+        return next(iter(self._episodic.values()), []) if self._episodic else []
+
+    def _ensure_session(self, session_id: str = "default"):
+        if session_id not in self._working:
+            self._working[session_id] = []
+        if session_id not in self._episodic:
+            self._episodic[session_id] = []
+
+    def add_turn(self, role: str, content: str, metadata: Optional[Dict] = None,
+                 session_id: str = "default"):
+        """添加一轮对话到 Working Context（按 session 分区）"""
+        self._ensure_session(session_id)
         entry = {
             "role": role,
             "content": content[:500],
             "ts": time.time(),
             "metadata": metadata or {},
         }
-        self.working_context.append(entry)
+        self._working[session_id].append(entry)
         # 超出上限时压缩
-        if len(self.working_context) > self.max_working_turns + 2:
-            self._compress()
+        if len(self._working[session_id]) > self.max_working_turns + 2:
+            self._compress(session_id)
 
-    def get_assembled_context(self, query: str = "", extra_memories: List[Dict] = None) -> str:
+    def get_assembled_context(self, query: str = "",
+                               extra_memories: List[Dict] = None,
+                               session_id: str = "default") -> str:
         """
-        组装分层上下文
+        组装分层上下文（按 session 分区）
 
         返回格式:
         [核心上下文]
@@ -78,6 +107,10 @@ class ContextLayer:
         [相关场景记忆]
         ...
         """
+        self._ensure_session(session_id)
+        wc = self._working.get(session_id, [])
+        eb = self._episodic.get(session_id, [])
+
         parts = []
 
         # Layer 0: 核心上下文
@@ -86,18 +119,18 @@ class ContextLayer:
         parts.append("")
 
         # Layer 1: Working Context（最近 N 轮）
-        if self.working_context:
+        if wc:
             parts.append("[最近对话]")
-            for entry in self.working_context[-self.max_working_turns:]:
+            for entry in wc[-self.max_working_turns:]:
                 prefix = "用户" if entry["role"] == "user" else "小艺"
                 parts.append(f"{prefix}: {entry['content'][:300]}")
             parts.append("")
 
         # Layer 2: Episodic Buffer（相关场景记忆）
-        if self.episodic_buffer and query:
+        if eb and query:
             q_words = set(re.findall(r'[\w\u4e00-\u9fff]+', query.lower()))
             relevant = []
-            for buf in self.episodic_buffer:
+            for buf in eb:
                 buf_words = set(re.findall(r'[\w\u4e00-\u9fff]+', buf.get("summary", "").lower()))
                 overlap = len(q_words & buf_words)
                 if overlap > 0:
@@ -119,25 +152,33 @@ class ContextLayer:
 
         return "\n".join(parts)
 
-    def _compress(self):
-        """将最早的 3 轮压缩为一条摘要"""
-        if len(self.working_context) < 4:
+    def _compress(self, session_id: str = "default"):
+        """将最早的 3 轮压缩为一条摘要（per-session）"""
+        self._ensure_session(session_id)
+        wc = self._working[session_id]
+        eb = self._episodic[session_id]
+        if len(wc) < 4:
             return
-        to_compress = self.working_context[:3]
+        to_compress = wc[:3]
         summary = self._summarize_turns(to_compress)
 
         # 移到 Episodic Buffer
-        self.episodic_buffer.append({
+        eb.append({
             "summary": summary,
             "ts": to_compress[0]["ts"],
             "end_ts": to_compress[-1]["ts"],
             "turn_count": len(to_compress),
         })
-        if len(self.episodic_buffer) > self.max_episodic_items:
-            self.episodic_buffer = self.episodic_buffer[-self.max_episodic_items:]
+        if len(eb) > self.max_episodic_items:
+            self._episodic[session_id] = eb[-self.max_episodic_items:]
 
         # 移除已压缩的对话
-        self.working_context = self.working_context[3:]
+        self._working[session_id] = wc[3:]
+
+    def clear_session(self, session_id: str):
+        """清除指定 session 的所有上下文（新会话或 session 结束时调用）"""
+        self._working.pop(session_id, None)
+        self._episodic.pop(session_id, None)
 
     def _summarize_turns(self, turns: List[Dict]) -> str:
         """摘要多轮对话"""
@@ -165,7 +206,8 @@ class ContextLayer:
 # ── 全局实例 ──
 _instance = None
 
-def get_context_layer(llm_flash=None) -> ContextLayer:
+def get_context_layer(llm_flash=None, session_id: str = "") -> ContextLayer:
+    """获取全局 ContextLayer 单例（v7.1: 支持 session_id 分区调用）"""
     global _instance
     if _instance is None:
         _instance = ContextLayer(llm_flash)

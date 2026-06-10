@@ -153,14 +153,18 @@ class UnifiedEntry:
     # ==================== 记忆操作 ====================
     
     @rail(scope=RailScope.USER, feature="memory_write")
-    def store(self, content: str, source: str = "user") -> Dict[str, Any]:
-        """存储记忆（统一写入 XiaoyiClawLLM + 降级 XiaoyiMemoryV2）"""
+    def store(self, content: str, source: str = "user", session_id: str = "") -> Dict[str, Any]:
+        """存储记忆（统一写入 XiaoyiClawLLM + 降级 XiaoyiMemoryV2）
+
+        v7.1: session_id 写入记忆元数据，检索时按 session 隔离（ChatRetriever 模式）。
+        """
         result = {"memory_id": None, "source": None, "warnings": []}
 
         # 1. 优先走统一 API（XiaoYiClawLLM）
         if self.xiaoyi_claw:
             try:
-                memory_id = self.xiaoyi_claw.remember(content, source=source)
+                memory_id = self.xiaoyi_claw.remember(content, source=source,
+                                                       session_id=session_id)
                 result["memory_id"] = memory_id
                 result["source"] = "xiaoyi_claw"
             except Exception as e:
@@ -207,26 +211,39 @@ class UnifiedEntry:
         fused.sort(key=lambda x: x.get("score", 0), reverse=True)
         return fused
 
-    def recall(self, query: str, top_k: int = 10) -> List[Dict[str, Any]]:
-        """检索记忆（统一 XiaoyiClawLLM.recall() + 降级 XiaoyiMemoryV2）"""
+    def recall(self, query: str, top_k: int = 10, session_id: str = "") -> List[Dict[str, Any]]:
+        """检索记忆（统一 XiaoyiClawLLM.recall() + 降级 XiaoyiMemoryV2）
+
+        v7.1 (HAConvDR + ChatRetriever): session_id 限定检索范围，
+        只返回属于当前会话的记忆，杜绝跨会话串扰。
+        session_id="" 时跳过过滤（向后兼容独立调用）。
+        """
         main_results = []
         warnings = []
 
         # 1. 统一 API 检索（主路）
         if self.xiaoyi_claw:
             try:
-                main_results = self.xiaoyi_claw.recall(query, top_k=top_k)
+                main_results = self.xiaoyi_claw.recall(query, top_k=top_k,
+                                                       session_id=session_id)
                 if not isinstance(main_results, list):
                     main_results = []
             except Exception as e:
-                warn = f"XiaoYiClawLLM recall 失败: {e}"
-                print(warn)
-                warnings.append(warn)
+                # 降级: 不传 session_id 再试
+                try:
+                    main_results = self.xiaoyi_claw.recall(query, top_k=top_k)
+                except Exception:
+                    pass
+                if not main_results:
+                    warn = f"XiaoYiClawLLM recall 失败: {e}"
+                    print(warn)
+                    warnings.append(warn)
 
         # 2. 降级走 XiaoyiMemoryV2（当主路失败时）
         if not main_results and self.memory:
             try:
-                main_results = self.memory.recall(query, top_k=top_k)
+                raw = self.memory.recall(query, top_k=top_k)
+                main_results = self._filter_by_session(raw, session_id) if session_id else raw
                 if not isinstance(main_results, list):
                     main_results = []
             except Exception as e:
@@ -240,7 +257,7 @@ class UnifiedEntry:
         else:
             return [{"error": "记忆系统不可用", "warnings": warnings}]
 
-        # 统一结果格式（添加来源标注便于调试）
+        # 统一结果格式 + session_id 过滤（HAConvDR 上下文去噪）
         final = []
         for r in results:
             if isinstance(r, dict):
@@ -252,6 +269,18 @@ class UnifiedEntry:
                 final.append({"content": str(r), "source": "unknown"})
 
         return final
+
+    def _filter_by_session(self, results: List[Dict], session_id: str) -> List[Dict]:
+        """HAConvDR 上下文去噪：只保留匹配当前 session_id 的条目"""
+        if not session_id:
+            return results
+        filtered = []
+        for r in results:
+            sid = r.get("session_id", "") if isinstance(r, dict) else ""
+            # 无 session_id 标记的条目保留（向后兼容旧数据）
+            if not sid or sid == session_id:
+                filtered.append(r)
+        return filtered
     
     def answer(self, query: str, context: str = None) -> Dict[str, Any]:
         """智能回答（优先走投机解码加速，降级走标准 answer）"""

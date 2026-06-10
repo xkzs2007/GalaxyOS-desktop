@@ -35,7 +35,7 @@ def _load_image(data: bytes):
     return img
 
 
-def _encode_image(img: Image.Image, fmt: str) -> str:
+def _encode_image(img, fmt: str) -> str:
     buf = io.BytesIO()
     fmt_lower = fmt.lower()
     save_fmt = fmt_lower.upper() if fmt_lower in ("jpeg", "png", "webp") else "JPEG"

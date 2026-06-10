@@ -332,9 +332,9 @@ class SpatialTopologyGraph:
         logger.info(f"场景注册: {label} (type={scene_type}, id={node_id})")
         return node_id
 
-    def get_scene(self, label_or_alias: str) -> Optional[SpatialNode]:
+    def get_scene(self, label_or_alias: str, session: str = "") -> Optional[SpatialNode]:
         """
-        通过名称或别名查找场景。
+        通过名称或别名查找场景 (v7.1: session 预留参数)。
 
         支持模糊匹配和消歧：
         1. 精确匹配 label

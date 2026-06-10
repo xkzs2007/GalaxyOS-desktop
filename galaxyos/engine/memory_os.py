@@ -60,83 +60,97 @@ def hybrid_score(text_a: str, text_b: str, emb_a: List[float] = None,
 class HeatTracker:
     """
     热度跟踪器 — 基于访问频率和时效性的权重计算
-    
+
     用于 DAG 压缩时决定哪些节点该保留、哪些可以摘要。
+    v7.1: 内部按 session_id 分区，不同会话的热度互不干扰。
     """
-    
+
     def __init__(self, decay_hours: float = 24.0,
                  boost_on_access: float = 0.1,
                  max_heat: float = 10.0):
         self.decay_hours = decay_hours          # 半衰期（小时）
         self.boost_on_access = boost_on_access  # 每次访问的升温
         self.max_heat = max_heat
-        self._nodes: Dict[str, Dict] = {}       # node_id -> heat data
-    
-    def record_access(self, node_id: str, now: float = None):
-        """记录一次访问"""
+        self._nodes: Dict[str, Dict] = {}       # node_id → heat data
+
+    def _key(self, node_id: str, session_id: str = ""):
+        """v7.1: 复合键 node_id#session_id，不同会话热度独立"""
+        return f"{node_id}#{session_id}" if session_id else node_id
+
+    def record_access(self, node_id: str, now: float = None, session_id: str = ""):
+        """记录一次访问 (v7.1: session_id 分区)"""
         if now is None:
             now = time.time()
-        
-        if node_id not in self._nodes:
-            self._nodes[node_id] = {
+
+        key = self._key(node_id, session_id)
+        if key not in self._nodes:
+            self._nodes[key] = {
                 "heat": 0.0,
                 "first_access": now,
                 "last_access": now,
                 "access_count": 0,
             }
-        
-        node = self._nodes[node_id]
+
+        node = self._nodes[key]
         hours_since = (now - node["last_access"]) / 3600
-        
+
         # 时效性衰减: 指数衰减
         if hours_since > 0:
             decay = math.exp(-hours_since / self.decay_hours)
             node["heat"] *= decay
-        
+
         # 升温
         node["heat"] = min(self.max_heat, node["heat"] + self.boost_on_access)
         node["last_access"] = now
         node["access_count"] += 1
-    
-    def get_heat(self, node_id: str, now: float = None) -> float:
-        """获取当前热度（含衰减）"""
-        node = self._nodes.get(node_id)
+
+    def get_heat(self, node_id: str, now: float = None, session_id: str = "") -> float:
+        """获取当前热度（含衰减）(v7.1: session_id 分区)"""
+        node = self._nodes.get(self._key(node_id, session_id))
         if not node:
             return 0.0
-        
+
         if now is None:
             now = time.time()
-        
+
         hours_since = (now - node["last_access"]) / 3600
         decayed = node["heat"] * math.exp(-hours_since / self.decay_hours)
         return decayed
-    
-    def should_keep(self, node_id: str, threshold: float = 0.3) -> bool:
+
+    def should_keep(self, node_id: str, threshold: float = 0.3, session_id: str = "") -> bool:
         """判断一个节点是否应保留（高于阈值）"""
-        return self.get_heat(node_id) >= threshold
-    
-    def get_cold_nodes(self, threshold: float = 0.1) -> List[str]:
-        """获取冷节点（低于阈值）"""
+        return self.get_heat(node_id, session_id=session_id) >= threshold
+
+    def get_cold_nodes(self, threshold: float = 0.1, session_id: str = "") -> List[str]:
+        """获取冷节点（低于阈值）(v7.1: session_id 分区)"""
+        prefix = f"#{session_id}" if session_id else ""
         return [nid for nid in self._nodes
-                if self.get_heat(nid) < threshold]
-    
-    def get_top_nodes(self, k: int = 10) -> List[str]:
-        """获取热度最高的 k 个节点"""
-        items = [(nid, self.get_heat(nid)) for nid in self._nodes]
+                if (not session_id or nid.endswith(prefix))
+                and self.get_heat(nid) < threshold]
+
+    def get_top_nodes(self, k: int = 10, session_id: str = "") -> List[str]:
+        """获取热度最高的 k 个节点 (v7.1: session_id 分区)"""
+        prefix = f"#{session_id}" if session_id else ""
+        items = [(nid, self.get_heat(nid)) for nid in self._nodes
+                 if not session_id or nid.endswith(prefix)]
         items.sort(key=lambda x: -x[1])
         return [nid for nid, _ in items[:k]]
-    
-    def get_status(self) -> dict:
-        total = len(self._nodes)
-        hot = sum(1 for nid in self._nodes if self.get_heat(nid) >= 1.0)
-        warm = sum(1 for nid in self._nodes if 0.3 <= self.get_heat(nid) < 1.0)
+
+    def get_status(self, session_id: str = "") -> dict:
+        """v7.1: session_id 分区状态查询"""
+        prefix = f"#{session_id}" if session_id else ""
+        nodes = {k: v for k, v in self._nodes.items()
+                 if not session_id or k.endswith(prefix)}
+        total = len(nodes)
+        hot = sum(1 for nid in nodes if self.get_heat(nid) >= 1.0)
+        warm = sum(1 for nid in nodes if 0.3 <= self.get_heat(nid) < 1.0)
         cold = total - hot - warm
         return {
             "total_nodes": total,
             "hot": hot,
             "warm": warm,
             "cold": cold,
-            "top_nodes": self.get_top_nodes(5),
+            "top_nodes": self.get_top_nodes(5, session_id=session_id),
         }
 
 

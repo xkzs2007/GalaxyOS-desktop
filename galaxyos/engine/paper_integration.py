@@ -306,18 +306,21 @@ class PaperIntegration:
                 "conflicts_resolved": conflicts_resolved, "summary": summary,
                 "entity_map": entity_map}
 
-    def temporal_retrieve(self, query: str, current_time: float = None) -> list:
-        """时间感知的混合检索，优先返回活跃事实。"""
+    def temporal_retrieve(self, query: str, current_time: float = None,
+                          session_key: str = "") -> list:
+        """时间感知的混合检索 (v7.1: session_key 过滤)"""
         tkg = self._get_temporal_kg()
         ts = current_time or time.time()
-        results = tkg.hybrid_retrieve(query, at_time=ts, top_k=10)
+        results = tkg.hybrid_retrieve(query, at_time=ts, top_k=10,
+                                      session_key=session_key)
         formatted = []
         for r in results:
             formatted.append({
                 "id": r.get('edge_id', ''),
                 "content": f"{r['src_entity']} -[{r['relation']}]-> {r['dst_entity']}: {r.get('content', '')}",
                 "source": "temporal_kg", "score": r.get('score', 0),
-                "metadata": {"t_created": r.get('t_created', 0), "relation": r.get('relation', '')}
+                "metadata": {"t_created": r.get('t_created', 0), "relation": r.get('relation', ''),
+                             "session_key": r.get('session_key', '')}
             })
         return formatted
 
@@ -405,12 +408,13 @@ class PaperIntegration:
         return cm.add_anchor(node_id, content[:500], session_key)
 
     def proximity_rerank(self, results: List[Dict],
-                          current_context: str) -> List[Dict]:
-        """用空间接近性重排序检索结果"""
+                          current_context: str,
+                          session_key: str = "") -> List[Dict]:
+        """用空间接近性重排序检索结果 (v7.1: session_key)"""
         cm = self._get_cognitive_map()
         if not results:
             return results
-        vec = cm.compute_anchor_vector(current_context)
+        vec = cm.compute_anchor_vector(current_context, session_key=session_key)
         scored = []
         for r in results:
             content = r.get("content", r.get("context", ""))
@@ -528,18 +532,25 @@ class PaperIntegration:
             logger.warning(f"get_scene_navigation_context failed: {e}")
             return ""
 
-    def spatial_rerank(self, results: list, current_context: str = None) -> list:
-        """空间重排序: 越接近当前场景的记忆排名越高"""
+    def spatial_rerank(self, results: list, current_context: str = None,
+                       session_key: str = "") -> list:
+        """空间重排序: 越接近当前场景的记忆排名越高 (v7.1: session_key 分区)"""
         if not current_context or not results:
             return results
         sg = self._get_spatial_graph()
         if not sg:
             return results
         try:
-            current_node = sg.get_scene(current_context)
+            current_node = sg.get_scene(current_context, session=session_key)
             if not current_node:
                 return results
+
+            # v7.1: 仅在当前 session 的场景图中搜索
             for r in results:
+                r_session = r.get("metadata", {}).get("session_key", "")
+                if session_key and r_session and r_session != session_key:
+                    r["spatial_score"] = 0.0
+                    continue
                 content = r.get("content", "") or r.get("text", "")
                 if not content:
                     r["spatial_score"] = 0.5
@@ -548,7 +559,7 @@ class PaperIntegration:
                 score = 0.0
                 matched = 0
                 for kw in keywords:
-                    scene_node = sg.get_scene(kw)
+                    scene_node = sg.get_scene(kw, session=session_key)
                     if scene_node:
                         dist = sg._graph_distance(current_node.node_id, scene_node.node_id)
                         if dist == 0:

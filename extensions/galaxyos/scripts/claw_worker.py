@@ -701,7 +701,8 @@ class ClawWorker:
 
     def recall(self, p: dict) -> dict:
         self._ensure()
-        return self._entry.recall(p.get("query", ""), p.get("top_k", 5))
+        return self._entry.recall(p.get("query", ""), p.get("top_k", 5),
+                                  session_id=p.get("session_id", ""))
 
     def smart_retrieval(self, p: dict) -> dict:
         """神经网络增强检索：走 retrieval_hub 完整五路管道 + neural_rerank_dedup

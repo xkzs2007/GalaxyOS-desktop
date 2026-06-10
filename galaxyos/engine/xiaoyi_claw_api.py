@@ -809,15 +809,19 @@ class XiaoYiClawLLM:
                  content: str,
                  metadata: Optional[Dict] = None,
                  vector: Optional[List[float]] = None,
-                 source: str = 'user') -> str:
+                 source: str = 'user',
+                 session_id: str = '') -> str:
         """
         存储记忆(单写: UnifiedVectorStore 为主 + DAG + Cognition Forest)
+
+        v7.1: session_id 写入元数据，检索时按 session 隔离。
 
         Args:
             content: 记忆内容
             metadata: 元数据
             vector: 向量(可选,不传则自动用 embedding API 生成)
             source: 来源标识
+            session_id: 会话 ID（ChatRetriever 模式）
 
         Returns:
             记忆 ID
@@ -826,6 +830,7 @@ class XiaoYiClawLLM:
         metadata = metadata or {}
         metadata['memory_id'] = memory_id
         metadata['source'] = source
+        metadata['session_id'] = session_id  # v7.1: 会话隔离
         metadata['created_at'] = datetime.now().isoformat()
 
         # 生成向量(如未提供),写入 UnifiedVectorStore
@@ -948,9 +953,13 @@ class XiaoYiClawLLM:
                query_vector: Optional[List[float]] = None,
                top_k: int = 10,
                source_filter: Optional[str] = None,
-               enhance_with_kg: bool = True) -> List[Dict]:
+               enhance_with_kg: bool = True,
+               session_id: str = "") -> List[Dict]:
         """
         检索记忆(双路融合:向量存储 + XiaoyiMemoryV2 增强检索)
+
+        v7.1 (HAConvDR): session_id 过滤已在此层实现；
+        调用方传入 session_id 即可自动按会话隔离检索结果。
 
         Args:
             query: 查询文本
@@ -958,6 +967,7 @@ class XiaoYiClawLLM:
             top_k: 返回数量
             source_filter: 来源过滤
             enhance_with_kg: 是否用知识图谱增强
+            session_id: 会话 ID（HAConvDR 上下文去噪）
 
         Returns:
             记忆列表
@@ -1052,9 +1062,22 @@ class XiaoYiClawLLM:
 
         deduped.sort(key=lambda x: x.get("score", 0), reverse=True)
         result = deduped[:top_k]
+
+        # v7.1 (HAConvDR): 会话级上下文中只保留当前 session 的记忆
+        # session_id="" 时跳过过滤（向后兼容）
+        if session_id:
+            def _match_session(item: dict) -> bool:
+                sid = (item.get("metadata", {}) or {}).get("session_id", "")
+                return not sid or sid == session_id
+            result = [r for r in result if _match_session(r)]
+            # 补足 top_k：不够时从全局结果中补充（保持返回数量）
+            if len(result) < top_k:
+                extra = [r for r in deduped[top_k:] if not _match_session(r)][:top_k - len(result)]
+                result.extend(extra)
+
         self.log_event("recall", f"query:{query[:100]}",
-                       detail=f"top_k={top_k} hits={len(result)}",
-                       metadata={"top_k": top_k, "hits": len(result)})
+                       detail=f"top_k={top_k} hits={len(result)} session={'scoped' if session_id else 'global'}",
+                       metadata={"top_k": top_k, "hits": len(result), "session_id": session_id})
         return result
 
     def _rrf_fuse(self, list_a: List[Dict], list_b: List[Dict], k: int = 60) -> List[Dict]:
@@ -4613,11 +4636,11 @@ def _rci_async_criticism(self, state):
 
 # 便捷 API 函数
 def remember(content: str, **kwargs) -> str:
-    """存储记忆"""
+    """存储记忆 (v7.1: 支持 session_id)"""
     return get_xiaoyi_claw().remember(content, **kwargs)
 
 def recall(query: str, **kwargs) -> List[Dict]:
-    """检索记忆"""
+    """检索记忆 (v7.1: 支持 session_id 过滤)"""
     return get_xiaoyi_claw().recall(query, **kwargs)
 
 def forget(memory_id: str) -> int:
