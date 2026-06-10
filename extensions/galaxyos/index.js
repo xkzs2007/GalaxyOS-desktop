@@ -78,16 +78,38 @@ function resolveWorkspace(api) {
 // ClawWorkerClient - 常驻 Python 进程通信层
 // ==========================================
 
-/** UDS path for claw-worker socket */
+/** UDS path for claw-worker socket — 多路径自发现（按优先级探测） */
 function getUdsPath() {
+    // 优先环境变量
+    if (process.env.GALAXYOS_UDS_PATH && existsSync(path.dirname(process.env.GALAXYOS_UDS_PATH))) {
+        return process.env.GALAXYOS_UDS_PATH;
+    }
+    // 默认路径（与 claw_worker.py 的 _GALAXYOS_VAR 对齐）
     return path.join(
         process.env.HOME || "/home/sandbox",
         ".openclaw/extensions/galaxyos/var/claw-worker.sock"
     );
 }
 
+/** 所有已知 UDS 路径（按优先级排序，自发现 fallback） */
+function getUdsProbePaths() {
+    const home = process.env.HOME || "/home/sandbox";
+    const primary = getUdsPath();
+    const paths = [primary];
+    // 兼容旧版 claw-core 路径
+    if (!primary.includes("claw-core")) {
+        paths.push(path.join(home, ".openclaw/extensions/claw-core/var/claw-worker.sock"));
+    }
+    // 兼容新版 galaxyos 路径
+    if (!primary.includes("galaxyos")) {
+        paths.push(path.join(home, ".openclaw/extensions/galaxyos/var/claw-worker.sock"));
+    }
+    return [...new Set(paths)]; // 去重
+}
+
 /** Gateway UDS path for Worker → Gateway reverse RPC */
 function getGatewayUdsPath() {
+    if (process.env.GALAXYOS_GATEWAY_UDS_PATH) return process.env.GALAXYOS_GATEWAY_UDS_PATH;
     return path.join(
         process.env.HOME || "/home/sandbox",
         ".openclaw/extensions/galaxyos/var/claw-gateway.sock"
@@ -830,7 +852,26 @@ class ClawWorkerClient {
 
     async _doStart() {
         this._cleanup();
-        await this._tryUdsOrSpawn(0);
+        // 多路径自发现：按优先级探测所有已知 UDS 路径
+        await this._probeUdsOrSpawn();
+    }
+
+    async _probeUdsOrSpawn() {
+        const probePaths = getUdsProbePaths();
+        for (let i = 0; i < probePaths.length; i++) {
+            const p = probePaths[i];
+            try {
+                this._udsPath = p;
+                await this._connectUdsDirect(p);
+                process.stderr.write(TAG + ' [UDS] 自发现成功: ' + p + '\n');
+                return;
+            } catch (e) {
+                process.stderr.write(TAG + ' [UDS] 探测 ' + (i+1) + '/' + probePaths.length + ' 失败 (' + p + '): ' + e.message + '\n');
+            }
+        }
+        // 所有已知路径都探测失败 → 重新 spawn Worker
+        process.stderr.write(TAG + ' [UDS] 所有已知路径探测失败，触发 Worker 自愈 spawn\n');
+        return new Promise((resolve, reject) => this._reconnectViaSpawn(resolve, reject));
     }
 
     async _tryUdsOrSpawn(attempt) {
@@ -848,9 +889,10 @@ class ClawWorkerClient {
         return new Promise((resolve, reject) => this._reconnectViaSpawn(resolve, reject));
     }
 
-    async _connectUdsDirect() {
+    async _connectUdsDirect(sockPath) {
+        const targetPath = sockPath || this._udsPath;
         return new Promise((resolve, reject) => {
-            const sock = net.createConnection(this._udsPath, () => {
+            const sock = net.createConnection(targetPath, () => {
                 sock.write('POST / HTTP/1.1\r\nHost: localhost\r\nContent-Length: 0\r\n\r\n');
                 let resp = '';
                 sock.on('data', (d) => {
@@ -859,7 +901,7 @@ class ClawWorkerClient {
                         this._udsMode = 'http';
                         sock.destroy();
                         this._ready = true;
-                        process.stderr.write(TAG + ' [UDS] HTTP over UDS mode\n');
+                        this._fails = 0;
                         resolve();
                     }
                 });
@@ -877,9 +919,11 @@ class ClawWorkerClient {
     _reconnectViaSpawn(resolve, reject) {
         try {
             this._cleanup();
+            // 传递通信路径环境变量，确保 Worker 与 Plugin 共享同一套 var/ 目录
+            const galaxosVarDir = path.dirname(getUdsPath());
             this.proc = spawn(_pythonBin, [WORKER_SCRIPT], {
                 cwd: this.workspace,
-                env: { ...process.env, PYTHONIOENCODING: 'utf-8', OPENCLAW_WORKSPACE: this.workspace, WORKER_UDS: '1', WORKER_ID: this.id },
+                env: { ...process.env, PYTHONIOENCODING: 'utf-8', OPENCLAW_WORKSPACE: this.workspace, WORKER_UDS: '1', WORKER_ID: this.id, GALAXYOS_VAR_DIR: galaxosVarDir },
                 stdio: ['pipe', 'pipe', 'pipe'],
             });
             let settled = false;
@@ -1225,22 +1269,68 @@ export default function register(api) {
         process.nextTick(_connectOrSpawn);
     }
 
-    // 健康检查:读 Worker 心跳 mmap(独立文件 8 字节 float64,不抢 GIL)
-    // 不再走 UDS ping,UDS 只处理业务请求
+    // ═══ 多通道独立健康检查 ═══
+    // mmap 心跳 → 进程存活 | ZMQ 心跳 → PUB/SUB 通道 | UDS ping → RPC 通道
+    // 不再走 UDS ping,UDS 只处理业务请求(但有独立 UDS ping 间隔，避免假活)
     const _workerHealthCheck = setInterval(() => {
-        const w = getWorker(ws);
-        if (!w._ready) return;
+        // ── 1. mmap 心跳(进程级存活) ──
         const hb = _readWorkerHeartbeat();
         if (!hb.alive) {
-            api.logger.warn?.(`${TAG} Worker heartbeat stale (${hb.age_ms}ms ago), reconnecting`);
-            w._ready = false;
-            w._cleanup();
-            w.start().catch(() => {});
+            api.logger.warn?.(`${TAG} [health] Worker mmap heartbeat stale (${hb.age_ms}ms), 触发重连`);
+            const w = getWorker(ws);
+            if (w._ready) {
+                w._ready = false;
+                w._cleanup?.();
+                w.start?.().catch(() => {});
+            }
+            return; // 进程都不活了，跳过后续通道检查
         }
-    }, 15000).unref();  // 15s 检查一次,mmap 读是文件系统级操作,开销忽略
+
+        // ── 2. ZMQ PUB/SUB 通道可达性(独立心跳事件) ──
+        const zmqAge = Date.now() - _zmqLastEventTs;
+        if (_zmqLastEventTs > 0 && zmqAge > 30000) {
+            api.logger.warn?.(`${TAG} [health] ZMQ SUB 通道无事件 ${Math.round(zmqAge/1000)}s, 可能断连`);
+            // 不立即重连 — _zmqPersistentLoop 会自动检测并恢复
+            // 仅记录告警
+        }
+
+        // ── 3. UDS RPC 通道可达性(ping，每 60s 一次) ──
+        if (!_lastUdsPing || Date.now() - _lastUdsPing > 60000) {
+            _lastUdsPing = Date.now();
+            const w = getWorker(ws);
+            if (w && w.ready) {
+                w.call("ping", {}, 5000).then((result) => {
+                    if (result?.ok !== true && result?.ok !== undefined) {
+                        api.logger.warn?.(`${TAG} [health] UDS ping 响应异常: ${JSON.stringify(result)}`);
+                    }
+                }).catch((e) => {
+                    api.logger.warn?.(`${TAG} [health] UDS ping 失败: ${e.message}, 触发重连`);
+                    if (w._ready !== false) {
+                        w._ready = false;
+                        w._cleanup?.();
+                        w.start?.().catch(() => {});
+                    }
+                });
+            }
+        }
+    }, 15000).unref();
+    let _lastUdsPing = 0;
 
     // Gateway stop:清理所有通道
     api.on("gateway_stop", async () => {
+        // 停止 ZMQ SUB 持久重连循环
+        if (_zmqSub) {
+            try { _zmqSub.close(); } catch (e) {}
+            _zmqSub = null;
+        }
+        _zmqSubActive = false;
+
+        // 停止 Worker 池
+        if (_workerPool) {
+            await _workerPool.shutdown();
+            _workerPool = null;
+        }
+
         if (_worker) {
             const w = _worker;
             _worker = null;
@@ -1978,44 +2068,108 @@ export default function register(api) {
     const ZMQ_PUB_PORT = pluginConfig.communication?.zmqPort || 5559;
     const MMAP_SHM_PATH = pluginConfig.communication?.mmapPath || "/dev/shm/claw_dag_cache";
     let _zmqSub = null;
-    let _mmapDagCache = null; // { text, stats, ts }
+    let _zmqSubActive = false;  // 当前 ZMQ SUB 是否活跃
+    let _zmqLastSeq = 0;        // 最后收到的 ZMQ 事件序号（gap 检测）
+    let _zmqLastEventTs = 0;    // 最后收到 ZMQ 事件的时间（心跳检测）
+    let _mmapDagCache = null;   // { text, stats, ts }
 
     // 向内部注册 IPC 通道元信息(非 channel 插件,不污染 api.channels)
     api._clawCoreIPC = api._clawCoreIPC || {};
     api._clawCoreIPC.meta = {
-      zmq: { endpoint: `tcp://127.0.0.1:${ZMQ_PUB_PORT}`, type: "pub/sub", events: ["dag_assemble", "dag_compact"] },
+      zmq: { endpoint: `tcp://127.0.0.1:${ZMQ_PUB_PORT}`, type: "pub/sub", events: ["dag_assemble", "dag_compact", "rccam_phase", "channel_heartbeat"] },
       mmap: { path: MMAP_SHM_PATH, size: "2MB", format: "4-byte LE length + UTF-8 JSON" },
       uds:  { path: getUdsPath(), protocol: "binary length-prefix JSON-RPC" },
     };
 
-    function _initZmq() {
-        if (_zmqSub) return;
-        try {
-            const zmq = require("zeromq");
-            const sub = new zmq.Subscriber();
-            sub.connect(`tcp://127.0.0.1:${ZMQ_PUB_PORT}`);
-            sub.subscribe("");
-            _zmqSub = sub;
-            api.logger.info?.(`${TAG} [zmq] SUB connected :${ZMQ_PUB_PORT}`);
-            (async () => {
+    // ═══ ZMQ SUB 持久重连循环(指数退避 + gap 检测) ═══
+    async function _zmqPersistentLoop() {
+        const MAX_BACKOFF = 30000;  // 最大退避 30s
+        const BASE_BACKOFF = 1000;  // 初始退避 1s
+        let backoff = BASE_BACKOFF;
+        let consecutiveFails = 0;
+
+        while (true) {
+            if (_zmqSub) {
+                try { _zmqSub.close(); } catch (e) {}
+                _zmqSub = null;
+            }
+            _zmqSubActive = false;
+
+            try {
+                const zmq = require("zeromq");
+                const sub = new zmq.Subscriber();
+                await sub.connect(`tcp://127.0.0.1:${ZMQ_PUB_PORT}`);
+                sub.subscribe("");
+                _zmqSub = sub;
+                _zmqSubActive = true;
+                _zmqLastEventTs = Date.now();
+                backoff = BASE_BACKOFF;
+                consecutiveFails = 0;
+
+                if (api.logger.info) {
+                    api.logger.info(`${TAG} [zmq] SUB 已连接 tcp://127.0.0.1:${ZMQ_PUB_PORT} (重试 #${consecutiveFails})`);
+                } else {
+                    process.stderr.write(`${TAG} [zmq] SUB connected :${ZMQ_PUB_PORT}\n`);
+                }
+
                 for await (const [msg] of sub) {
                     try {
                         const evt = JSON.parse(msg.toString());
+                        _zmqLastEventTs = Date.now();
+
+                        // ── 序号 gap 检测 ──
+                        if (evt.seq && typeof evt.seq === 'number') {
+                            if (_zmqLastSeq > 0 && evt.seq > _zmqLastSeq + 1) {
+                                const gapSize = evt.seq - _zmqLastSeq - 1;
+                                process.stderr.write(`${TAG} [zmq] ⚠️ 事件跳号: seq ${_zmqLastSeq}→${evt.seq} (丢失 ${gapSize} 条), 触发 mmap 全量同步\n`);
+                                // gap 后触发 mmap 全量同步，补偿丢失的 DAG 状态
+                                _mmapDagCache = _dagReadMmap();
+                            }
+                            _zmqLastSeq = evt.seq;
+                        }
+
+                        // ── DAG 事件 ──
                         if (evt.event === "dag_compact" || evt.event === "dag_assemble") {
                             _mmapDagCache = _dagReadMmap();
                         }
                         // Worker 主动推送恢复信号 → 自动关熔断器
                         if (evt.event === "dag_recovered" && _dagCB.state === 'OPEN') {
                             _dagCB.reset();
-                            api.logger.info?.(`${TAG} [context-engine] DAG circuit CLOSED via ZMQ recovery signal`);
+                            if (api.logger.info) {
+                                api.logger.info(`${TAG} [context-engine] DAG circuit CLOSED via ZMQ recovery signal`);
+                            }
                         }
-                    } catch {}
+                        // channel_heartbeat → 标记 ZMQ 通道正常
+                        if (evt.event === "channel_heartbeat") {
+                            // 仅更新 _zmqLastEventTs，上面已更新
+                        }
+
+                        // ── R-CCAM 阶段事件 ──
+                        if (evt.event === "rccam_phase") {
+                            const phase = evt.phase || "?";
+                            const status = evt.status || "?";
+                            const cycle = evt.data?.cycle ?? "?";
+                            if (api.logger.info) {
+                                api.logger.info(`${TAG} [rccam-events] phase=${phase} status=${status} cycle=${cycle}`);
+                            }
+                        }
+                    } catch (e) {}
                 }
-            })();
-        } catch (e) {
-            api.logger.debug?.(`${TAG} [zmq] SUB init failed: ${e.message}`);
+            } catch (e) {
+                consecutiveFails++;
+                backoff = Math.min(BASE_BACKOFF * Math.pow(2, consecutiveFails - 1), MAX_BACKOFF);
+                process.stderr.write(`${TAG} [zmq] SUB 断开 (fail #${consecutiveFails}), ${backoff}ms 后重连: ${e.message}\n`);
+            }
+
+            _zmqSubActive = false;
+            await new Promise(r => setTimeout(r, backoff).unref());
         }
     }
+
+    // 启动 ZMQ 持久重连循环
+    _zmqPersistentLoop().catch((e) => {
+        process.stderr.write(`${TAG} [zmq] persistent loop fatal: ${e.message}\n`);
+    });
 
     function _dagReadMmap() {
         try {
@@ -2032,7 +2186,7 @@ export default function register(api) {
         } catch { return null; }
     }
 
-    _initZmq();
+    // ZMQ SUB 持久重连循环已在上面 _zmqPersistentLoop() 启动
 
     // 后台 mmap 过期清理(每 5 分钟检查一次)
     const MMAP_CLEANUP_INTERVAL = 300000; // 5 min
@@ -3530,36 +3684,9 @@ export default function register(api) {
         } catch (e) {}
     });
     // ==========================================
-    // R-CCAM 白盒化:ZMQ SUB 订阅事件流
-    // 消费 Worker 通过 ZMQ PUB tcp://127.0.0.1:5559 推送的 rccam_phase 事件
+    // R-CCAM 白盒化: 已合并到 ZMQ SUB 持久重连循环（_zmqPersistentLoop）
+    // 不再需要独立 ZMQ SUB — 统一由事件循环处理 rccam_phase + gap 检测 + 自动重连
     // ==========================================
-    (async () => {
-        let zmq;
-        try { zmq = await import("zeromq"); } catch (e) {
-            api.logger.debug?.(`${TAG} [rccam-events] zmq not available: ${e.message}`);
-            return;
-        }
-        try {
-            const sub = new zmq.Subscriber();
-            await sub.connect("tcp://127.0.0.1:5559");
-            sub.subscribe("");   // 订阅全部
-            api.logger.info?.(`${TAG} [rccam-events] ZMQ SUB connected`);
-            (async () => {
-                for await (const [body] of sub) {
-                    try {
-                        const msg = JSON.parse(body.toString());
-                        if (msg.event !== "rccam_phase") continue;
-                        const phase = msg.phase || "?";
-                        const status = msg.status || "?";
-                        const cycle = msg.data?.cycle ?? "?";
-                        api.logger.info?.(`${TAG} [rccam-events] phase=${phase} status=${status} cycle=${cycle}`);
-                    } catch (e) {}
-                }
-            })();
-        } catch (e) {
-            api.logger.debug?.(`${TAG} [rccam-events] subscriber failed: ${e.message}`);
-        }
-    })();
 
-    api.logger.info?.(`${TAG} v4 plugin registration complete: 6 tools + 1 hook + context-engine + rccam-pipeline (worker=${workerEnabled ? "enabled" : "disabled"})`);
+    api.logger.info?.(`${TAG} v4 plugin registration complete: 6 tools + 1 hook + context-engine + rccam-pipeline + 通信自发现 (worker=${workerEnabled ? "enabled" : "disabled"})`);
 }

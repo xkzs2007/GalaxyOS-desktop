@@ -114,30 +114,24 @@ def _push_to_session_index(session_node: dict):
     except Exception:
         pass
 
-# ========== 三通道路径 ==========
-UDS_PATH = os.path.join(
-    os.path.expanduser("~/.openclaw/extensions/claw-core/var"),
-    "claw-worker.sock"
+# ========== 三通道路径（统一使用 GALAXYOS_EXT_DIR 环境变量，默认 ~/.openclaw/extensions/galaxyos/var）==========
+_GALAXYOS_VAR = os.environ.get(
+    "GALAXYOS_VAR_DIR",
+    os.path.expanduser("~/.openclaw/extensions/galaxyos/var")
 )
-ZMQ_PUB_PORT = 5559
-MMAP_PATH = os.path.join(
-    os.path.expanduser("~/.openclaw/extensions/claw-core/var"),
-    "claw_worker_mmap"
-)
+UDS_PATH = os.path.join(_GALAXYOS_VAR, "claw-worker.sock")
+ZMQ_PUB_PORT = int(os.environ.get("GALAXYOS_ZMQ_PORT", "5559"))
+MMAP_PATH = os.path.join(_GALAXYOS_VAR, "claw_worker_mmap")
 
 # 心跳专用 mmap（独立文件，插件只读 8 字节时间戳 float64，不跟 GIL 抢锁）
-HB_PATH = os.path.join(
-    os.path.expanduser("~/.openclaw/extensions/claw-core/var"),
-    "claw_worker_heartbeat"
-)
+HB_PATH = os.path.join(_GALAXYOS_VAR, "claw_worker_heartbeat")
 _zmq_pub = None  # ZMQ socket (optional)
+_zmq_event_seq = 0  # ZMQ PUB 事件全局序号（插件端做 gap 检测）
+_zmq_seq_lock = threading.Lock()
 
 # ========== Gateway UDS 代理（Worker → Gateway 透明 RPC） ==========
-_GATEWAY_UDS_PATH = os.path.join(
-    os.path.expanduser("~/.openclaw/extensions/claw-core/var"),
-    "claw-gateway.sock"
-)
-_MMAP_SHM_PATH = os.path.expanduser("~/.openclaw/extensions/claw-core/var/claw_shared_state")
+_GATEWAY_UDS_PATH = os.path.join(_GALAXYOS_VAR, "claw-gateway.sock")
+_MMAP_SHM_PATH = os.path.join(_GALAXYOS_VAR, "claw_shared_state")
 _MMAP_SHM_SIZE = 4096
 
 class _GatewayProxy:
@@ -1891,13 +1885,16 @@ def _zmq_pub_init():
 
 
 def _zmq_pub_event(event_type, data):
-    """通过 ZMQ PUB 推送结构化事件"""
-    global _zmq_pub
+    """通过 ZMQ PUB 推送结构化事件（带全局递增序号，插件端做 gap 检测）"""
+    global _zmq_pub, _zmq_event_seq
     if _zmq_pub is None:
         return
     try:
         import zmq
-        payload = json.dumps({"event": event_type, "ts": time.time(), **data}, ensure_ascii=False)
+        with _zmq_seq_lock:
+            _zmq_event_seq += 1
+            seq = _zmq_event_seq
+        payload = json.dumps({"event": event_type, "ts": time.time(), "seq": seq, **data}, ensure_ascii=False)
         _zmq_pub.send_string(payload)
     except Exception:
         pass
@@ -1922,6 +1919,18 @@ def _heartbeat_writer_thread():
             time.sleep(1.0)
         except Exception:
             time.sleep(0.5)
+
+
+def _zmq_heartbeat_thread():
+    """ZMQ 心跳线程：每 5 秒推送一次 channel_heartbeat 事件
+    
+    插件端通过 ZMQ SUB 接收此事件，独立判断 ZMQ 通道是否可达。
+    与 mmap 心跳分离：mmap 心跳证明进程存活，ZMQ 心跳证明 PUB/SUB 通道正常。
+    """
+    while not _shutdown_flag:
+        if _zmq_pub is not None:
+            _zmq_pub_event("channel_heartbeat", {"channel": "zmq_pub"})
+        time.sleep(5.0)
 
 
 def _preload_rccam_deps():
@@ -2597,7 +2606,7 @@ def main():
         except Exception as _sync_e:
             sys.stderr.write(f"[claw-worker] 代码同步跳过: {_sync_e}\n")
 
-    # ====== 分通道改造：心跳走独立 mmap，UDS 纯业务 ======
+    # ====== 分通道改造：心跳走独立 mmap + ZMQ，UDS 纯业务 ======
     global _shutdown_flag
     _shutdown_flag = False
 
@@ -2606,6 +2615,12 @@ def main():
         target=_heartbeat_writer_thread, daemon=True, name="heartbeat-mmap"
     )
     hb_thread.start()
+
+    # 1.5 ZMQ PUB 心跳线程（独立判断 PUB/SUB 通道可达性）
+    zmq_hb_thread = threading.Thread(
+        target=_zmq_heartbeat_thread, daemon=True, name="heartbeat-zmq"
+    )
+    zmq_hb_thread.start()
 
     # 2. 预加载 R-CCAM 依赖（避免第一次调用卡死 GIL）
     preload_thread = threading.Thread(
