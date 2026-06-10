@@ -39,8 +39,9 @@ class PaperIntegrationAddon:
     - MemoryOS: memory_os_* UDS 方法（热度和分段）
     """
     
-    def __init__(self, worker=None):
+    def __init__(self, worker=None, methods_map=None):
         self.worker = worker
+        self._methods_map = methods_map  # 可选的 UDS 方法表
         
         # RLM
         self.rlm_processor = None
@@ -57,13 +58,34 @@ class PaperIntegrationAddon:
         # 是否已注册
         self._registered = False
     
-    def register_all(self):
+    def register_all(self, methods_map=None):
         """注册所有 UDS 方法和 hooks"""
         if self._registered:
             return
         
         if not self.worker:
             logger.warning("Worker 未提供，跳过 UDS 注册")
+            return
+        
+        # 方法表来源优先级: 参数 > self._methods_map > getattr(worker, '_METHODS') > 模块级 _METHODS
+        methods = methods_map or self._methods_map
+        if methods is None:
+            methods = getattr(self.worker, '_METHODS', None)
+        if methods is None:
+            import sys as _sys
+            _mod = _sys.modules.get(self.worker.__class__.__module__, None)
+            if _mod:
+                methods = getattr(_mod, '_METHODS', None)
+            if methods is None:
+                # 最后兜底: 全局命名空间（测试场景）
+                import builtins
+                try:
+                    from claw_worker import _METHODS
+                except ImportError:
+                    pass
+        
+        if methods is None:
+            logger.warning("找不到 _METHODS 表，UDS 注册跳过")
             return
         
         # 获取 LLM 引用
@@ -80,16 +102,14 @@ class PaperIntegrationAddon:
             self.skill_curriculum.initialize(catalog)
         
         # 注册 UDS 方法
-        methods_map = getattr(self.worker, '_METHODS', None)
-        if methods_map is not None:
-            methods_map["rlm_process"] = self._uds_rlm_process
-            methods_map["rlm_fast_process"] = self._uds_rlm_fast_process
-            methods_map["skill_curriculum_step"] = self._uds_skill_step
-            methods_map["skill_curriculum_status"] = self._uds_skill_status
-            methods_map["memory_os_heat_status"] = self._uds_heat_status
-            methods_map["memory_os_search"] = self._uds_memory_os_search
-            methods_map["memory_os_hybrid_score"] = self._uds_hybrid_score
-            logger.info("三论文集成: 7 个 UDS 方法已注册")
+        methods["rlm_process"] = self._uds_rlm_process
+        methods["rlm_fast_process"] = self._uds_rlm_fast_process
+        methods["skill_curriculum_step"] = self._uds_skill_step
+        methods["skill_curriculum_status"] = self._uds_skill_status
+        methods["memory_os_heat_status"] = self._uds_heat_status
+        methods["memory_os_search"] = self._uds_memory_os_search
+        methods["memory_os_hybrid_score"] = self._uds_hybrid_score
+        logger.info("三论文集成: 7 个 UDS 方法已注册")
         
         self._registered = True
         logger.info("✅ 论文集成完成: RLM + SKILL0 + MemoryOS")
@@ -198,8 +218,7 @@ def integrate_into_worker(worker, methods_map: dict = None) -> PaperIntegrationA
       from paper_integration_addon import integrate_into_worker
       integrate_into_worker(self, _METHODS)
     """
-    addon = PaperIntegrationAddon(worker)
-    addon._METHODS = methods_map
+    addon = PaperIntegrationAddon(worker, methods_map=methods_map)
     addon.register_all()
     return addon
 
