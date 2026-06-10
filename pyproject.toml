@@ -35,3 +35,8 @@ python_version = "3.12"
 ignore_missing_imports = true
 show_error_codes = true
 warn_unused_configs = true
+
+[tool.maturin]
+manifest-path = "extensions/galaxyos/native/Cargo.toml"
+python-source = "."
+module-name = "galaxyos_native"

@@ -25,7 +25,19 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const WORKER_SCRIPT = path.join(__dirname, "scripts", "claw_worker.py");
 const PIL_WORKER_SCRIPT = path.join(__dirname, "scripts", "pil_worker.py");
 
-// Rust 原生扩展二进制（替代 pil_worker.py，零 GIL，SIMD 加速）
+// Rust 原生扩展 — 三级检测
+// 1. PyO3 Python 模块（最优：零序列化，直接 import）
+let _pyo3Native = false;
+try {
+    const r = spawnSync(_pythonBin, ["-c", "import galaxyos_native; print(galaxyos_native.__version__)"], {
+        encoding: "utf-8", timeout: 5000, stdio: ["pipe", "pipe", "ignore"]
+    });
+    if (r.status === 0 && r.stdout?.trim()) {
+        _pyo3Native = true;
+        process.stderr.write(`[galaxyos] PyO3 galaxyos_native v${r.stdout.trim()} detected (zero-copy)\n`);
+    }
+} catch {}
+// 2. 独立二进制（stdin/stdout JSON-RPC）
 const _nativeBinaryCandidates = [
     path.join(__dirname, "scripts", "galaxyos-native"),
     path.join(__dirname, "native", "target", "release", "galaxyos-native"),
@@ -36,7 +48,6 @@ let _nativeBinary = null;
 for (const p of _nativeBinaryCandidates) {
     if (existsSync(p)) { _nativeBinary = p; break; }
 }
-// Fallback: 检查 PATH
 if (!_nativeBinary) {
     try {
         const p = execSync("which galaxyos-native 2>/dev/null || echo ''", { encoding: "utf-8" }).trim();
@@ -1177,10 +1188,12 @@ export default function register(api) {
     api.logger.info?.(`${TAG} v2 plugin initialized, workspace=${ws}`);
 
     // 原生扩展状态报告
-    if (_nativeBinary) {
-        api.logger.info?.(`${TAG} Rust native extension detected: ${_nativeBinary}`);
+    if (_pyo3Native) {
+        api.logger.info?.(`${TAG} Rust native: PyO3 module (galaxyos_native) — zero-copy, no GIL`);
+    } else if (_nativeBinary) {
+        api.logger.info?.(`${TAG} Rust native: subprocess binary (${_nativeBinary})`);
     } else {
-        api.logger.warn?.(`${TAG} Rust native extension NOT found — image/vector ops fall back to Python PIL (slower, GIL-bound). Run \`make native\` to build.`);
+        api.logger.warn?.(`${TAG} Rust native extension NOT found — image/vector ops fall back to Python PIL (slower, GIL-bound). Run \`make native-py\` or \`make native\`.`);
     }
 
     // ==========================================

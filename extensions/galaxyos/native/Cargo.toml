@@ -4,11 +4,20 @@ version = "0.1.0"
 edition = "2021"
 description = "GalaxyOS native extensions — PIL replacement + SIMD vector compute"
 
+[lib]
+name = "galaxyos_native"
+crate-type = ["cdylib", "rlib"]
+
+[[bin]]
+name = "galaxyos-native"
+path = "src/main.rs"
+
 [dependencies]
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 base64 = "0.22"
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp", "gif"] }
+pyo3 = { version = "0.23", features = ["extension-module"] }
 
 [profile.release]
 opt-level = 3

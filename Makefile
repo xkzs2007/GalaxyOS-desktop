@@ -1,7 +1,7 @@
 # GalaxyOS — 开发命令速查
 # make test | make coverage | make lint | make clean | make sync | make native
 
-.PHONY: test coverage lint clean install deps sync sync-dist bench native
+.PHONY: test coverage lint clean install deps sync sync-dist bench native native-py
 
 PYTHON := python3
 VENV := .venv
@@ -63,7 +63,7 @@ sync-dist: sync
 bench:
 	$(PYTHON) tests/cognitive_ablation.py
 
-# ── native: 编译 Rust 原生扩展 ──
+# ── native: 编译 Rust 原生扩展（二进制）──
 native:
 	@echo "🦀 Building GalaxyOS native extension..."
 	@if [ ! -d extensions/galaxyos/native ]; then \
@@ -77,4 +77,14 @@ native:
 	@mkdir -p extensions/galaxyos/scripts
 	cp extensions/galaxyos/native/target/release/galaxyos-native native/target/release/galaxyos-native 2>/dev/null || true
 	cp extensions/galaxyos/native/target/release/galaxyos-native extensions/galaxyos/scripts/galaxyos-native 2>/dev/null || true
-	@echo "✅ Copied to native/target/release/galaxyos-native + extensions/galaxyos/scripts/galaxyos-native"
+	@echo "✅ Copied to native/target/release/ + extensions/galaxyos/scripts/"
+
+# ── native-py: 编译 PyO3 Python 扩展（pip 安装后直接 import galaxyos_native）──
+native-py:
+	@echo "🦀 Building PyO3 Python extension..."
+	@if ! command -v maturin >/dev/null 2>&1; then \
+		echo "📦 Installing maturin..."; \
+		pip install maturin; \
+	fi
+	cd extensions/galaxyos/native && maturin develop --release
+	@echo "✅ PyO3 extension installed — Python can now: import galaxyos_native"

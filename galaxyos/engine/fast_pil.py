@@ -33,22 +33,27 @@ logger = logging.getLogger(__name__)
 
 PIL_WORKER_SCRIPT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "pil_worker.py")
 
-# Rust 原生扩展（更快，无 GIL）— 多路径搜索
+# ── Rust 原生扩展检测（3 级优先级） ──
+# 1. PyO3 编译的 Python 扩展（最优：零序列化开销，直接内存共享）
+_try_galaxyos_native_module = None
+try:
+    import galaxyos_native
+    _try_galaxyos_native_module = galaxyos_native
+    logger.info(f"[fast-pil] using PyO3 native module galaxyos_native v{getattr(galaxyos_native, '__version__', '?')}")
+except ImportError:
+    pass
+
+# 2. 独立二进制（stdin/stdout JSON-RPC，有序列化开销）
 def _find_rust_binary():
     """按优先级搜索 galaxyos-native 二进制"""
     _ENGINE_DIR = os.path.dirname(os.path.abspath(__file__))
     _GALAXYOS_DIR = os.path.dirname(_ENGINE_DIR)
     _REPO_ROOT = os.path.dirname(_GALAXYOS_DIR)
     candidates = [
-        # 1. 与 pil_worker 同目录（部署目录）
         os.path.join(_ENGINE_DIR, "galaxyos-native"),
-        # 2. extensions/galaxyos/native 构建产物
         os.path.join(_REPO_ROOT, "extensions", "galaxyos", "native", "target", "release", "galaxyos-native"),
-        # 3. 仓库根 native/ (Makefile 复制目标)
         os.path.join(_REPO_ROOT, "native", "target", "release", "galaxyos-native"),
-        # 4. $HOME/.cargo/bin (通过 cargo install 安装)
         os.path.expanduser("~/.cargo/bin/galaxyos-native"),
-        # 5. 系统 PATH
         "galaxyos-native",
     ]
     for p in candidates:
@@ -56,11 +61,19 @@ def _find_rust_binary():
             return p
     return None
 
-_RUST_BINARY = _find_rust_binary()
-_USE_RUST = _RUST_BINARY is not None
-if _USE_RUST:
-    logger.info(f"[fast-pil] using Rust native extension: {_RUST_BINARY}")
+_RUST_BINARY = _find_rust_binary() if _try_galaxyos_native_module is None else None
+
+# 使用模式
+if _try_galaxyos_native_module is not None:
+    _BACKEND = "pyo3"        # Python 原生扩展，零开销
+    _USE_RUST = True
+elif _RUST_BINARY is not None:
+    _BACKEND = "subprocess"  # 独立二进制，有序列化开销
+    _USE_RUST = True
+    logger.info(f"[fast-pil] using Rust subprocess: {_RUST_BINARY}")
 else:
+    _BACKEND = "python"      # Python pil_worker 子进程
+    _USE_RUST = False
     logger.info("[fast-pil] Rust native extension not found, using Python pil_worker (PIL)")
 PIL_TIMEOUT = 8.0  # 单操作超时
 
@@ -100,17 +113,23 @@ class LRUCache:
 # ── PIL 子进程管理 ──
 
 class PilWorkerProcess:
-    """管理独立的 pil_worker.py 子进程, 通过 stdin/stdout 通信"""
+    """管理图像处理加速：PyO3 原生模块 > Rust subprocess > Python pil_worker"""
 
     def __init__(self):
         self._proc = None
         self._lock = threading.Lock()
         self._next_id = 0
         self._stats = {"requests": 0, "errors": 0, "restarts": 0}
-        self._ensure_started()
+        if _BACKEND == "pyo3":
+            # PyO3 模式：无需启动子进程，直接内存调用
+            logger.info("[fast-pil] PyO3 backend — no subprocess needed")
+        else:
+            self._ensure_started()
 
     def _ensure_started(self):
-        """启动或重启子进程"""
+        """启动或重启子进程（仅 subprocess/python 模式）"""
+        if _BACKEND == "pyo3":
+            return
         with self._lock:
             if self._proc and self._proc.poll() is None:
                 return
@@ -141,29 +160,107 @@ class PilWorkerProcess:
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
-            bufsize=1,  # 行缓冲
+            bufsize=1,
         )
         self._stats["restarts"] += 1
 
-        # 读取就绪信号
         try:
             ready_line = self._proc.stdout.readline()
             if ready_line:
                 ready = json.loads(ready_line.strip())
                 if ready.get("event") == "ready":
-                    logger.info(f"[fast-pil] pil_worker ready (pid={ready.get('pid')})")
+                    logger.info(f"[fast-pil] worker ready (pid={ready.get('pid')})")
                     return
-        except Exception as e:
+        except Exception:
             pass
 
         raise RuntimeError("PIL worker failed to start")
 
     def call(self, method: str, params: dict) -> dict:
-        """同步调用 PIL worker（从 Worker 的 UDS handler 线程中调用）
+        """调用图像/向量操作
 
-        由于 UDS 是串行的, 这里同步等待不会造成并发问题,
-        且 PIL 操作是 I/O 密集型（等待子进程），Python GIL 在 subprocess 通信期间会释放。
+        PyO3 模式：直接调用原生函数（零序列化开销）
+        其他模式：通过 stdin/stdout JSON-RPC 子进程
         """
+        # ═══ PyO3 快速路径（零开销，无 GIL 竞争）═══
+        if _BACKEND == "pyo3":
+            return self._call_pyo3(method, params)
+        # ═══ 子进程路径（原有逻辑）═══
+        return self._call_subprocess(method, params)
+
+    def _call_pyo3(self, method: str, params: dict) -> dict:
+        """PyO3 原生模块直接调用 — 无需子进程、无序列化"""
+        t0 = time.time()
+        try:
+            data_b64 = params.get("data_b64", "")
+            data = base64.b64decode(data_b64) if data_b64 else b""
+            fmt = params.get("fmt", "jpeg")
+
+            if method == "resize":
+                result_b64, size = _try_galaxyos_native_module.resize(
+                    data,
+                    int(params.get("width", 800)),
+                    int(params.get("height", 600)),
+                    params.get("keep_ratio", True),
+                    fmt,
+                )
+                elapsed = round((time.time() - t0) * 1000, 1)
+                return {"data_b64": result_b64, "size": list(size), "timing_ms": elapsed}
+
+            elif method == "enhance":
+                result_b64 = _try_galaxyos_native_module.enhance(
+                    data,
+                    float(params.get("brightness", 1.0)),
+                    float(params.get("contrast", 1.0)),
+                    float(params.get("sharpness", 1.0)),
+                    fmt,
+                )
+                elapsed = round((time.time() - t0) * 1000, 1)
+                return {"data_b64": result_b64, "timing_ms": elapsed}
+
+            elif method == "ocr_preprocess":
+                result_b64 = _try_galaxyos_native_module.ocr_preprocess(
+                    data,
+                    params.get("fmt", "png"),
+                )
+                elapsed = round((time.time() - t0) * 1000, 1)
+                return {"data_b64": result_b64, "timing_ms": elapsed}
+
+            elif method == "vector_dot":
+                a = params.get("a", [])
+                b = params.get("b", [])
+                dot = _try_galaxyos_native_module.vector_dot(a, b)
+                elapsed = round((time.time() - t0) * 1000, 1)
+                return {"dot": dot, "timing_ms": elapsed}
+
+            elif method == "vector_cosine":
+                a = params.get("a", [])
+                b = params.get("b", [])
+                cosine = _try_galaxyos_native_module.vector_cosine(a, b)
+                elapsed = round((time.time() - t0) * 1000, 1)
+                return {"cosine": cosine, "timing_ms": elapsed}
+
+            elif method == "vector_batch_cosine":
+                query = params.get("query", [])
+                candidates = params.get("candidates", [])
+                scores = _try_galaxyos_native_module.vector_batch_cosine(query, candidates)
+                elapsed = round((time.time() - t0) * 1000, 1)
+                return {"scores": list(scores), "timing_ms": elapsed}
+
+            elif method == "ping":
+                return {"ok": True, "backend": "pyo3"}
+
+            else:
+                return {"error": f"unknown PyO3 method: {method}"}
+
+        except Exception as e:
+            elapsed = round((time.time() - t0) * 1000, 1)
+            self._stats["errors"] += 1
+            logger.error(f"[fast-pil] PyO3 call {method} failed: {e}")
+            return {"error": str(e), "timing_ms": elapsed}
+
+    def _call_subprocess(self, method: str, params: dict) -> dict:
+        """通过 stdin/stdout JSON-RPC 调用子进程"""
         self._ensure_started()
         timeout_at = time.time() + PIL_TIMEOUT
 
