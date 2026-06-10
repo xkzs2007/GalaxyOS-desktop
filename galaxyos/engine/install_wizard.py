@@ -74,22 +74,40 @@ def heading(title):
     _print(f"{B}{title}{N}")
     _print(f"{C}{'='*60}{N}")
 
-# ── 路径定义 ──
+# ── 路径定义（自动检测 GalaxyOS 仓库位置） ──
+_THIS_FILE = Path(__file__).resolve()
+# 如果 install_wizard.py 在 galaxyos/engine/ 下，仓库根目录 = 上两层
+if _THIS_FILE.parent.name == "engine" and _THIS_FILE.parent.parent.name == "galaxyos":
+    _GALAXYOS_REPO = _THIS_FILE.parent.parent.parent
+else:
+    _GALAXYOS_REPO = Path(os.environ.get("GALAXYOS_REPO", str(Path.home() / ".openclaw" / "workspace" / "GalaxyOS")))
+
 WORKSPACE = Path(os.environ.get("OPENCLAW_WORKSPACE", str(Path.home() / ".openclaw" / "workspace")))
-SKILL_DIR = WORKSPACE / "skills" / "xiaoyi-claw-omega-final"
-SCRIPTS_DIR = SKILL_DIR / "scripts"
-CORE_DIR = SKILL_DIR / "skills" / "llm-memory-integration" / "core"
-SRC_DIR = WORKSPACE / "skills" / "llm-memory-integration" / "src"
-CONFIG_DIR = SKILL_DIR / "config"
-DIST_DIR = Path.home() / ".openclaw" / "extensions" / "claw-core" / "dist" / "scripts"
-VAR_DIR = Path.home() / ".openclaw" / "extensions" / "claw-core" / "var"
+
+# GalaxyOS 引擎目录
+galaxy_engine = _GALAXYOS_REPO / "galaxyos" / "engine"
+galaxy_privileged = _GALAXYOS_REPO / "galaxyos" / "privileged"
+galaxy_config = _GALAXYOS_REPO / "config"
+galaxy_scripts = _GALAXYOS_REPO / "galaxyos" / "scripts"
+
+# OpenClaw 扩展目录（galaxyos 插件运行时）
+EXT_DIR = Path.home() / ".openclaw" / "extensions" / "galaxyos"
+DIST_DIR = EXT_DIR / "dist" / "scripts"
+VAR_DIR = EXT_DIR / "var"
+
+# 旧版路径（兼容 legacy claw-core）
+CLAW_CORE_EXT = Path.home() / ".openclaw" / "extensions" / "claw-core"
+DIST_DIR_LEGACY = CLAW_CORE_EXT / "dist" / "scripts"
+VAR_DIR_LEGACY = CLAW_CORE_EXT / "var"
 
 # ── 仿生睡眠巩固引擎 ──
-SLEEP_CORE = CORE_DIR / "biorhythm_sleep_consolidation.py"
-SLEEP_LOG = Path.home() / ".openclaw" / "workspace" / "memory" / "dreaming" / "dream_log.jsonl"
+SLEEP_CORE = galaxy_engine / "biorhythm_sleep_consolidation.py"
+SLEEP_LOG = WORKSPACE / "memory" / "dreaming" / "dream_log.jsonl"
 
 # ── KG as Memory Backbone ──
-KG_DB = Path.home() / ".openclaw" / "workspace" / "temporal_kg.db"
+KG_DB = WORKSPACE / "temporal_kg.db"
+
+# 旧的 dist2（迁移前遗留）
 DIST2_DIR = Path.home() / ".openclaw" / "dist" / "scripts" / "skills" / "llm-memory-integration" / "core"
 
 
@@ -144,7 +162,7 @@ def check_environment() -> Dict[str, Any]:
 
     # 目录存在性
     results["dirs"] = {}
-    for name, p in [("scripts", SCRIPTS_DIR), ("config", CONFIG_DIR), ("dist", DIST_DIR), ("var", VAR_DIR)]:
+    for name, p in [("scripts", galaxy_scripts), ("config", galaxy_config), ("dist", DIST_DIR), ("var", VAR_DIR)]:
         results["dirs"][name] = p.exists()
         if not p.exists():
             warn(f"{name} 目录不存在: {p}", indent=1)
@@ -163,47 +181,45 @@ def test_all_modules() -> Dict[str, Any]:
     results = {"total": 0, "ok": 0, "fail": 0, "details": []}
 
     # ── 确保路径 ──
-    for p in [str(SCRIPTS_DIR), str(CORE_DIR), str(SRC_DIR), str(SRC_DIR / "integration"), str(SRC_DIR / "memory")]:
+    for p in [str(galaxy_scripts), str(galaxy_engine), str(galaxy_engine), str(galaxy_engine / "integration"), str(galaxy_engine / "memory")]:
         if os.path.isdir(p):
             sys.path.insert(0, p)
 
     # 读取模块依赖配置
-    deps_path = CONFIG_DIR / "module_dependencies.json"
+    deps_path = galaxy_config / "module_dependencies.json"
     if deps_path.exists():
         with open(deps_path) as f:
             deps = json.load(f)
         module_names = list(deps.get("modules", {}).keys())
         info(f"module_dependencies.json 定义 {len(module_names)} 个模块", indent=1)
 
-    # ── 1) 扫描 llm-memory-integration/core/（13 层主体） ──
-    core_py_files = {}
-    if CORE_DIR.exists():
-        for fn in os.listdir(CORE_DIR):
+    # ── 1) 扫描 galaxyos/engine/（核心引擎，164 个模块） ──
+    engine_py_files = {}
+    if galaxy_engine.exists():
+        for fn in os.listdir(galaxy_engine):
             if fn.endswith(".py") and fn != "__init__.py":
-                core_py_files[fn[:-3]] = CORE_DIR / fn
-        info(f"core/ 目录发现 {len(core_py_files)} 个模块文件", indent=1)
+                engine_py_files[fn[:-3]] = galaxy_engine / fn
+        info(f"galaxyos/engine/ 发现 {len(engine_py_files)} 个模块文件", indent=1)
 
-    # ── 2) 扫描 src/ 各子目录 ──
-    src_py_files = {}
-    if SRC_DIR.exists():
-        for root, dirs, files in os.walk(SRC_DIR):
-            for fn in files:
-                if fn.endswith(".py") and fn != "__init__.py":
-                    rel = os.path.relpath(os.path.join(root, fn), SRC_DIR).replace("/", ".")[:-3]
-                    src_py_files[rel] = os.path.join(root, fn)
-        info(f"src/ 目录发现 {len(src_py_files)} 个模块文件", indent=1)
+    # ── 2) 扫描 galaxyos/privileged/（高性能层，70 个模块） ──
+    priv_py_files = {}
+    if galaxy_privileged.exists():
+        for fn in os.listdir(galaxy_privileged):
+            if fn.endswith(".py") and fn != "__init__.py":
+                priv_py_files[f"privileged.{fn[:-3]}"] = galaxy_privileged / fn
+        info(f"galaxyos/privileged/ 发现 {len(priv_py_files)} 个模块文件", indent=1)
 
-    # ── 3) 扫描 scripts/（入口/协调/辅助） ──
+    # ── 3) 扫描 galaxyos/scripts/ ──
     script_py_files = {}
-    for fn in os.listdir(SCRIPTS_DIR):
+    for fn in os.listdir(galaxy_scripts):
         if fn.endswith(".py") and fn not in ("__init__.py", "install_wizard.py", "simple_debug.py",
                                                "migrate_tencent_to_unified.py"):
-            script_py_files[fn[:-3]] = SCRIPTS_DIR / fn
+            script_py_files[fn[:-3]] = galaxy_scripts / fn
     info(f"scripts/ 目录发现 {len(script_py_files)} 个模块文件", indent=1)
 
     # ── 合并去重 ──
     all_modules = {}
-    for d in [core_py_files, src_py_files, script_py_files]:
+    for d in [engine_py_files, priv_py_files, script_py_files]:
         for k, v in d.items():
             if k not in all_modules:
                 all_modules[k] = v
@@ -256,7 +272,7 @@ def test_all_modules() -> Dict[str, Any]:
     print()
     heading("🔬 子系统初始化链路（XiaoYiClawLLM）")
     try:
-        sys.path.insert(0, str(SCRIPTS_DIR))
+        sys.path.insert(0, str(galaxy_scripts))
         import logging
         logging.disable(logging.CRITICAL)
         mod = importlib.import_module("xiaoyi_claw_api")
@@ -306,13 +322,13 @@ def check_file_sync() -> Dict[str, Any]:
         warn(f"dist 目录不存在: {DIST_DIR}")
         return results
 
-    for fn in os.listdir(SCRIPTS_DIR):
+    for fn in os.listdir(galaxy_scripts):
         if not fn.endswith(".py"):
             continue
         # 跳过向导自身（不是核心模块）
         if fn in ("install_wizard.py",):
             continue
-        src = SCRIPTS_DIR / fn
+        src = galaxy_scripts / fn
         dst = DIST_DIR / fn
 
         status = "ok"
@@ -331,20 +347,35 @@ def check_file_sync() -> Dict[str, Any]:
         elif status == "stale":
             warn(f"{fn}: 源文件更新于 dist 之后", indent=1)
 
-    # 也检查 index.js
-    plugin_src = WORKSPACE / "extensions" / "claw-core" / "index.js"
-    plugin_src2 = Path.home() / ".openclaw" / "extensions" / "claw-core" / "index.js"
+    # 也检查 galaxyos 插件 index.js
+    plugin_src = EXT_DIR / "index.js"
     if plugin_src.exists():
-        dst_plugin = Path.home() / ".openclaw" / "extensions" / "claw-core" / "dist" / "index.js"
-        # 跳过 index.js 的比较，直接记录存在性
-        pass
+        dst_plugin = EXT_DIR / "dist" / "index.js"
 
-    # ── 也检查 core/ → dist2 (llm-memory-integration) ──
-    if DIST2_DIR.exists() and CORE_DIR.exists():
-        for fn in os.listdir(CORE_DIR):
+    # ── 也检查 galaxyos/engine/ → dist (运行时同步) ──
+    if DIST_DIR.exists() and galaxy_engine.exists():
+        for fn in os.listdir(galaxy_engine):
             if not fn.endswith(".py") or fn == "__init__.py":
                 continue
-            src = CORE_DIR / fn
+            src = galaxy_engine / fn
+            dst = DIST_DIR / fn
+            status = "ok"
+            if not dst.exists():
+                status = "missing"
+                results["out_of_sync"] += 1
+            elif os.path.getmtime(src) > os.path.getmtime(dst):
+                status = "stale"
+                results["out_of_sync"] += 1
+            results["files"].append({"file": f"engine/{fn}", "status": status, "src_mtime": os.path.getmtime(src)})
+            if status != "ok":
+                warn(f"engine/{fn}: {'dist 中缺失' if status == 'missing' else '源文件更新于 dist 之后'}", indent=1)
+
+    # ── 旧版兼容检查：core/ → dist2 (llm-memory-integration) ──
+    if DIST2_DIR.exists() and galaxy_engine.exists():
+        for fn in os.listdir(galaxy_engine):
+            if not fn.endswith(".py") or fn == "__init__.py":
+                continue
+            src = galaxy_engine / fn
             dst = DIST2_DIR / fn
 
             status = "ok"
@@ -531,10 +562,10 @@ def scan_breakers() -> Dict[str, Any]:
 
     results = {"files": {}, "total_breaks": 0}
 
-    for fn in sorted(os.listdir(SCRIPTS_DIR)):
+    for fn in sorted(os.listdir(galaxy_scripts)):
         if not fn.endswith(".py"):
             continue
-        fp = SCRIPTS_DIR / fn
+        fp = galaxy_scripts / fn
         try:
             with open(fp) as f:
                 source = f.read()
@@ -622,7 +653,7 @@ def check_and_wizard_config(interactive: bool = True, config_only: bool = False)
 
     config_data = {}
     for name, desc in expected_configs.items():
-        fp = CONFIG_DIR / name
+        fp = galaxy_config / name
         if fp.exists():
             try:
                 with open(fp) as f:
@@ -712,9 +743,9 @@ def run_config_wizard(config_data: Dict[str, Any]):
     print(f"  向量模型: {emb.get('model', '?')} ({emb.get('dimensions', '?')}维)")
 
     print(f"\n{Y}配置编辑需要直接修改配置文件{N}")
-    print(f"  路径: {CONFIG_DIR / 'llm_config.json'}")
-    print(f"  路径: {CONFIG_DIR / 'performance_config.json'}")
-    print(f"  路径: {CONFIG_DIR / 'priority_config.json'}")
+    print(f"  路径: {galaxy_config / 'llm_config.json'}")
+    print(f"  路径: {galaxy_config / 'performance_config.json'}")
+    print(f"  路径: {galaxy_config / 'priority_config.json'}")
     print()
     print("建议修改项:")
     print("  1. LLM API Key / Base URL")
@@ -731,7 +762,7 @@ def run_config_wizard(config_data: Dict[str, Any]):
     }
     if choice in files:
         fn = files[choice]
-        fp = CONFIG_DIR / fn
+        fp = galaxy_config / fn
         print(f"\n📄 {fp}")
         try:
             with open(fp) as f:
@@ -850,7 +881,7 @@ def test_sleep_consolidation() -> Dict[str, Any]:
     # ── 空闲感知集成测试 ──
     print(f"\n{C}┌─ {B}ConsolidationEngine 空闲感知集成{N}")
     try:
-        sys.path.insert(0, str(CORE_DIR))
+        sys.path.insert(0, str(galaxy_engine))
         from memory_consolidation import ConsolidationEngine
         engine = ConsolidationEngine(ws)
         engine._last_user_active = time.time() - 200
@@ -897,7 +928,7 @@ def test_kg() -> Dict[str, Any]:
         "errors": [],
     }
 
-    sys.path.insert(0, str(CORE_DIR))
+    sys.path.insert(0, str(galaxy_engine))
 
     # ── 导入测试 ──
     print(f"\n{C}┌─ {B}模块导入{N}")
@@ -1053,7 +1084,7 @@ def auto_fix(sync_result: Dict[str, Any], import_result: Optional[Dict[str, Any]
         for entry in sync_result.get("files", []):
             fn = entry["file"]
             if entry["status"] in ("missing", "stale"):
-                src = SCRIPTS_DIR / fn
+                src = galaxy_scripts / fn
                 dst = DIST_DIR / fn
                 try:
                     shutil.copy2(str(src), str(dst))
@@ -1064,43 +1095,41 @@ def auto_fix(sync_result: Dict[str, Any], import_result: Optional[Dict[str, Any]
                     fixed["failed"] += 1
                     err(f"同步失败 {fn}: {e}")
 
-        # 同步 index.js
-        for src_candidate in [
-            WORKSPACE / "extensions" / "claw-core" / "index.js",
-            Path.home() / ".openclaw" / "extensions" / "claw-core" / "index.js",
-            SCRIPTS_DIR.parent / ".." / ".." / "extensions" / "claw-core" / "index.js",
-        ]:
-            src_candidate = src_candidate.resolve()
-            if src_candidate.exists():
-                dst = Path.home() / ".openclaw" / "extensions" / "claw-core" / "dist" / "index.js"
+        # 同步 index.js（galaxyos 插件）
+    if EXT_DIR.exists():
+        plugin_src = EXT_DIR / "index.js"
+        plugin_dst = EXT_DIR / "dist" / "index.js"
+        if plugin_src.exists() and plugin_src.resolve() != plugin_dst.resolve():
+            try:
+                shutil.copy2(str(plugin_src), str(plugin_dst))
+                fixed["synced"] += 1
+                ok("已同步: galaxyos/dist/index.js")
+            except Exception as e:
+                err(f"同步 galaxyos/index.js 失败: {e}")
+
+    # ── 同步 GalaxyOS engine 到 dist（运行时同步） ──
+    for src_dir, dst_dir, label in [
+        (galaxy_engine, DIST_DIR, "engine→dist"),
+    ]:
+        if not src_dir.exists() or not dst_dir.exists():
+            continue
+        for fn in os.listdir(src_dir):
+            if not fn.endswith(".py") or fn == "__init__.py":
+                continue
+            src = src_dir / fn
+            dst = dst_dir / fn
+            if not dst.exists() or os.path.getmtime(src) > os.path.getmtime(dst):
                 try:
-                    shutil.copy2(str(src_candidate), str(dst))
+                    import shutil
+                    shutil.copy2(str(src), str(dst))
                     fixed["synced"] += 1
-                    ok(f"已同步: dist/index.js")
                 except Exception as e:
-                    err(f"同步 index.js 失败: {e}")
-                break
+                    fixed["failed"] += 1
+                    err(f"同步 {fn} 失败: {e}")
+        if fixed["synced"] > 0:
+            ok(f"已同步: {label} ({fixed['synced']} 文件)")
 
     # ── 同步睡眠引擎模块（如不存在则复制） ──
-    sleep_dst_core = CORE_DIR / "biorhythm_sleep_consolidation.py"
-    if SLEEP_CORE.exists() and not sleep_dst_core.exists():
-        try:
-            shutil.copy2(str(SLEEP_CORE), str(sleep_dst_core))
-            fixed["synced"] += 1
-            ok(f"已同步: core/biorhythm_sleep_consolidation.py")
-            fixed["details"].append({"file": "biorhythm_sleep_consolidation.py", "action": "copied_to_core"})
-        except Exception as e:
-            err(f"同步 sleep 模块到 core/ 失败: {e}")
-
-    # GalaxyOS 仓库同步
-    galaxyos_repo = Path("/tmp/galaxyos-upload")
-    if galaxyos_repo.exists() and SLEEP_CORE.exists():
-        for dst_dir in [galaxyos_repo / "services", galaxyos_repo / "skills" / "llm-memory-integration" / "core"]:
-            dst_dir.mkdir(parents=True, exist_ok=True)
-            try:
-                shutil.copy2(str(SLEEP_CORE), dst_dir / "biorhythm_sleep_consolidation.py")
-            except Exception as e:
-                err(f"同步到 GalaxyOS {dst_dir} 失败: {e}")
 
     return fixed
 
@@ -1110,13 +1139,26 @@ def auto_fix(sync_result: Dict[str, Any], import_result: Optional[Dict[str, Any]
 # ════════════════════════════════════════════════════════════════
 
 def get_core_version() -> str:
-    """从 claw-core package.json 读版本号"""
-    pkg = Path.home() / ".openclaw" / "extensions" / "claw-core" / "package.json"
+    """从 galaxyos/engine 或 extensions 读版本号"""
+    # 优先从 galaxyos 插件读
+    pkg = EXT_DIR / "package.json"
     try:
-        with open(pkg) as f:
-            return json.load(f).get("version", "unknown")
+        if pkg.exists():
+            with open(pkg) as f:
+                return json.load(f).get("version", "1.0.0")
     except Exception:
-        return "unknown"
+        pass
+    # 从 README 读
+    readme = _GALAXYOS_REPO / "README.md"
+    if readme.exists():
+        try:
+            with open(readme) as f:
+                for line in f:
+                    if "版本:" in line:
+                        return line.split("版本:")[-1].strip().split("·")[0].strip()
+        except Exception:
+            pass
+    return "7.1"
 
 
 def generate_report(all_results: Dict[str, Any]) -> Dict[str, Any]:
@@ -1185,7 +1227,7 @@ def print_report(report: Dict[str, Any]):
 
     print(f"\n{B}健康评分: {s.get('health_score', 0)}/100{N}")
     ver = report.get("version", "?")
-    print(f"  系统版本: claw-core v{ver}")
+    print(f"  系统版本: GalaxyOS v{ver}")
     print(f"  生成时间: {now}")
     print(f"  主机:     {report.get('hostname', '?')}")
     print()
@@ -1203,6 +1245,74 @@ def print_report(report: Dict[str, Any]):
 
 
 # ════════════════════════════════════════════════════════════════
+# 插件安装向导
+# ════════════════════════════════════════════════════════════════
+
+def _install_plugin_guide():
+    """检测/安装 GalaxyOS OpenClaw 插件引导"""
+    heading("🔌 GalaxyOS 插件安装向导")
+
+    ext_dir = EXT_DIR
+    plugin_json = ext_dir / "openclaw.plugin.json"
+    bootstrap = ext_dir / "plugin-bootstrap.cjs"
+
+    if ext_dir.exists() and plugin_json.exists() and bootstrap.exists():
+        ok(f"GalaxyOS 插件已安装: {ext_dir}")
+
+        # 读插件配置
+        try:
+            with open(plugin_json) as f:
+                cfg = json.load(f)
+            pid = cfg.get("id", "?")
+            desc = cfg.get("description", "")[:80]
+            tools = cfg.get("contracts", {}).get("tools", [])
+            info(f"插件 ID: {pid}", indent=1)
+            info(f"描述: {desc}...", indent=1)
+            info(f"注册工具: {', '.join(tools[:6])}{'...' if len(tools) > 6 else ''}", indent=1)
+
+            # 检测 OpenClaw 注册状态
+            try:
+                r = subprocess.run(
+                    ["openclaw", "plugins", "list"],
+                    capture_output=True, text=True, timeout=5
+                )
+                if "galaxyos" in r.stdout:
+                    ok("GalaxyOS 插件已在 OpenClaw 中注册")
+                elif "claw-core" in r.stdout and "galaxyos" not in r.stdout:
+                    warn("检测到旧版 claw-core 插件，galaxyos 未注册")
+                    info("运行: openclaw plugins enable galaxyos", indent=1)
+                else:
+                    warn("GalaxyOS 插件未在 OpenClaw 中注册")
+                    info("安装路径已在 extensions/，重启 Gateway 生效", indent=1)
+            except Exception:
+                info("无法查询 OpenClaw 插件列表", indent=1)
+        except Exception as e:
+            err(f"读取插件配置失败: {e}")
+    else:
+        err("GalaxyOS 插件文件不完整")
+        info(f"期望路径: {ext_dir}", indent=1)
+        info(f"需要文件: openclaw.plugin.json + plugin-bootstrap.cjs + index.js + scripts/", indent=1)
+        info("", indent=1)
+        info("手动安装:", indent=1)
+        info(f"  1. 确保 GalaxyOS 仓库已克隆到 {_GALAXYOS_REPO}", indent=1)
+        info(f"  2. 运行: cp -r {_GALAXYOS_REPO / 'extensions' / 'galaxyos'} {ext_dir}", indent=1)
+        info(f"  3. 重启 Gateway: supervisorctl restart openclaw-gateway", indent=1)
+
+    # 检查 Worker
+    if VAR_DIR.exists():
+        sock = VAR_DIR / "claw-worker.sock"
+        if sock.exists():
+            ok(f"Worker UDS 已就绪: {sock}")
+        else:
+            warn("Worker UDS socket 未就绪（Worker 未运行或未完全启动）")
+            info("检查: supervisorctl status claw-worker", indent=1)
+    else:
+        warn(f"Worker var 目录不存在: {VAR_DIR}")
+
+    print()
+
+
+# ════════════════════════════════════════════════════════════════
 # 入口
 # ════════════════════════════════════════════════════════════════
 
@@ -1216,7 +1326,12 @@ def main():
     parser.add_argument("--sleep-test", action="store_true", help="仿生睡眠巩固引擎专项测试")
     parser.add_argument("--kg-test", action="store_true", help="知识图谱功能专项测试")
     parser.add_argument("--all", action="store_true", help="全量模式（体检 + 睡眠测试 + 修复）")
+    parser.add_argument("--install-plugin", action="store_true", help="安装/检测 GalaxyOS OpenClaw 插件")
     args = parser.parse_args()
+
+    if args.install_plugin:
+        _install_plugin_guide()
+        return
 
     # ── --report 模式：所有 print 重定向到 stderr，stdout 只留最终 JSON ──
     if args.report:
