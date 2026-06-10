@@ -41,7 +41,12 @@ service-account.json
 .DS_Store
 Thumbs.db
 
-# ── 大文件 ──
+# ── 大文件 / 模型 ──
 *.tar.gz
 *.zip
-*.pth
+
+# 排除运行时模型目录（非 git 大文件默认排除，force-add 需要的）
+# *.pth 放开给 synapse_pretrain.pth
+# *.onnx 已在 models/embeddings/ 中
+# *.bin 不入（382MB RCCAM 权重）
+# *.pkl 入（127KB 分类器模型）
