@@ -2221,6 +2221,14 @@ def main():
     worker = ClawWorker()
     _worker_inst = worker
     _init_methods(worker)
+
+    # 三论文集成: RLM + SKILL0 + MemoryOS
+    try:
+        from galaxyos.engine.paper_integration_addon import integrate_into_worker
+        _paper_addon = integrate_into_worker(worker, _METHODS)
+        sys.stderr.write(f"[claw-worker] 三论文集成注册: RLM + SKILL0 + MemoryOS\n")
+    except Exception as e:
+        sys.stderr.write(f"[claw-worker] 三论文集成跳过: {e}\n")
     
     # 启动记忆巩固后台
     try:

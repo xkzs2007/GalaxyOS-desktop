@@ -58,6 +58,7 @@ _MODULE_MAP = {
     'multi_agent_debate':           ('galaxyos.engine', 'multi_agent_debate'),
     'nlp_enhanced':                 ('galaxyos.engine', 'nlp_enhanced'),
     'paper_integration':            ('galaxyos.engine', 'paper_integration'),
+    'paper_integration_addon':     ('galaxyos.engine', 'paper_integration_addon'),
     'plan_solve':                   ('galaxyos.engine', 'plan_solve'),
     'rag_optimizer':                ('galaxyos.privileged', 'rag_optimizer'),
     'rccam_state':                  ('galaxyos.engine', 'rccam_state'),
