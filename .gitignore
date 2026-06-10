@@ -8,6 +8,10 @@ build/
 .venv/
 venv/
 
+# ── Node.js ──
+node_modules/
+package-lock.json
+
 # ── 测试/CI ──
 .pytest_cache/
 htmlcov/
