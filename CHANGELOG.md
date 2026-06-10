@@ -1,5 +1,22 @@
 # Changelog
 
+## [7.3.0] — 2026-06-10
+
+### Added
+- **ContextEngine 全论文决策链** — 21 个论文模块全接入 `context_assemble()` 两阶段编排 (Self-RAG IsREL+CRAG Evaluate → CoVe 验证 → Adaptive Hallucination → Cognitive Load → Dynamic CRAG Threshold → SKILL0 → CoEvolve → Turn Recovery(2505.06120) → MemCoE(2605.00702) → MemGPT ContextLayer → MemoryOS HeatTracker/SegmentedPage → SSM Predicter → AriGraph → RAPTOR → HyperRouting → KoRa Behavior → Code-Aware → Thinking Enhanced → Memory Consolidation → Sleep Consolidation)
+- **session_id 全链路隔离** — 15 处检索入口 → MemGPT/MemoryOS/HierMemory/ClawWorker 全部按 session 分区，多会话数据零串扰
+- **Gateway 防塞爆** — ZMQ 500ms 去重 + 系统消息上限 5 条，防止消息风暴撑爆上下文
+- **IPC 路径统一** — claw-core/var → galaxyos/var (6 个 Python + 1 个 JS 模块)
+- **RLM 递归压缩** — 新增 `rlm_compress()` 替代紧急截断，递归分解超长消息为摘要
+- **BlobArena 无损还原注入** — 记忆召回时自动还原完整上下文
+- **galaxyos_native 纯 Python shim** — 无 Rust 环境自动降级纯 Python；libs/ 预编译包备用
+- **native 国内镜像** — `.cargo/config.toml` rsproxy 镜像；Makefile rustup-cn/native-libs target
+- **openclaw.plugin.json memorySlots** — ContextEngine 多槽位分离记忆注入配置
+- **压测验证** — 451 pass (19 自定义 + 412 原有)，JS 语法全过
+
+### Fixed
+- 上下文超长时不截断，改用 RLM 递归压缩
+
 ## [7.2.0] — 2026-06-10
 
 ### Added

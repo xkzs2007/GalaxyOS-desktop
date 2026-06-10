@@ -1,7 +1,7 @@
 # 🌌 GalaxyOS — 认知增强引擎
 
 > OpenClaw 的开源认知增强引擎，为 AI Assistant 提供记忆、检索、推理、验证、自进化等全套认知能力
-> 版本: v7.2 · GalaxyPool 统一管理 + 通信增强 + 神经网络全量修复 + 硬编码路径清零
+> 版本: v7.3 · 全论文模块接入ContextEngine决策链 + session_id全面隔离 + Gateway防塞爆
 
 ## 总览
 
@@ -234,7 +234,8 @@ GALAXYOS_REPO=. python3 -m galaxyos.engine.unified_entry recall --query "查询"
 
 | 版本 | 文件 | 说明 |
 |------|------|------|
-| **v7.2 (最新)** | — | **GalaxyPool 统一管理 + 负载感知调度 + batch RPC + Rust PyO3 + 神经网络全量修复 + CLI-Anything** |
+| **v7.3 (最新)** | — | **全论文模块接入ContextEngine决策链 + session_id全面隔离 + Gateway防塞爆** |
+| **v7.2** | — | **GalaxyPool 统一管理 + 负载感知调度 + batch RPC + Rust PyO3 + 神经网络全量修复 + CLI-Anything** |
 | **v7.1** | — | **RLM 递归环境 + SKILL0 技能课程 + MemoryOS 记忆操作系统 + 10+1 论文集成 + GalaxyOS 插件** |
 | **v7.0** | — | **统一包 galaxyos/ + WorkerPool 弹性扩缩 + PIL 子进程隔离 + CircuitBreaker 断路器 + Rust 原生扩展** |
 | **v6.5** | — | **CfC+GAT 全链路激活 + BlobArena per-session + Titans 惊讶门控 + SSM 预测器 + A2A DAG 总线 + MemGAS-SkVM 融合** |
@@ -253,6 +254,21 @@ GALAXYOS_REPO=. python3 -m galaxyos.engine.unified_entry recall --query "查询"
 | v3.0.0 | `docs/xiaoyi-claw-core-architecture-v3.0.0.md` | 16 层架构、R-CCAM 认知循环 |
 
 **完整架构文档（含 17 层全景图、470+ 功能列表、更新日志）：** 👉 [📖 查看 Skills 文档栏](https://cnb.cool/llm-memory-integrat/GalaxyOS?tabValue=SKILLS-ov-file)
+
+### v7.3 新特性
+
+| 特性 | 说明 |
+|------|------|
+| **ContextEngine 全论文决策链** | 21 个论文模块全接入 `context_assemble()`：Self-RAG IsREL → CRAG Evaluate → CoVe 验证 → Adaptive Hallucination → Cognitive Load → Dynamic CRAG Threshold → SKILL0 → CoEvolve → Turn Recovery → MemCoE → MemGPT ContextLayer → MemoryOS HeatTracker/SegmentedPage → SSM Predicter → AriGraph → RAPTOR → HyperRouting → KoRa Behavior → Code-Aware → Thinking Enhanced → Memory Consolidation → Sleep Consolidation |
+| **session_id 全链路隔离** | 15 处检索入口 → MemGPT/MemoryOS/HierMemory 全部按 session 分区, 多会话数据零串扰 |
+| **Gateway 防塞爆** | ZMQ 500ms 去重 + 系统消息上限 5 条, 防止消息风暴撑爆上下文 |
+| **IPC 路径统一** | claw-core/var → galaxyos/var (6 个 Python + 1 个 JS), 统一数据目录 |
+| **RLM 递归压缩** | `rlm_compress()` 替代紧急截断, RLM 递归分解超长消息为摘要 |
+| **BlobArena 无损还原注入** | 记忆召回时自动还原 BlobArena 存储的完整上下文 |
+| **galaxyos_native 纯 Python shim** | 无 Rust 环境自动降级到纯 Python, libs/ 预编译包备用 |
+| **native 国内镜像** | `.cargo/config.toml` rsproxy 镜像, Makefile rustup-cn target |
+| **openclaw.plugin.json memorySlots** | ContextEngine memorySlots 配置, 多槽位分离记忆注入 |
+| **压测验证** | 451 pass (19 自定义 + 412 原有), JS 语法全过 |
 
 ### v7.2 新特性
 

@@ -1,12 +1,12 @@
 ---
 name: galaxyos
-description: GalaxyOS v7.2 — GalaxyPool统一管理 + 负载感知调度 + 通信增强 + 神经网络全量修复 + 硬编码路径清零
+description: GalaxyOS v7.3 — 全论文模块接入ContextEngine决策链 + session_id全面隔离 + Gateway防塞爆
 author: xkzs2007
 license: MIT-0
 tags: [architecture, memory, llm, rccam, dag, kora, knowledge-graph, ncps, neural-synapse-network, context-engine, galaxy-pool, load-aware-scheduling, batch-rpc, cli-anything, rust-pyo3, vector-api]
 ---
 
-# GalaxyOS v7.2
+# GalaxyOS v7.3
 
 > **定位**: OpenClaw 的核心底层能力引擎
 > **更新时间**: 2026-06-10
@@ -15,7 +15,7 @@ tags: [architecture, memory, llm, rccam, dag, kora, knowledge-graph, ncps, neura
 > **模型**: ONNX bge-small-zh-v1.5 (512d) + LTC 液态神经网络 + CfC 序列预测 + Synapse 预训练 + 4 GNN 模型
 > **IPC**: UDS RPC + ZMQ PUB/SUB + mmap 大 payload 路由 + batch RPC + R-CCAM 流式进度
 > **弹性**: GalaxyPool 统一管理 6 类组件 + WorkerPool 负载感知调度 + CircuitBreaker 断路器
-> **v7.2 新特性** ✅: GalaxyPool | 负载感知调度 | batch RPC | R-CCAM 会话互斥 | mmap 大payload路由 | Rust PyO3桥梁 | 神经网络修复 | 硬编码路径清零 | CLI-Anything | Rust auto-build
+> **v7.3 新特性** ✅: 全论文模块接入ContextEngine决策链 | session_id全链路隔离 | Gateway防塞爆 | IPC路径统一 | RLM递归压缩 | BlobArena无损还原 | galaxyos_native shim | native国内镜像 | openclaw.plugin.json memorySlots
 
 ---
 
@@ -33,13 +33,13 @@ GalaxyOS是 OpenClaw 的**核心底层能力引擎**，提供：
 
 ---
 
-| **文档版本**: v7.2 | 2026-06-10 | GalaxyPool统一管理 + 负载感知调度 + 通信增强 + 神经网络修复 + 路径清零 |
-| **上次版本**: v7.0 | 2026-06-09 | 统一包 galaxyos/ + WorkerPool 弹性 + PIL 隔离 + 熔断器 + Rust 扩展 |
+| **文档版本**: v7.3 | 2026-06-10 | 全论文模块接入ContextEngine决策链 + session_id全面隔离 + Gateway防塞爆 |
+| **上次版本**: v7.2 | 2026-06-10 | GalaxyPool统一管理 + 负载感知调度 + 通信增强 + 神经网络修复 + 路径清零 |
 
 ---
 
 *GalaxyOS — OpenClaw 的核心底层能力引擎*
-*文档版本: v7.2 | 最后更新: 2026-06-10 | GalaxyPool + 负载感知调度 + 通信增强 + 神经网络修复*
+*文档版本: v7.3 | 最后更新: 2026-06-10 | 全论文决策链 + session_id隔离 + Gateway防塞爆*
 
 ---
 
@@ -53,7 +53,7 @@ GalaxyOS是 OpenClaw 的**核心底层能力引擎**，提供：
                                     │
                                     ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                      GalaxyOS v7.2 — GalaxyPool统一管理 + 负载感知调度 + 通信增强 + 神经网络修复 + 路径清零        │
+│                      GalaxyOS v7.3 — 全论文模块接入ContextEngine决策链 + session_id全面隔离 + Gateway防塞爆        │
 │                         (核心底层能力引擎 · 17层)                            │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
@@ -663,6 +663,19 @@ claw.rccam_cycle("用户输入", max_cycles=1)
 | DAG 上下文排序 | **时间衰减权重重排序** | 2026-06-02 |
 | install_wizard.py | **6 阶段全自动自检 + `--kg-test` 专项测试** | 2026-06-02 |
 
+### v7.3 (2026-06-10) — 全论文模块接入ContextEngine决策链 + session_id全面隔离 + Gateway防塞爆
+
+- **ContextEngine 全论文决策链**: 21 论文模块全接入 `context_assemble()` 两阶段决策（Self-RAG IsREL+CRAG Evaluate → 10+ 论文链编排）
+- **session_id 全链路隔离**: 15 处检索多会话数据零串扰
+- **Gateway 防塞爆**: ZMQ 500ms去重 + 系统消息上限5条
+- **IPC 路径统一**: claw-core/var → galaxyos/var
+- **RLM 递归压缩替代紧急截断**: 新增 `rlm_compress()`
+- **BlobArena 无损还原注入**
+- **galaxyos_native 纯 Python shim**: libs/ 预编译包备用
+- **native 国内镜像**: .cargo/config.toml rsproxy镜像
+- **openclaw.plugin.json memorySlots**: 多槽位分离记忆注入
+- **压测**: 451 pass (19自定义+412原有), JS语法全过
+
 ### v7.2 (2026-06-10) — GalaxyPool 统一管理 + 负载感知调度 + 通信增强 + 神经网络全量修复 + 硬编码路径清零
 
 - ⭐ **GalaxyPool 统一管理** — 6 类组件 (mmap/gateway/zmq/native/heartbeat/workers) 单入口 start/stop + 拓扑排序 + 统一健康检查 + 电路断路器
@@ -677,7 +690,7 @@ claw.rccam_cycle("用户输入", max_cycles=1)
 - ⭐ **CLI-Anything 插件** — 7 工具 (shell_run/git/make/test/file) Agent 自运维
 - ⭐ **硬编码路径清零** — 10 处 `/home/sandbox` → `OPENCLAW_WORKSPACE` / `os.path.expanduser`
 - ⭐ **安装向导修复** — 补 sqlite3 import + KG 检查恢复正常
-- 📊 **统计数据更新**：总能力项 470+，新增 v7.2 12 项指标
+- 📊 **统计数据更新**：总能力项 470+，新增 v7.3 10 项指标
 
 ### v7.1 (2026-06-10) — RLM 递归环境 + SKILL0 技能课程 + MemoryOS 记忆操作系统 + 10+1 论文集成 + GalaxyOS 插件
 
