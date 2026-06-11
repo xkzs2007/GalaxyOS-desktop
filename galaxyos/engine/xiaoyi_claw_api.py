@@ -2146,7 +2146,7 @@ class XiaoYiClawLLM:
                 _tc = self._get_thinking_skills_context(state)
                 extra_user = f"\n\n{_tc[:500]}" if _tc else ""
                 rsp = self.llm_flash.chat.completions.create(
-                    model=self._llm_flash_model,
+                    model=getattr(self, '_llm_flash_model', 'deepseek-v4-flash'),
                     messages=[
                         {"role": "system", "content": "你是一个查询分析器。输出格式:\n[REWRITTEN]改写后的查询\n[TYPE]问候/简单/复杂\n\n规则:1.改写保留核心去冗余;2.TYPE:问候=纯打招呼,简单=事实性问题可直接从搜索结果回答,复杂=需要多步推理"},
                         {"role": "user", "content": f"原文:{raw_query}\n分析:{extra_user}"},
@@ -3440,7 +3440,7 @@ class XiaoYiClawLLM:
                     logger.debug(f"web search 失败: {we}")
 
                 # 3. 搜索结果用 Flash 整合(快、便宜,简单总结)
-                if collected_info.strip():
+                if collected_info.strip() and self.llm_flash:
                     # 注入思考技能指导
                     _tc = self._get_thinking_skills_context(state)
                     system_prompt = "你是一个知识丰富的AI助手,请基于搜索结果回答用户问题。"
@@ -3454,7 +3454,7 @@ class XiaoYiClawLLM:
                     try:
                         system_prompt = "你是一个知识丰富的AI助手,请基于搜索结果回答用户问题。"
                         rsp = self.llm_flash.chat.completions.create(
-                            model=self._llm_flash_model,
+                            model=getattr(self, '_llm_flash_model', 'deepseek-v4-flash'),
                             messages=[
                                 {"role": "system", "content": system_prompt},
                                 {"role": "user", "content": summary_prompt},
@@ -3586,7 +3586,7 @@ class XiaoYiClawLLM:
                         "回答(简洁、准确):"
                     )
                     rsp = self.llm_flash.chat.completions.create(
-                        model=self._llm_flash_model,
+                        model=getattr(self, '_llm_flash_model', 'deepseek-v4-flash'),
                         messages=[
                             {"role": "system", "content": summary_prompt},
                         ],
