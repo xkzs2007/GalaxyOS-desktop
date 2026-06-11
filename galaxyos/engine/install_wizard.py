@@ -279,15 +279,17 @@ def _pyg_index_url(torch_version: str) -> str:
 
     PyG 官方 wheel 是基于 torch 版本号发布的，命名规则：
       torch-2.10.0+cpu.html  →  https://data.pyg.org/whl/torch-2.10.0+cpu.html
-    torch 2.12+ PyG 还没发 wheel，回落到 2.10（兼容性最好）。
+    PyG wheel index 命名规则：torch-{major}.{minor}.0+cpu.html
+    2026-06-11 实测: torch 2.12 OK, torch 2.13 尚未发布(403)。
+    当检测到的 torch 版本超过已知的最高发布版本时回退到 2.12。
     """
     m = re.match(r"^(\d+)\.(\d+)", torch_version or "")
     if not m:
-        return "https://data.pyg.org/whl/torch-2.10.0+cpu.html"
+        return "https://data.pyg.org/whl/torch-2.12.0+cpu.html"
     major, minor = int(m.group(1)), int(m.group(2))
-    # PyG wheel 已发布的最高 torch 版本（按 2026 年 6 月的 release 状态）
-    if (major, minor) > (2, 11):
-        return "https://data.pyg.org/whl/torch-2.10.0+cpu.html"
+    # PyG wheel 已发布的最高 torch 版本（2026-06-11: 2.12, 2.13 尚未发布）
+    if (major, minor) > (2, 12):
+        return "https://data.pyg.org/whl/torch-2.12.0+cpu.html"
     return f"https://data.pyg.org/whl/torch-{major}.{minor}.0+cpu.html"
 
 
