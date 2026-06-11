@@ -1,6 +1,16 @@
 #!/usr/bin/env python3
 """
 L4 - Execution Layer
+
+⚠️  ARCHITECTURE WARNING (F-12) ⚠️
+本文件是【空壳实现】。
+- SkillAdapter.load() 读 config 后丢失（行 56-59 存到局部变量不存到 self）
+- SkillAdapter.execute() 永远返回假字符串 {"status": "success", "result": "执行成功"}
+- 51 个 skills 中 80+ 个 .py 脚本（generate_seedream.py / image_understanding.py / 等）
+  **没有任何一个会被本 gateway 触发**
+
+【症状】: 用户调 claw_compile_skill / claw_asset_search / claw_asset_register 工具，插件返回假 success
+【建议】: 重写本模块让它真正解析 SKILL.md + 调用对应 skill 脚本，或在 README 中明确标注"暂未实现"。
 技能执行层
 
 职责：

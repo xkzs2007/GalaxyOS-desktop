@@ -368,7 +368,7 @@ class GraphConstructor:
     def get_adjacency_matrix(self) -> Tuple[np.ndarray, Dict[str, int]]:
         """
         获取邻接矩阵
-        
+
         Returns:
             adjacency_matrix: 邻接矩阵
             id_to_idx: 实体ID到索引的映射
@@ -376,17 +376,46 @@ class GraphConstructor:
         n = len(self.entities)
         entity_ids = list(self.entities.keys())
         id_to_idx = {eid: i for i, eid in enumerate(entity_ids)}
-        
+
         adj_matrix = np.zeros((n, n), dtype=np.float32)
-        
+
         for rel in self.relations:
             i = id_to_idx[rel.source_id]
             j = id_to_idx[rel.target_id]
             adj_matrix[i, j] = rel.weight
             # 对于无向图，也设置反向边
             # adj_matrix[j, i] = rel.weight
-        
+
         return adj_matrix, id_to_idx
+
+    def get_edge_index(self) -> Tuple[np.ndarray, Dict[str, int]]:
+        """
+        获取稀疏边索引 (2, E) — 避免 N×N 稠密矩阵带来的 OOM
+
+        Returns:
+            edge_index: (2, E) int64 数组，edge_index[0]=src, edge_index[1]=dst
+            id_to_idx: 实体ID到索引的映射
+        """
+        n = len(self.entities)
+        entity_ids = list(self.entities.keys())
+        id_to_idx = {eid: i for i, eid in enumerate(entity_ids)}
+
+        src_list = []
+        dst_list = []
+        for rel in self.relations:
+            if rel.source_id in id_to_idx and rel.target_id in id_to_idx:
+                src_list.append(id_to_idx[rel.source_id])
+                dst_list.append(id_to_idx[rel.target_id])
+
+        if src_list:
+            edge_index = np.stack([
+                np.array(src_list, dtype=np.int64),
+                np.array(dst_list, dtype=np.int64),
+            ], axis=0)
+        else:
+            edge_index = np.zeros((2, 0), dtype=np.int64)
+
+        return edge_index, id_to_idx
     
     def get_feature_matrix(self) -> Tuple[np.ndarray, Dict[str, int]]:
         """

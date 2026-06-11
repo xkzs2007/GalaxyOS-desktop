@@ -1251,6 +1251,19 @@ class DAGContextManager:
         persona_nodes = self.get_session_nodes(session_key, priority_max=0, limit=10)
         cycles = self.get_rccam_session_cycles(session_key)
 
+        # 修复 F-18: 之前 Cognitive Forest 节点（_cog_subtree_user / _cog_subtree_self）
+        # 既不在单会话 assemble 范围（要 session_key == self.session_key），也不在
+        # cross_session_memory_restore 范围（明确过滤）。现在在 assemble 顶部
+        # 主动注入这两种节点作为 persona 补充，让自进化能力 / 用户画像真正可被读到。
+        try:
+            for _cog_prefix in ("_cog_subtree_user", "_cog_subtree_self"):
+                _cog_nodes = self.get_session_nodes(_cog_prefix, priority_max=0, limit=5)
+                for _cn in _cog_nodes:
+                    if _cn.content and _cn.content not in [p[1] for p in persona_nodes if hasattr(p, '__iter__') and False]:
+                        persona_nodes.append(_cn)
+        except Exception:
+            pass
+
         result_parts = []
         used_tokens = 0
         traced_ids = set()
@@ -1268,7 +1281,11 @@ class DAGContextManager:
                 # parent_ids causal trace: collect upstream nodes
                 upstream_nodes = []
                 if trace_parent_depth > 0:
+                    # 修复 F-17: 之前每个 parent_id 都新开 sqlite3.connect/close，
+                    # 在 trace_parent_depth=2 + 30 节点时产生 60+ 次连接。
+                    # 改为一次连接 + 复用 cursor + IN (?,?,?) 批量查。
                     stack = [(n, 0) for n in nodes]
+                    _to_query = {}  # (pid, depth) → nodes 需要它
                     while stack:
                         node_entry, d = stack.pop()
                         if d >= trace_parent_depth:
@@ -1281,19 +1298,22 @@ class DAGContextManager:
                             if pid in traced_ids:
                                 continue
                             traced_ids.add(pid)
-                            with self._lock:
-                                conn = sqlite3.connect(self.db_path)
-                                conn.row_factory = sqlite3.Row
-                                cur = conn.execute(
-                                    "SELECT * FROM rccam_nodes WHERE node_id=? AND session_key=?",
-                                    (pid, session_key)
-                                )
-                                prow = cur.fetchone()
-                                conn.close()
-                            if prow:
-                                pd = dict(prow)
-                                upstream_nodes.append(pd)
-                                stack.append((pd, d + 1))
+                            _to_query[pid] = d
+                    if _to_query:
+                        with self._lock:
+                            conn = sqlite3.connect(self.db_path)
+                            conn.row_factory = sqlite3.Row
+                            placeholders = ",".join("?" * len(_to_query))
+                            cur = conn.execute(
+                                f"SELECT * FROM rccam_nodes WHERE node_id IN ({placeholders}) AND session_key=?",
+                                (*_to_query.keys(), session_key)
+                            )
+                            rows = cur.fetchall()
+                            conn.close()
+                        for prow in rows:
+                            pd = dict(prow)
+                            upstream_nodes.append(pd)
+                            stack.append((pd, _to_query.get(pd.get("node_id"), 0) + 1))
                 for up in upstream_nodes:
                     ut = up.get("tokens", len(up.get("content","")) // 2)
                     if used_tokens + ut > max_tokens * 0.95:

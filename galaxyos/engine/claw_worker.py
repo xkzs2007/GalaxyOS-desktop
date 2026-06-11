@@ -2395,7 +2395,7 @@ def _handle_one_http_request(conn, raw_data, methods_map):
         if http_method == "GET" and http_path == "/":
             _send_http_reply(conn, 200, {
                 "service": "GalaxyOS ClawWorker",
-                "version": "7.0.0",
+                "version": "7.3.2",
                 "endpoints": {
                     "REST": "GET|POST /<method>  (see /rest for full list)",
                     "JSON-RPC": "POST /  with {id, method, params}",
@@ -2676,7 +2676,9 @@ def _mmap_write(cache_key, data):
         payload = json.dumps(full, ensure_ascii=False)
         raw = payload.encode("utf-8")
         os.makedirs(os.path.dirname(MMAP_PATH), exist_ok=True)
-        header = struct.pack(">I", len(raw))
+        # 修复 F-8: mmap 字节序。Python 侧 _mmap_read 用小端 (<I)，
+        # 这里 _mmap_write 之前用大端 (>I) 永远读不到；改为小端与 read 对齐。
+        header = struct.pack("<I", len(raw))
         with open(MMAP_PATH, "wb") as f:
             f.write(header + raw)
     except Exception:

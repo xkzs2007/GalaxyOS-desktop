@@ -19,11 +19,56 @@ import { createInterface } from "node:readline";
 import fs, { existsSync, mkdirSync, chmodSync, unlinkSync, readFileSync, openSync, writeSync, closeSync, readSync, writeFileSync, renameSync, copyFileSync } from "node:fs";
 import net from "node:net";
 import http from "node:http";
+import { createRequire as _createRequire } from "node:module";
+// ESM 兼容垫片: index.js 是 "type":"module" 的 ESM, 但 zeromq 是 CJS,
+// 用 createRequire 显式构造 CJS loader
+const _cjsRequire = _createRequire(import.meta.url);
 
 const TAG = "[galaxyos]";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const WORKER_SCRIPT = path.join(__dirname, "scripts", "claw_worker.py");
 const PIL_WORKER_SCRIPT = path.join(__dirname, "scripts", "pil_worker.py");
+
+// ════════════════════════════════════════════════════════════════
+// OpenClaw 用户配置目录解析（dev / prod / container 三模式）
+// ════════════════════════════════════════════════════════════════
+//
+// OpenClaw 2026.5.6 实际部署布局：
+//   核心代码: /home/sandbox/openclaw/node_modules/openclaw/  (npm 全局)
+//   用户配置: $HOME/.openclaw/                              (生产默认)
+//   dev 模式: $HOME/.openclaw-dev/                          (开发测试)
+//   容器:    /opt/openclaw/                                 (固定路径)
+//
+// 优先级:
+//   1) OPENCLAW_HOME / GALAXYOS_OPENCLAW_HOME 环境变量（显式覆盖）
+//   2) /opt/openclaw               (容器固定布局)
+//   3) $HOME/.openclaw             (生产)
+//   4) $HOME/.openclaw-dev         (dev)
+//   5) 自动检测 __dirname 上溯找到的 OPENCLAW_HOME
+function _openclawHome() {
+    const envVars = ["OPENCLAW_HOME", "GALAXYOS_OPENCLAW_HOME"];
+    for (const k of envVars) {
+        const v = process.env[k];
+        if (v && existsSync(v) && statSyncSafe(v)?.isDirectory()) return v;
+    }
+    // 容器布局
+    if (existsSync("/opt/openclaw") && statSyncSafe("/opt/openclaw")?.isDirectory()) {
+        return "/opt/openclaw";
+    }
+    const home = process.env.HOME || "/home/sandbox";
+    // 生产
+    const prod = `${home}/.openclaw`;
+    if (existsSync(prod) && statSyncSafe(prod)?.isDirectory()) return prod;
+    // dev
+    const dev = `${home}/.openclaw-dev`;
+    if (existsSync(dev) && statSyncSafe(dev)?.isDirectory()) return dev;
+    // 兜底：生产默认
+    return prod;
+}
+function statSyncSafe(p) {
+    try { return fs.statSync(p); } catch { return null; }
+}
+const OPENCLAW_HOME = _openclawHome();
 
 // Rust 原生扩展 — 三级检测
 // 1. PyO3 Python 模块（最优：零序列化，直接 import）
@@ -119,9 +164,21 @@ try {
 
 function resolveWorkspace(api) {
     const ws = api.runtime.workspace?.cwd?.();
-    if (ws)
-        return ws;
-    return process.env.OPENCLAW_WORKSPACE || "/home/sandbox/.openclaw/workspace";
+    if (ws && existsSync(ws)) return ws;  // 必须存在
+    // 兼容 sandbox: 优先 OPENCLAW_WORKSPACE 显式,再尝试 OPENCLAW_HOME/下的多个候选
+    const ocHome = OPENCLAW_HOME;
+    const candidates = [
+        process.env.OPENCLAW_WORKSPACE,
+        `${ocHome}/workspace-dev`,
+        `${ocHome}/workspace`,
+    ].filter(Boolean);
+    for (const c of candidates) {
+        if (existsSync(c)) return c;
+    }
+    // 最后一个: 创建
+    const fallback = `${ocHome}/workspace-dev`;
+    try { mkdirSync(fallback, { recursive: true }); } catch {}
+    return fallback;
 }
 
 // ======== Rust native binary spawn helper (stdin/stdout JSON-RPC) ========
@@ -198,25 +255,29 @@ function getUdsPath() {
     if (process.env.GALAXYOS_UDS_PATH && existsSync(path.dirname(process.env.GALAXYOS_UDS_PATH))) {
         return process.env.GALAXYOS_UDS_PATH;
     }
-    // 默认路径（与 claw_worker.py 的 _GALAXYOS_VAR 对齐）
+    // v2026.6.11: 多 worker 时优先用 worker:1 独立 socket (避免多 worker 共享同一 socket 文件的 race)
     return path.join(
-        process.env.HOME || "/home/sandbox",
-        ".openclaw/extensions/galaxyos/var/claw-worker.sock"
+        OPENCLAW_HOME,
+        "extensions/galaxyos/var/claw-worker-worker-1.sock"
     );
 }
 
 /** 所有已知 UDS 路径（按优先级排序，自发现 fallback） */
 function getUdsProbePaths() {
-    const home = process.env.HOME || "/home/sandbox";
+    const ocHome = OPENCLAW_HOME;
     const primary = getUdsPath();
     const paths = [primary];
     // 兼容旧版 claw-core 路径
     if (!primary.includes("claw-core")) {
-        paths.push(path.join(home, ".openclaw/extensions/claw-core/var/claw-worker.sock"));
+        paths.push(path.join(ocHome, "extensions/claw-core/var/claw-worker.sock"));
     }
-    // 兼容新版 galaxyos 路径
-    if (!primary.includes("galaxyos")) {
-        paths.push(path.join(home, ".openclaw/extensions/galaxyos/var/claw-worker.sock"));
+    // 兼容旧版 galaxyos 共享 socket (legacy 模式)
+    if (!primary.endsWith("claw-worker.sock")) {
+        paths.push(path.join(ocHome, "extensions/galaxyos/var/claw-worker.sock"));
+    }
+    // worker:2 备用 socket
+    if (!primary.includes("worker-2")) {
+        paths.push(path.join(ocHome, "extensions/galaxyos/var/claw-worker-worker-2.sock"));
     }
     return [...new Set(paths)]; // 去重
 }
@@ -225,8 +286,8 @@ function getUdsProbePaths() {
 function getGatewayUdsPath() {
     if (process.env.GALAXYOS_GATEWAY_UDS_PATH) return process.env.GALAXYOS_GATEWAY_UDS_PATH;
     return path.join(
-        process.env.HOME || "/home/sandbox",
-        ".openclaw/extensions/galaxyos/var/claw-gateway.sock"
+        OPENCLAW_HOME,
+        "extensions/galaxyos/var/claw-gateway.sock"
     );
 }
 
@@ -282,12 +343,12 @@ function _getWorkerAgent(workerId) {
 // ======== Python Worker mmap 读取（大 payload 解引用）========
 // v7.0: galaxyos/var 为主路径，claw-core/var 为 fallback
 const WORKER_MMAP_PATH = path.join(
-    process.env.HOME || "/home/sandbox",
-    ".openclaw/extensions/galaxyos/var/claw_worker_mmap"
+    OPENCLAW_HOME,
+    "extensions/galaxyos/var/claw_worker_mmap"
 );
 const WORKER_MMAP_BACKCOMPAT = path.join(
-    process.env.HOME || "/home/sandbox",
-    ".openclaw/extensions/claw-core/var/claw_worker_mmap"
+    OPENCLAW_HOME,
+    "extensions/claw-core/var/claw_worker_mmap"
 );
 function _readWorkerMmap(key) {
     // 读取 Python Worker 写的 mmap（4 字节大端长度前缀 + JSON）
@@ -949,14 +1010,14 @@ function stopGatewayUdsServer() {
 // ────────── ZMQ ROUTER 双向通道(回复版)──────────
 function startZmqRouter(api) {
     const zmqPath = path.join(
-        process.env.HOME || "/home/sandbox",
-        ".openclaw/extensions/galaxyos/var/claw-router.ipc"
+        OPENCLAW_HOME,
+        "extensions/galaxyos/var/claw-router.ipc"
     );
     try { unlinkSync(zmqPath); } catch (e) {}
 
     let zmq;
     try {
-        zmq = require(path.join(__dirname, "node_modules", "zeromq"));
+        zmq = _cjsRequire(path.join(__dirname, "node_modules", "zeromq"));
     } catch (e) {
         api.logger.warn?.(`${TAG} [zmq-router] zeromq not available, skipping`);
         return;
@@ -1041,8 +1102,8 @@ function stopZmqRouter() {
 
 // ────────── mmap 结构化共享状态 ──────────
 const MMAP_PATH = path.join(
-    process.env.HOME || "/home/sandbox",
-    ".openclaw/extensions/galaxyos/var/claw_mmap_control"
+    OPENCLAW_HOME,
+    "extensions/galaxyos/var/claw_mmap_control"
 );
 const MMAP_SIZE = 4096; // 4KB shared state
 // 固定偏移:
@@ -1094,8 +1155,8 @@ function mmapReadSignal() {
  * 写入 /dev/shm/claw_shared_state 供两边零拷贝
  */
 const MMAP_SHM = path.join(
-    process.env.HOME || "/home/sandbox",
-    ".openclaw/extensions/galaxyos/var/claw_shared_state"
+    OPENCLAW_HOME,
+    "extensions/galaxyos/var/claw_shared_state"
 );
 
 function _mmapSyncInit() {
@@ -1152,8 +1213,8 @@ function _mmapSyncRead() {
 
 // ────────── 心跳 mmap(Worker 端写入,只读 8 字节 float64 时间戳)──────────
 const HB_PATH = path.join(
-    process.env.HOME || "/home/sandbox",
-    ".openclaw/extensions/galaxyos/var/claw_worker_heartbeat"
+    OPENCLAW_HOME,
+    "extensions/galaxyos/var/claw_worker_heartbeat"
 );
 
 /**
@@ -1182,8 +1243,8 @@ function _readWorkerHeartbeat() {
 
 // Gateway 心跳写入独立 8 字节文件(与 Worker 心跳分离,mmap 仅用于 R-CCAM 持久化)
 const GATEWAY_HB_PATH = path.join(
-    process.env.HOME || "/home/sandbox",
-    ".openclaw/extensions/galaxyos/var/claw_gateway_heartbeat"
+    OPENCLAW_HOME,
+    "extensions/galaxyos/var/claw_gateway_heartbeat"
 );
 let _gatewayHbTimer = null;
 function _startGatewayHeartbeat(api) {
@@ -2216,8 +2277,11 @@ export default function register(api) {
             const userInput = String(params.user_input ?? "");
             const maxCycles = Math.min(Number(params.max_cycles) || 1, 3);
             const storeMem = params.store_memory !== false;
-            // R-CCAM 会话级去重：同一用户输入 5 分钟内不重复提交
-            const dedupKey = params.session_key || userInput.slice(0, 200);
+            // R-CCAM 会话级去重：必须带 session_key，否则不做 dedup（避免用户连续问
+            // 相同问题时复用前次结果）。F-15 修复。
+            const dedupKey = params.session_key
+                ? `session:${params.session_key}`
+                : null;
             const existing = _rccamFlying.get(dedupKey);
             if (existing && Date.now() - existing.ts < _rccamFlyingMaxAgeMs) {
                 process.stderr.write(TAG + ' [rccam] dedup: reusing in-flight for key=' + dedupKey.slice(0, 60) + '\n');
@@ -2240,7 +2304,7 @@ export default function register(api) {
                         max_cycles: maxCycles,
                         store_memory: storeMem,
                     }, 120000);
-                    _rccamFlying.set(dedupKey, { promise: rccamPromise, ts: Date.now() });
+                    if (dedupKey) _rccamFlying.set(dedupKey, { promise: rccamPromise, ts: Date.now() });
                     result = await rccamPromise;
                     fromWorker = true;
                 } catch (_workerErr) {
@@ -2253,7 +2317,7 @@ export default function register(api) {
                             store_memory: storeMem,
                         }),
                     }, 120000);
-                    _rccamFlying.set(dedupKey, { promise: rccamPromise, ts: Date.now() });
+                    if (dedupKey) _rccamFlying.set(dedupKey, { promise: rccamPromise, ts: Date.now() });
                     const elapsedMs = Date.now() - startMs;
                     if (r.error) {
                         return { content: [{ type: "text", text: `认知循环执行失败:${r.message}` }], isError: true };
@@ -2532,8 +2596,8 @@ export default function register(api) {
     // 文件持久化:Gateway 重启后恢复最后 500 条摘要
     const _sessionSummaries = new Map();
     const SUMMARY_CACHE_PATH = path.join(
-        process.env.HOME || "/home/sandbox",
-        ".openclaw/context-offload/summary-cache.jsonl"
+        OPENCLAW_HOME,
+        "context-offload/summary-cache.jsonl"
     );
     function _saveSummaryCache() {
         try {
@@ -2618,7 +2682,7 @@ export default function register(api) {
             _zmqSubActive = false;
 
             try {
-                const zmq = require("zeromq");
+                const zmq = _cjsRequire("zeromq");
                 const sub = new zmq.Subscriber();
                 await sub.connect(`tcp://127.0.0.1:${ZMQ_PUB_PORT}`);
                 sub.subscribe("");

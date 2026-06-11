@@ -39,17 +39,25 @@ def _load():
     global _classifier
     if _classifier is not None:
         return _classifier
-    model_path = os.path.join(
-        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-        "data", "rccam_classifier_v1.pkl",
-    )
+    # 修复 BUG-4: 原代码 `dirname(dirname(__file__))` 解析到 /workspace/galaxyos/，
+    # 但 pkl 真实在 /workspace/data/ 下，永远找不到，ML 模型从未加载过。
+    # 改为多候选路径 + 存在性探测。
+    _base = os.path.dirname(os.path.abspath(__file__))
+    _candidates = [
+        os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(_base))),
+                     "data", "rccam_classifier_v1.pkl"),  # repo_root/data/
+        os.path.join(os.path.dirname(os.path.dirname(_base)),
+                     "data", "rccam_classifier_v1.pkl"),  # galaxyos/data/ (兼容旧布局)
+        "/workspace/data/rccam_classifier_v1.pkl",  # 绝对路径兜底
+    ]
+    model_path = next((p for p in _candidates if os.path.exists(p)), _candidates[0])
     if not os.path.exists(model_path):
         logger.warning(f"分类器模型未找到: {model_path}，使用纯启发式")
         return None
     try:
         with open(model_path, "rb") as f:
             _classifier = pickle.load(f)
-        logger.info(f"分类器模型已加载 ({os.path.getsize(model_path)} bytes)")
+        logger.info(f"分类器模型已加载 ({os.path.getsize(model_path)} bytes) from {model_path}")
         return _classifier
     except Exception as e:
         logger.warning(f"分类器模型加载失败: {e}，使用纯启发式")

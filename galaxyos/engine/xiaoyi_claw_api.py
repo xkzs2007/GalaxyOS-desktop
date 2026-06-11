@@ -11,11 +11,12 @@ import logging
 import random
 from pathlib import Path
 from typing import Dict, Any, List, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 import time
 import uuid
 import re
 import threading as _th_mod
+import sqlite3  # 修复 F-1: _retrieval_phase 行 2346 等处用 sqlite3 但顶部未 import
 
 # ── 统一 var 路径解析（v7.0: galaxyos 优先，claw-core fallback）────
 _OPENCLAW_HOME_API = os.path.expanduser(
@@ -192,6 +193,25 @@ class XiaoYiClawLLM:
             self._kv_session_id = "xiaoyi-claw-main"
 
         # 初始化各模块
+        # 修复 F-16: 显式先把可能延后初始化的属性置 None，
+        # 防止 _init_llm_client 部分失败时后续 7+ 处裸 `self.X` AttributeError
+        # 被 except 静默吞掉导致 RCI / FLARE / CRAG 全部静默失能。
+        self.thinking_enhanced = None
+        self.dynamic_confidence = None
+        self.memory_editor = None
+        self.debate_engine = None
+        self.got_engine = None
+        self.context_layer = None
+        self.fast_pil = None
+        self._rci_threadpool = None
+        self._engine_int = None
+        self._smart_processor = None
+        self._hallucination_guard = None
+        self._gateway = None
+        self._smn = None
+        self._paper_int = None
+        self._consolidation = None
+
         self._init_vector_store()
         self._init_ontology_bridge()
         self._init_brain_sync()
@@ -217,6 +237,8 @@ class XiaoYiClawLLM:
         self._init_v4_services()
         self._init_gateway_client()
         self._init_dag_integration()
+        # 修复 BUG-1: _paper_int 从未被初始化，导致 30+ 处论文级增强全部静默失效
+        self._init_paper_integration()
 
         logger.info("小艺 Claw 大模型初始化完成")
 
@@ -742,6 +764,28 @@ class XiaoYiClawLLM:
         except Exception as e:
             self._dag_integration = None
             logger.debug("DAGIntegration: %s", e)
+
+    def _init_paper_integration(self):
+        """修复 BUG-1 + F-4: 初始化 PaperIntegration (RAPTOR/GraphRAG/Reflection/ToT/语义熵/因果/情感/认知负载)
+        原代码整个 __init__ 都没调这个，导致 _retrieval/_cognition/_control/_action/_memory
+        五个阶段里 30+ 处 `if getattr(self, '_paper_int', None):` 全部跳空。
+
+        真实签名: get_integration(llm_flash=None, workspace: str = "") -> PaperIntegration
+        之前 FIX-1 误用 get_integration(_flash, _pro) 触发 TypeError，
+        修正为只传 llm_flash，第二个参数是 workspace 字符串。"""
+        self._paper_int = None
+        try:
+            from paper_integration import get_integration
+            _flash = getattr(self, 'llm_flash', None)
+            try:
+                # 真实签名: (llm_flash=None, workspace: str = "")
+                self._paper_int = get_integration(llm_flash=_flash)
+            except TypeError:
+                # 兼容无参/旧签名
+                self._paper_int = get_integration()
+            logger.info("PaperIntegration 加载成功")
+        except Exception as e:
+            logger.warning(f"PaperIntegration 初始化失败（30+ 处增强会降级）: {e}")
 
 
     def set_rci_publisher(self, zmq_fn=None, mmap_fn=None):
@@ -2368,7 +2412,8 @@ class XiaoYiClawLLM:
                     _sr = []
                     if self.dag:
                         _sr, _ = self.dag.retrieve(_sq, top_k=3)
-                    _vm = self.retrieve_memories(_sq, top_k=2)
+                    # 修复 F-3: XiaoYiClawLLM 没有 retrieve_memories 方法，改用 recall
+                    _vm = self.recall(_sq, top_k=2)
                     if isinstance(_vm, list):
                         for _v in _vm:
                             _c = _v.get('content','')[:300] if isinstance(_v, dict) else str(_v)[:300]
@@ -2409,7 +2454,8 @@ class XiaoYiClawLLM:
                             _sr_hit = len(_sr_info['results'])
                             if _sr_hit < 2:
                                 _prune_dag, _ = self.dag.retrieve(_pq, top_k=5) if self.dag else ([], {})
-                                _prune_vm = self.retrieve_memories(_pq, top_k=3)
+                                # 修复 F-3: 同上，retrieve_memories → recall
+                                _prune_vm = self.recall(_pq, top_k=3)
                                 _prune_extra_parts = []
                                 for _r in (_prune_dag or []) + (_prune_vm or []):
                                     _c = _r.get('content','')[:300] if isinstance(_r, dict) else str(_r)[:300]
@@ -2642,13 +2688,18 @@ class XiaoYiClawLLM:
         if _budget in ("greeting", "minimal"):
             state.knowledge_type = "general"
             state.type_confidence = 0.9
-            state.analysis = {
+            # 修复 BUG-5: 原本 `state.analysis = {...}` 整段覆盖，
+            # 会清空 _retrieval_phase 写入的 rewritten_query / current_dag_context /
+            # compact_rag_context / kg_ingested / kg_hidden_relations / crag_sub_queries /
+            # reflexion_context / semantic_entropy 等 15+ 字段，导致 action_phase 拿不到
+            # 改写后的查询，DAG 上下文，CRAG 子查询，命中率/质量双降。
+            state.analysis.update({
                 "complexity": "simple",
                 "confusion": 0.1,
                 "intent": "greeting_or_ack",
                 "needs_more_info": False,
                 "think_level": "direct",
-            }
+            })
             state.intent = "greeting"
             state.needs_more_info = False
             state.thinking_skills_used = []
@@ -3383,6 +3434,9 @@ class XiaoYiClawLLM:
         执行控制阶段的决定。边界拒绝时给出具体原因。
         """
         query = state.user_input
+        # 修复 BUG-2: 原代码后段 3684-3703 用了裸 `answer` 变量会 NameError，
+        # 被外层 `except Exception: pass` 静默吞掉，导致 LTP/LTD 突触权重调整永远失效。
+        answer = state.generated_answer
 
         if state.strategy == "boundary_violation":
             state.action_success = True
@@ -3675,7 +3729,30 @@ class XiaoYiClawLLM:
         # ═══ EnhancedHallucinationGuard: 防幻觉验证 ═══
         try:
             if getattr(self, '_hallucination_guard', None) and state.generated_answer:
-                _vg = self._hallucination_guard.verify(state.generated_answer, state.user_input)
+                # 修复 F-6: EnhancedHallucinationGuard 类没有 verify(answer, query) 方法，
+                # 实际方法签名是 verify_with_cross_validation(statement, initial_confidence, use_web_search, use_thinking)，
+                # 或 verify_image_claim / verify_image_statement。这里做能力探测，
+                # 让防幻觉 + LTP/LTD 突触调整真正生效。
+                _vg = None
+                _guard = self._hallucination_guard
+                if hasattr(_guard, 'verify'):
+                    try:
+                        _vg = _guard.verify(state.generated_answer, state.user_input)
+                    except Exception:
+                        _vg = None
+                if _vg is None and hasattr(_guard, 'verify_with_cross_validation'):
+                    try:
+                        _vg = _guard.verify_with_cross_validation(
+                            statement=state.generated_answer,
+                            initial_confidence=state.answer_confidence,
+                            use_web_search=False,
+                            use_thinking=True,
+                        )
+                    except Exception:
+                        _vg = None
+                # 统一字段为 {confidence, alternative}
+                if _vg is not None and not isinstance(_vg, dict):
+                    _vg = {"confidence": getattr(_vg, 'confidence', 0.7)}
                 if _vg and _vg.get('confidence', 1.0) < 0.5:
                     state.answer_confidence = min(state.answer_confidence, _vg['confidence'])
                     if _vg.get('alternative'):
@@ -3840,16 +3917,18 @@ class XiaoYiClawLLM:
         # 4. 情感标记 + 写回 DAG
         try:
             if self._dag_integration and self._dag_integration.dag:
+                # 修复 F-10: DAGIntegration 类没有 add_message_with_scene 方法，
+                # 该方法在 DAGContextManager（self.dag）上。改走 self.dag.add_message_with_scene
                 _emotion_state = state.analysis.get('emotion_context', {})
                 if isinstance(_emotion_state, dict) and _emotion_state:
-                    self._dag_integration.add_message_with_scene(
+                    self.dag.add_message_with_scene(
                         session_key=state.session_key,
                         role="system",
                         content=f"[emotion_snapshot] {json.dumps(_emotion_state, ensure_ascii=False)[:500]}"
                     )
                 _synapse_state = getattr(state, 'synapse_updated', False)
                 if _synapse_state:
-                    self._dag_integration.add_message_with_scene(
+                    self.dag.add_message_with_scene(
                         session_key=state.session_key,
                         role="system",
                         content="[synapse_snapshot] memory_synapse_updated"
@@ -4274,7 +4353,8 @@ class XiaoYiClawLLM:
                         "completeness": _flare_judge.get('completeness', 5),
                         "avg": _flare_judge.get('avg', 5),
                     }
-                    if self._rci_threadpool is not None:
+                    # 修复 F-5: 用 getattr 兜底 _rci_threadpool 未初始化场景
+                    if getattr(self, '_rci_threadpool', None) is not None:
                         self._rci_threadpool.submit(
                             _rci_async_criticism, self, state
                         )
@@ -4308,16 +4388,22 @@ class XiaoYiClawLLM:
                 pass
 
             # 停止判断
+            # 修复 F-9: 原来 max_cycles_reached 放第一个 elif 链首，max_cycles=1 时
+            # 第一次循环结束 cycle_count=1 必然命中它，导致 high_confidence /
+            # cognitive_budget_met 后续 elif 永远走不到。调整为：
+            # 1) 边界违规 / 策略完成 永远立即停
+            # 2) 高置信度 / 认知预算 提前停（先于 max_cycles 判定）
+            # 3) 最后才是 max_cycles_reached
             if state.strategy == "boundary_violation":
                 state.should_stop = True; state.stop_reason = "boundary_violation"
-            elif state.cycle_count >= state.max_cycles:
-                state.should_stop = True; state.stop_reason = "max_cycles_reached"
             elif state.strategy != "answer":
                 state.should_stop = True; state.stop_reason = "strategy_completed"
             elif state.answer_confidence >= 0.7:
                 state.should_stop = True; state.stop_reason = "high_confidence"
             elif state.analysis.get('cognitive_budget') != "full":
                 state.should_stop = True; state.stop_reason = "cognitive_budget_met"
+            elif state.cycle_count >= state.max_cycles:
+                state.should_stop = True; state.stop_reason = "max_cycles_reached"
 
         # ═══ 写入 performance_metrics（供 ThinkingEnhanced 消费） ═══
         try:
@@ -4344,6 +4430,17 @@ class XiaoYiClawLLM:
                 self._gateway.zmq_send("rccam_complete",
                     {"query": state.user_input[:200], "success": True, "confidence": state.answer_confidence},
                     timeout_ms=500)
+        except Exception:
+            pass
+
+        # 修复 BUG-3: 原来 log_event 写在 return {…} 之后是死代码，导致 TKG 事件库
+        # 永远收不到 "process" 事件，监控/dashboard 看不到调用记录。
+        try:
+            self.log_event("process", f"input:{user_input[:80]}",
+                           detail=f"cycles={max_cycles} budget={_process_budget}s",
+                           session_key=session_key or "xiaoyi-claw-main",
+                           metadata={"answer_len": len(state.generated_answer or ""),
+                                    "cycles": max_cycles, "strategy": getattr(state, 'strategy', '')})
         except Exception:
             pass
 
@@ -4424,13 +4521,6 @@ class XiaoYiClawLLM:
                 }
             }
         }
-
-        self.log_event("process", f"input:{user_input[:80]}",
-                       detail=f"cycles={max_cycles} budget={_process_budget}s",
-                       session_key=session_key or "xiaoyi-claw-main",
-                       metadata={"answer_len": len(state.generated_answer or ""),
-                                "cycles": max_cycles, "strategy": getattr(state, 'strategy', '')})
-        return result
 
     def get_status(self) -> Dict[str, Any]:
         """

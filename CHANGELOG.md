@@ -1,5 +1,30 @@
 # Changelog
 
+## [7.3.2] — 2026-06-11
+
+### Added
+- **GAT 双路径 + 稀疏 PyG 后端** — 5.8GB 容器下 N=2000 节点 0.4GB RSS + 7ms 延迟（vs 原稠密矩阵 20GB OOM），`mode=auto/dense/sparse` + `backend=auto/pyg/native` 开关
+- **HNSW 隐式边构造** — `gnn_graph_builder._build_implicit_edges` jieba 全 N² → HNSW 索引 O(N·log N)，5.8GB 容器下 N=3078 节点 135ms（vs 原 ~2min）
+- **HNSW 端到端集成** — `load_from_database` ≥ 200 节点自动挂载 HNSW 索引 + `query_neighbors(query_vec, k)` 语义召回接口；`_load_from_dag_db` 大表走 HNSW 召回取代纯时间序
+- **install_wizard 阶段 0.5** — torch/torch_geometric/torch_scatter/torch_sparse/hnswlib/faiss/ncps 检测 + 清华源 + PyG wheel + PyTorch CPU 索引
+- **install_wizard `--fix-torch`** — 一键补齐 ML 栈（自动选解释器 + 清华源 + 预编译 hnswlib wheel fallback）
+- **install_wizard `--python` / `--openclaw-home`** — 显式覆盖 Python 解释器和 OpenClaw 用户配置目录（生产容器固定运行时）
+- **Python 3.12.13 运行时** — `/opt/python/bin/python3.12`（python-build-standalone 预编译），torch 2.12.0+cpu + torch_geometric 2.8.0 + hnswlib 0.8.0 + faiss 1.14.2 + ncps 0.0.2 全家桶就绪
+- **PyG GATConv 加速** — 2.8x speedup vs 手写稠密，CPU 上 N=2000 节点 7ms
+- **KG 集成 5.8GB 适配** — N=3000 节点 forward RSS=373MB（之前稠密 OOM）
+- **GAT 预算估算 + 硬上限** — `_estimate_dense_bytes` + `_dense_n_hard_limit`，单层 attention ≤ 50MB（num_heads=4 → N≤1768）
+- **OpenClaw 路径解析** — `_openclawHome()` / `_resolve_openclaw_home()` 覆盖 dev/prod/容器三模式，`OPENCLAW_HOME` / `GALAXYOS_OPENCLAW_HOME` 显式 env 覆盖；9 处 `process.env.HOME` 替换为 `OPENCLAW_HOME`
+- **互动模式自动询问 --fix-torch** — tty 缺包时问 `[Y/n]`，非交互/CI 不阻塞
+
+### Fixed
+- **dtype mismatch (c10::Half != float)** — chunked 路径 cast W/a 到 h.dtype
+- **PyG 2.8 `add_self_loops` bug** — 改 `add_self_loops=False` 手工加自环
+- **PyG 收到稠密 (N, N) 当 edge_index** — GAT `_resolve_graph` 区分 `is_edge_index` + `pyg_mode` 透传
+- **KG 优先用 `_adj_matrix` 不用 edge_index** — `KG.forward` 优先 `_edge_index`
+- **PyG index URL 算法** — torch>2.11 回落到 torch-2.10.0+cpu.html
+- **hnswlib cp312 wheel 装不上** — `tar xzf libs/hnswlib-0.8.0-x86_64.tar.gz` 直接展开到 site-packages
+- **py3.12 装不上** — `python-build-standalone` 20260602 release tag
+
 ## [7.3.0] — 2026-06-10
 
 ### Added

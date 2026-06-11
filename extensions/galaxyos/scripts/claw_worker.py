@@ -34,8 +34,15 @@ import threading
 import selectors
 
 # ========== 路径初始化 ==========
+# v2026.6.11 修: WORKSPACE 跟随 OPENCLAW_HOME, dev 模式自动用 .openclaw-dev
+# OPENCLAW_HOME / GALAXYOS_OPENCLAW_HOME 优先, 兜底 ~/.openclaw
+_OPENCLAW_HOME = os.path.expanduser(
+    os.environ.get("OPENCLAW_HOME")
+    or os.environ.get("GALAXYOS_OPENCLAW_HOME")
+    or "~/.openclaw"
+)
 WORKSPACE = os.environ.get("OPENCLAW_WORKSPACE",
-    os.path.expanduser("~/.openclaw/workspace"))
+    os.path.join(_OPENCLAW_HOME, "workspace"))
 
 # 自动检测 GalaxyOS 仓库路径（galaxyos/engine/ 或 extensions/galaxyos/dist/scripts/）
 _THIS_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -56,6 +63,9 @@ _GALAXYOS_SCRIPTS = os.path.join(_GALAXYOS_REPO, "galaxyos", "scripts") if _GALA
 sys.path.insert(0, _GALAXYOS_ENGINE)
 sys.path.insert(0, _GALAXYOS_PRIVILEGED)
 sys.path.insert(0, _GALAXYOS_SCRIPTS)
+# v2026.6.11 修: 显式加入 _GALAXYOS_REPO 让 `import galaxyos` 顶层包可用
+if _GALAXYOS_REPO and _GALAXYOS_REPO not in sys.path:
+    sys.path.insert(0, _GALAXYOS_REPO)
 
 # Legacy fallback: workspace skills path (backward compat)
 _LEGACY_CORE = os.path.join(WORKSPACE, "skills", "xiaoyi-claw-omega-final", "skills", "llm-memory-integration", "core")
@@ -138,7 +148,13 @@ def _resolve_var_path(subpath, mkdirs=True):
     # 最后尝试：创建 galaxyos/var/
     return primary
 
-UDS_PATH = _resolve_var_path("claw-worker.sock")
+# v2026.6.11 修: 多 worker 共用 UDS_PATH 会导致 race condition (kernel 只路由到首个 bind 的).
+# 给每个 worker 独立 socket 文件: claw-worker-{id}.sock
+_WORKER_ID = os.environ.get('WORKER_ID', 'worker:1')
+_worker_id_suffix = _WORKER_ID.replace(':', '-').replace('/', '_')
+UDS_PATH = _resolve_var_path(f"claw-worker-{_worker_id_suffix}.sock")
+# 兼容旧探测路径 (plugin/wizard 用 claw-worker.sock 找主 worker)
+UDS_PATH_LEGACY = _resolve_var_path("claw-worker.sock")
 ZMQ_PUB_PORT = 5559
 MMAP_PATH = _resolve_var_path("claw_worker_mmap")
 
@@ -257,7 +273,20 @@ class _GatewayProxy:
 gateway = _GatewayProxy()
 
 # ========== HTTP JSON-RPC ==========
-HTTP_PORT = 8765
+# v2026.6.11: 多 worker 独立 HTTP port (worker:1=8765, worker:2=8766, ...)
+_HTTP_BASE_PORT = 8765
+_HTTP_PORT_OFFSET = 0
+try:
+    if _WORKER_ID == "worker:1": _HTTP_PORT_OFFSET = 0
+    elif _WORKER_ID == "worker:2": _HTTP_PORT_OFFSET = 1
+    elif _WORKER_ID == "worker:3": _HTTP_PORT_OFFSET = 2
+    else:
+        # 数字后缀 fallback
+        import re
+        m = re.match(r'worker:(\d+)', _WORKER_ID)
+        if m: _HTTP_PORT_OFFSET = int(m.group(1)) - 1
+except Exception: pass
+HTTP_PORT = _HTTP_BASE_PORT + _HTTP_PORT_OFFSET
 
 # 记忆巩固引擎（后台线程）
 _consolidation = None
@@ -1812,6 +1841,9 @@ def _uds_server_thread(methods_map):
 
     sys.stderr.write(f"[claw-worker] UDS (serial, timeout={REQUEST_TIMEOUT}s) listening on {UDS_PATH}\n")
 
+    # v2026.6.11: socket __slots__ 不能加 attr, 用 fd→buffer 字典
+    _recv_buffers = {}
+
     while not _shutdown_flag:
         events = sel.select(timeout=0.5)
         for key, mask in events:
@@ -1820,32 +1852,54 @@ def _uds_server_thread(methods_map):
                 try:
                     conn, _addr = server.accept()
                     conn.setblocking(False)
+                    _recv_buffers[conn.fileno()] = b""
                     sel.register(conn, _sel_mod.EVENT_READ, data=b"")
                 except Exception:
                     pass
             else:
                 conn = key.fileobj
+                fd = conn.fileno()
                 try:
                     chunk = conn.recv(65536)
                     if chunk:
-                        key.data += chunk
-                        if b"\r\n\r\n" in key.data and b"Content-Length:" in key.data:
-                            # 完整 HTTP 请求头已到达 → 处理
-                            sel.unregister(conn)
-                            _handle_one_http_request(conn, key.data, methods_map)
-                            try:
-                                conn.close()
-                            except Exception:
-                                pass
+                        _recv_buffers[fd] = _recv_buffers.get(fd, b"") + chunk
+                        buf = _recv_buffers[fd]
+                        if b"\r\n\r\n" in buf:
+                            has_cl = b"Content-Length:" in buf or b"content-length:" in buf
+                            ready = False
+                            if not has_cl:
+                                ready = True
+                            else:
+                                try:
+                                    _hdr_part = buf.split(b"\r\n\r\n", 1)[0].decode("utf-8", errors="replace")
+                                    _cl = 0
+                                    for _line in _hdr_part.split("\r\n"):
+                                        if _line.lower().startswith("content-length:"):
+                                            _cl = int(_line.split(":", 1)[1].strip())
+                                    _body = buf.split(b"\r\n\r\n", 1)[1]
+                                    if len(_body) >= _cl:
+                                        ready = True
+                                except Exception:
+                                    pass
+                            if ready:
+                                sel.unregister(conn)
+                                _recv_buffers.pop(fd, None)
+                                _handle_one_http_request(conn, buf, methods_map)
+                                try:
+                                    conn.close()
+                                except Exception:
+                                    pass
                     else:
                         sel.unregister(conn)
+                        _recv_buffers.pop(fd, None)
                         try:
                             conn.close()
                         except Exception:
                             pass
                 except (BlockingIOError, InterruptedError):
                     pass
-                except Exception:
+                except Exception as e:
+                    sys.stderr.write(f"[claw-worker UDS] OUTER except: {type(e).__name__}: {e}\n"); sys.stderr.flush()
                     sel.unregister(conn)
                     try:
                         conn.close()
@@ -2175,7 +2229,8 @@ def _mmap_write(cache_key, data):
         payload = json.dumps(full, ensure_ascii=False)
         raw = payload.encode("utf-8")
         os.makedirs(os.path.dirname(MMAP_PATH), exist_ok=True)
-        header = struct.pack(">I", len(raw))
+        # 修复 F-8: mmap 字节序与 read 端对齐（小端）
+        header = struct.pack("<I", len(raw))
         with open(MMAP_PATH, "wb") as f:
             f.write(header + raw)
     except Exception:
@@ -2231,31 +2286,59 @@ def _http_serve(methods_map):
     sys.stderr.write(f"[claw-worker]   REST endpoints: {len(_REST_ROUTES)} routes (GET /health, POST /recall, ...)\n")
     sys.stderr.write(f"[claw-worker]   API index: curl http://127.0.0.1:{HTTP_PORT}/\n")
 
+    # v2026.6.11: socket 是 __slots__ 不能加 attr, 用 _recv_buffers dict 按 fd 索引
+    _recv_buffers = {}
+
     while not _shutdown_flag:
         events = sel.select(timeout=0.5)
         for key, mask in events:
             if key.data is None:
+                # 新连接
                 try:
                     conn, _addr = server.accept()
                     conn.setblocking(False)
+                    _recv_buffers[conn.fileno()] = b""
                     sel.register(conn, _sel_mod.EVENT_READ, data=b"")
                 except Exception:
                     pass
             else:
                 conn = key.fileobj
+                fd = conn.fileno()
                 try:
                     chunk = conn.recv(65536)
                     if chunk:
-                        key.data += chunk
-                        if b"\r\n\r\n" in key.data and b"Content-Length:" in key.data:
-                            sel.unregister(conn)
-                            _handle_one_http_request(conn, key.data, methods_map)
-                            try:
-                                conn.close()
-                            except Exception:
-                                pass
+                        _recv_buffers[fd] = _recv_buffers.get(fd, b"") + chunk
+                        buf = _recv_buffers[fd]
+                        # 完整请求条件: 头部完整 + (无 body 或 Content-Length 已收齐)
+                        if b"\r\n\r\n" in buf:
+                            has_cl = b"Content-Length:" in buf or b"content-length:" in buf
+                            ready = False
+                            if not has_cl:
+                                ready = True  # GET / POST 空 body
+                            else:
+                                try:
+                                    _hdr_part = buf.split(b"\r\n\r\n", 1)[0].decode("utf-8", errors="replace")
+                                    _cl = 0
+                                    for _line in _hdr_part.split("\r\n"):
+                                        if _line.lower().startswith("content-length:"):
+                                            _cl = int(_line.split(":", 1)[1].strip())
+                                    _body = buf.split(b"\r\n\r\n", 1)[1]
+                                    if len(_body) >= _cl:
+                                        ready = True
+                                except Exception:
+                                    pass
+                            if ready:
+                                sel.unregister(conn)
+                                _recv_buffers.pop(fd, None)
+                                _handle_one_http_request(conn, buf, methods_map)
+                                try:
+                                    conn.close()
+                                except Exception:
+                                    pass
                     else:
+                        # 对端关闭
                         sel.unregister(conn)
+                        _recv_buffers.pop(fd, None)
                         try:
                             conn.close()
                         except Exception:
@@ -2264,6 +2347,7 @@ def _http_serve(methods_map):
                     pass
                 except Exception:
                     sel.unregister(conn)
+                    _recv_buffers.pop(fd, None)
                     try:
                         conn.close()
                     except Exception:

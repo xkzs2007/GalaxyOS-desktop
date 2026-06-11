@@ -54,6 +54,7 @@
       "path": "../llm-memory-integration",
       "priority": 1
     },
+    "claw_plugin": {
       "enabled": true,
       "plugin": true,
       "priority": 2

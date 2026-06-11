@@ -170,15 +170,37 @@ class KnowledgeGraphGNN(nn.Module):
         self._get_relation_id(relation)
     
     def build_graph(self) -> None:
-        """构建图数据结构"""
-        # 获取邻接矩阵和特征矩阵
-        adj_matrix, id_to_idx = self.graph_constructor.get_adjacency_matrix()
+        """
+        构建图数据结构
+
+        双路径存储（避免大图 OOM）：
+          - 始终缓存 edge_index (2, E) 稀疏表示
+          - 当图小时 (N <= GAT_sparse_threshold) 额外缓存 _adj_matrix 供向后兼容
+          - 当图大时只存 edge_index，GAT 前向自动用 SparseGraphAttentionLayer
+        """
+        from gat_layer import _DEFAULT_SPARSE_THRESHOLD
+        edge_index, id_to_idx = self.graph_constructor.get_edge_index()
         feature_matrix, _ = self.graph_constructor.get_feature_matrix()
-        
-        self._adj_matrix = torch.tensor(adj_matrix, dtype=torch.float32)
+
+        # 总是存 feature + edge_index
         self._feature_matrix = torch.tensor(feature_matrix, dtype=torch.float32)
+        self._edge_index = torch.tensor(edge_index, dtype=torch.long)
         self._id_to_idx = id_to_idx
         self._idx_to_id = {v: k for k, v in id_to_idx.items()}
+
+        # 小图额外缓存稠密 adj (向后兼容 + 取 attention weights)
+        N = feature_matrix.shape[0] if feature_matrix.size > 0 else 0
+        if N > 0 and N <= _DEFAULT_SPARSE_THRESHOLD:
+            adj_matrix, _ = self.graph_constructor.get_adjacency_matrix()
+            self._adj_matrix = torch.tensor(adj_matrix, dtype=torch.float32)
+        else:
+            self._adj_matrix = None  # 大图不缓存稠密
+
+    def _resolve_graph(self, device: torch.device) -> torch.Tensor:
+        """按 N 大小返回稠密 adj 或 edge_index，给 GAT.forward 用。"""
+        if self._adj_matrix is not None:
+            return self._adj_matrix.to(device)
+        return self._edge_index.to(device)
     
     def forward(
         self,
@@ -188,56 +210,80 @@ class KnowledgeGraphGNN(nn.Module):
     ) -> torch.Tensor:
         """
         前向传播
-        
+
         Args:
             entity_ids: 实体ID张量（可选）
-            adj_matrix: 邻接矩阵（可选）
+            adj_matrix: 邻接矩阵（可选）— 仅向后兼容
             feature_matrix: 特征矩阵（可选）
-            
+
         Returns:
             实体嵌入
         """
         # 使用缓存的数据或提供的输入
+        # 优先用 edge_index（PyG 友好 + 节省 5.8GB 容器下小图稠密 adj 显存）
+        # 如果显式传 adj_matrix 才用稠密（向后兼容）
         if adj_matrix is None:
-            adj_matrix = getattr(self, '_adj_matrix', None)
+            # 内部缓存：优先用 edge_index（pyg 后端可吃）
+            if getattr(self, '_edge_index', None) is not None:
+                adj_matrix = None  # 保持 None，让下方用 edge_index
+            else:
+                adj_matrix = getattr(self, '_adj_matrix', None)
         if feature_matrix is None:
             feature_matrix = getattr(self, '_feature_matrix', None)
-        
-        if adj_matrix is None or feature_matrix is None:
+
+        if feature_matrix is None:
             raise ValueError("Please call build_graph() first or provide adj_matrix and feature_matrix")
-        
+
         # 移动到正确的设备
         device = next(self.parameters()).device
-        adj_matrix = adj_matrix.to(device)
         feature_matrix = feature_matrix.to(device)
-        
+        # 优先 edge_index（PyG 友好）；没有才退回 adj_matrix
+        edge_index = getattr(self, '_edge_index', None)
+        if adj_matrix is None and edge_index is not None:
+            graph = edge_index.to(device)
+        elif adj_matrix is not None:
+            graph = adj_matrix.to(device)
+        else:
+            # 没有图数据 — 返回恒等特征
+            return self.output_layer(self.feature_proj(feature_matrix))
+
         # 特征投影
         h = self.feature_proj(feature_matrix)
-        
+
         # GNN 前向传播
         if self.gnn_type == 'hybrid':
-            h_gat = self.gnn_gat(h, adj_matrix)
-            h_sage = self.gnn_sage(h, self._get_adj_list(adj_matrix))
+            h_gat = self.gnn_gat(h, graph)
+            h_sage = self.gnn_sage(h, self._get_adj_list_from_index(edge_index, device))
             h = torch.cat([h_gat, h_sage], dim=-1)
             h = self.combine(h)
         elif self.gnn_type == 'graphsage':
-            h = self.gnn(h, self._get_adj_list(adj_matrix))
+            h = self.gnn(h, self._get_adj_list_from_index(edge_index, device))
         else:
-            h = self.gnn(h, adj_matrix)
-        
+            h = self.gnn(h, graph)
+
         # 输出层
         output = self.output_layer(h)
-        
+
         return output
-    
-    def _get_adj_list(self, adj_matrix: torch.Tensor) -> List[List[int]]:
-        """从邻接矩阵获取邻接表"""
-        adj_np = adj_matrix.cpu().numpy()
-        n = adj_np.shape[0]
-        adj_list = []
-        for i in range(n):
-            neighbors = np.where(adj_np[i] > 0)[0].tolist()
-            adj_list.append(neighbors)
+
+    def _get_adj_list_from_index(
+        self, edge_index: Optional[torch.Tensor], device: torch.device
+    ) -> List[List[int]]:
+        """从 edge_index 生成邻接表（GraphSAGE 用）。"""
+        if edge_index is None or edge_index.numel() == 0:
+            n = self._feature_matrix.size(0) if self._feature_matrix is not None else 0
+            return [[] for _ in range(n)]
+        ei = edge_index.to(device)
+        src = ei[0].cpu().numpy()
+        dst = ei[1].cpu().numpy()
+        n = int(max(src.max(initial=0), dst.max(initial=0))) + 1 if src.size > 0 else 0
+        # 实际上节点数从 feature_matrix 取更稳
+        if self._feature_matrix is not None:
+            n = self._feature_matrix.size(0)
+        adj_list = [[] for _ in range(n)]
+        for s, d in zip(src.tolist(), dst.tolist()):
+            if 0 <= s < n:
+                adj_list[s].append(d)
         return adj_list
     
     def get_entity_embedding(

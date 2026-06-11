@@ -68,6 +68,8 @@ _MODULE_MAP = {
     'rag_optimizer':                ('galaxyos.privileged', 'rag_optimizer'),
     'rccam_state':                  ('galaxyos.engine', 'rccam_state'),
     'retrieval_hub':                ('galaxyos.engine', 'retrieval_hub'),
+    'onnx_embedding':               ('galaxyos.engine', 'onnx_embedding'),
+    'neural_pipeline':              ('galaxyos.engine', 'neural_pipeline'),
     'thinking_enhanced':            ('galaxyos.engine', 'thinking_enhanced'),
     'tree_of_thought':              ('galaxyos.engine', 'tree_of_thought'),
     'unified_cache':                ('galaxyos.privileged', 'unified_cache'),

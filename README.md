@@ -1,7 +1,7 @@
 # 🌌 GalaxyOS — 认知增强引擎
 
 > OpenClaw 的开源认知增强引擎，为 AI Assistant 提供记忆、检索、推理、验证、自进化等全套认知能力
-> 版本: v7.3 · 全论文模块接入ContextEngine决策链 + session_id全面隔离 + Gateway防塞爆
+> 版本: v7.3.2 · GAT 双路径稀疏化 + HNSW 端到端 + 5.8GB 容器适配 + OpenClaw 路径解析
 
 ## 总览
 
@@ -236,7 +236,8 @@ GALAXYOS_REPO=. python3 -m galaxyos.engine.unified_entry recall --query "查询"
 
 | 版本 | 文件 | 说明 |
 |------|------|------|
-| **v7.3 (最新)** | — | **全论文模块接入ContextEngine决策链 + session_id全面隔离 + Gateway防塞爆** |
+| **v7.3.2 (最新)** | — | **GAT 双路径稀疏化 + HNSW 端到端 + 5.8GB 容器适配 + OpenClaw 路径解析** |
+| **v7.3** | — | **全论文模块接入ContextEngine决策链 + session_id全面隔离 + Gateway防塞爆** |
 | **v7.2** | — | **GalaxyPool 统一管理 + 负载感知调度 + batch RPC + Rust PyO3 + 神经网络全量修复 + CLI-Anything** |
 | **v7.1** | — | **RLM 递归环境 + SKILL0 技能课程 + MemoryOS 记忆操作系统 + 10+1 论文集成 + GalaxyOS 插件** |
 | **v7.0** | — | **统一包 galaxyos/ + WorkerPool 弹性扩缩 + PIL 子进程隔离 + CircuitBreaker 断路器 + Rust 原生扩展** |
@@ -256,6 +257,19 @@ GALAXYOS_REPO=. python3 -m galaxyos.engine.unified_entry recall --query "查询"
 | v3.0.0 | `docs/xiaoyi-claw-core-architecture-v3.0.0.md` | 16 层架构、R-CCAM 认知循环 |
 
 **完整架构文档（含 17 层全景图、470+ 功能列表、更新日志）：** 👉 [📖 查看 Skills 文档栏](https://cnb.cool/llm-memory-integrat/GalaxyOS?tabValue=SKILLS-ov-file)
+
+### v7.3.2 新特性 (5.8GB 容器适配 + GAT/HNSW 性能突破)
+
+| 特性 | 说明 |
+|------|------|
+| **GAT 双路径 + 稀疏 PyG 后端** | `mode=auto/dense/sparse` + `backend=auto/pyg/native` 开关，5.8GB 容器下 N=2000 节点 0.4GB RSS + 7ms 延迟（vs 原稠密矩阵 20GB OOM），PyG GATConv 2.8x speedup |
+| **HNSW 隐式边构造** | `gnn_graph_builder._build_implicit_edges` jieba 全 N² → HNSW 索引 O(N·log N)，N=3078 节点 135ms（vs 原 ~2min） |
+| **HNSW 端到端** | `load_from_database` ≥ 200 节点自动挂载 HNSW 索引 + `query_neighbors(query_vec, k)` 语义召回；`_load_from_dag_db` 大表走 HNSW 召回取代纯时间序 |
+| **install_wizard 阶段 0.5** | torch/torch_geometric/torch_scatter/torch_sparse/hnswlib/faiss/ncps 检测 + 清华源 + PyG wheel + PyTorch CPU 索引，`--fix-torch` 一键补齐 |
+| **Python 3.12.13 运行时** | `/opt/python/bin/python3.12` (python-build-standalone)，torch 2.12.0+cpu + torch_geometric 2.8.0 + hnswlib 0.8.0 + faiss 1.14.2 + ncps 0.0.2 全家桶就绪 |
+| **KG 集成 5.8GB 适配** | N=3000 节点 forward RSS=373MB（之前稠密 OOM） |
+| **OpenClaw 路径解析** | `_openclawHome()` / `_resolve_openclaw_home()` 覆盖 dev/prod/容器三模式，`OPENCLAW_HOME` env 显式覆盖；9 处 `process.env.HOME` 替换为 `OPENCLAW_HOME` |
+| **互动模式自动询问 --fix-torch** | tty 缺包时问 `[Y/n]`，非交互/CI 不阻塞 |
 
 ### v7.3 新特性
 

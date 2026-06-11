@@ -531,15 +531,22 @@ class ConsolidationEngine:
         if self._sleep_consolidator is None and not self._sleep_consolidator_imported:
             self._sleep_consolidator_imported = True
             try:
-                # 导入睡眠引擎
-                import importlib.util
-                sleep_path = os.path.join(self.workspace,
-                    "GalaxyOS/skills/llm-memory-integration/core/biorhythm_sleep_consolidation.py")
-                spec = importlib.util.spec_from_file_location("biorhythm_sleep_consolidation", sleep_path)
-                if spec and spec.loader:
-                    mod = importlib.util.module_from_spec(spec)
-                    spec.loader.exec_module(mod)
-                    self._sleep_consolidator = mod.BioRhythmSleepConsolidator(self.workspace)
+                # v2026.6.11: biorhythm 实际在 galaxyos/engine/, 不在 workspace/GalaxyOS/skills/...
+                # 优先尝试 import galaxyos.engine.biorhythm_sleep_consolidation (标准导入)
+                try:
+                    from galaxyos.engine.biorhythm_sleep_consolidation import BioRhythmSleepConsolidator as _BRS
+                    self._sleep_consolidator = _BRS(self.workspace)
+                except ImportError:
+                    # 兼容旧版 monolithic GalaxyOS: 从 workspace/GalaxyOS/skills/... 路径动态加载
+                    import importlib.util
+                    sleep_path = os.path.join(self.workspace,
+                        "GalaxyOS/skills/llm-memory-integration/core/biorhythm_sleep_consolidation.py")
+                    spec = importlib.util.spec_from_file_location("biorhythm_sleep_consolidation", sleep_path)
+                    if spec and spec.loader:
+                        mod = importlib.util.module_from_spec(spec)
+                        spec.loader.exec_module(mod)
+                        self._sleep_consolidator = mod.BioRhythmSleepConsolidator(self.workspace)
+                if self._sleep_consolidator:
                     self._sleep_consolidator.start_background()
             except Exception as e:
                 return {"error": f"sleep_consolidator import failed: {e}"}

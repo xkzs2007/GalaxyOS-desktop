@@ -1,0 +1,49 @@
+{
+  "version": "1.0",
+  "description": "GalaxyOS 进化触发器配置 — 控制记忆巩固、知识图谱演化、模型自学习的触发条件",
+  "triggers": {
+    "memory_consolidation": {
+      "enabled": true,
+      "every_n_cycles": 10,
+      "min_new_memories": 3,
+      "max_per_hour": 4,
+      "priority": 1
+    },
+    "knowledge_graph_prune": {
+      "enabled": true,
+      "every_n_cycles": 20,
+      "min_node_count": 100,
+      "max_per_hour": 2,
+      "priority": 2
+    },
+    "synaptic_pretrain": {
+      "enabled": true,
+      "every_n_cycles": 50,
+      "min_neuron_count": 20,
+      "max_per_hour": 1,
+      "priority": 3
+    },
+    "persona_update": {
+      "enabled": true,
+      "every_n_cycles": 100,
+      "min_interactions": 50,
+      "max_per_day": 1,
+      "priority": 4
+    },
+    "vector_reindex": {
+      "enabled": true,
+      "every_n_cycles": 200,
+      "min_dirty_vectors": 500,
+      "max_per_day": 1,
+      "priority": 5
+    }
+  },
+  "cooldowns": {
+    "global_min_interval_seconds": 30,
+    "per_trigger_min_interval_seconds": 60
+  },
+  "thresholds": {
+    "min_confidence": 0.6,
+    "min_usefulness_score": 0.5
+  }
+}

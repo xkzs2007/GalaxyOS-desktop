@@ -1,6 +1,12 @@
 #!/usr/bin/env python3
 """
 L1 - Core Layer
+
+⚠️  ARCHITECTURE WARNING (F-11) ⚠️
+本文件是【孤儿代码】—— 全工程 0 处 `from core.prompt_integration` 引用。
+原设计加载仓库根 IDENTITY.md / AGENTS.md 作为系统 prompt，但这两个文件**根本不存在**于 /workspace/，
+_load_identity() 走 fallback 默认值，没有任何实际效果。
+【建议】: 删除本文件，或补上 IDENTITY.md / AGENTS.md 并在 XiaoYiClawLLM 中真正调用本模块。
 核心认知层
 
 职责：

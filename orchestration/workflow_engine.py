@@ -2,6 +2,14 @@
 """
 工作流引擎 - 执行预定义的工作流
 
+⚠️  ARCHITECTURE WARNING (F-13) ⚠️
+本文件路径 SKILL_ROOT / "skills/llm-memory-integration/core" **不存在**于当前仓库结构。
+44 个工作流中除了 5 个内置简单任务 (search/create/update/delete/query)，
+其他 39 个工作流（memory_reflector / crag / hallucination_guard / memgpt_memory 等）
+的底层模块在 galaxyos/engine/，但没有任何代码把它们同步到 CORE_DIR。
+【症状】: _load_module() 对所有 30+ 内置工作流失败，WorkflowEngine 实际上是个半残。
+【建议】: 把 CORE_DIR 重定向到 galaxyos/engine/，或在 _load_module() 前先做 sys.path 注入。
+
 Author: 小艺 Claw
 Version: 1.0.0
 Created: 2026-04-23

@@ -1372,24 +1372,31 @@ def _do_synapse_gat(query: str, _ws: str, _neuron_count: int) -> list:
 
         import numpy as np
 
-        # 4. 构建邻接矩阵 + GAT 前向
+        # 4. 构建稀疏边索引 + GAT 前向（不再构造 N×N 稠密矩阵）
         import torch
         _n = len(_neurons)
         _features = torch.tensor(np.array(_features_list), dtype=torch.float32)
-        _adj = torch.eye(_n)
-        if _edges_src:
-            for _si, _ti in zip(_edges_src, _edges_dst):
-                _adj[_si, _ti] = 1.0
+        _src_list = list(_edges_src)
+        _dst_list = list(_edges_dst)
+        # 加自环
+        _self_loop = list(range(_n))
+        _src_list = _src_list + _self_loop
+        _dst_list = _dst_list + _self_loop
+        if _src_list:
+            _edge_index = torch.tensor([_src_list, _dst_list], dtype=torch.long)
+        else:
+            _edge_index = torch.zeros(2, 0, dtype=torch.long)
 
         try:
             from gat_layer import GAT
+            # 默认 mode='auto'，大图自动走 sparse 路径
             _gat = GAT(
                 input_dim=64, hidden_dim=64, output_dim=64,
                 num_heads=4, num_layers=2, dropout=0.3,
             )
             _gat.eval()
             with torch.no_grad():
-                _embeddings = _gat(_features, _adj)
+                _embeddings = _gat(_features, _edge_index)
         except Exception as _e:
             logger.debug(f"GAT forward failed, fallback to ONNX raw: {_e}")
             _embeddings = _features

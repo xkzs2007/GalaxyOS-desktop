@@ -1,6 +1,13 @@
 #!/usr/bin/env python3
 """
 L3 - Orchestration Layer
+
+⚠️  ARCHITECTURE WARNING (F-13) ⚠️
+本文件是【孤儿代码】—— 全工程 0 处 `from orchestration.task_engine import` 引用。
+唯一引用方是 examples/03_task_orchestration.py（且 examples 自己也因引用不存在的
+infrastructure.unified_integration / memory_context.memory_manager 而无法运行）。
+to_dict() 静默截断 result 到 200 字符。
+【建议】: 删 examples/，删本文件，或将 task 引擎接入 unified_entry.execute_workflow。
 任务编排层
 
 职责：
