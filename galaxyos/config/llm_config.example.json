@@ -1,31 +1,31 @@
 {
+  "_doc": "GalaxyOS LLM 配置文件模板。复制为 llm_config.json 后填入真实 API Key。\n生产部署：\n  1) cp llm_config.example.json llm_config.json\n  2) 编辑 llm_config.json，把 sk-REPLACE_ME_* 替换为真实 key\n  3) llm_config.json 已在 .gitignore 中，不会被 commit。\n\n也可走环境变量：\n  export GALAXYOS_LLM_API_KEY=sk-...\n  export GALAXYOS_EMBEDDING_API_KEY=sk-...\n代码侧优先读 env，回落 llm_config.json。",
   "llm": {
     "provider": "openai-compatible",
-    "base_url": "https://api.openai.com/v1",
-    "api_key": "YOUR_LLM_API_KEY",
-    "model": "gpt-4",
-    "max_tokens": 150,
+    "base_url": "https://api.deepseek.com/beta",
+    "api_key": "sk-REPLACE_ME_DEEPSEEK",
+    "model": "deepseek-v4-flash",
+    "max_tokens": 2048,
     "temperature": 0.5
+  },
+  "llm_pro": {
+    "provider": "openai-compatible",
+    "base_url": "https://api.siliconflow.cn/v1",
+    "api_key": "sk-REPLACE_ME_SILICONFLOW",
+    "model": "Pro/deepseek-ai/DeepSeek-V3.1-Terminus",
+    "max_tokens": 4096,
+    "temperature": 0.3
   },
   "embedding": {
     "provider": "openai-compatible",
-    "base_url": "https://api.openai.com/v1",
-    "api_key": "YOUR_EMBEDDING_API_KEY",
-    "model": "text-embedding-3-small",
-    "dimensions": 1536
+    "base_url": "https://api.siliconflow.cn/v1",
+    "api_key": "sk-REPLACE_ME_SILICONFLOW",
+    "model": "BAAI/bge-m3",
+    "dimensions": 1024
   },
   "search": {
     "top_k": 20,
     "max_distance": 0.8,
     "rrf_k": 60
-  },
-  "_comment": {
-    "providers": [
-      "openai-compatible (OpenAI, Azure, etc.)",
-      "anthropic",
-      "gitee (Gitee AI)",
-      "ollama (本地模型)"
-    ],
-    "note": "请将此文件复制为 llm_config.json 并填入您的 API 密钥"
   }
 }

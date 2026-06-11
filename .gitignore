@@ -25,7 +25,11 @@ coverage.xml
 *.sqlite3
 
 # ── 配置文件（含密钥风险） ──
+# 真实 llm_config.json（任何位置的）不入库
 config/llm_config.json
+galaxyos/config/llm_config.json
+*/config/llm_config.json
+**/llm_config.json
 *.env
 .env.*
 .env.local
@@ -33,6 +37,9 @@ config/llm_config.json
 *.pem
 credentials.json
 service-account.json
+# 通配：任何 *_config.json / *secrets*.json（防止以后新增路径漏配）
+*secrets*.json
+**/secrets.json
 
 # ── IDE ──
 .idea/
