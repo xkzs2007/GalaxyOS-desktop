@@ -21,9 +21,6 @@
 - **unified_coordinator.py** — 注册 Layer 13 全部 6 个新模块
 - **install_wizard.py** — 依赖扫描从手写精简表改为 requirements.txt 全量扫描
 
-### Fixed
-- **install_wizard PyG index URL** — torch>2.11 回落到 torch-2.10.0+cpu.html
-
 ## [7.3.2] — 2026-06-11
 
 ### Added
