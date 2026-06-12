@@ -255,10 +255,10 @@ function getUdsPath() {
     if (process.env.GALAXYOS_UDS_PATH && existsSync(path.dirname(process.env.GALAXYOS_UDS_PATH))) {
         return process.env.GALAXYOS_UDS_PATH;
     }
-    // v2026.6.11: 多 worker 时优先用 worker:1 独立 socket (避免多 worker 共享同一 socket 文件的 race)
+    // Python Worker 监听 claw-worker.sock（单文件，所有 worker 通过 HTTP keep-alive 复用）
     return path.join(
         OPENCLAW_HOME,
-        "extensions/galaxyos/var/claw-worker-worker-1.sock"
+        "extensions/galaxyos/var/claw-worker.sock"
     );
 }
 
@@ -267,18 +267,16 @@ function getUdsProbePaths() {
     const ocHome = OPENCLAW_HOME;
     const primary = getUdsPath();
     const paths = [primary];
+    // worker:1 独立 socket（worker:1 绑定 claw-worker-worker-1.sock）
+    const w1 = path.join(ocHome, "extensions/galaxyos/var/claw-worker-worker-1.sock");
+    if (primary !== w1) paths.push(w1);
+    // worker:2 独立 socket
+    const w2 = path.join(ocHome, "extensions/galaxyos/var/claw-worker-worker-2.sock");
+    if (primary !== w2) paths.push(w2);
+    // 兼容旧版 galaxyos 共享 socket (legacy 模式，Python 端也可能 fallback 到它)
+    paths.push(path.join(ocHome, "extensions/galaxyos/var/claw-worker.sock"));
     // 兼容旧版 claw-core 路径
-    if (!primary.includes("claw-core")) {
-        paths.push(path.join(ocHome, "extensions/claw-core/var/claw-worker.sock"));
-    }
-    // 兼容旧版 galaxyos 共享 socket (legacy 模式)
-    if (!primary.endsWith("claw-worker.sock")) {
-        paths.push(path.join(ocHome, "extensions/galaxyos/var/claw-worker.sock"));
-    }
-    // worker:2 备用 socket
-    if (!primary.includes("worker-2")) {
-        paths.push(path.join(ocHome, "extensions/galaxyos/var/claw-worker-worker-2.sock"));
-    }
+    paths.push(path.join(ocHome, "extensions/claw-core/var/claw-worker.sock"));
     return [...new Set(paths)]; // 去重
 }
 
@@ -1281,7 +1279,10 @@ class ClawWorkerClient {
         this._shutdown = false;
         this._startPromise = null;
         this._reconnectTimer = null;
-        this._udsPath = getUdsPath();
+        // 每个 Worker 用独立 UDS socket：Python 端用 WORKER_ID → claw-worker-worker-1.sock
+        this._udsPath = this.id && this.id !== 'worker:default'
+            ? path.join(OPENCLAW_HOME, `extensions/galaxyos/var/claw-worker-${this.id.replace(':', '-')}.sock`)
+            : getUdsPath();
         this._udsMode = null;        // 'http' | 'raw' | null
     }
 
@@ -1512,7 +1513,10 @@ class ClawWorkerClient {
 }
 
 function runClawScript(workspace, action, args, timeoutMs = 20000) {
-    const script = path.join(workspace, "skills/xiaoyi-claw-omega-final/scripts/unified_entry.py");
+    // v2026.6.12: unified_entry.py 已迁移到 extensions/galaxyos/scripts/
+    const script = existsSync(path.join(__dirname, "scripts", "unified_entry.py"))
+        ? path.join(__dirname, "scripts", "unified_entry.py")
+        : path.join(workspace, "extensions", "galaxyos", "dist", "scripts", "unified_entry.py");
     const argParts = [action];
     for (const [key, value] of Object.entries(args)) {
         if (value) {

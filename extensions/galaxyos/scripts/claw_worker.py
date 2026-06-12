@@ -34,15 +34,8 @@ import threading
 import selectors
 
 # ========== 路径初始化 ==========
-# v2026.6.11 修: WORKSPACE 跟随 OPENCLAW_HOME, dev 模式自动用 .openclaw-dev
-# OPENCLAW_HOME / GALAXYOS_OPENCLAW_HOME 优先, 兜底 ~/.openclaw
-_OPENCLAW_HOME = os.path.expanduser(
-    os.environ.get("OPENCLAW_HOME")
-    or os.environ.get("GALAXYOS_OPENCLAW_HOME")
-    or "~/.openclaw"
-)
 WORKSPACE = os.environ.get("OPENCLAW_WORKSPACE",
-    os.path.join(_OPENCLAW_HOME, "workspace"))
+    os.path.expanduser("~/.openclaw/workspace"))
 
 # 自动检测 GalaxyOS 仓库路径（galaxyos/engine/ 或 extensions/galaxyos/dist/scripts/）
 _THIS_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -63,9 +56,6 @@ _GALAXYOS_SCRIPTS = os.path.join(_GALAXYOS_REPO, "galaxyos", "scripts") if _GALA
 sys.path.insert(0, _GALAXYOS_ENGINE)
 sys.path.insert(0, _GALAXYOS_PRIVILEGED)
 sys.path.insert(0, _GALAXYOS_SCRIPTS)
-# v2026.6.11 修: 显式加入 _GALAXYOS_REPO 让 `import galaxyos` 顶层包可用
-if _GALAXYOS_REPO and _GALAXYOS_REPO not in sys.path:
-    sys.path.insert(0, _GALAXYOS_REPO)
 
 # Legacy fallback: workspace skills path (backward compat)
 _LEGACY_CORE = os.path.join(WORKSPACE, "skills", "xiaoyi-claw-omega-final", "skills", "llm-memory-integration", "core")
@@ -148,13 +138,9 @@ def _resolve_var_path(subpath, mkdirs=True):
     # 最后尝试：创建 galaxyos/var/
     return primary
 
-# v2026.6.11 修: 多 worker 共用 UDS_PATH 会导致 race condition (kernel 只路由到首个 bind 的).
-# 给每个 worker 独立 socket 文件: claw-worker-{id}.sock
-_WORKER_ID = os.environ.get('WORKER_ID', 'worker:1')
-_worker_id_suffix = _WORKER_ID.replace(':', '-').replace('/', '_')
-UDS_PATH = _resolve_var_path(f"claw-worker-{_worker_id_suffix}.sock")
-# 兼容旧探测路径 (plugin/wizard 用 claw-worker.sock 找主 worker)
-UDS_PATH_LEGACY = _resolve_var_path("claw-worker.sock")
+_WORKER_ID = os.environ.get('WORKER_ID', 'worker')
+_WORKER_SUFFIX = _WORKER_ID.replace(':', '-')  # worker:1 → worker-1
+UDS_PATH = _resolve_var_path(f"claw-worker-{_WORKER_SUFFIX}.sock")
 ZMQ_PUB_PORT = 5559
 MMAP_PATH = _resolve_var_path("claw_worker_mmap")
 
@@ -273,20 +259,7 @@ class _GatewayProxy:
 gateway = _GatewayProxy()
 
 # ========== HTTP JSON-RPC ==========
-# v2026.6.11: 多 worker 独立 HTTP port (worker:1=8765, worker:2=8766, ...)
-_HTTP_BASE_PORT = 8765
-_HTTP_PORT_OFFSET = 0
-try:
-    if _WORKER_ID == "worker:1": _HTTP_PORT_OFFSET = 0
-    elif _WORKER_ID == "worker:2": _HTTP_PORT_OFFSET = 1
-    elif _WORKER_ID == "worker:3": _HTTP_PORT_OFFSET = 2
-    else:
-        # 数字后缀 fallback
-        import re
-        m = re.match(r'worker:(\d+)', _WORKER_ID)
-        if m: _HTTP_PORT_OFFSET = int(m.group(1)) - 1
-except Exception: pass
-HTTP_PORT = _HTTP_BASE_PORT + _HTTP_PORT_OFFSET
+HTTP_PORT = 8765
 
 # 记忆巩固引擎（后台线程）
 _consolidation = None
@@ -774,9 +747,494 @@ class ClawWorker:
                 return {"results": [], "success": False,
                         "error": f"smart_retrieval failed: {e}, fallback failed: {e2}"}
 
+    def rlm_compress(self, p: dict) -> dict:
+        """RLM 递归环境压缩 — 将超长消息列表递归分解为摘要
+
+        用于 ContextEngine 紧急裁剪时替代简单截断。
+        """
+        messages = p.get("messages", [])
+        max_summary_tokens = p.get("max_tokens", 500)
+        try:
+            content = ""
+            if isinstance(messages, list):
+                content = "\n".join(
+                    f"[{m.get('role','?')}] {str(m.get('content',''))[:300]}"
+                    for m in messages[:20]
+                )
+            elif isinstance(messages, str):
+                content = messages
+
+            from rlm_env import RLMEnvironment
+            rlm = RLMEnvironment(content)
+            # 用 RLM 的 slice 函数递归分解
+            parts = rlm.auto_slice(max_chunk=300, overlap=30)
+            summarized = []
+            for chunk in parts[:5]:
+                summarized.append(chunk[:200])
+            return {"compressed": "\n".join(summarized), "parts": len(parts),
+                    "original_len": len(content)}
+        except Exception as e:
+            return {"compressed": "", "error": str(e)}
+
     def store(self, p: dict) -> dict:
         self._ensure()
-        return self._entry.store(p.get("content", ""), source=p.get("source", "user"))
+        return self._entry.store(p.get("content", ""), source=p.get("source", "user"),
+                                 session_id=p.get("session_id", ""))
+
+    def context_assemble(self, p: dict) -> dict:
+        """全论文模块编排上下文组装 — Self-RAG + CRAG + MemGPT + MemoryOS + BlobArena + AriGraph + RAPTOR
+
+        供 JS ContextEngine assemble() 调用。
+        两阶段决策：
+          1. Self-RAG IsREL: 判断是否需要检索（不需要则跳过）
+          2. CRAG: 评估检索质量 → USE/DISCARD/AUGMENT
+        然后才走全模块编排（BlobArena → MemGPT → MemoryOS → AriGraph → RAPTOR）
+        """
+        query = p.get("query", "")
+        session_id = p.get("session_id", "")
+        top_k = p.get("top_k", 5)
+        try:
+            result: Dict[str, Any] = {"session_id": session_id, "layers": {}, "decisions": {}}
+
+            # ═══ Phase 0: Self-RAG IsREL — 判断是否需要检索 ═══
+            should_retrieve = True
+            try:
+                from isrel_predictor import IsRELPredictor
+                isrel = IsRELPredictor()
+                decision = isrel.predict(query, context=None)
+                should_retrieve = decision.should_retrieve
+                result["decisions"]["isrel"] = {
+                    "should_retrieve": should_retrieve,
+                    "confidence": decision.confidence,
+                    "reason": getattr(decision, 'reason', '')
+                }
+                if not should_retrieve:
+                    result["injection"] = ""
+                    result["success"] = True
+                    result["skipped"] = "isrel_no_retrieve"
+                    return result
+            except Exception:
+                # 预测器不可用时默认检索（不过度保守）
+                pass
+
+            # ═══ Phase 1: 全模块检索（仅 IsREL 判定需要时） ═══
+
+            # ── Layer 0: BlobArena 无损还原 — 从 blob 还原完整原文 ────
+            try:
+                from blob_arena import get_blob_arena
+                arena = get_blob_arena()
+                if arena:
+                    blob_ids = arena.list_ids(session_id=session_id, limit=5)
+                    restored = []
+                    for bid in blob_ids:
+                        full_text = arena.read_text(bid)
+                        if full_text:
+                            restored.append({"blob_id": bid, "content": full_text[:1000]})
+                    if restored:
+                        result["layers"]["blob_arena_restored"] = restored
+            except Exception as e:
+                result["layers"]["blob_error"] = str(e)
+
+            # ── Layer 1: MemGPT 分层上下文（Working → Episodic → Semantic）────
+            try:
+                from hierarchical_context import get_context_layer
+                ctx_layer = get_context_layer(session_id=session_id)
+                if ctx_layer:
+                    # 注入当前 query 作为 turn
+                    ctx_layer.add_turn("user", query, session_id=session_id)
+                    # 检索补充先查（注入到 semantic 层）
+                    extra = []
+                    if self._entry:
+                        recalled = self._entry.recall(query, top_k=top_k, session_id=session_id)
+                        if isinstance(recalled, list):
+                            extra = recalled[:top_k]
+                    assembled = ctx_layer.get_assembled_context(
+                        query=query, extra_memories=extra, session_id=session_id)
+                    result["layers"]["memgpt_context"] = assembled[:4000]
+            except Exception as e:
+                result["layers"]["memgpt_error"] = str(e)
+
+            # ── Layer 2: MemoryOS 热度跟踪 — 记录本次访问 ────
+            try:
+                from memory_os import HeatTracker
+                # 使用全局单例或懒加载
+                if not hasattr(self, '_heat_tracker'):
+                    self._heat_tracker = HeatTracker()
+                self._heat_tracker.record_access(
+                    f"query_{session_id}", session_id=session_id)
+                hot_nodes = self._heat_tracker.get_top_nodes(5, session_id=session_id)
+                result["layers"]["heat_top"] = hot_nodes
+            except Exception as e:
+                result["layers"]["heat_error"] = str(e)
+
+            # ── Layer 3: HierarchicalMemory — 工作集/近期集/归档集 ────
+            try:
+                from hierarchical_memory import HierarchicalMemoryManager, get_manager
+                hm = get_manager() if 'get_manager' in dir() else None
+                if hm is None:
+                    hm = HierarchicalMemoryManager()
+                hm_recall = hm.recall(query, top_k=top_k, session_id=session_id)
+                result["layers"]["hierarchical_memories"] = hm_recall[:top_k]
+            except Exception as e:
+                result["layers"]["hierarchical_error"] = str(e)
+
+            # ── Layer 4: HAConvDR 上下文去噪检索 ────
+            try:
+                self._ensure()
+                if self._entry:
+                    scrubbed = self._entry.recall(query, top_k=top_k * 2, session_id=session_id)
+                    result["layers"]["haconvdr_recall"] = scrubbed[:top_k]
+            except Exception as e:
+                result["layers"]["haconvdr_error"] = str(e)
+
+            # ── Layer 5: AriGraph 空间场景上下文 ────
+            try:
+                from paper_integration import get_integration
+                pi = get_integration()
+                if pi:
+                    spatial_ctx = pi.spatial_context_augment(query, [])
+                    if spatial_ctx:
+                        result["layers"]["spatial_scene"] = spatial_ctx.get("scene_nav", "")[:500]
+            except Exception as e:
+                result["layers"]["spatial_error"] = str(e)
+
+            # ── Layer 6: RAPTOR 分层摘要 ────
+            try:
+                from four_advancements import RAPTOREngine
+                if hasattr(self, '_raptor') and self._raptor._tree_built:
+                    # RAPTOR 摘要树已就绪，注入顶层摘要
+                    result["layers"]["raptor_summaries"] = list(self._raptor._summaries.values())[:3]
+            except Exception as e:
+                result["layers"]["raptor_error"] = str(e)
+
+            # ── Phase 2b: Cognitive Load 评估 — 影响 CRAG 阈值 ────
+            cognitive_load_level = 0.5
+            try:
+                from cognitive_load import CognitiveLoad
+                cl = CognitiveLoad()
+                load_result = cl.assess(query, [], [])
+                cognitive_load_level = load_result.get("load_level", 0.5)
+                result["decisions"]["cognitive_load"] = {
+                    "level": cognitive_load_level,
+                    "intrinsic": load_result.get("intrinsic", 0),
+                    "extrinsic": load_result.get("extrinsic", 0)
+                }
+            except Exception as e:
+                result["decisions"]["cognitive_load_error"] = str(e)
+
+            # ── Phase 2c: Dynamic CRAG Threshold — 自适应阈值 ────
+            try:
+                from dynamic_crag_threshold import DynamicCRAGThreshold
+                dct = DynamicCRAGThreshold()
+                adaptive_thresholds = dct.compute_thresholds(
+                    query_complexity=len(query.split()),
+                    cognitive_load=cognitive_load_level)
+                result["decisions"]["crag_thresholds"] = adaptive_thresholds
+            except Exception as e:
+                result["decisions"]["crag_threshold_error"] = str(e)
+            try:
+                from retrieval_evaluator import evaluate_retrieval, RetrievalAction
+                # 收集所有检索结果做质量评估
+                all_retrieved = (result["layers"].get("hierarchical_memories", []) +
+                                 result["layers"].get("haconvdr_recall", []))
+                if all_retrieved:
+                    docs = [r.get("content", "") if isinstance(r, dict) else str(r)
+                            for r in all_retrieved[:10]]
+                    eval_result = evaluate_retrieval(query, docs)
+                    action = eval_result.action.value if hasattr(eval_result.action, 'value') else str(eval_result.action)
+                    result["decisions"]["crag"] = {
+                        "action": action,
+                        "quality": eval_result.quality_score,
+                        "selected_count": len(getattr(eval_result, 'selected_indices', []))
+                    }
+                    if action in ("discard", "discarded"):
+                        result["layers"]["hierarchical_memories"] = []
+                        result["layers"]["haconvdr_recall"] = []
+            except Exception as e:
+                result["decisions"]["crag_error"] = str(e)
+
+            # ── Phase 2d: CoVe 逐条验证检索结果 ────
+            try:
+                from chain_of_verification import ChainOfVerification
+                all_retrieved = (result["layers"].get("hierarchical_memories", []) +
+                                 result["layers"].get("haconvdr_recall", []))
+                if all_retrieved:
+                    docs = [r.get("content", "") if isinstance(r, dict) else str(r)
+                            for r in all_retrieved[:5]]
+                    combined = "\n".join(docs)
+                    cove = ChainOfVerification()
+                    cove_result = cove.verify(combined, query)
+                    verified_score = cove_result.get("verified_ratio", 0.5) if isinstance(cove_result, dict) else 0.5
+                    result["decisions"]["cove"] = {"verified_ratio": verified_score}
+            except Exception as e:
+                result["decisions"]["cove_error"] = str(e)
+
+            # ── Phase 2e: Adaptive Hallucination Params — 动态调整验证强度 ────
+            try:
+                from adaptive_hallucination_params import AdaptiveHallucinationParams
+                ahp = AdaptiveHallucinationParams()
+                params = ahp.compute_params(query,
+                    context=str(result.get("decisions", {}).get("crag", {}).get("quality", 0.5)))
+                result["decisions"]["hallucination_params"] = {"confidence_threshold": params.get("threshold", 0.8)}
+            except Exception as e:
+                result["decisions"]["hallucination_error"] = str(e)
+
+            # ── Phase 3: SKILL0 技能课程 — 渐进撤除已内化的技能提示 ────
+            try:
+                from skill_curriculum import SkillCurriculum
+                if not hasattr(self, '_skill_curriculum'):
+                    self._skill_curriculum = SkillCurriculum()
+                # 记录本次使用，递增训练步数
+                self._skill_curriculum._training_step += 1
+                # 每 validate_interval 步做一次技能验证
+                if self._skill_curriculum._training_step % self._skill_curriculum._validate_interval == 0:
+                    self._skill_curriculum._current_stage = min(
+                        self._skill_curriculum._current_stage + 1,
+                        self._skill_curriculum._stages)
+                # 获取当前阶段应保留的技能
+                active = list(self._skill_curriculum.active_skills)[:10]
+                result["decisions"]["skill0"] = {
+                    "stage": self._skill_curriculum._current_stage,
+                    "active_count": len(active),
+                    "internalized_hint": "以下技能已内化可省略: " + ", ".join(
+                        [s for s in list(self._skill_curriculum._all_skills)[:5]
+                         if s not in self._skill_curriculum.active_skills])
+                }
+            except Exception as e:
+                result["decisions"]["skill0_error"] = str(e)
+
+            # ═══════════════════════════════════════════════════════════
+            # Phase 3b: CoEvolve (2604.15840) — 失败模式反馈
+            #           影响 SKILL0 权重，失败技能重新激活
+            # ═══════════════════════════════════════════════════════════
+            try:
+                _cq = result.get("decisions", {}).get("crag", {}).get("quality", 0.5)
+                _cv = result.get("decisions", {}).get("cove", {}).get("verified_ratio", 0.5)
+                _isrel_skipped = result.get("skipped", "") == "isrel_no_retrieve"
+                if _cq < 0.4 and _cv < 0.4:
+                    result["decisions"]["coevolve"] = {
+                        "failure_detected": True,
+                        "pattern": "low_quality_retrieval",
+                        "action": "reactivate_retrieval_skills"
+                    }
+                elif _isrel_skipped and len(query.split()) > 10:
+                    result["decisions"]["coevolve"] = {
+                        "failure_detected": True,
+                        "pattern": "isrel_false_negative",
+                        "action": "lower_isrel_threshold"
+                    }
+            except Exception as e:
+                result["decisions"]["coevolve_error"] = str(e)
+
+            # ═══════════════════════════════════════════════════════════
+            # Phase 3c: Turn Recovery (2505.06120) — 多轮对话走错路恢复
+            #           检测 CRAG 质量连续下降 → 丢弃锚定轮次重新 assemble
+            # ═══════════════════════════════════════════════════════════
+            try:
+                crag_q = result.get("decisions", {}).get("crag", {}).get("quality", 0.5)
+                cove_v = result.get("decisions", {}).get("cove", {}).get("verified_ratio", 0.5)
+                if not hasattr(self, '_turn_history'):
+                    self._turn_history: Dict[str, List[Dict]] = {}
+                if session_id not in self._turn_history:
+                    self._turn_history[session_id] = []
+                hist = self._turn_history[session_id]
+                hist.append({"q": query[:80], "cq": crag_q, "cv": cove_v, "ts": time.time()})
+                if len(hist) > 20:
+                    hist.pop(0)
+                if len(hist) >= 3:
+                    recent = hist[-3:]
+                    scores = [h["cq"] for h in recent]
+                    if scores[0] > 0.5 and scores[-1] < scores[0] * 0.5:
+                        result["decisions"]["turn_recovery"] = {
+                            "degraded": True,
+                            "trend": f"{scores[0]:.2f}→{scores[-1]:.2f}",
+                            "action": "discard_anchors",
+                            "detail": "连续降级超过50%，可能锚定错误，已清理轮次缓存"
+                        }
+                        hist.clear()
+                        # 强制标记当前 assemble 需从 DAG 全量恢复
+                        result["layers"]["turn_recovery"] = True
+            except Exception as e:
+                result["decisions"]["turn_recovery_error"] = str(e)
+
+            # ═══════════════════════════════════════════════════════════
+            # Phase 3d: MemCoE (2605.00702) — 双阶段记忆优化
+            #           Stage 1: 对比反馈 → 记忆 guidelime
+            #           Stage 2: guideline-aligned 记忆更新策略
+            # ═══════════════════════════════════════════════════════════
+            try:
+                _cq = result.get("decisions", {}).get("crag", {}).get("quality", 0.5)
+                _cv = result.get("decisions", {}).get("cove", {}).get("verified_ratio", 0.5)
+                # Stage 1: Guideline Induction — 用对比反馈生成记忆组织指导
+                guideline = {}
+                if _cq > 0.7 and _cv > 0.7:
+                    guideline["action"] = "consolidate"  # 高质量 → 巩固到 LTM
+                    guideline["heat_boost"] = 0.15
+                elif _cq < 0.4 or _cv < 0.4:
+                    guideline["action"] = "decay"        # 低质量 → 衰减
+                    guideline["heat_decay"] = 0.2
+                else:
+                    guideline["action"] = "maintain"
+
+                # Stage 2: Guideline-Aligned Policy — 按 guideline 调整 HeatingTracker
+                try:
+                    from memory_os import HeatTracker
+                    if hasattr(self, '_heat_tracker') and guideline:
+                        if guideline.get("heat_boost"):
+                            for nid in result.get("layers", {}).get("heat_top", [])[:3]:
+                                self._heat_tracker.record_access(nid, session_id=session_id)
+                        if guideline.get("heat_decay"):
+                            cold = self._heat_tracker.get_cold_nodes(session_id=session_id)
+                            for nid in cold[:3]:
+                                # 冷节点进一步降温
+                                current = self._heat_tracker.get_heat(nid, session_id=session_id)
+                                if current > 0:
+                                    # 通过多次 record_access 的反向操作来降温
+                                    pass  # 实际降温由 decay_hours 自然衰减完成
+                except Exception:
+                    pass
+
+                result["decisions"]["memcoe"] = {"guideline": guideline["action"]}
+            except Exception as e:
+                result["decisions"]["memcoe_error"] = str(e)
+
+            # ── Phase 4: MemoryOS SegmentedPageOrganizer — STM→MTM→LPM ────
+            try:
+                from memory_os import SegmentedPageOrganizer
+                if not hasattr(self, '_page_org'):
+                    self._page_org = SegmentedPageOrganizer()
+                self._page_org.add_page(query, {"session": session_id, "ts": time.time()})
+                # 触发升级：STM 满 → MTM 合并 → LPM 提炼
+                if len(self._page_org.short_term) > self._page_org.max_short_term:
+                    self._page_org.upgrade_to_mid()
+                ltm_profile = self._page_org.get_ltm_context()
+                if ltm_profile:
+                    result["layers"]["memoryos_profile"] = ltm_profile[:1000]
+            except Exception as e:
+                result["layers"]["memoryos_error"] = str(e)
+
+            # ── Phase 4b: SSM 记忆预测 (MemCast 式经验条件推理) ────
+            try:
+                from ssm_state_predictor import SSMPredictor
+                if not hasattr(self, '_ssm_predictor'):
+                    self._ssm_predictor = SSMPredictor()
+                # 记录本次检索为时序信号
+                self._ssm_predictor.record_recall(query, session_id)
+                # 预测"下一步应该预加载哪些记忆"
+                predicted = self._ssm_predictor.predict_next_recall(query, session_id, top_k=3)
+                if predicted:
+                    result["layers"]["ssm_predicted"] = [
+                        {"id": p[0], "prob": round(p[1], 3)} for p in predicted
+                    ]
+            except Exception as e:
+                result["layers"]["ssm_error"] = str(e)
+
+            # ── Phase 5: HyperRouting — 策略路由 ────
+            try:
+                from hyper_routing import HyperRouter
+                if not hasattr(self, '_hyper_router'):
+                    self._hyper_router = HyperRouter()
+                route_hint = self._hyper_router.select_strategy({
+                    "query_len": len(query),
+                    "session_len": 1,
+                    "time": time.time()
+                })
+                result["decisions"]["hyper_route"] = {"strategy": str(route_hint)}
+            except Exception as e:
+                result["decisions"]["hyper_route_error"] = str(e)
+
+            # ── Phase 6: KoRa 行为模式 — 检测用户行为模式 ────
+            try:
+                from kora_behavior import KoraBehavior
+                if not hasattr(self, '_kora'):
+                    self._kora = KoraBehavior()
+                self._kora.record_action(query, session_id)
+                pattern_hint = self._kora.detect_pattern(session_id)
+                if pattern_hint:
+                    result["layers"]["kora_pattern"] = pattern_hint[:500]
+            except Exception as e:
+                result["layers"]["kora_error"] = str(e)
+
+            # ── Phase 7: Code-Aware Reasoning — 代码感知 ────
+            try:
+                code_keywords = ["代码", "code", "def ", "class ", "import ", "bug", "报错", "函数", "变量"]
+                if any(kw in query for kw in code_keywords):
+                    from code_aware_reasoning import CodeAwareReasoner
+                    car = CodeAwareReasoner()
+                    code_hint = car.analyze_query(query)
+                    if code_hint:
+                        result["layers"]["code_aware"] = code_hint[:300]
+            except Exception as e:
+                result["layers"]["code_aware_error"] = str(e)
+
+            # ── Phase 8: Thinking Enhanced — 多路推理 ────
+            try:
+                from thinking_enhanced import ThinkingEnhanced
+                te = ThinkingEnhanced()
+                multi_hint = te.multi_path_reason(query, max_paths=2)
+                if multi_hint:
+                    result["layers"]["thinking_enhanced"] = multi_hint[:500]
+            except Exception as e:
+                result["layers"]["thinking_enhanced_error"] = str(e)
+
+            # ── Phase 9: Memory Consolidation (后台) ────
+            try:
+                from memory_consolidation import MemoryConsolidationEngine
+                if not hasattr(self, '_consolidation_engine'):
+                    self._consolidation_engine = MemoryConsolidationEngine()
+                # 后台线程不阻塞：每 50 次调用触发一次巩固
+                if not hasattr(self, '_consolidation_counter'):
+                    self._consolidation_counter = 0
+                self._consolidation_counter += 1
+                if self._consolidation_counter % 50 == 0:
+                    self._consolidation_engine.consolidate(background=True)
+            except Exception as e:
+                result["layers"]["consolidation_error"] = str(e)
+
+            # ── Phase 10: BioRhythm Sleep Consolidation (后台) ────
+            try:
+                from biorhythm_sleep_consolidation import SleepConsolidation
+                if not hasattr(self, '_sleep_consolidation'):
+                    self._sleep_consolidation = SleepConsolidation()
+                # 每小时检查一次是否需要睡眠巩固
+                if not hasattr(self, '_last_sleep_check'):
+                    self._last_sleep_check = 0
+                if time.time() - self._last_sleep_check > 3600:
+                    self._sleep_consolidation.check_and_consolidate()
+                    self._last_sleep_check = time.time()
+            except Exception as e:
+                result["layers"]["sleep_error"] = str(e)
+
+            # ── 汇总：合并所有 layer 为单一注入文本 ────
+            parts = []
+            if result["layers"].get("blob_arena_restored"):
+                blob_parts = []
+                for b in result["layers"]["blob_arena_restored"][:3]:
+                    blob_parts.append(f"[Blob#{b['blob_id'][:8]}] {b['content'][:400]}")
+                parts.append("[无损上下文还原]\n" + "\n".join(blob_parts))
+            if result["layers"].get("memgpt_context"):
+                parts.append(result["layers"]["memgpt_context"])
+            if result["layers"].get("spatial_scene"):
+                parts.append(f"[场景] {result['layers']['spatial_scene']}")
+            if result["layers"].get("ssm_predicted"):
+                preds = ", ".join(f"{p['id']}({p['prob']})" for p in result["layers"]["ssm_predicted"][:3])
+                parts.append(f"[记忆预测] 下一步可能需要: {preds}")
+            if result["layers"].get("memoryos_profile"):
+                parts.append(f"[长期画像] {result['layers']['memoryos_profile']}")
+            if result["layers"].get("kora_pattern"):
+                parts.append(f"[行为模式] {result['layers']['kora_pattern']}")
+            if result["layers"].get("code_aware"):
+                parts.append(f"[代码分析] {result['layers']['code_aware']}")
+            if result["layers"].get("thinking_enhanced"):
+                parts.append(f"[多路推理] {result['layers']['thinking_enhanced']}")
+            if result["layers"].get("raptor_summaries"):
+                parts.append("[历史摘要] " + "\n".join(result["layers"]["raptor_summaries"]))
+            result["injection"] = "\n\n".join(parts)[:6000]
+            result["success"] = True
+            return result
+
+        except Exception as e:
+            return {"success": False, "error": str(e), "session_id": session_id}
 
     def verify(self, p: dict) -> dict:
         """验证 — 走 MultiSourceCrossValidator 多源交叉验证"""
@@ -1722,6 +2180,8 @@ def _init_methods(worker):
         "rccam": worker.rccam,
         "hardinfo": worker.hardinfo,
         "implicit_feedback": worker.implicit_feedback,
+        "context_assemble": worker.context_assemble,
+        "rlm_compress": worker.rlm_compress,
         "dag_ingest": worker.dag_ingest,
         "persona_snapshot": worker.persona_snapshot,
         "dag_status": worker.dag_status,
@@ -1841,9 +2301,6 @@ def _uds_server_thread(methods_map):
 
     sys.stderr.write(f"[claw-worker] UDS (serial, timeout={REQUEST_TIMEOUT}s) listening on {UDS_PATH}\n")
 
-    # v2026.6.11: socket __slots__ 不能加 attr, 用 fd→buffer 字典
-    _recv_buffers = {}
-
     while not _shutdown_flag:
         events = sel.select(timeout=0.5)
         for key, mask in events:
@@ -1852,54 +2309,32 @@ def _uds_server_thread(methods_map):
                 try:
                     conn, _addr = server.accept()
                     conn.setblocking(False)
-                    _recv_buffers[conn.fileno()] = b""
                     sel.register(conn, _sel_mod.EVENT_READ, data=b"")
                 except Exception:
                     pass
             else:
                 conn = key.fileobj
-                fd = conn.fileno()
                 try:
                     chunk = conn.recv(65536)
                     if chunk:
-                        _recv_buffers[fd] = _recv_buffers.get(fd, b"") + chunk
-                        buf = _recv_buffers[fd]
-                        if b"\r\n\r\n" in buf:
-                            has_cl = b"Content-Length:" in buf or b"content-length:" in buf
-                            ready = False
-                            if not has_cl:
-                                ready = True
-                            else:
-                                try:
-                                    _hdr_part = buf.split(b"\r\n\r\n", 1)[0].decode("utf-8", errors="replace")
-                                    _cl = 0
-                                    for _line in _hdr_part.split("\r\n"):
-                                        if _line.lower().startswith("content-length:"):
-                                            _cl = int(_line.split(":", 1)[1].strip())
-                                    _body = buf.split(b"\r\n\r\n", 1)[1]
-                                    if len(_body) >= _cl:
-                                        ready = True
-                                except Exception:
-                                    pass
-                            if ready:
-                                sel.unregister(conn)
-                                _recv_buffers.pop(fd, None)
-                                _handle_one_http_request(conn, buf, methods_map)
-                                try:
-                                    conn.close()
-                                except Exception:
-                                    pass
+                        key.data += chunk
+                        if b"\r\n\r\n" in key.data and b"Content-Length:" in key.data:
+                            # 完整 HTTP 请求头已到达 → 处理
+                            sel.unregister(conn)
+                            _handle_one_http_request(conn, key.data, methods_map)
+                            try:
+                                conn.close()
+                            except Exception:
+                                pass
                     else:
                         sel.unregister(conn)
-                        _recv_buffers.pop(fd, None)
                         try:
                             conn.close()
                         except Exception:
                             pass
                 except (BlockingIOError, InterruptedError):
                     pass
-                except Exception as e:
-                    sys.stderr.write(f"[claw-worker UDS] OUTER except: {type(e).__name__}: {e}\n"); sys.stderr.flush()
+                except Exception:
                     sel.unregister(conn)
                     try:
                         conn.close()
@@ -1962,7 +2397,7 @@ def _handle_one_http_request(conn, raw_data, methods_map):
         if http_method == "GET" and http_path == "/":
             _send_http_reply(conn, 200, {
                 "service": "GalaxyOS ClawWorker",
-                "version": "7.0.0",
+                "version": "7.3.2",
                 "endpoints": {
                     "REST": "GET|POST /<method>  (see /rest for full list)",
                     "JSON-RPC": "POST /  with {id, method, params}",
@@ -2150,13 +2585,27 @@ def _zmq_pub_init():
 
 
 def _zmq_pub_event(event_type, data):
-    """通过 ZMQ PUB 推送结构化事件"""
+    """通过 ZMQ PUB 推送结构化事件 — v7.1: 速率限制防网关塞爆
+
+    相同 event_type 在 500ms 内只发一次（避免 dag_ingest 每消息都触发 ZMQ 洪泛）。
+    """
     global _zmq_pub
     if _zmq_pub is None:
         return
     try:
+        # ── 速率限制：同类型事件 500ms 去重 ──
+        _now = time.time()
+        _zmq_last = getattr(_zmq_pub_event, '_last', {})
+        _last_ts, _last_data = _zmq_last.get(event_type, (0, None))
+        # 忽略数据（仅检查 session），同 session 同类型 500ms 内跳过
+        _session = data.get("session", "")
+        if _now - _last_ts < 0.5 and _last_data == _session:
+            return
+        _zmq_last[event_type] = (_now, _session)
+        _zmq_pub_event._last = _zmq_last
+
         import zmq
-        payload = json.dumps({"event": event_type, "ts": time.time(), **data}, ensure_ascii=False)
+        payload = json.dumps({"event": event_type, "ts": _now, **data}, ensure_ascii=False)
         _zmq_pub.send_string(payload)
     except Exception:
         pass
@@ -2229,7 +2678,8 @@ def _mmap_write(cache_key, data):
         payload = json.dumps(full, ensure_ascii=False)
         raw = payload.encode("utf-8")
         os.makedirs(os.path.dirname(MMAP_PATH), exist_ok=True)
-        # 修复 F-8: mmap 字节序与 read 端对齐（小端）
+        # 修复 F-8: mmap 字节序。Python 侧 _mmap_read 用小端 (<I)，
+        # 这里 _mmap_write 之前用大端 (>I) 永远读不到；改为小端与 read 对齐。
         header = struct.pack("<I", len(raw))
         with open(MMAP_PATH, "wb") as f:
             f.write(header + raw)
@@ -2286,59 +2736,31 @@ def _http_serve(methods_map):
     sys.stderr.write(f"[claw-worker]   REST endpoints: {len(_REST_ROUTES)} routes (GET /health, POST /recall, ...)\n")
     sys.stderr.write(f"[claw-worker]   API index: curl http://127.0.0.1:{HTTP_PORT}/\n")
 
-    # v2026.6.11: socket 是 __slots__ 不能加 attr, 用 _recv_buffers dict 按 fd 索引
-    _recv_buffers = {}
-
     while not _shutdown_flag:
         events = sel.select(timeout=0.5)
         for key, mask in events:
             if key.data is None:
-                # 新连接
                 try:
                     conn, _addr = server.accept()
                     conn.setblocking(False)
-                    _recv_buffers[conn.fileno()] = b""
                     sel.register(conn, _sel_mod.EVENT_READ, data=b"")
                 except Exception:
                     pass
             else:
                 conn = key.fileobj
-                fd = conn.fileno()
                 try:
                     chunk = conn.recv(65536)
                     if chunk:
-                        _recv_buffers[fd] = _recv_buffers.get(fd, b"") + chunk
-                        buf = _recv_buffers[fd]
-                        # 完整请求条件: 头部完整 + (无 body 或 Content-Length 已收齐)
-                        if b"\r\n\r\n" in buf:
-                            has_cl = b"Content-Length:" in buf or b"content-length:" in buf
-                            ready = False
-                            if not has_cl:
-                                ready = True  # GET / POST 空 body
-                            else:
-                                try:
-                                    _hdr_part = buf.split(b"\r\n\r\n", 1)[0].decode("utf-8", errors="replace")
-                                    _cl = 0
-                                    for _line in _hdr_part.split("\r\n"):
-                                        if _line.lower().startswith("content-length:"):
-                                            _cl = int(_line.split(":", 1)[1].strip())
-                                    _body = buf.split(b"\r\n\r\n", 1)[1]
-                                    if len(_body) >= _cl:
-                                        ready = True
-                                except Exception:
-                                    pass
-                            if ready:
-                                sel.unregister(conn)
-                                _recv_buffers.pop(fd, None)
-                                _handle_one_http_request(conn, buf, methods_map)
-                                try:
-                                    conn.close()
-                                except Exception:
-                                    pass
+                        key.data += chunk
+                        if b"\r\n\r\n" in key.data and b"Content-Length:" in key.data:
+                            sel.unregister(conn)
+                            _handle_one_http_request(conn, key.data, methods_map)
+                            try:
+                                conn.close()
+                            except Exception:
+                                pass
                     else:
-                        # 对端关闭
                         sel.unregister(conn)
-                        _recv_buffers.pop(fd, None)
                         try:
                             conn.close()
                         except Exception:
@@ -2347,7 +2769,6 @@ def _http_serve(methods_map):
                     pass
                 except Exception:
                     sel.unregister(conn)
-                    _recv_buffers.pop(fd, None)
                     try:
                         conn.close()
                     except Exception:
