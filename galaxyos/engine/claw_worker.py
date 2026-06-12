@@ -779,461 +779,198 @@ class ClawWorker:
         return self._entry.store(p.get("content", ""), source=p.get("source", "user"),
                                  session_id=p.get("session_id", ""))
 
-    def context_assemble(self, p: dict) -> dict:
-        """全论文模块编排上下文组装 — Self-RAG + CRAG + MemGPT + MemoryOS + BlobArena + AriGraph + RAPTOR
+        def context_assemble(self, p: dict) -> dict:
+            """全论文模块编排上下文组装 — PipelineEngine 驱动版
 
-        供 JS ContextEngine assemble() 调用。
-        两阶段决策：
-          1. Self-RAG IsREL: 判断是否需要检索（不需要则跳过）
-          2. CRAG: 评估检索质量 → USE/DISCARD/AUGMENT
-        然后才走全模块编排（BlobArena → MemGPT → MemoryOS → AriGraph → RAPTOR）
-        """
-        query = p.get("query", "")
-        session_id = p.get("session_id", "")
-        top_k = p.get("top_k", 5)
-        try:
-            result: Dict[str, Any] = {"session_id": session_id, "layers": {}, "decisions": {}}
+            所有模块通过 PipelineEngine 自动注册、推导依赖图、
+            拓扑排序调度、产出自动被下游消费。
 
-            # ═══ Phase 0: Self-RAG IsREL — 判断是否需要检索 ═══
-            should_retrieve = True
-            try:
-                from isrel_predictor import IsRELPredictor
-                isrel = IsRELPredictor()
-                decision = isrel.predict(query, context=None)
-                should_retrieve = decision.should_retrieve
-                result["decisions"]["isrel"] = {
-                    "should_retrieve": should_retrieve,
-                    "confidence": decision.confidence,
-                    "reason": getattr(decision, 'reason', '')
-                }
-                if not should_retrieve:
-                    result["injection"] = ""
-                    result["success"] = True
-                    result["skipped"] = "isrel_no_retrieve"
-                    return result
-            except Exception:
-                # 预测器不可用时默认检索（不过度保守）
-                pass
-
-            # ═══ Phase 1: 全模块检索（仅 IsREL 判定需要时） ═══
-
-            # ── Layer 0: BlobArena 无损还原 — 从 blob 还原完整原文 ────
-            try:
-                from blob_arena import get_blob_arena
-                arena = get_blob_arena()
-                if arena:
-                    blob_ids = arena.list_ids(session_id=session_id, limit=5)
-                    restored = []
-                    for bid in blob_ids:
-                        full_text = arena.read_text(bid)
-                        if full_text:
-                            restored.append({"blob_id": bid, "content": full_text[:1000]})
-                    if restored:
-                        result["layers"]["blob_arena_restored"] = restored
-            except Exception as e:
-                result["layers"]["blob_error"] = str(e)
-
-            # ── Layer 1: MemGPT 分层上下文（Working → Episodic → Semantic）────
-            try:
-                from hierarchical_context import get_context_layer
-                ctx_layer = get_context_layer(session_id=session_id)
-                if ctx_layer:
-                    # 注入当前 query 作为 turn
-                    ctx_layer.add_turn("user", query, session_id=session_id)
-                    # 检索补充先查（注入到 semantic 层）
-                    extra = []
-                    if self._entry:
-                        recalled = self._entry.recall(query, top_k=top_k, session_id=session_id)
-                        if isinstance(recalled, list):
-                            extra = recalled[:top_k]
-                    assembled = ctx_layer.get_assembled_context(
-                        query=query, extra_memories=extra, session_id=session_id)
-                    result["layers"]["memgpt_context"] = assembled[:4000]
-            except Exception as e:
-                result["layers"]["memgpt_error"] = str(e)
-
-            # ── Layer 2: MemoryOS 热度跟踪 — 记录本次访问 ────
-            try:
-                from memory_os import HeatTracker
-                # 使用全局单例或懒加载
-                if not hasattr(self, '_heat_tracker'):
-                    self._heat_tracker = HeatTracker()
-                self._heat_tracker.record_access(
-                    f"query_{session_id}", session_id=session_id)
-                hot_nodes = self._heat_tracker.get_top_nodes(5, session_id=session_id)
-                result["layers"]["heat_top"] = hot_nodes
-            except Exception as e:
-                result["layers"]["heat_error"] = str(e)
-
-            # ── Layer 3: HierarchicalMemory — 工作集/近期集/归档集 ────
-            try:
-                from hierarchical_memory import HierarchicalMemoryManager, get_manager
-                hm = get_manager() if 'get_manager' in dir() else None
-                if hm is None:
-                    hm = HierarchicalMemoryManager()
-                hm_recall = hm.recall(query, top_k=top_k, session_id=session_id)
-                result["layers"]["hierarchical_memories"] = hm_recall[:top_k]
-            except Exception as e:
-                result["layers"]["hierarchical_error"] = str(e)
-
-            # ── Layer 4: HAConvDR 上下文去噪检索 ────
-            try:
-                self._ensure()
-                if self._entry:
-                    scrubbed = self._entry.recall(query, top_k=top_k * 2, session_id=session_id)
-                    result["layers"]["haconvdr_recall"] = scrubbed[:top_k]
-            except Exception as e:
-                result["layers"]["haconvdr_error"] = str(e)
-
-            # ── Layer 5: AriGraph 空间场景上下文 ────
-            try:
-                from paper_integration import get_integration
-                pi = get_integration()
-                if pi:
-                    spatial_ctx = pi.spatial_context_augment(query, [])
-                    if spatial_ctx:
-                        result["layers"]["spatial_scene"] = spatial_ctx.get("scene_nav", "")[:500]
-            except Exception as e:
-                result["layers"]["spatial_error"] = str(e)
-
-            # ── Layer 6: RAPTOR 分层摘要 ────
-            try:
-                from four_advancements import RAPTOREngine
-                if hasattr(self, '_raptor') and self._raptor._tree_built:
-                    # RAPTOR 摘要树已就绪，注入顶层摘要
-                    result["layers"]["raptor_summaries"] = list(self._raptor._summaries.values())[:3]
-            except Exception as e:
-                result["layers"]["raptor_error"] = str(e)
-
-            # ── Phase 2b: Cognitive Load 评估 — 影响 CRAG 阈值 ────
-            cognitive_load_level = 0.5
-            try:
-                from cognitive_load import CognitiveLoad
-                cl = CognitiveLoad()
-                load_result = cl.assess(query, [], [])
-                cognitive_load_level = load_result.get("load_level", 0.5)
-                result["decisions"]["cognitive_load"] = {
-                    "level": cognitive_load_level,
-                    "intrinsic": load_result.get("intrinsic", 0),
-                    "extrinsic": load_result.get("extrinsic", 0)
-                }
-            except Exception as e:
-                result["decisions"]["cognitive_load_error"] = str(e)
-
-            # ── Phase 2c: Dynamic CRAG Threshold — 自适应阈值 ────
-            try:
-                from dynamic_crag_threshold import DynamicCRAGThreshold
-                dct = DynamicCRAGThreshold()
-                adaptive_thresholds = dct.compute_thresholds(
-                    query_complexity=len(query.split()),
-                    cognitive_load=cognitive_load_level)
-                result["decisions"]["crag_thresholds"] = adaptive_thresholds
-            except Exception as e:
-                result["decisions"]["crag_threshold_error"] = str(e)
-            try:
-                from retrieval_evaluator import evaluate_retrieval, RetrievalAction
-                # 收集所有检索结果做质量评估
-                all_retrieved = (result["layers"].get("hierarchical_memories", []) +
-                                 result["layers"].get("haconvdr_recall", []))
-                if all_retrieved:
-                    docs = [r.get("content", "") if isinstance(r, dict) else str(r)
-                            for r in all_retrieved[:10]]
-                    eval_result = evaluate_retrieval(query, docs)
-                    action = eval_result.action.value if hasattr(eval_result.action, 'value') else str(eval_result.action)
-                    result["decisions"]["crag"] = {
-                        "action": action,
-                        "quality": eval_result.quality_score,
-                        "selected_count": len(getattr(eval_result, 'selected_indices', []))
-                    }
-                    if action in ("discard", "discarded"):
-                        result["layers"]["hierarchical_memories"] = []
-                        result["layers"]["haconvdr_recall"] = []
-            except Exception as e:
-                result["decisions"]["crag_error"] = str(e)
-
-            # ── Phase 2d: CoVe 逐条验证检索结果 ────
-            try:
-                from chain_of_verification import ChainOfVerification
-                all_retrieved = (result["layers"].get("hierarchical_memories", []) +
-                                 result["layers"].get("haconvdr_recall", []))
-                if all_retrieved:
-                    docs = [r.get("content", "") if isinstance(r, dict) else str(r)
-                            for r in all_retrieved[:5]]
-                    combined = "\n".join(docs)
-                    cove = ChainOfVerification()
-                    cove_result = cove.verify(combined, query)
-                    verified_score = cove_result.get("verified_ratio", 0.5) if isinstance(cove_result, dict) else 0.5
-                    result["decisions"]["cove"] = {"verified_ratio": verified_score}
-            except Exception as e:
-                result["decisions"]["cove_error"] = str(e)
-
-            # ── Phase 2e: Adaptive Hallucination Params — 动态调整验证强度 ────
-            try:
-                from adaptive_hallucination_params import AdaptiveHallucinationParams
-                ahp = AdaptiveHallucinationParams()
-                params = ahp.compute_params(query,
-                    context=str(result.get("decisions", {}).get("crag", {}).get("quality", 0.5)))
-                result["decisions"]["hallucination_params"] = {"confidence_threshold": params.get("threshold", 0.8)}
-            except Exception as e:
-                result["decisions"]["hallucination_error"] = str(e)
-
-            # ── Phase 3: SKILL0 技能课程 — 渐进撤除已内化的技能提示 ────
-            try:
-                from skill_curriculum import SkillCurriculum
-                if not hasattr(self, '_skill_curriculum'):
-                    self._skill_curriculum = SkillCurriculum()
-                # 记录本次使用，递增训练步数
-                self._skill_curriculum._training_step += 1
-                # 每 validate_interval 步做一次技能验证
-                if self._skill_curriculum._training_step % self._skill_curriculum._validate_interval == 0:
-                    self._skill_curriculum._current_stage = min(
-                        self._skill_curriculum._current_stage + 1,
-                        self._skill_curriculum._stages)
-                # 获取当前阶段应保留的技能
-                active = list(self._skill_curriculum.active_skills)[:10]
-                result["decisions"]["skill0"] = {
-                    "stage": self._skill_curriculum._current_stage,
-                    "active_count": len(active),
-                    "internalized_hint": "以下技能已内化可省略: " + ", ".join(
-                        [s for s in list(self._skill_curriculum._all_skills)[:5]
-                         if s not in self._skill_curriculum.active_skills])
-                }
-            except Exception as e:
-                result["decisions"]["skill0_error"] = str(e)
-
-            # ═══════════════════════════════════════════════════════════
-            # Phase 3b: CoEvolve (2604.15840) — 失败模式反馈
-            #           影响 SKILL0 权重，失败技能重新激活
-            # ═══════════════════════════════════════════════════════════
-            try:
-                _cq = result.get("decisions", {}).get("crag", {}).get("quality", 0.5)
-                _cv = result.get("decisions", {}).get("cove", {}).get("verified_ratio", 0.5)
-                _isrel_skipped = result.get("skipped", "") == "isrel_no_retrieve"
-                if _cq < 0.4 and _cv < 0.4:
-                    result["decisions"]["coevolve"] = {
-                        "failure_detected": True,
-                        "pattern": "low_quality_retrieval",
-                        "action": "reactivate_retrieval_skills"
-                    }
-                elif _isrel_skipped and len(query.split()) > 10:
-                    result["decisions"]["coevolve"] = {
-                        "failure_detected": True,
-                        "pattern": "isrel_false_negative",
-                        "action": "lower_isrel_threshold"
-                    }
-            except Exception as e:
-                result["decisions"]["coevolve_error"] = str(e)
-
-            # ═══════════════════════════════════════════════════════════
-            # Phase 3c: Turn Recovery (2505.06120) — 多轮对话走错路恢复
-            #           检测 CRAG 质量连续下降 → 丢弃锚定轮次重新 assemble
-            # ═══════════════════════════════════════════════════════════
-            try:
-                crag_q = result.get("decisions", {}).get("crag", {}).get("quality", 0.5)
-                cove_v = result.get("decisions", {}).get("cove", {}).get("verified_ratio", 0.5)
-                if not hasattr(self, '_turn_history'):
-                    self._turn_history: Dict[str, List[Dict]] = {}
-                if session_id not in self._turn_history:
-                    self._turn_history[session_id] = []
-                hist = self._turn_history[session_id]
-                hist.append({"q": query[:80], "cq": crag_q, "cv": cove_v, "ts": time.time()})
-                if len(hist) > 20:
-                    hist.pop(0)
-                if len(hist) >= 3:
-                    recent = hist[-3:]
-                    scores = [h["cq"] for h in recent]
-                    if scores[0] > 0.5 and scores[-1] < scores[0] * 0.5:
-                        result["decisions"]["turn_recovery"] = {
-                            "degraded": True,
-                            "trend": f"{scores[0]:.2f}→{scores[-1]:.2f}",
-                            "action": "discard_anchors",
-                            "detail": "连续降级超过50%，可能锚定错误，已清理轮次缓存"
-                        }
-                        hist.clear()
-                        # 强制标记当前 assemble 需从 DAG 全量恢复
-                        result["layers"]["turn_recovery"] = True
-            except Exception as e:
-                result["decisions"]["turn_recovery_error"] = str(e)
-
-            # ═══════════════════════════════════════════════════════════
-            # Phase 3d: MemCoE (2605.00702) — 双阶段记忆优化
-            #           Stage 1: 对比反馈 → 记忆 guidelime
-            #           Stage 2: guideline-aligned 记忆更新策略
-            # ═══════════════════════════════════════════════════════════
-            try:
-                _cq = result.get("decisions", {}).get("crag", {}).get("quality", 0.5)
-                _cv = result.get("decisions", {}).get("cove", {}).get("verified_ratio", 0.5)
-                # Stage 1: Guideline Induction — 用对比反馈生成记忆组织指导
-                guideline = {}
-                if _cq > 0.7 and _cv > 0.7:
-                    guideline["action"] = "consolidate"  # 高质量 → 巩固到 LTM
-                    guideline["heat_boost"] = 0.15
-                elif _cq < 0.4 or _cv < 0.4:
-                    guideline["action"] = "decay"        # 低质量 → 衰减
-                    guideline["heat_decay"] = 0.2
-                else:
-                    guideline["action"] = "maintain"
-
-                # Stage 2: Guideline-Aligned Policy — 按 guideline 调整 HeatingTracker
+            供 JS ContextEngine assemble() 调用。
+            """
+            # ═══ Value Gate 快速路径: 分析注入利用率 ────
+            if p.get("_value_gate"):
                 try:
-                    from memory_os import HeatTracker
-                    if hasattr(self, '_heat_tracker') and guideline:
-                        if guideline.get("heat_boost"):
-                            for nid in result.get("layers", {}).get("heat_top", [])[:3]:
-                                self._heat_tracker.record_access(nid, session_id=session_id)
-                        if guideline.get("heat_decay"):
-                            cold = self._heat_tracker.get_cold_nodes(session_id=session_id)
-                            for nid in cold[:3]:
-                                # 冷节点进一步降温
-                                current = self._heat_tracker.get_heat(nid, session_id=session_id)
-                                if current > 0:
-                                    # 通过多次 record_access 的反向操作来降温
-                                    pass  # 实际降温由 decay_hours 自然衰减完成
+                    from value_gate import ValueGate
+                    from impact_tracker import ImpactTracker
+                    gate = ValueGate()
+                    tracker = ImpactTracker()
+                    inject = p.get("_injection", "")
+                    response = p.get("_response", "")
+                    results = gate.analyze(inject, response)
+                    # 回传给 Impact Tracker
+                    sid = p.get("session_id", "")
+                    for key, rate in results.items():
+                        tracker.report_usage(sid, key, "usage_rate", rate)
+                    return {"success": True, "value_gate": results}
+                except Exception as e:
+                    return {"success": False, "value_gate_error": str(e)}
+
+            query = p.get("query", "")
+            session_id = p.get("session_id", "")
+            top_k = p.get("top_k", 5)
+            prefetch_ids = p.get("prefetch_ids", [])
+            isrel_threshold_override = p.get("isrel_threshold_override", None)
+            ltm_profile_in = p.get("ltm_profile", "")
+
+            try:
+                from pipeline_engine import PipelineEngine
+                from pipeline_registry import register_all_modules
+
+                engine = PipelineEngine()
+                register_all_modules(engine)
+
+                ctx = {
+                    "query": query,
+                    "session_id": session_id,
+                    "top_k": top_k,
+                    "prefetch_ids": prefetch_ids,
+                    "isrel_threshold_override": isrel_threshold_override,
+                    "ltm_profile_in": ltm_profile_in,
+                    "errors": {},
+                    "timings": {},
+                }
+
+                ctx = engine.run(ctx, timeout=12.0)
+
+                should_retrieve = ctx.get("should_retrieve", True)
+                if not should_retrieve:
+                    return {
+                        "success": True,
+                        "skipped": "isrel_no_retrieve",
+                        "injection": "",
+                        "session_id": session_id,
+                        "layers": {},
+                        "decisions": {
+                            "isrel": {
+                                "should_retrieve": False,
+                                "confidence": ctx.get("isrel_confidence", 0),
+                                "reason": ctx.get("isrel_reason", ""),
+                                "threshold_override": isrel_threshold_override,
+                            }
+                        },
+                    }
+
+                parts = []
+                if ctx.get("reranked_results"):
+                    results = ctx["reranked_results"]
+                    parts.append("[检索增强]\n" + "\n".join(
+                        f"  - {r.get('content', str(r))[:500]}" for r in results[:5]
+                    ))
+                if ctx.get("memgpt_context"):
+                    parts.append(f"[分层记忆] {ctx['memgpt_context'][:2000]}")
+                if ctx.get("arigraph_context"):
+                    parts.append(f"[空间场景] {str(ctx['arigraph_context'])[:500]}")
+                if ctx.get("ssm_predicted"):
+                    preds = ", ".join(
+                        f"{p.get('id', p) if isinstance(p, dict) else p}({p.get('prob', 0.5) if isinstance(p, dict) else 0.5})"
+                        for p in ctx["ssm_predicted"][:3]
+                    )
+                    parts.append(f"[记忆预测] 下一步可能需要: {preds}")
+                if ctx.get("memoryos_profile"):
+                    parts.append(f"[长期画像] {ctx['memoryos_profile'][:1000]}")
+                if ltm_profile_in and ltm_profile_in not in (ctx.get("memoryos_profile", "") or ""):
+                    parts.append(f"[跨会话画像] {ltm_profile_in}")
+                if ctx.get("kora_pattern"):
+                    parts.append(f"[行为模式] {str(ctx['kora_pattern'])[:500]}")
+                if ctx.get("thinking_enhanced"):
+                    parts.append(f"[多路推理] {str(ctx['thinking_enhanced'])[:500]}")
+                if ctx.get("raptor_summaries"):
+                    parts.append("[历史摘要] " + "\n".join(ctx["raptor_summaries"][:3]))
+                if ctx.get("proposition_results"):
+                    props = ctx["proposition_results"]
+                    parts.append("[命题检索] " + "\n".join(
+                        f"  - {p.get('proposition', p.get('content', str(p)))[:300]}"
+                        for p in props[:3]
+                    ))
+                if ctx.get("hyde_rewritten") and ctx.get("hyde_rewritten_query"):
+                    parts.append(f"[HyDE改写] {ctx['hyde_rewritten_query'][:500]}")
+                if ctx.get("compressed_context"):
+                    ratio = ctx.get("compression_ratio", 0)
+                    parts.append(f"[压缩上下文] (压缩比 {ratio}) {ctx['compressed_context'][:2000]}")
+                if ctx.get("cove_fix"):
+                    parts.append(f"[CoVe修正] {str(ctx['cove_fix'])[:500]}")
+
+                injection = "\n\n".join(parts)[:6000]
+
+                loop_overrides = {}
+                decisions = {
+                    "isrel": {"should_retrieve": True,
+                        "confidence": ctx.get("isrel_confidence", 1.0),
+                        "reason": ctx.get("isrel_reason", ""),
+                        "threshold_override": isrel_threshold_override,
+                    },
+                    "cognitive_load": ctx.get("cognitive_load", 0.5),
+                    "crag": {"quality": ctx.get("crag_quality", 0.5),
+                        "action": ctx.get("crag_action", "USE"),
+                    },
+                    "cove": {"verified_ratio": ctx.get("cove_verified_ratio", 0.5)},
+                    "coevolve": {"failure_detected": ctx.get("coevolve_failure", False),
+                        "pattern": ctx.get("coevolve_pattern", None),
+                    },
+                    "skill0": {"stage": ctx.get("skill_stage", None),
+                        "delta": ctx.get("skill_delta", None),
+                    },
+                    "memcoe": {"guideline": ctx.get("memcoe_guideline", "maintain")},
+                    "hyper_route": ctx.get("fusion_strategy", "auto"),
+                    "hallucination_params": ctx.get("hallucination_params", {}),
+                }
+                if ctx.get("turn_recovery"):
+                    decisions["turn_recovery"] = {"degraded": True,
+                        "action": ctx.get("turn_action", "dag_restore"),
+                    }
+
+                layers = {}
+                for key in [
+                    "ssm_predicted", "memoryos_profile",
+                    "kora_pattern", "heat_top",
+                    "turn_recovery", "ltm_injected",
+                    "blob_records", "memgpt_context",
+                    "arigraph_context", "raptor_summaries",
+                    "thinking_enhanced", "cove_fix",
+                    "cfc_intent", "cfc_seq_predictions",
+                    "ltc_synapse_stats", "neural_pipeline_result",
+                    "synapse_stats", "emotion_state",
+                    "causal_insight", "memory_gate",
+                    "consolidation_triggered", "biorhythm_cycle",
+                    "auto_learner_done",
+                    "proposition_results", "hyde_rewritten",
+                    "hyde_rewritten_query", "hyde_docs",
+                    "compressed_context", "compression_ratio",
+                ]:
+                    if key in ctx:
+                        layers[key] = ctx[key]
+                layers["_errors"] = ctx.get("errors", {})
+                layers["_timings"] = ctx.get("timings", {})
+                layers["_pipeline_stages"] = list(engine._stages.keys())
+                # ═══ 闭环5: MetaOptimizer 计算下一轮的参数覆盖 ────
+                try:
+                    from meta_optimizer import MetaOptimizer
+                    from impact_tracker import ImpactTracker
+                    _tracker = ImpactTracker()
+                    _opt = MetaOptimizer()
+                    _overrides = _opt.compute(session_id, _tracker, ctx)
+                    if _overrides:
+                        loop_overrides = _overrides
                 except Exception:
                     pass
 
-                result["decisions"]["memcoe"] = {"guideline": guideline["action"]}
+                return {
+                    "success": True,
+                    "injection": injection,
+                    "session_id": session_id,
+                    "layers": layers,
+                    "decisions": decisions,
+                    "loop_overrides": loop_overrides,
+                }
+
             except Exception as e:
-                result["decisions"]["memcoe_error"] = str(e)
-
-            # ── Phase 4: MemoryOS SegmentedPageOrganizer — STM→MTM→LPM ────
-            try:
-                from memory_os import SegmentedPageOrganizer
-                if not hasattr(self, '_page_org'):
-                    self._page_org = SegmentedPageOrganizer()
-                self._page_org.add_page(query, {"session": session_id, "ts": time.time()})
-                # 触发升级：STM 满 → MTM 合并 → LPM 提炼
-                if len(self._page_org.short_term) > self._page_org.max_short_term:
-                    self._page_org.upgrade_to_mid()
-                ltm_profile = self._page_org.get_ltm_context()
-                if ltm_profile:
-                    result["layers"]["memoryos_profile"] = ltm_profile[:1000]
-            except Exception as e:
-                result["layers"]["memoryos_error"] = str(e)
-
-            # ── Phase 4b: SSM 记忆预测 (MemCast 式经验条件推理) ────
-            try:
-                from ssm_state_predictor import SSMPredictor
-                if not hasattr(self, '_ssm_predictor'):
-                    self._ssm_predictor = SSMPredictor()
-                # 记录本次检索为时序信号
-                self._ssm_predictor.record_recall(query, session_id)
-                # 预测"下一步应该预加载哪些记忆"
-                predicted = self._ssm_predictor.predict_next_recall(query, session_id, top_k=3)
-                if predicted:
-                    result["layers"]["ssm_predicted"] = [
-                        {"id": p[0], "prob": round(p[1], 3)} for p in predicted
-                    ]
-            except Exception as e:
-                result["layers"]["ssm_error"] = str(e)
-
-            # ── Phase 5: HyperRouting — 策略路由 ────
-            try:
-                from hyper_routing import HyperRouter
-                if not hasattr(self, '_hyper_router'):
-                    self._hyper_router = HyperRouter()
-                route_hint = self._hyper_router.select_strategy({
-                    "query_len": len(query),
-                    "session_len": 1,
-                    "time": time.time()
-                })
-                result["decisions"]["hyper_route"] = {"strategy": str(route_hint)}
-            except Exception as e:
-                result["decisions"]["hyper_route_error"] = str(e)
-
-            # ── Phase 6: KoRa 行为模式 — 检测用户行为模式 ────
-            try:
-                from kora_behavior import KoraBehavior
-                if not hasattr(self, '_kora'):
-                    self._kora = KoraBehavior()
-                self._kora.record_action(query, session_id)
-                pattern_hint = self._kora.detect_pattern(session_id)
-                if pattern_hint:
-                    result["layers"]["kora_pattern"] = pattern_hint[:500]
-            except Exception as e:
-                result["layers"]["kora_error"] = str(e)
-
-            # ── Phase 7: Code-Aware Reasoning — 代码感知 ────
-            try:
-                code_keywords = ["代码", "code", "def ", "class ", "import ", "bug", "报错", "函数", "变量"]
-                if any(kw in query for kw in code_keywords):
-                    from code_aware_reasoning import CodeAwareReasoner
-                    car = CodeAwareReasoner()
-                    code_hint = car.analyze_query(query)
-                    if code_hint:
-                        result["layers"]["code_aware"] = code_hint[:300]
-            except Exception as e:
-                result["layers"]["code_aware_error"] = str(e)
-
-            # ── Phase 8: Thinking Enhanced — 多路推理 ────
-            try:
-                from thinking_enhanced import ThinkingEnhanced
-                te = ThinkingEnhanced()
-                multi_hint = te.multi_path_reason(query, max_paths=2)
-                if multi_hint:
-                    result["layers"]["thinking_enhanced"] = multi_hint[:500]
-            except Exception as e:
-                result["layers"]["thinking_enhanced_error"] = str(e)
-
-            # ── Phase 9: Memory Consolidation (后台) ────
-            try:
-                from memory_consolidation import MemoryConsolidationEngine
-                if not hasattr(self, '_consolidation_engine'):
-                    self._consolidation_engine = MemoryConsolidationEngine()
-                # 后台线程不阻塞：每 50 次调用触发一次巩固
-                if not hasattr(self, '_consolidation_counter'):
-                    self._consolidation_counter = 0
-                self._consolidation_counter += 1
-                if self._consolidation_counter % 50 == 0:
-                    self._consolidation_engine.consolidate(background=True)
-            except Exception as e:
-                result["layers"]["consolidation_error"] = str(e)
-
-            # ── Phase 10: BioRhythm Sleep Consolidation (后台) ────
-            try:
-                from biorhythm_sleep_consolidation import SleepConsolidation
-                if not hasattr(self, '_sleep_consolidation'):
-                    self._sleep_consolidation = SleepConsolidation()
-                # 每小时检查一次是否需要睡眠巩固
-                if not hasattr(self, '_last_sleep_check'):
-                    self._last_sleep_check = 0
-                if time.time() - self._last_sleep_check > 3600:
-                    self._sleep_consolidation.check_and_consolidate()
-                    self._last_sleep_check = time.time()
-            except Exception as e:
-                result["layers"]["sleep_error"] = str(e)
-
-            # ── 汇总：合并所有 layer 为单一注入文本 ────
-            parts = []
-            if result["layers"].get("blob_arena_restored"):
-                blob_parts = []
-                for b in result["layers"]["blob_arena_restored"][:3]:
-                    blob_parts.append(f"[Blob#{b['blob_id'][:8]}] {b['content'][:400]}")
-                parts.append("[无损上下文还原]\n" + "\n".join(blob_parts))
-            if result["layers"].get("memgpt_context"):
-                parts.append(result["layers"]["memgpt_context"])
-            if result["layers"].get("spatial_scene"):
-                parts.append(f"[场景] {result['layers']['spatial_scene']}")
-            if result["layers"].get("ssm_predicted"):
-                preds = ", ".join(f"{p['id']}({p['prob']})" for p in result["layers"]["ssm_predicted"][:3])
-                parts.append(f"[记忆预测] 下一步可能需要: {preds}")
-            if result["layers"].get("memoryos_profile"):
-                parts.append(f"[长期画像] {result['layers']['memoryos_profile']}")
-            if result["layers"].get("kora_pattern"):
-                parts.append(f"[行为模式] {result['layers']['kora_pattern']}")
-            if result["layers"].get("code_aware"):
-                parts.append(f"[代码分析] {result['layers']['code_aware']}")
-            if result["layers"].get("thinking_enhanced"):
-                parts.append(f"[多路推理] {result['layers']['thinking_enhanced']}")
-            if result["layers"].get("raptor_summaries"):
-                parts.append("[历史摘要] " + "\n".join(result["layers"]["raptor_summaries"]))
-            result["injection"] = "\n\n".join(parts)[:6000]
-            result["success"] = True
-            return result
-
-        except Exception as e:
-            return {"success": False, "error": str(e), "session_id": session_id}
-
+                import traceback
+                return {
+                    "success": False,
+                    "error": f"{type(e).__name__}: {e}",
+                    "traceback": traceback.format_exc(),
+                    "session_id": session_id,
+                }
     def verify(self, p: dict) -> dict:
         """验证 — 走 MultiSourceCrossValidator 多源交叉验证"""
         claim = p.get("claim", "")

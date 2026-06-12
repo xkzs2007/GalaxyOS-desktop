@@ -2380,134 +2380,6 @@ export default function register(api) {
     });
 
     // ==========================================
-    // Tool: claw_compile_skill - SkVM 编译技能
-    // ==========================================
-    api.registerTool({
-        name: "claw_compile_skill",
-        label: "Skill Compiler (SkVM)",
-        description: "编译一个 Skill：CapabilityProfile 匹配 → 环境绑定 → 裁剪 → 优化。\n" +
-            "调用 Worker compile_skill UDS，返回 CompiledArtifact。",
-        parameters: {
-            type: "object",
-            properties: {
-                skill_text: { type: "string", description: "Skill 原始 Markdown 内容" },
-                skill_name: { type: "string", description: "Skill 名称（可选）" },
-            },
-            required: ["skill_text"],
-        },
-        async execute(_toolCallId, params) {
-            const startMs = Date.now();
-            const w = getWorker(ws);
-            if (!w || !w.ready) {
-                return { content: [{ type: "text", text: "Worker 未就绪" }], isError: true };
-            }
-            try {
-                const result = await w.call("compile_skill", {
-                    skill_text: String(params.skill_text),
-                    skill_name: String(params.skill_name || ""),
-                }, 30000);
-                const artifact = result.artifact || {};
-                const text = `✅ 编译完成\n` +
-                    `  名称: ${artifact.skill_name || params.skill_name || "(unnamed)"}\n` +
-                    `  文本: ${(artifact.optimized_text || "").length}B (原始 ${(params.skill_text || "").length}B)\n` +
-                    `  环境检查: ${artifact.env_check || "ok"}\n` +
-                    `  裁剪比例: ${artifact.prune_ratio || 0}\n` +
-                    `  Asset ID: ${result.asset_id || "N/A"}`;
-                return { content: [{ type: "text", text }], details: { elapsedMs: Date.now() - startMs } };
-            }
-            catch (err) {
-                return { content: [{ type: "text", text: `编译失败: ${err.message}` }], isError: true };
-            }
-        },
-    });
-
-    // ==========================================
-    // Tool: claw_asset_search - AssetRegistry 查询
-    // ==========================================
-    api.registerTool({
-        name: "claw_asset_search",
-        label: "Asset Registry Search",
-        description: "查询 KnowledgeAsset 注册表。支持按 query/capability/tag/category 搜索。\n" +
-            "MemGAS-SkVM 融合系统的核心查询接口。",
-        parameters: {
-            type: "object",
-            properties: {
-                query: { type: "string", description: "文本查询" },
-                capability_key: { type: "string", description: "按 capability 过滤 (如 web_access, reasoning)" },
-                tag: { type: "string", description: "按标签过滤" },
-                category: { type: "string", description: "按分类过滤 (neuron, memory, skill)" },
-                top_k: { type: "number", default: 10, description: "最大返回条数" },
-            },
-        },
-        async execute(_toolCallId, params) {
-            const startMs = Date.now();
-            const w = getWorker(ws);
-            if (!w || !w.ready) {
-                return { content: [{ type: "text", text: "Worker 未就绪" }], isError: true };
-            }
-            try {
-                const result = await w.call("asset_search", {
-                    query: params.query || "",
-                    capability_key: params.capability_key || "",
-                    tag: params.tag || "",
-                    category: params.category || "",
-                    top_k: Math.min(Number(params.top_k) || 10, 50),
-                }, 15000);
-                const assets = result.assets || [];
-                let text = `📋 AssetRegistry (${assets.length} 条):\n`;
-                for (const a of assets) {
-                    const mg = a.multi_granularity ? Object.keys(a.multi_granularity).join(",") : "-";
-                    text += `  [${a.asset_id?.slice(0, 20) || ""}...] ${a.asset_type || "?"} | mg=${mg} | #${(a.tags || []).slice(0, 3).join(",")}\n`;
-                }
-                if (!assets.length) text = "没有匹配的资产。";
-                return { content: [{ type: "text", text }], details: { elapsedMs: Date.now() - startMs } };
-            }
-            catch (err) {
-                return { content: [{ type: "text", text: `查询失败: ${err.message}` }], isError: true };
-            }
-        },
-    });
-
-    // ==========================================
-    // Tool: claw_asset_register - 注册新 Asset
-    // ==========================================
-    api.registerTool({
-        name: "claw_asset_register",
-        label: "Asset Registry Register",
-        description: "注册一个自定义 KnowledgeAsset 到 AssetRegistry。\n" +
-            "支持带 capability_profile、compiled_artifact 和 tags 的高级注册。",
-        parameters: {
-            type: "object",
-            properties: {
-                content: { type: "string", description: "资产内容" },
-                tags: { type: "array", items: { type: "string" }, description: "标签列表" },
-                category: { type: "string", description: "分类 (neuron/skill/memory/other)" },
-                source: { type: "string", description: "来源名称" },
-            },
-            required: ["content"],
-        },
-        async execute(_toolCallId, params) {
-            const startMs = Date.now();
-            const w = getWorker(ws);
-            if (!w || !w.ready) {
-                return { content: [{ type: "text", text: "Worker 未就绪" }], isError: true };
-            }
-            try {
-                const result = await w.call("asset_register", {
-                    content: String(params.content),
-                    tags: params.tags || [],
-                    category: params.category || "other",
-                    source: params.source || "gateway_tool",
-                }, 15000);
-                return { content: [{ type: "text", text: `✅ Asset 已注册: ${result.asset_id || "N/A"}` }], details: { elapsedMs: Date.now() - startMs } };
-            }
-            catch (err) {
-                return { content: [{ type: "text", text: `注册失败: ${err.message}` }], isError: true };
-            }
-        },
-    });
-
-    // ==========================================
     // ContextEngine - 接管上下文压缩,防止 DAG 炸掉
     // 要求 OpenClaw >= 2026.3.7(registerContextEngine API)
     // ==========================================
@@ -2534,27 +2406,86 @@ export default function register(api) {
     const MAINTENANCE_L2 = 20;
     const MAINTENANCE_L3 = 50;
 
-    // --- 辅助函数:从 message 对象提取纯文本 ---
+    // --- 辅助函数:剥离 Conversation info / Sender 平台元数据信封 ---
+    // 这些元数据由 xiaoyi-channel 等平台注入到用户消息中,
+    // 形式为:
+    //   Conversation info (untrusted metadata):
+    //   ```json
+    //   {"timestamp":"...","timezone":"..."}
+    //   ```
+    // 不应进入知识库索引、DAG 图谱或上下文预算统计。
+    const _CONVERSATION_META_RE = /(?:^|\n)\s*Conversation\s+info[^\n]*:\s*```[\s\S]*?```/gi;
+    const _SENDER_META_RE = /Sender[^\n]*:\s*```[\s\S]*?```/gi;
+    function stripMetadata(text) {
+        if (!text) return text;
+        return text
+            .replace(_CONVERSATION_META_RE, "")
+            .replace(_SENDER_META_RE, "")
+            .replace(/\n{3,}/g, "\n\n")
+            .trim();
+    }
+
+    // --- 辅助函数:从 message 对象提取纯文本（仅 text 类型块,同时剥离元数据） ---
     function extractText(msg) {
         if (!msg?.content) return "";
-        if (typeof msg.content === "string") return msg.content;
-        if (Array.isArray(msg.content)) {
-            return msg.content
+        let text;
+        if (typeof msg.content === "string") {
+            text = msg.content;
+        } else if (Array.isArray(msg.content)) {
+            text = msg.content
                 .filter(c => c.type === "text")
                 .map(c => c.text || "")
                 .join(" ");
+        } else {
+            return "";
         }
-        return "";
+        return stripMetadata(text);
+    }
+
+    // --- 辅助函数:从 message 对象提取所有内容块的纯文本（含 tool_use/tool_result,同时剥离元数据） ---
+    // 用于 token 估算,保证工具调用 JSON payload 也被纳入字符统计
+    function extractFullText(msg) {
+        if (!msg?.content) return "";
+        let text;
+        if (typeof msg.content === "string") {
+            text = msg.content;
+        } else if (Array.isArray(msg.content)) {
+            text = msg.content
+                .filter(c => c.type === "text" || c.type === "tool_use" || c.type === "tool_result" || c.type === "function")
+                .map(c => {
+                    if (c.type === "text") return c.text || "";
+                    // tool_use / tool_result 可能包含 input/output JSON
+                    if (c.input) return typeof c.input === "string" ? c.input : JSON.stringify(c.input);
+                    if (c.output) return typeof c.output === "string" ? c.output : JSON.stringify(c.output);
+                    if (c.content) return typeof c.content === "string" ? c.content : JSON.stringify(c.content);
+                    return JSON.stringify(c);
+                })
+                .join(" ");
+        } else {
+            return "";
+        }
+        return stripMetadata(text);
+    }
+
+    // --- 辅助函数:判断消息是否为真正的工具调用结果（排除元数据误判） ---
+    function isRealToolResult(msg) {
+        if (msg.role === "tool") return true;
+        if (msg.role === "assistant" && msg.tool_calls && msg.tool_calls.length > 0) {
+            // 避免将纯文本消息误判（Conversation info 可能带空或无关的 tool_calls 属性）
+            const text = extractText(msg);
+            return text.length < 500; // 真正的 tool_calls 消息几乎不含 text 内容
+        }
+        return false;
     }
 
     // --- 辅助函数:估算消息的 token 数(基于字符长度,更精确) ---
     // 中文约 1.5 字符/token,英文约 4 字符/token,混合取 ~2.5
     // 工具调用结果通常更密集,加 1.3x 系数
     function estimateTokens(msg) {
-        const text = extractText(msg);
-        // 工具调用结果通常含 JSON,token 密度更高
-        const isToolResult = msg.role === "tool" || (msg.role === "assistant" && msg.tool_calls);
+        const text = extractFullText(msg);  // 使用 full text 确保 tool payload 也被统计
+        if (!text) return 0;
         const baseEstimate = Math.ceil(text.length / 2.5);
+        const isToolResult = isRealToolResult(msg);
         return isToolResult ? Math.ceil(baseEstimate * 1.3) : baseEstimate;
     }
 
@@ -3097,9 +3028,20 @@ export default function register(api) {
             async ingest({ sessionId, message, isHeartbeat }) {
                 try {
                     if (isHeartbeat) return { ingested: true };
-                    const content = extractText(message);
-                    if (!content || content.trim().length < 5) return { ingested: false };
-                    api.logger.debug?.(`${TAG} [context-engine] ingest: session=${sessionId}, role=${message?.role}, len=${content.length}`);
+                    // 先获取纯文本（含全内容块且剥离元数据）来检测是否纯粹是元数据
+                    const rawText = extractFullText(message);
+                    const cleanText = extractText(message);
+                    if (!rawText || rawText.trim().length < 5) return { ingested: false };
+
+                    // ═══ Conversation info 元数据检测 ═══
+                    // 如果剥离元数据后文本为空或极短,说明消息全是平台元数据,不索引
+                    const isPureMetadata = !cleanText || cleanText.trim().length < 5;
+                    if (isPureMetadata) {
+                        api.logger.debug?.(`${TAG} [context-engine] ingest: skipping pure metadata message (session=${sessionId})`);
+                        return { ingested: true };
+                    }
+
+                    api.logger.debug?.(`${TAG} [context-engine] ingest: session=${sessionId}, role=${message?.role}, len=${cleanText.length}`);
 
                     // 新会话检测:/new 后自动清理当前会话的 DAG 节点和摘要缓存
                     // 注意：不移除 _rccamCache（按 query 做 key，不依赖 session），
@@ -3121,15 +3063,15 @@ export default function register(api) {
                         design_ref: "index.js#L1287-L1318",
                     };
 
-                    // 并行:smartStore 知识库索引 + DAG 节点存储
+                    // 并行:smartStore 知识库索引（存剥离后的内容）+ DAG 节点存储（标记为 conversation）
                     const [stored, dagResult] = await Promise.all([
-                        smartStore(content, source, sessionId).catch(() => false),
+                        smartStore(cleanText, source, sessionId).catch(() => false),
                         dagCall("dag_ingest", {
                             sessionId,
                             role: message?.role || source,
-                            content,
+                            content: cleanText,
                             tokens,
-                            metadata: galaxyMeta,
+                            metadata: { ...galaxyMeta, content_type: "conversation" },
                         }),
                     ]);
                     if (!stored) {
@@ -3229,7 +3171,14 @@ export default function register(api) {
                     // 系统消息上限：最多保留 5 条（核心 prompt），超出的丢弃
                     const MAX_SYSTEM_MSGS = 5;
                     const systemMsgs = dedupedSystem.slice(-MAX_SYSTEM_MSGS);
-                    const nonSystemMsgs = messages.filter(m => m.role !== "system");
+                    // ═══ 过滤纯元数据消息（Conversation info / Sender 等平台注入）═══
+                    // 这些消息剥离元数据信封后内容为空,不应计入上下文预算
+                    const nonSystemMsgs = messages.filter(m => {
+                        if (m.role === "system") return false;
+                        // 检查是否为纯元数据
+                        const text = extractText(m);
+                        return text && text.trim().length >= 3;
+                    });
 
                     // 1) 计算系统提示的实际 token 开销
                     const systemTokens = systemMsgs.reduce((sum, m) => sum + estimateTokens(m), 0);
@@ -3291,8 +3240,16 @@ export default function register(api) {
                         api.logger.info?.(`${TAG} [context-engine] assemble emergency trim: kept ${recentMsgs.length} msgs, ~${systemTokens + usedTokens} tokens, rlm=${rlmSummary ? 'compressed' : 'truncated'}`);
                     }
 
+                    // ═══ 从 sessionState 读取上次模块输出的决策反馈 ═══
+                    const prevState = _sessionState.get(sessionId) || {};
+                    const ssmPreds = prevState.ssm_preds || [];
+                    const coeThreshold = prevState.coe_threshold || null;
+                    const ltmProfile = prevState.ltm_profile || "";
+
                     // 4) 增强检索: 全论文模块编排 (MemGPT+MemoryOS+HAConvDR+AriGraph+RAPTOR)
-                    //    优先调 context_assemble，降级到 smartRecall
+                    //    ┌─ 闭环1: SSM预测 → 传 prefetch_ids 给 Worker 预加载 ─┐
+                    //    ┌─ 闭环2: CoEvolve → 传 threshold 给 Worker ───────────┐
+                    //    ┌─ 闭环4: MemoryOS LTM → 传 profile 给 Worker ────────┐
                     let systemPromptAddition = "";
                     if (CE_RECALL_ON_ASSEMBLE) {
                         try {
@@ -3300,17 +3257,71 @@ export default function register(api) {
                             if (lastUserMsg) {
                                 const query = extractText(lastUserMsg);
                                 if (query && query.trim().length >= 5) {
-                                    // v7.1: 优先走全论文模块编排
                                     let injection = "";
                                     try {
                                         const w = getWorker(ws);
                                         if (w.ready) {
                                             const ctxResult = await w.call("context_assemble", {
-                                                query, session_id: sessionId, top_k: 5
+                                                query,
+                                                session_id: sessionId,
+                                                top_k: 5,
+                                                // ═══ 闭环1: SSM 预测的下步记忆 → Worker 预加载 ═══
+                                                prefetch_ids: ssmPreds.slice(0, 3).map(p => p.id),
+                                                // ═══ 闭环2: CoEvolve 检测到的阈值调整 → Worker 修正 IsREL ═══
+                                                isrel_threshold_override: coeThreshold,
+                                                // ═══ 闭环4: MemoryOS LTM 画像 → Worker 注入上下文 ═══
+                                                ltm_profile: ltmProfile,
                                             }, 15000);
                                             if (ctxResult?.success && ctxResult?.injection) {
                                                 injection = ctxResult.injection;
-                                                api.logger.debug?.(`${TAG} [context-engine] context_assemble layers: ${Object.keys(ctxResult.layers || {}).filter(k => !k.endsWith('_error')).join(',')}`);
+                                                // ═══ 消费每个闭环的输出,存入 sessionState ═══
+                                                const layers = ctxResult.layers || {};
+                                                const decisions = ctxResult.decisions || {};
+                                                const state = _sessionState.get(sessionId) || {};
+                                                // 闭环1: SSM预测 → 存给下次用
+                                                if (layers.ssm_predicted) {
+                                                    state.ssm_preds = layers.ssm_predicted;
+                                                }
+                                                // 闭环2: CoEvolve 失败检测 → 调整阈值
+                                                if (decisions.coevolve?.failure_detected) {
+                                                    const p = decisions.coevolve.pattern;
+                                                    if (p === "isrel_false_negative") {
+                                                        state.coe_threshold = 0.1; // 降低 IsREL 阈值,多检索
+                                                    } else if (p === "low_quality_retrieval") {
+                                                        state.coe_threshold = null; // 恢复默认
+                                                    }
+                                                }
+                                                // 闭环3: Turn Recovery → 清 sessionState 强制 DAG 恢复
+                                                if (layers.turn_recovery) {
+                                                    state.turn_recovered = true;
+                                                    // 丢弃之前的 SSM 预测和阈值
+                                                    delete state.ssm_preds;
+                                                    delete state.coe_threshold;
+                                                }
+                                                // 闭环4: MemoryOS LTM → 持久化跨 session
+                                                if (layers.memoryos_profile) {
+                                                    state.ltm_profile = layers.memoryos_profile;
+                                                }
+                                                // 闭环5(新): KoRa 行为模式 → 影响路由策略
+                                                if (layers.kora_pattern) {
+                                                    state.kora_pattern = layers.kora_pattern;
+                                                }
+                                                // ═══ 闭环6: MetaOptimizer 参数覆盖 → 持久化到 sessionState ═══
+                                                const overrides = ctxResult.loop_overrides || {};
+                                                if (overrides.isrel_threshold_override !== undefined) {
+                                                    state.coe_threshold = overrides.isrel_threshold_override;
+                                                }
+                                                if (overrides.ssm_k !== undefined) {
+                                                    state.ssm_k = overrides.ssm_k;
+                                                }
+                                                if (overrides.memoryos_max_len !== undefined) {
+                                                    state.memoryos_max_len = overrides.memoryos_max_len;
+                                                }
+                                                if (overrides.coevolve_strategy !== undefined) {
+                                                    state.coevolve_strategy = overrides.coevolve_strategy;
+                                                }
+                                                _sessionState.set(sessionId, state);
+                                                api.logger.debug?.(`${TAG} [context-engine] context_assemble layers: ${Object.keys(layers).filter(k => !k.endsWith('_error')).join(',')}`);
                                             }
                                         }
                                     } catch (e) { /* 降级 */ }
@@ -3901,6 +3912,8 @@ export default function register(api) {
 
     // ═══ R-CCAM 三层兜底: assemble → before_prompt_build → agent_end 补充消息 ═══
     const _rccamCache = new Map();
+    // ═══ 会话级状态存储:让各模块的输出能被下次 assemble 消费 ═══
+    const _sessionState = new Map(); // sessionId → { ssm_preds, hyper_route, kora_pattern, coe_threshold, ltm_profile }
     const RCCAM_CACHE_TTL = 60000;
     const RCCAM_CACHE_MAX = 100;
     // 纪录哪些 cache key 已被 assemble() 消费(用于 agent_end 判断是否需要发补充消息)
@@ -4091,6 +4104,25 @@ export default function register(api) {
                 } catch (e) {
                     api.logger.debug?.(`${TAG} [agent_end] L0 log failed: ${e.message}`);
                 }
+            }
+
+            // ═══ Value Gate: 分析注入信息利用率 ═══
+            if (systemPromptAddition && asstContent) {
+                (async () => {
+                    try {
+                        const w = getWorker(ws);
+                        if (w && w.ready) {
+                            await w.call("context_assemble", {
+                                _value_gate: true,
+                                _injection: systemPromptAddition,
+                                _response: asstContent,
+                                session_id: sessionKey,
+                            });
+                        }
+                    } catch (e) {
+                        api.logger.debug?.(`${TAG} [value_gate] failed: ${e.message}`);
+                    }
+                })();
             }
 
             // ── 从 rccam 缓存持久化 save_memory ──

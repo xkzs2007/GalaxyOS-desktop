@@ -48,6 +48,7 @@ class SelfEvolutionEngine:
         self._memory_reflector = None
         self._auto_learner = None
         self._smart_processor = None
+        self._apo_optimizer = None
         
         # 进化追踪数据
         self.evolution_tracker_path = self.workspace / 'memory' / 'evolution_tracker.jsonl'
@@ -56,6 +57,37 @@ class SelfEvolutionEngine:
         
         # 模式检测频率控制
         self._last_pattern_check = 0.0
+        self._last_apo_run = 0.0
+
+    # ── APO (Automatic Prompt Optimization) ────────────────
+
+    def _ensure_apo(self) -> bool:
+        """懒加载 APO PromptOptimizer"""
+        if self._apo_optimizer is not None:
+            return True
+        try:
+            from auto_prompt_optimizer import PromptOptimizer, training_examples_from_quality_history
+            from auto_prompt_optimizer import wrap_llm_call
+            self._apo_optimizer = PromptOptimizer(workspace_path=str(self.workspace))
+            # 设置 llm_call (懒加载，等第一次 optimize 时注入)
+            self._apo_training_fn = training_examples_from_quality_history
+            self._apo_wrap = wrap_llm_call
+            logger.info("APO PromptOptimizer 懒加载成功")
+            return True
+        except Exception as e:
+            logger.debug(f"APO 加载失败（非关键）: {e}")
+            return False
+
+    def set_apo_llm_call(self, llm_engine):
+        """从外部注入 LLM 引擎"""
+        if not self._ensure_apo():
+            return
+        try:
+            llm_fn = self._apo_wrap(llm_engine)
+            self._apo_optimizer.set_llm_call(llm_fn)
+            logger.info("APO LLM call 已注入")
+        except Exception as e:
+            logger.debug(f"APO llm call 注入失败: {e}")
     
     # ── 1. 质量自评 ────────────────────────────────────────
     
@@ -370,13 +402,64 @@ class SelfEvolutionEngine:
                 "severity": p["severity"],
             })
         
+        # — APO 优化建议（每 5 分钟最多跑一次）
+        apo_result = None
+        if self._ensure_apo() and self._apo_optimizer._llm_call and (time.time() - self._last_apo_run > 300):
+            try:
+                examples = self._apo_training_fn(self._scores)
+                if examples:
+                    # 从 quality history 提取当前 prompt 上下文
+                    current_prompt = self._build_apo_current_prompt()
+                    opt_result = self._apo_optimizer.optimize(
+                        current_prompt=current_prompt,
+                        training_data=examples,
+                        num_rounds=1,        # 每轮只跑 1 次 APO（节省预算）
+                        beam_width=2,
+                        candidates_per_round=2,
+                        eval_budget=3,
+                    )
+                    self._last_apo_run = time.time()
+                    if opt_result.get("best_score", 0) > 0.3:
+                        suggestions.append({
+                            "target": "apo_prompt_improvement",
+                            "current_score": quality.get("overall", 0.5),
+                            "suggestion": f"APO prompt 优化完成（最优分数: {opt_result['best_score']:.2f}）",
+                            "apo_result": opt_result,
+                        })
+                        apo_result = opt_result
+            except Exception as e:
+                logger.debug(f"APO 优化失败: {e}")
+        
         return {
             "quality_score": quality,
             "suggestions": suggestions,
             "evolution_trend": trend,
+            "apo_result": apo_result,
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "has_improvement_needed": quality.get("needs_improvement", False) or len(suggestions) > 0,
         }
+
+    def _build_apo_current_prompt(self) -> str:
+        """从质量历史构建当前 prompt 上下文，作为 APO 优化的基线"""
+        recent = self._scores[-10:] if self._scores else []
+        prompt_parts = [
+            "You are a helpful AI assistant. Provide accurate, complete, and relevant responses.",
+            f"Recent evaluations: {len(recent)} quality assessments.",
+        ]
+        if recent:
+            avg_scores = defaultdict(list)
+            for r in recent:
+                sc = r.get("scores", {})
+                for k, v in sc.items():
+                    if isinstance(v, (int, float)):
+                        avg_scores[k].append(v)
+            parts = []
+            for dim, vals in avg_scores.items():
+                avg = sum(vals) / len(vals)
+                parts.append(f"{dim}: {avg:.2f}")
+            if parts:
+                prompt_parts.append("Average quality: " + ", ".join(parts))
+        return "\n".join(prompt_parts)
     
     # ── 5. 频率控制 ──────────────────────────────────────
     

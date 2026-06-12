@@ -239,6 +239,8 @@ class XiaoYiClawLLM:
         self._init_dag_integration()
         # 修复 BUG-1: _paper_int 从未被初始化，导致 30+ 处论文级增强全部静默失效
         self._init_paper_integration()
+        # ── MemGAS-SkVM 融合架构 ──
+        self._init_memgas_skvm()
 
         logger.info("小艺 Claw 大模型初始化完成")
 
@@ -565,7 +567,12 @@ class XiaoYiClawLLM:
         try:
             from memory_consolidation import ConsolidationEngine
             self._consolidation_engine = ConsolidationEngine()
-            logger.info("ConsolidationEngine 加载成功")
+            # 启动后台巩固线程（空闲 ≥ 120s 自动跑梦境周期）
+            if hasattr(self._consolidation_engine, 'start_background'):
+                self._consolidation_engine.start_background()
+                logger.info("ConsolidationEngine 加载成功，后台巩固线程已启动")
+            else:
+                logger.info("ConsolidationEngine 加载成功")
         except Exception as e:
             self._consolidation_engine = None
             logger.debug("ConsolidationEngine: %s", e)
@@ -689,7 +696,12 @@ class XiaoYiClawLLM:
         try:
             from self_evolution_engine import SelfEvolutionEngine
             self._self_evolution = SelfEvolutionEngine()
-            logger.info("SelfEvolutionEngine 加载成功")
+            # 注入 APO LLM call（懒加载，等第一次 optimize 时激活）
+            try:
+                self._self_evolution.set_apo_llm_call(self)
+            except Exception:
+                pass
+            logger.info("SelfEvolutionEngine 加载成功（含 APO）")
         except Exception as e:
             self._self_evolution = None
             logger.debug("SelfEvolution: %s", e)
@@ -786,6 +798,74 @@ class XiaoYiClawLLM:
             logger.info("PaperIntegration 加载成功")
         except Exception as e:
             logger.warning(f"PaperIntegration 初始化失败（30+ 处增强会降级）: {e}")
+
+    def _init_memgas_skvm(self):
+        """初始化 MemGAS-SkVM 融合架构
+
+        包含:
+        - knowledge_asset.AssetRegistry: 统一知识资产注册表
+        - capability_registry: SkVM 26 维原语能力（lazy init）
+        - skill_compiler: Skill 编译器（lazy init）
+        - entropy_router: 语义熵路由（lazy init）
+        - multi_granularity: 多粒度提取器（lazy init）
+
+        注意: AssetRegistry 轻量，立即初始化；其余 4 个懒加载。
+        """
+        self._asset_registry = None
+        self._capability_registry = None
+        self._skill_compiler = None
+        self._entropy_router = None
+        self._multi_granularity = None
+        try:
+            from knowledge_asset import AssetRegistry
+            self._asset_registry = AssetRegistry()
+            logger.info("MemGAS AssetRegistry 初始化成功")
+        except Exception as e:
+            logger.warning(f"MemGAS AssetRegistry 初始化失败: {e}")
+
+        # ── 初始化 PipelineEngine 并注册全部阶段 ──
+        self._pipeline = None
+        try:
+            from pipeline_engine import PipelineEngine
+            from pipeline_registry import register_all_modules
+            self._pipeline = PipelineEngine()
+            register_all_modules(self._pipeline)
+            stage_count = len(self._pipeline._stages) if hasattr(self._pipeline, '_stages') else 0
+            logger.info(f"PipelineEngine 初始化完成（{stage_count} 阶段注册）")
+        except Exception as e:
+            self._pipeline = None
+            logger.warning(f"PipelineEngine 初始化失败（pipeline 降级）: {e}")
+
+        logger.info("MemGAS-SkVM 融合架构初始化完成（其余模块懒加载）")
+
+    def _run_pipeline(self, state):
+        """运行 MemGAS-SkVM pipeline 并将产出注入 state.analysis"""
+        if not self._pipeline:
+            return {}
+        try:
+            ctx = {
+                "session_id": getattr(state, 'session_key', 'default'),
+                "query": state.user_input,
+                "intent": getattr(state, 'intent', 'unknown'),
+                "knowledge_type": getattr(state, 'knowledge_type', 'general'),
+                "retrieved_memories": getattr(state, 'retrieved_memories', []),
+                "dag_context": state.analysis.get('current_dag_context', ''),
+                "cognitive_load": getattr(state, 'cognitive_load', 0.5),
+                "reranked_results": getattr(state, 'retrieved_memories', []),
+                "memgpt_context": state.analysis.get('reflexion_context', ''),
+                "ssm_predicted": getattr(state, 'analysis', {}).get('ssm_predicted', []),
+                "memoryos_profile": getattr(state, 'analysis', {}).get('memoryos_profile', ''),
+            }
+            pr = self._pipeline.run(ctx, timeout=10.0)
+            for k, v in pr.items():
+                if v is not None and k not in ('compressed_context', 'compression_ratio', 'compressor_error'):
+                    state.analysis[f'pipeline_{k}'] = v
+            if pr.get('compressed_context'):
+                state.analysis['pipeline_compressed_context'] = pr['compressed_context']
+            return pr
+        except Exception as e:
+            logger.debug(f"Pipeline run 失败（非关键）: {e}")
+            return {}
 
 
     def set_rci_publisher(self, zmq_fn=None, mmap_fn=None):
@@ -4198,6 +4278,13 @@ class XiaoYiClawLLM:
             "intent": "unknown", "routing": "", "user_input": user_input[:500],
         }
 
+        # ── 标记活跃（通知后台睡眠线程） ──
+        if self._consolidation_engine is not None:
+            try:
+                self._consolidation_engine.mark_active()
+            except Exception:
+                pass
+
         _critic_context = None
 
         while state.cycle_count < state.max_cycles and not state.should_stop:
@@ -4220,6 +4307,10 @@ class XiaoYiClawLLM:
                 state = self._retrieval_phase(state)
             _write_rccam_phase("retrieval", state, state.user_input[:500])
             if state.should_stop: break
+
+            # ── MemGAS-SkVM Pipeline: 在 retrieval 产出的基础上运行 ──
+            if self._pipeline:
+                self._run_pipeline(state)
 
             # 阶段 2: Cognition
             state = self._cognition_phase(state)

@@ -12,7 +12,11 @@ GalaxyOS — 安装向导 + 配置向导
   python3 install_wizard.py --fix            # 体检后自动修复（同步文件）
   python3 install_wizard.py --sleep-test    # 仿生睡眠巩固引擎专项测试
   python3 install_wizard.py --kg-test       # 知识图谱功能专项测试
+  python3 install_wizard.py --memgas-test   # MemGAS-SkVM 资产编排功能专项测试
   python3 install_wizard.py --all            # 全量模式（体检 + 睡眠测试 + 修复）
+  python3 install_wizard.py --install-deps  # 一键安装缺失依赖（pip 包 + Rust 工具链）
+  python3 install_wizard.py --setup-api-key # 引导设置 LLM API Key
+  python3 install_wizard.py --api-key sk-xxx --setup-api-key  # 非互动设置 API Key
 """
 
 import os
@@ -220,30 +224,98 @@ def check_environment() -> Dict[str, Any]:
     results["os"] = {"system": platform.system(), "release": platform.release(), "arch": platform.machine()}
     info(f"系统: {results['os']['system']} {results['os']['release']} {results['os']['arch']}", indent=1)
 
-    # 关键 pip 包
-    required_pkgs = {
-        "openai": "LLM API 调用",
-        "requests": "HTTP 请求",
+    # 关键 pip 包 — 从 requirements.txt 全量扫描
+    _all_pkgs = ["openai", "requests", "numpy", "scipy", "pyzmq", "aiohttp",
+                 "httpx", "faiss", "hnswlib", "PIL", "orjson", "polars",
+                 "duckdb", "pandas", "jieba", "snownlp", "tiktoken",
+                 "scikit_learn", "onnxruntime", "torch", "psutil",
+                 "ncps", "tokenizers", "pydantic"]
+    _IMPORT_ALIAS = {
+        "faiss": "faiss", "PIL": "PIL", "scikit_learn": "scikit_learn",
+        "onnxruntime": "onnxruntime", "torch": "torch",
     }
-    optional_pkgs = {
-        "pysqlite3": "向量存储",
+    _PIP_ALIAS = {
+        "PIL": "Pillow", "scikit_learn": "scikit-learn",
+        "faiss": "faiss-cpu", "pyzmq": "pyzmq",
     }
+    _PIP_MAP = {}
 
-    all_ok = True
-    for pkg, desc in required_pkgs.items():
+    missing_pkgs = []
+    for pkg in _all_pkgs:
+        _import_name = _IMPORT_ALIAS.get(pkg, pkg)
+        _pip_name = _PIP_ALIAS.get(pkg, pkg)
+        _PIP_MAP[pkg] = _pip_name
         try:
-            importlib.import_module(pkg)
+            importlib.import_module(_import_name)
             results["packages"][pkg] = True
         except ImportError:
             results["packages"][pkg] = False
-            all_ok = False
+            missing_pkgs.append(pkg)
 
-    if all_ok:
-        ok("所有必需 pip 包已安装")
+    results["packages_summary"] = {
+        "total": len(_all_pkgs),
+        "installed": len(_all_pkgs) - len(missing_pkgs),
+        "missing": missing_pkgs,
+    }
+
+    if missing_pkgs:
+        _pip_cmd = "pip install " + " ".join(_PIP_MAP[p] for p in missing_pkgs if p in _PIP_MAP)
+        results["packages_summary"]["pip_command"] = _pip_cmd
+        warn(f"缺少 {len(missing_pkgs)}/{len(_all_pkgs)} 个包")
+        info("运行: " + _pip_cmd, indent=1)
     else:
-        missing = [p for p, v in results["packages"].items() if not v]
-        err(f"缺少必需包: {', '.join(missing)}")
-        info("运行: pip install " + " ".join(missing), indent=1)
+        ok(f"全部 {len(_all_pkgs)} 个 Python 包已安装")
+
+    # ── Rust/Cargo 工具链 ──
+    results["rust"] = {}
+    _has_rustc = shutil.which("rustc")
+    _has_cargo = shutil.which("cargo")
+    results["rust"]["rustc"] = bool(_has_rustc)
+    results["rust"]["cargo"] = bool(_has_cargo)
+    if _has_rustc:
+        try:
+            _rv = subprocess.run(["rustc", "--version"], capture_output=True, text=True, timeout=3)
+            results["rust"]["version"] = _rv.stdout.strip()
+            ok(f"Rust 工具链已安装: {_rv.stdout.strip()}")
+        except Exception:
+            results["rust"]["version"] = "?"
+    else:
+        warn("Rust 未安装（tokenizers / onnxruntime 需要）")
+        info("安装: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh", indent=1)
+        if _has_cargo:
+            warn("cargo 存在但 rustc 缺失，工具链不完整", indent=1)
+
+    # ── 系统共享库 ──
+    results["system_libs"] = {}
+    _lib_checks = [
+        ("libssl", "openssl/libssl-dev"),
+        ("libffi", "libffi-dev"),
+        ("libomp", "libomp-dev（faiss 多线程需要）"),
+        ("libgomp", "libgomp1（ONNX 并行）"),
+    ]
+    for _lib_name, _hint in _lib_checks:
+        _found = False
+        try:
+            _r = subprocess.run(["ldconfig", "-p"], capture_output=True, text=True, timeout=3)
+            _found = _lib_name in _r.stdout
+        except Exception:
+            pass
+        if not _found:
+            try:
+                _found = bool(subprocess.run(["dpkg", "-l"], capture_output=True, text=True, timeout=3))
+            except Exception:
+                pass
+        results["system_libs"][_lib_name] = _found
+        if not _found:
+            warn(f"系统库 {_hint} 可能缺失")
+
+    # ── 目录存在性 ──
+    results["dirs"] = {}
+    for name, p in [("scripts", galaxy_scripts), ("config", galaxy_config), ("dist", DIST_DIR), ("var", VAR_DIR),
+                     ("engine", galaxy_engine), ("privileged", galaxy_privileged)]:
+        results["dirs"][name] = p.exists() if hasattr(p, 'exists') else os.path.isdir(str(p))
+        if not results["dirs"][name]:
+            warn(f"{name} 目录不存在: {p}", indent=1)
 
     # 目录存在性
     results["dirs"] = {}
@@ -1175,6 +1247,175 @@ def scan_breakers() -> Dict[str, Any]:
 
 
 # ════════════════════════════════════════════════════════════════
+# Phase 4.5: 数据库探活
+# ════════════════════════════════════════════════════════════════
+#
+# 验证 GalaxyOS 所有 SQLite 数据库在首次调用前就能正常创建和打开,
+# 防止运行时才暴露磁盘权限/父目录不可写等问题。
+
+# 所有数据库的定义（路径、表、使用方）
+_DATABASES = [
+    {
+        "name": "DAG Context",
+        "path": Path.home() / ".openclaw" / "dag_context.db",
+        "tables": ["dag_nodes", "rccam_nodes"],
+        "module": "dag_context_manager.DAGContextManager",
+        "critical": True,
+    },
+    {
+        "name": "Temporal Knowledge Graph",
+        "path": WORKSPACE / "temporal_kg.db",
+        "tables": ["entities", "temporal_edges", "communities"],
+        "module": "temporal_kg.TemporalKnowledgeGraph",
+        "critical": True,
+    },
+    {
+        "name": "Spatial Topology",
+        "path": WORKSPACE / "spatial_topology.db",
+        "tables": ["spatial_nodes", "spatial_edges", "navigation_records"],
+        "module": "spatial_topology.SpatialTopologyGraph",
+        "critical": False,
+    },
+    {
+        "name": "Cognitive Map",
+        "path": WORKSPACE / "cognitive_map.db",
+        "tables": ["spatial_anchors", "cognitive_queries", "transition_graph", "anchor_sequences"],
+        "module": "cognitive_map.CognitiveMap",
+        "critical": False,
+    },
+]
+
+
+def check_databases() -> Dict[str, Any]:
+    """检查所有 SQLite 数据库：创建、打开、表完整性。
+
+    为每个数据库：
+      1. 确保父目录可写（os.makedirs）
+      2. sqlite3.connect + PRAGMA quick_check
+      3. 验证期望的表已存在
+      4. 打印数据库大小和记录数（对已知表）
+    """
+    heading("🗄️  阶段 4.5：数据库探活")
+
+    results = {
+        "dbs": {},
+        "pass": 0,
+        "fail": 0,
+        "critical_fail": False,
+    }
+
+    for db in _DATABASES:
+        name = db["name"]
+        db_path = db["path"]
+        expected_tables = db["tables"]
+        critical = db["critical"]
+
+        entry = {
+            "path": str(db_path),
+            "exists": db_path.exists(),
+            "connect_ok": False,
+            "quick_check": False,
+            "tables_found": [],
+            "tables_missing": [],
+            "row_counts": {},
+            "size_kb": 0,
+        }
+
+        # 确保父目录可写
+        try:
+            parent = db_path.parent
+            os.makedirs(parent, exist_ok=True)
+            if not os.access(str(parent), os.W_OK):
+                entry["error"] = f"父目录不可写: {parent}"
+                results["dbs"][name] = entry
+                results["fail"] += 1
+                if critical:
+                    results["critical_fail"] = True
+                err(f"{name}: {entry['error']}")
+                continue
+        except Exception as e:
+            entry["error"] = f"父目录检查失败: {e}"
+            results["dbs"][name] = entry
+            results["fail"] += 1
+            if critical:
+                results["critical_fail"] = True
+            err(f"{name}: {entry['error']}")
+            continue
+
+        # 连接 + PRAGMA quick_check
+        try:
+            conn = sqlite3.connect(str(db_path))
+            cur = conn.cursor()
+
+            # quick_check
+            try:
+                cur.execute("PRAGMA quick_check")
+                qc = cur.fetchone()
+                if qc and qc[0] == "ok":
+                    entry["quick_check"] = True
+            except Exception:
+                pass
+
+            entry["connect_ok"] = True
+
+            # 查询表列表
+            cur.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
+            existing_tables = {row[0] for row in cur.fetchall()}
+            entry["tables_found"] = sorted(existing_tables)
+
+            missing = [t for t in expected_tables if t not in existing_tables]
+            entry["tables_missing"] = missing
+
+            # 对已知表统计行数
+            for tbl in expected_tables:
+                if tbl in existing_tables:
+                    try:
+                        cnt = cur.execute(f"SELECT COUNT(*) FROM [{tbl}]").fetchone()[0]
+                        entry["row_counts"][tbl] = cnt
+                    except Exception:
+                        pass
+
+            conn.close()
+        except Exception as e:
+            entry["error"] = f"连接/查询失败: {e}"
+            results["dbs"][name] = entry
+            results["fail"] += 1
+            if critical:
+                results["critical_fail"] = True
+            err(f"{name}: {entry['error']}")
+            continue
+
+        # 文件大小
+        if db_path.exists():
+            entry["size_kb"] = round(db_path.stat().st_size / 1024, 1)
+
+        # 输出
+        if missing:
+            # 缺少表但仍然 OK（lazy init 会在首次使用后补齐）
+            warn(f"{name} — 缺少表: {', '.join(missing)}（首次使用后自动创建）")
+            entry["ok"] = True
+        else:
+            rows = sum(entry["row_counts"].values())
+            size = entry["size_kb"]
+            ok(f"{name}  — {entry['size_kb']}KB, {' | '.join(f'{t}={entry["row_counts"].get(t,0)}行' for t in expected_tables if t in entry['row_counts']) or '空'}")
+            entry["ok"] = True
+
+        results["dbs"][name] = entry
+        results["pass"] += 1
+
+    # 总结
+    total = len(_DATABASES)
+    if results["critical_fail"]:
+        err(f"{results['fail']}/{total} 数据库失败（含关键数据库），请检查权限或磁盘空间")
+    elif results["fail"] > 0:
+        warn(f"{results['fail']}/{total} 数据库异常（非关键，不影响核心功能）")
+    else:
+        ok(f"{results['pass']}/{total} 数据库全部正常")
+
+    return results
+
+
+# ════════════════════════════════════════════════════════════════
 # Phase 5: 配置检查 & 向导
 # ════════════════════════════════════════════════════════════════
 
@@ -1613,6 +1854,159 @@ def test_kg() -> Dict[str, Any]:
 
 
 # ════════════════════════════════════════════════════════════════
+# Phase 6: MemGAS-SkVM 资产编排链路检测
+# ════════════════════════════════════════════════════════════════
+
+def _MEMGAS_SKVM_MODULES() -> set:
+    """返回 MemGAS-SkVM 融合架构涉及的 5 个模块名"""
+    return {"knowledge_asset", "capability_registry", "multi_granularity",
+            "skill_compiler", "entropy_router"}
+
+
+def test_memgas_skvm() -> Dict[str, Any]:
+    """MemGAS-SkVM 资产编排链路专项检测
+
+    测试：
+      1. KnowledgeAsset CRUD (AssetRegistry)
+      2. CapabilityProfile 26 维画像创建
+      3. EntropyRouter 通道权重计算
+      4. MultiGranularityExtractor 粒度提取
+      5. SkillCompiler 编译
+    """
+    heading("🧠 阶段 6：MemGAS-SkVM 资产编排链路")
+
+    results = {
+        "tests": {},
+        "pass": 0,
+        "fail": 0,
+        "memgas_skvm_modules_found": [],
+    }
+
+    # ── 扫描 MemGAS-SkVM 模块是否存在 ──
+    _memgas_module_set = _MEMGAS_SKVM_MODULES()
+    for mod_name in sorted(_memgas_module_set):
+        # 检查 engine 目录
+        fp = galaxy_engine / f"{mod_name}.py"
+        exists = fp.exists()
+        results["memgas_skvm_modules_found"].append({"module": mod_name, "file": str(fp), "exists": exists})
+        if exists:
+            info(f"📦 {mod_name}.py — 存在")
+        else:
+            warn(f"{mod_name}.py — 缺失（预期路径: {fp}）")
+
+    # ── Test 1: AssetRegistry CRUD ──
+    print()
+    info("🔬 1/5 KnowledgeAsset CRUD")
+    try:
+        sys.path.insert(0, str(galaxy_engine))
+        sys.path.insert(0, str(_GALAXYOS_REPO))
+        from knowledge_asset import KnowledgeAsset, AssetType, AssetRegistry, AssociationEdge
+        reg = AssetRegistry()
+        asset = KnowledgeAsset(
+            asset_id="wizard_test_001",
+            asset_type=AssetType.KNOWLEDGE,
+            raw_content="Test knowledge asset from install wizard",
+            tags=["test", "wizard"],
+            category="test",
+        )
+        reg.register(asset)
+        fetched = reg.get("wizard_test_001")
+        assert fetched is not None, "AssetRegistry.get() 返回 None"
+        assert fetched.asset_id == "wizard_test_001"
+        reg.delete("wizard_test_001")
+        assert reg.get("wizard_test_001") is None, "删除后 asset 应不可查询"
+        results["tests"]["asset_registry_crud"] = True
+        results["pass"] += 1
+        ok("AssetRegistry CRUD: 创建 → 读取 → 删除 通过")
+    except Exception as e:
+        results["tests"]["asset_registry_crud"] = False
+        results["fail"] += 1
+        err(f"AssetRegistry CRUD 失败: {e}")
+
+    # ── Test 2: CapabilityProfile ──
+    print()
+    info("🔬 2/5 CapabilityProfile 26 维原语")
+    try:
+        from capability_registry import CapabilityProfile, ProfileMatcher
+        profile = CapabilityProfile(
+            web_access="search",
+            tool_exec="plugin",
+            reasoning=2,
+            multimodal=False,
+            code_gen=True,
+            search=True,
+            memory=True,
+        )
+        # 验证至少有 web_access / reasoning / search 等核心字段
+        assert profile.web_access == "search"
+        assert profile.reasoning == 2
+        assert profile.search is True
+        results["tests"]["capability_profile"] = True
+        results["pass"] += 1
+        ok(f"CapabilityProfile 创建成功（web_access={profile.web_access}, reasoning={profile.reasoning}）")
+    except Exception as e:
+        results["tests"]["capability_profile"] = False
+        results["fail"] += 1
+        err(f"CapabilityProfile 失败: {e}")
+
+    # ── Test 3: EntropyRouter ──
+    print()
+    info("🔬 3/5 EntropyRouter 通道权重")
+    try:
+        from entropy_router import EntropyRouter
+        router = EntropyRouter()
+        strategy = router.compute_channel_entropy([])
+        assert strategy is not None
+        results["tests"]["entropy_router"] = True
+        results["pass"] += 1
+        ok(f"EntropyRouter 权重计算通过: {str(strategy)[:80]}")
+    except Exception as e:
+        results["tests"]["entropy_router"] = False
+        results["fail"] += 1
+        err(f"EntropyRouter 失败: {e}")
+
+    # ── Test 4: MultiGranularityExtractor（轻量） ──
+    print()
+    info("🔬 4/5 MultiGranularity 粒度提取")
+    try:
+        from multi_granularity import MultiGranularityExtractor
+        extractor = MultiGranularityExtractor()
+        result = extractor.extract("GalaxyOS is a cognitive enhancement engine. It provides memory, retrieval, and reasoning capabilities.")
+        assert result is not None
+        results["tests"]["multi_granularity"] = True
+        results["pass"] += 1
+        ok(f"MultiGranularity 提取通过")
+    except Exception as e:
+        results["tests"]["multi_granularity"] = False
+        results["fail"] += 1
+        err(f"MultiGranularity 失败: {e}")
+
+    # ── Test 5: SkillCompiler（轻量检测，不执行完整编译） ──
+    print()
+    info("🔬 5/5 SkillCompiler 可加载")
+    try:
+        from skill_compiler import SkillCompiler
+        compiler = SkillCompiler()
+        assert compiler is not None
+        results["tests"]["skill_compiler"] = True
+        results["pass"] += 1
+        ok(f"SkillCompiler 加载成功")
+    except Exception as e:
+        results["tests"]["skill_compiler"] = False
+        results["fail"] += 1
+        err(f"SkillCompiler 加载失败: {e}")
+
+    # ── 汇总 ──
+    print()
+    if results["fail"] == 0:
+        ok(f"MemGAS-SkVM 全部 {results['pass']}/5 检测通过")
+    else:
+        warn(f"{results['pass']}/{results['pass'] + results['fail']} 检测通过, {results['fail']} 失败")
+
+    return results
+
+
+# ════════════════════════════════════════════════════════════════
 # 修复功能
 # ════════════════════════════════════════════════════════════════
 
@@ -1721,6 +2115,7 @@ def generate_report(all_results: Dict[str, Any]) -> Dict[str, Any]:
     mod = all_results.get("modules", {})
     sync = all_results.get("sync", {})
     svc = all_results.get("services", {})
+    dbs = all_results.get("databases", {})
     brk = all_results.get("breakers", {})
     cfg = all_results.get("config", {})
 
@@ -1728,6 +2123,10 @@ def generate_report(all_results: Dict[str, Any]) -> Dict[str, Any]:
     slp_stages = sleep.get("stages", {})
     slp_ok = sum(1 for s in slp_stages.values() if s.get("ok", False))
     slp_total = len(slp_stages) if slp_stages else 0
+
+    memgas = all_results.get("memgas", {})
+    mg_ok = memgas.get("pass", 0)
+    mg_total = memgas.get("pass", 0) + memgas.get("fail", 0)
 
     report = {
         "generated": now,
@@ -1742,9 +2141,14 @@ def generate_report(all_results: Dict[str, Any]) -> Dict[str, Any]:
             "breakers": brk.get("total_breaks", 0),
             "worker_alive": svc.get("worker", {}).get("ping", False),
             "config_issues": len(cfg.get("issues", [])),
+            "databases_pass": dbs.get("pass", 0),
+            "databases_fail": dbs.get("fail", 0),
+            "databases_total": dbs.get("fail", 0) + dbs.get("pass", 0),
             "supervisor_ok": svc.get("supervisor", {}).get("status") == "running",
             "sleep_stages_ok": slp_ok,
             "sleep_stages_total": slp_total,
+            "memgas_ok": mg_ok,
+            "memgas_total": mg_total,
         },
         "detail": all_results,
     }
@@ -1765,6 +2169,10 @@ def generate_report(all_results: Dict[str, Any]) -> Dict[str, Any]:
         score -= 20
     if svc.get("supervisor", {}).get("status") != "running":
         score -= 15
+    if dbs.get("critical_fail", False):
+        score -= 20
+    if dbs.get("fail", 0) > 0:
+        score -= dbs["fail"] * 5
     report["summary"]["health_score"] = max(0, min(100, score))
 
     return report
@@ -1794,6 +2202,10 @@ def print_report(report: Dict[str, Any]):
     slp_total = s.get('sleep_stages_total', 0)
     if slp_total > 0:
         print(f"  {G}💤{N} 仿生睡眠: {slp_ok}/{slp_total} 阶段通过")
+    mg_ok = s.get('memgas_ok', 0)
+    mg_total = s.get('memgas_total', 0)
+    if mg_total > 0:
+        print(f"  {'✅' if mg_ok == mg_total else '⚠️ '} MemGAS-SkVM: {mg_ok}/{mg_total} 检测通过")
 
 
 # ════════════════════════════════════════════════════════════════
@@ -1865,6 +2277,152 @@ def _install_plugin_guide():
 
 
 # ════════════════════════════════════════════════════════════════
+# 依赖安装 & API Key 向导
+# ════════════════════════════════════════════════════════════════
+
+def _install_missing_deps():
+    """一键安装缺失的 pip 包 + 检测 Rust 工具链"""
+    heading("📦 一键安装缺失依赖")
+
+    req_file = _GALAXYOS_REPO / "requirements.txt"
+    if req_file.exists():
+        info("检测到 requirements.txt，优先使用")
+        _cmd = f"pip install -r {req_file}"
+        print(f"\n{Y}即将运行:{N} {_cmd}")
+        _confirm = input(f"{C}继续? (Y/n) {N}").strip().lower()
+        if _confirm in ("", "y", "yes"):
+            _r = subprocess.run(_cmd.split(), capture_output=False, text=True)
+            if _r.returncode == 0:
+                ok("requirements.txt 安装完成")
+            else:
+                err("部分依赖安装失败，请检查错误信息")
+        else:
+            info("跳过 requirements.txt")
+    else:
+        _all_pip = ["openai", "requests", "numpy", "scipy", "pyzmq", "aiohttp",
+                    "httpx", "faiss-cpu", "hnswlib", "Pillow", "orjson", "polars",
+                    "duckdb", "pandas", "jieba", "snownlp", "tiktoken",
+                    "scikit-learn", "onnxruntime", "torch", "psutil",
+                    "ncps", "tokenizers", "pydantic"]
+        _cmd = "pip install " + " ".join(_all_pip)
+        print(f"\n{Y}即将运行:{N} {_cmd}")
+        _confirm = input(f"{C}继续? (Y/n) {N}").strip().lower()
+        if _confirm in ("", "y", "yes"):
+            _r = subprocess.run(_cmd.split(), capture_output=False, text=True)
+            if _r.returncode == 0:
+                ok("所有 Python 依赖安装完成")
+            else:
+                err("部分依赖安装失败")
+
+    # Rust 工具链
+    print()
+    if not shutil.which("rustc"):
+        warn("Rust 未安装")
+        info("安装命令: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh", indent=1)
+        _r = input(f"{C}要自动安装 Rust 吗? (y/N) {N}").strip().lower()
+        if _r == "y":
+            info("正在下载安装 Rust...")
+            subprocess.run(
+                "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y",
+                shell=True, capture_output=False, text=True)
+            _rustup_home = os.path.expanduser("~/.cargo/bin")
+            if _rustup_home not in os.environ.get("PATH", ""):
+                os.environ["PATH"] = _rustup_home + ":" + os.environ.get("PATH", "")
+            if shutil.which("rustc"):
+                _rv = subprocess.run(["rustc", "--version"], capture_output=True, text=True).stdout.strip()
+                ok(f"Rust 安装成功: {_rv}")
+            else:
+                warn("Rust 安装后未生效，请重启终端后重试")
+    else:
+        _rv = subprocess.run(["rustc", "--version"], capture_output=True, text=True).stdout.strip()
+        ok(f"Rust 已安装: {_rv}")
+
+
+def _setup_api_key_wizard(api_key: str = None):
+    """引导设置 LLM API Key"""
+    heading("🔑 LLM API Key 设置向导")
+
+    config_fp = galaxy_config / "llm_config.json"
+    if not config_fp.exists():
+        example_fp = galaxy_config / "llm_config.example.json"
+        if example_fp.exists():
+            import shutil as _sh
+            _sh.copy2(str(example_fp), str(config_fp))
+            ok(f"从示例创建: {config_fp}")
+        else:
+            _default = {
+                "llm": {
+                    "provider": "openai",
+                    "model": "gpt-4o-mini",
+                    "base_url": "https://api.openai.com/v1",
+                    "api_key": "",
+                },
+                "embedding": {
+                    "provider": "openai",
+                    "model": "text-embedding-3-small",
+                    "dimensions": 128,
+                    "api_key": "",
+                }
+            }
+            with open(config_fp, "w") as _f:
+                json.dump(_default, _f, indent=2)
+            info(f"创建默认配置: {config_fp}")
+
+    try:
+        with open(config_fp) as _f:
+            _cfg = json.load(_f)
+    except Exception as _e:
+        err(f"读取配置失败: {_e}")
+        return
+
+    _llm = _cfg.get("llm", {})
+    _old_key = _llm.get("api_key", "")
+
+    print(f"\n当前设置:")
+    print(f"  Provider:  {_llm.get('provider', '?')}")
+    print(f"  Model:     {_llm.get('model', '?')}")
+    print(f"  Base URL:  {_llm.get('base_url', '?')}")
+    print(f"  API Key:   {'*' * 8 + _old_key[-4:] if _old_key else '未设置'}")
+
+    if api_key:
+        _new_key = api_key
+    else:
+        print()
+        _new_key = input(f"{C}请输入 API Key（留空跳过）: {N}").strip()
+
+    if not _new_key:
+        info("API Key 未修改")
+        return
+
+    _llm["api_key"] = _new_key
+    _emb = _cfg.get("embedding", {})
+    if isinstance(_emb, dict) and not _emb.get("api_key"):
+        _emb["api_key"] = _new_key
+        _cfg["embedding"] = _emb
+
+    _cfg["llm"] = _llm
+    try:
+        with open(config_fp, "w") as _f:
+            json.dump(_cfg, _f, indent=2)
+        ok(f"API Key 已保存到 {config_fp}")
+    except Exception as _e:
+        err(f"保存失败: {_e}")
+
+    print()
+    _test = input(f"{C}要测试 API Key 连通性吗? (Y/n) {N}").strip().lower()
+    if _test in ("", "y", "yes"):
+        try:
+            from openai import OpenAI
+            _client = OpenAI(api_key=_new_key, base_url=_llm.get("base_url", "https://api.openai.com/v1"))
+            _resp = _client.models.list()
+            _model_names = [m.id for m in _resp[:5]]
+            ok(f"API 连通成功，可用模型: {', '.join(_model_names)}")
+        except Exception as _e:
+            err(f"API 连接测试失败: {_e}")
+            warn("请检查 API Key 和 Base URL 是否正确")
+
+
+# ════════════════════════════════════════════════════════════════
 # 入口
 # ════════════════════════════════════════════════════════════════
 
@@ -1877,11 +2435,15 @@ def main():
     parser.add_argument("--fix", action="store_true", help="体检后自动修复")
     parser.add_argument("--sleep-test", action="store_true", help="仿生睡眠巩固引擎专项测试")
     parser.add_argument("--kg-test", action="store_true", help="知识图谱功能专项测试")
+    parser.add_argument("--memgas-test", action="store_true", help="MemGAS-SkVM 资产编排功能专项测试")
     parser.add_argument("--all", action="store_true", help="全量模式（体检 + 睡眠测试 + 修复）")
     parser.add_argument("--install-plugin", action="store_true", help="安装/检测 GalaxyOS OpenClaw 插件")
     parser.add_argument("--fix-torch", action="store_true", help="自动补齐 torch/torch_geometric/hnswlib 等 ML 栈（清华源 + PyG wheel + CPU 索引）")
     parser.add_argument("--python", default=None, help="显式指定 Python 解释器路径（覆盖自动检测，常用于生产环境/容器固定运行时）")
     parser.add_argument("--openclaw-home", default=None, help="显式指定 OpenClaw 用户配置目录（覆盖 OPENCLAW_HOME 环境变量，覆盖 dev/prod 自动检测）")
+    parser.add_argument("--install-deps", action="store_true", help="一键安装缺失依赖（pip 包 + 检测 Rust 工具链）")
+    parser.add_argument("--setup-api-key", action="store_true", help="引导设置 LLM API Key")
+    parser.add_argument("--api-key", default=None, help="直接传入 LLM API Key（配合 --setup-api-key 使用）")
     args = parser.parse_args()
 
     # ── 显式 OpenClaw home 时重新解析全局路径 ──
@@ -1896,6 +2458,14 @@ def main():
         VAR_DIR_LEGACY = CLAW_CORE_EXT / "var"
         WORKSPACE = Path(os.environ.get("OPENCLAW_WORKSPACE", str(_OPENCLAW_HOME / "workspace")))
         ok(f"OpenClaw home: {_OPENCLAW_HOME}")
+
+    if args.install_deps:
+        _install_missing_deps()
+        return
+
+    if args.setup_api_key:
+        _setup_api_key_wizard(api_key=args.api_key)
+        return
 
     if args.install_plugin:
         _install_plugin_guide()
@@ -1934,6 +2504,15 @@ def main():
             sys.stdout.flush()
         return
 
+    if args.memgas_test:
+        all_results["memgas"] = test_memgas_skvm()
+        report = generate_report(all_results)
+        if args.report:
+            sys.stdout = _real_stdout
+            sys.stdout.write(json.dumps(report, indent=2, ensure_ascii=False) + "\n")
+            sys.stdout.flush()
+        return
+
     # ── 执行各阶段 ──
     all_results["env"] = check_environment()
     # v2026.6.11+: 互动模式自动问是否 --fix-torch（CI/--check/--report 时不阻塞）
@@ -1948,6 +2527,7 @@ def main():
     all_results["modules"] = test_all_modules()
     all_results["sync"] = check_file_sync()
     all_results["services"] = check_services()
+    all_results["databases"] = check_databases()
     all_results["breakers"] = scan_breakers()
     all_results["config"] = check_and_wizard_config(interactive=not args.check and not args.report and not args.fix)
 
