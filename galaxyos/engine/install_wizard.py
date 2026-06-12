@@ -337,7 +337,7 @@ def check_environment() -> Dict[str, Any]:
 #   2) 缺失时打印**清华源 + PyG 官方 wheel index + CPU 索引**的安装命令
 #   3) 可选 --fix-torch 直接跑 pip install
 #
-# PyG 2.8 + torch 2.10 是 2026 年清华 PyPI 镜像里有的稳定组合。
+# PyG 2.8 + torch 2.12 是 2026 年清华 PyPI 镜像里有的稳定组合（torch 2.10 清华已下架）。
 
 # 清华 PyPI 镜像（包最全）
 _TSINGHUA_PYPI = "https://pypi.tuna.tsinghua.edu.cn/simple"
@@ -615,7 +615,7 @@ def check_torch_stack(interactive_offer: bool = True) -> Dict[str, Any]:
         return results
 
     warn(f"缺失 {len(missing)} 个核心包：{', '.join(missing)}")
-    pyg_index = _pyg_index_url(results["torch_version"] or "2.10.0")
+    pyg_index = _pyg_index_url(results["torch_version"] or "2.12.0")
 
     # 命令分两段：torch (PyTorch 官方 CPU 源) + 其它 (清华 PyPI + PyG index)
     has_torch = results["packages"]["torch"]["ok"]
@@ -696,7 +696,7 @@ def fix_torch_stack(
         ok("所有依赖已就绪，无需安装")
         return 0
 
-    pyg_index = _pyg_index_url(state["torch_version"] or "2.10.0")
+    pyg_index = _pyg_index_url(state["torch_version"] or "2.12.0")
     common_args = [
         py_str, "-m", "pip", "install", "--break-system-packages",
         "-i", _TSINGHUA_PYPI,
