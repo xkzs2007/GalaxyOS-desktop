@@ -1,0 +1,44 @@
+{
+  "version": "4.1.0",
+  "updated": "2026-04-11T14:09:34.087999",
+  "layers": {
+    "L1": {
+      "name": "Core",
+      "module": "core.prompt_integration",
+      "status": "active"
+    },
+    "L2": {
+      "name": "Memory",
+      "module": "memory_context.memory_manager",
+      "status": "active"
+    },
+    "L3": {
+      "name": "Orchestration",
+      "module": "orchestration.task_engine",
+      "status": "active"
+    },
+    "L4": {
+      "name": "Execution",
+      "module": "execution.skill_adapter_gateway",
+      "status": "active"
+    },
+    "L5": {
+      "name": "Governance",
+      "module": "governance.security.auth_integration",
+      "status": "active"
+    },
+    "L6": {
+      "name": "Infrastructure",
+      "module": "infrastructure.integration",
+      "status": "active"
+    }
+  },
+  "features": {
+    "avx512": true,
+    "gpu": true,
+    "quantization": true,
+    "ann": true,
+    "memory_integration": true,
+    "skill_registry": true
+  }
+}

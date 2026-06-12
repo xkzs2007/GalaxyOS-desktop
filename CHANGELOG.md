@@ -1,5 +1,29 @@
 # Changelog
 
+## [8.0.0] — 2026-06-12
+
+### Added
+- **MemGAS-SkVM 融合架构 (Layer 13)** — KnowledgeAsset + AssetRegistry + CapabilityRegistry
+  + SkillCompiler + MultiGranularity + EntropyRouter 全套资产编排模块
+- **AutoPromptOptimizer (APO)** — ProTeGi 算法实现，基于 Automatic Prompt
+  Optimization with "Gradient Descent" and Beam Search (arXiv 2305.03495)
+- **PipelineEngine + PipelineRegistry** — 自动化依赖推导/拓扑排序/并行调度
+- **ImpactTracker** — 模块效果追踪器，命中率/有效性统计
+- **MetaOptimizer** — 从 ImpactTracker 读取指标自动调参
+- **ValueGate** — 注入价值评估器，检测 LLM 回复中 injection 利用率
+- **七情六欲 skill 集成** — qiqing-liuyu 表达风格技能纳入 GalaxyOS 生态
+- **安全加固** — `llm_config.json` 脱敏 + `.gitignore` 强化
+
+### Changed
+- **claw_worker.py context_assemble** — 全论文模块编排 → PipelineEngine 统一调度
+- **xiaoyi_claw_api.py** — 启动时初始化 MemGAS-SkVM + APO 注入 + 后台巩固线程
+- **self_evolution_engine.py** — 注入 APO PromptOptimizer 懒加载
+- **unified_coordinator.py** — 注册 Layer 13 全部 6 个新模块
+- **install_wizard.py** — 依赖扫描从手写精简表改为 requirements.txt 全量扫描
+
+### Fixed
+- **install_wizard PyG index URL** — torch>2.11 回落到 torch-2.10.0+cpu.html
+
 ## [7.3.2] — 2026-06-11
 
 ### Added

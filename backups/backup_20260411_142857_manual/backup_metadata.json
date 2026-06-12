@@ -1,0 +1,13 @@
+{
+  "timestamp": "2026-04-11T14:28:57.890051",
+  "name": "manual",
+  "version": "4.1.0",
+  "files": [
+    "inventory/fusion_registry.json",
+    "inventory/skill_registry.json",
+    "config/performance_config.json",
+    "config/system_config.json",
+    "config/monitor_config.json",
+    "config/priority_config.json"
+  ]
+}

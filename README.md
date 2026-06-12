@@ -1,7 +1,7 @@
 # 🌌 GalaxyOS — 认知增强引擎
 
 > OpenClaw 的开源认知增强引擎，为 AI Assistant 提供记忆、检索、推理、验证、自进化等全套认知能力
-> 版本: v7.3.2 · GAT 双路径稀疏化 + HNSW 端到端 + 5.8GB 容器适配 + OpenClaw 路径解析
+> 版本: v8.0.0 · MemGAS-SkVM 融合架构 + APO 自优化 + PipelineEngine 重构 + 七情六欲集成
 
 ## 总览
 
@@ -236,7 +236,8 @@ GALAXYOS_REPO=. python3 -m galaxyos.engine.unified_entry recall --query "查询"
 
 | 版本 | 文件 | 说明 |
 |------|------|------|
-| **v7.3.2 (最新)** | — | **GAT 双路径稀疏化 + HNSW 端到端 + 5.8GB 容器适配 + OpenClaw 路径解析** |
+| **v8.0.0 (最新)** | — | **MemGAS-SkVM 融合架构 + APO 自优化 + PipelineEngine 重构 + 七情六欲集成** |
+| **v7.3.2** | — | **GAT 双路径稀疏化 + HNSW 端到端 + 5.8GB 容器适配 + OpenClaw 路径解析** |
 | **v7.3** | — | **全论文模块接入ContextEngine决策链 + session_id全面隔离 + Gateway防塞爆** |
 | **v7.2** | — | **GalaxyPool 统一管理 + 负载感知调度 + batch RPC + Rust PyO3 + 神经网络全量修复 + CLI-Anything** |
 | **v7.1** | — | **RLM 递归环境 + SKILL0 技能课程 + MemoryOS 记忆操作系统 + 10+1 论文集成 + GalaxyOS 插件** |
@@ -257,6 +258,16 @@ GALAXYOS_REPO=. python3 -m galaxyos.engine.unified_entry recall --query "查询"
 | v3.0.0 | `docs/xiaoyi-claw-core-architecture-v3.0.0.md` | 16 层架构、R-CCAM 认知循环 |
 
 **完整架构文档（含 17 层全景图、470+ 功能列表、更新日志）：** 👉 [📖 查看 Skills 文档栏](https://cnb.cool/llm-memory-integrat/GalaxyOS?tabValue=SKILLS-ov-file)
+
+### v8.0.0 新特性 (MemGAS-SkVM 融合架构 + APO 自优化 + PipelineEngine 重构 + 七情六欲集成)
+
+1. **MemGAS-SkVM 融合架构** — KnowledgeAsset + AssetRegistry + CapabilityRegistry + SkillCompiler + MultiGranularity + EntropyRouter
+2. **AutoPromptOptimizer (APO)** — ProTeGi 算法，基于 Automatic Prompt Optimization with "Gradient Descent" and Beam Search (arXiv 2305.03495)
+3. **PipelineEngine + PipelineRegistry** — 替代手工 try/except，自动化依赖推导/拓扑排序/并行调度
+4. **ImpactTracker + MetaOptimizer** — 模块效果追踪 + 自动调参闭环
+5. **ValueGate** — LLM 回复价值评估，检测 injection 利用率
+6. **七情六欲技能集成** — qiqing-liuyu 表达风格纳入 GalaxyOS 生态
+7. **安全加固** — `llm_config.json` 脱敏 + `.gitignore` 强化
 
 ### v7.3.2 新特性 (5.8GB 容器适配 + GAT/HNSW 性能突破)
 

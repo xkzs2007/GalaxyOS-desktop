@@ -1,0 +1,40 @@
+{
+  "version": "4.1.0",
+  "priorities": {
+    "memory": {
+      "primary": "llm-memory-integration",
+      "fallback": [
+        "memory-tencentdb",
+        "vector-memory-hack",
+        "git-notes-memory"
+      ],
+      "description": "记忆检索优先使用向量搜索"
+    },
+    "search": {
+      "primary": "llm-memory-integration",
+      "fallback": [
+        "vector-memory-hack",
+        "multi-search-engine"
+      ],
+      "description": "搜索优先使用混合检索"
+    },
+    "document": {
+      "primary": "docx",
+      "fallback": [
+        "pdf",
+        "excel-analysis"
+      ],
+      "description": "文档处理优先使用专用技能"
+    },
+    "push": {
+      "primary": "today-task",
+      "fallback": [],
+      "description": "推送任务使用 today-task"
+    }
+  },
+  "routing": {
+    "auto_select": true,
+    "consider_performance": true,
+    "consider_availability": true
+  }
+}

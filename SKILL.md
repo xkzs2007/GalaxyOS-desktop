@@ -1,21 +1,21 @@
 ---
 name: galaxyos
-description: GalaxyOS v7.3 — 全论文模块接入ContextEngine决策链 + session_id全面隔离 + Gateway防塞爆
+description: GalaxyOS v8.0 — MemGAS-SkVM 融合架构 + APO 自优化 + PipelineEngine 重构 + 七情六欲集成
 author: xkzs2007
 license: MIT-0
 tags: [architecture, memory, llm, rccam, dag, kora, knowledge-graph, ncps, neural-synapse-network, context-engine, galaxy-pool, load-aware-scheduling, batch-rpc, cli-anything, rust-pyo3, vector-api]
 ---
 
-# GalaxyOS v7.3
+# GalaxyOS v8.0
 
 > **定位**: OpenClaw 的核心底层能力引擎
-> **更新时间**: 2026-06-10
+> **更新时间**: 2026-06-12
 > **架构**: 统一包 `galaxyos/` + GalaxyPool 统一管理 + OpenClaw 插件 `extensions/galaxyos/`
-> **总能力项**: 470+ 项
+> **总能力项**: 490+ 项
 > **模型**: ONNX bge-small-zh-v1.5 (512d) + LTC 液态神经网络 + CfC 序列预测 + Synapse 预训练 + 4 GNN 模型
 > **IPC**: UDS RPC + ZMQ PUB/SUB + mmap 大 payload 路由 + batch RPC + R-CCAM 流式进度
 > **弹性**: GalaxyPool 统一管理 6 类组件 + WorkerPool 负载感知调度 + CircuitBreaker 断路器
-> **v7.3 新特性** ✅: 全论文模块接入ContextEngine决策链 | session_id全链路隔离 | Gateway防塞爆 | IPC路径统一 | RLM递归压缩 | BlobArena无损还原 | galaxyos_native shim | native国内镜像 | openclaw.plugin.json memorySlots
+> **v8.0 新特性** ✅: MemGAS-SkVM 融合架构(Layer 13) | APO 自优化 | PipelineEngine 重构 | 七情六欲集成 | 安全加固
 
 ---
 
@@ -33,13 +33,13 @@ GalaxyOS是 OpenClaw 的**核心底层能力引擎**，提供：
 
 ---
 
-| **文档版本**: v7.3 | 2026-06-10 | 全论文模块接入ContextEngine决策链 + session_id全面隔离 + Gateway防塞爆 |
-| **上次版本**: v7.2 | 2026-06-10 | GalaxyPool统一管理 + 负载感知调度 + 通信增强 + 神经网络修复 + 路径清零 |
+| **文档版本**: v8.0 | 2026-06-12 | MemGAS-SkVM 融合架构 + APO 自优化 + PipelineEngine 重构 + 七情六欲集成 |
+| **上次版本**: v7.3 | 2026-06-10 | 全论文模块接入ContextEngine决策链 + session_id全面隔离 + Gateway防塞爆 |
 
 ---
 
 *GalaxyOS — OpenClaw 的核心底层能力引擎*
-*文档版本: v7.3 | 最后更新: 2026-06-10 | 全论文决策链 + session_id隔离 + Gateway防塞爆*
+*文档版本: v8.0 | 最后更新: 2026-06-12 | MemGAS-SkVM 融合架构 + APO 自优化 + PipelineEngine 重构*
 
 ---
 
@@ -53,7 +53,7 @@ GalaxyOS是 OpenClaw 的**核心底层能力引擎**，提供：
                                     │
                                     ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                      GalaxyOS v7.3 — 全论文模块接入ContextEngine决策链 + session_id全面隔离 + Gateway防塞爆        │
+│                      GalaxyOS v8.0 — MemGAS-SkVM 融合架构 + APO 自优化 + PipelineEngine 重构        │
 │                         (核心底层能力引擎 · 17层)                            │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
@@ -662,6 +662,18 @@ claw.rccam_cycle("用户输入", max_cycles=1)
 | 思考内容截断 | **500→2000** | 2026-06-02 |
 | DAG 上下文排序 | **时间衰减权重重排序** | 2026-06-02 |
 | install_wizard.py | **6 阶段全自动自检 + `--kg-test` 专项测试** | 2026-06-02 |
+
+### v8.0 (2026-06-12) — MemGAS-SkVM 融合架构 + APO 自优化 + PipelineEngine 重构 + 七情六欲集成
+
+- **MemGAS-SkVM 融合架构 (Layer 13)** — KnowledgeAsset + AssetRegistry + CapabilityRegistry + SkillCompiler + MultiGranularity + EntropyRouter
+- **AutoPromptOptimizer (APO)** — ProTeGi 算法 (arXiv 2305.03495)
+- **PipelineEngine + PipelineRegistry** — 自动化依赖推导/拓扑排序/并行调度
+- **ImpactTracker + MetaOptimizer** — 模块效果追踪 + 自动调参
+- **ValueGate** — LLM 回复价值评估，检测 injection 利用率
+- **七情六欲 skill 集成** — qiqing-liuyu 表达风格技能纳入 GalaxyOS 生态
+- **安全加固** — llm_config.json 脱敏 + .gitignore 强化
+- **install_wizard PyG 索引修复** — torch>2.11 回落到 torch-2.10.0+cpu.html
+- 📊 **统计数据更新**：总能力项 490+，新增 v8.0 8 项指标
 
 ### v7.3 (2026-06-10) — 全论文模块接入ContextEngine决策链 + session_id全面隔离 + Gateway防塞爆
 

@@ -1,0 +1,595 @@
+{
+  "version": "4.1.0",
+  "updated": "2026-04-11T14:15:14.299342",
+  "summary": {
+    "total_skills": 49,
+    "total_plugins": 2,
+    "categories": {
+      "memory": 6,
+      "search": 5,
+      "document": 5,
+      "ai": 2,
+      "utility": 30,
+      "integration": 1
+    }
+  },
+  "skills": {
+    "brainstorming": {
+      "id": "brainstorming",
+      "path": "/home/sandbox/.openclaw/workspace/skills/brainstorming",
+      "type": "skill",
+      "features": [
+        "scripts"
+      ]
+    },
+    "skillhub-preference": {
+      "id": "skillhub-preference",
+      "path": "/home/sandbox/.openclaw/workspace/skills/skillhub-preference",
+      "type": "skill",
+      "features": []
+    },
+    "axton-obsidian-visual-skills-excalidraw-diagram": {
+      "id": "axton-obsidian-visual-skills-excalidraw-diagram",
+      "path": "/home/sandbox/.openclaw/workspace/skills/axton-obsidian-visual-skills-excalidraw-diagram",
+      "type": "skill",
+      "features": []
+    },
+    "davila7-claude-code-templates-ship-learn-next": {
+      "id": "davila7-claude-code-templates-ship-learn-next",
+      "path": "/home/sandbox/.openclaw/workspace/skills/davila7-claude-code-templates-ship-learn-next",
+      "type": "skill",
+      "features": []
+    },
+    "ima-skill": {
+      "id": "ima-skill",
+      "path": "/home/sandbox/.openclaw/workspace/skills/ima-skill",
+      "type": "skill",
+      "features": []
+    },
+    "vector-memory-hack": {
+      "id": "vector-memory-hack",
+      "path": "/home/sandbox/.openclaw/workspace/skills/vector-memory-hack",
+      "type": "skill",
+      "features": [
+        "tfidf",
+        "semantic_search",
+        "zero_dependency",
+        "fast_search"
+      ]
+    },
+    "xiaoyi-claw-omega-final": {
+      "id": "xiaoyi-claw-omega-final",
+      "path": "/home/sandbox/.openclaw/workspace/skills/xiaoyi-claw-omega-final",
+      "type": "skill",
+      "features": []
+    },
+    "pptx": {
+      "id": "pptx",
+      "path": "/home/sandbox/.openclaw/workspace/skills/pptx",
+      "type": "skill",
+      "features": [
+        "scripts"
+      ]
+    },
+    "xiaoyi-image-search": {
+      "id": "xiaoyi-image-search",
+      "path": "/home/sandbox/.openclaw/workspace/skills/xiaoyi-image-search",
+      "type": "skill",
+      "features": [
+        "scripts"
+      ]
+    },
+    "weather": {
+      "id": "weather",
+      "path": "/home/sandbox/.openclaw/workspace/skills/weather",
+      "type": "skill",
+      "features": []
+    },
+    "Humanizer-zh-main": {
+      "id": "Humanizer-zh-main",
+      "path": "/home/sandbox/.openclaw/workspace/skills/Humanizer-zh-main",
+      "type": "skill",
+      "features": []
+    },
+    "proactive-tasks": {
+      "id": "proactive-tasks",
+      "path": "/home/sandbox/.openclaw/workspace/skills/proactive-tasks",
+      "type": "skill",
+      "features": [
+        "scripts"
+      ]
+    },
+    "deep-search-and-insight-synthesize": {
+      "id": "deep-search-and-insight-synthesize",
+      "path": "/home/sandbox/.openclaw/workspace/skills/deep-search-and-insight-synthesize",
+      "type": "skill",
+      "features": []
+    },
+    "nano-pdf": {
+      "id": "nano-pdf",
+      "path": "/home/sandbox/.openclaw/workspace/skills/nano-pdf",
+      "type": "skill",
+      "features": []
+    },
+    "xiaoyi-image-understanding": {
+      "id": "xiaoyi-image-understanding",
+      "path": "/home/sandbox/.openclaw/workspace/skills/xiaoyi-image-understanding",
+      "type": "skill",
+      "features": [
+        "scripts"
+      ]
+    },
+    "fitness-coach": {
+      "id": "fitness-coach",
+      "path": "/home/sandbox/.openclaw/workspace/skills/fitness-coach",
+      "type": "skill",
+      "features": [
+        "scripts"
+      ]
+    },
+    "webapp-testing": {
+      "id": "webapp-testing",
+      "path": "/home/sandbox/.openclaw/workspace/skills/webapp-testing",
+      "type": "skill",
+      "features": [
+        "scripts"
+      ]
+    },
+    "xiaoyi-report": {
+      "id": "xiaoyi-report",
+      "path": "/home/sandbox/.openclaw/workspace/skills/xiaoyi-report",
+      "type": "skill",
+      "features": [
+        "scripts"
+      ]
+    },
+    "llm-memory-integration": {
+      "id": "llm-memory-integration",
+      "path": "/home/sandbox/.openclaw/workspace/skills/llm-memory-integration",
+      "type": "skill",
+      "features": [
+        "avx512",
+        "gpu",
+        "ann",
+        "quantization",
+        "embedding",
+        "vector_search",
+        "hybrid_search",
+        "smart_router",
+        "rrf_fusion",
+        "progressive_enable"
+      ]
+    },
+    "natural-language-planner": {
+      "id": "natural-language-planner",
+      "path": "/home/sandbox/.openclaw/workspace/skills/natural-language-planner",
+      "type": "skill",
+      "features": [
+        "scripts"
+      ]
+    },
+    "excel-analysis": {
+      "id": "excel-analysis",
+      "path": "/home/sandbox/.openclaw/workspace/skills/excel-analysis",
+      "type": "skill",
+      "features": []
+    },
+    "ontology": {
+      "id": "ontology",
+      "path": "/home/sandbox/.openclaw/workspace/skills/ontology",
+      "type": "skill",
+      "features": [
+        "scripts"
+      ]
+    },
+    "find-skills": {
+      "id": "find-skills",
+      "path": "/home/sandbox/.openclaw/workspace/skills/find-skills",
+      "type": "skill",
+      "features": [
+        "scripts"
+      ]
+    },
+    "calcom-cal.com-web-design-guidelines-1.0.2": {
+      "id": "calcom-cal.com-web-design-guidelines-1.0.2",
+      "path": "/home/sandbox/.openclaw/workspace/skills/calcom-cal.com-web-design-guidelines-1.0.2",
+      "type": "skill",
+      "features": []
+    },
+    "brainhole-factory": {
+      "id": "brainhole-factory",
+      "path": "/home/sandbox/.openclaw/workspace/skills/brainhole-factory",
+      "type": "skill",
+      "features": []
+    },
+    "react-best-practices": {
+      "id": "react-best-practices",
+      "path": "/home/sandbox/.openclaw/workspace/skills/react-best-practices",
+      "type": "skill",
+      "features": []
+    },
+    "docx": {
+      "id": "docx",
+      "path": "/home/sandbox/.openclaw/workspace/skills/docx",
+      "type": "skill",
+      "features": [
+        "scripts"
+      ]
+    },
+    "openclaw-skills-agent-builder-1.0.3": {
+      "id": "openclaw-skills-agent-builder-1.0.3",
+      "path": "/home/sandbox/.openclaw/workspace/skills/openclaw-skills-agent-builder-1.0.3",
+      "type": "skill",
+      "features": []
+    },
+    "today-task": {
+      "id": "today-task",
+      "path": "/home/sandbox/.openclaw/workspace/skills/today-task",
+      "type": "skill",
+      "features": [
+        "push_to_hiboard",
+        "task_notification",
+        "markdown_support"
+      ]
+    },
+    "git-notes-memory": {
+      "id": "git-notes-memory",
+      "path": "/home/sandbox/.openclaw/workspace/skills/git-notes-memory",
+      "type": "skill",
+      "features": [
+        "git_notes",
+        "knowledge_graph",
+        "branch_aware"
+      ]
+    },
+    "markitdown": {
+      "id": "markitdown",
+      "path": "/home/sandbox/.openclaw/workspace/skills/markitdown",
+      "type": "skill",
+      "features": [
+        "scripts"
+      ]
+    },
+    "hz-proactive-agent": {
+      "id": "hz-proactive-agent",
+      "path": "/home/sandbox/.openclaw/workspace/skills/hz-proactive-agent",
+      "type": "skill",
+      "features": [
+        "scripts"
+      ]
+    },
+    "superdesign": {
+      "id": "superdesign",
+      "path": "/home/sandbox/.openclaw/workspace/skills/superdesign",
+      "type": "skill",
+      "features": []
+    },
+    "self-improving-agent": {
+      "id": "self-improving-agent",
+      "path": "/home/sandbox/.openclaw/workspace/skills/self-improving-agent",
+      "type": "skill",
+      "features": [
+        "scripts"
+      ]
+    },
+    "xiaoyi-health": {
+      "id": "xiaoyi-health",
+      "path": "/home/sandbox/.openclaw/workspace/skills/xiaoyi-health",
+      "type": "skill",
+      "features": []
+    },
+    "imap-smtp-email": {
+      "id": "imap-smtp-email",
+      "path": "/home/sandbox/.openclaw/workspace/skills/imap-smtp-email",
+      "type": "skill",
+      "features": [
+        "scripts"
+      ]
+    },
+    "skill-creator": {
+      "id": "skill-creator",
+      "path": "/home/sandbox/.openclaw/workspace/skills/skill-creator",
+      "type": "skill",
+      "features": [
+        "scripts"
+      ]
+    },
+    "xiaoyi-doc-convert": {
+      "id": "xiaoyi-doc-convert",
+      "path": "/home/sandbox/.openclaw/workspace/skills/xiaoyi-doc-convert",
+      "type": "skill",
+      "features": [
+        "scripts"
+      ]
+    },
+    "seedream-image_gen": {
+      "id": "seedream-image_gen",
+      "path": "/home/sandbox/.openclaw/workspace/skills/seedream-image_gen",
+      "type": "skill",
+      "features": [
+        "scripts"
+      ]
+    },
+    "best-minds": {
+      "id": "best-minds",
+      "path": "/home/sandbox/.openclaw/workspace/skills/best-minds",
+      "type": "skill",
+      "features": []
+    },
+    "2nd-brain": {
+      "id": "2nd-brain",
+      "path": "/home/sandbox/.openclaw/workspace/skills/2nd-brain",
+      "type": "skill",
+      "features": []
+    },
+    "xiao-gui-agent": {
+      "id": "xiao-gui-agent",
+      "path": "/home/sandbox/.openclaw/workspace/skills/xiao-gui-agent",
+      "type": "skill",
+      "features": []
+    },
+    "openclaw-skills-soulcraft": {
+      "id": "openclaw-skills-soulcraft",
+      "path": "/home/sandbox/.openclaw/workspace/skills/openclaw-skills-soulcraft",
+      "type": "skill",
+      "features": []
+    },
+    "multi-search-engine": {
+      "id": "multi-search-engine",
+      "path": "/home/sandbox/.openclaw/workspace/skills/multi-search-engine",
+      "type": "skill",
+      "features": []
+    },
+    "autonomous-tasks": {
+      "id": "autonomous-tasks",
+      "path": "/home/sandbox/.openclaw/workspace/skills/autonomous-tasks",
+      "type": "skill",
+      "features": []
+    },
+    "pdf": {
+      "id": "pdf",
+      "path": "/home/sandbox/.openclaw/workspace/skills/pdf",
+      "type": "skill",
+      "features": [
+        "scripts"
+      ]
+    },
+    "huawei-drive": {
+      "id": "huawei-drive",
+      "path": "/home/sandbox/.openclaw/workspace/skills/huawei-drive",
+      "type": "skill",
+      "features": [
+        "scripts"
+      ]
+    },
+    "xiaoyi-web-search": {
+      "id": "xiaoyi-web-search",
+      "path": "/home/sandbox/.openclaw/workspace/skills/xiaoyi-web-search",
+      "type": "skill",
+      "features": [
+        "scripts"
+      ]
+    },
+    "xiaoyi-file-upload": {
+      "id": "xiaoyi-file-upload",
+      "path": "/home/sandbox/.openclaw/workspace/skills/xiaoyi-file-upload",
+      "type": "skill",
+      "features": []
+    }
+  },
+  "plugins": {
+    "memory-tencentdb": {
+      "id": "memory-tencentdb",
+      "path": "/home/sandbox/.openclaw/extensions/memory-tencentdb",
+      "type": "plugin",
+      "name": "Memory (TencentDB)",
+      "description": "Four-layer memory system — auto-captures, structures, and profiles conversational knowledge",
+      "features": [
+        "capture",
+        "extraction",
+        "persona",
+        "pipeline",
+        "recall",
+        "embedding",
+        "report"
+      ]
+    },
+    "xiaoyi-channel": {
+      "id": "xiaoyi-channel",
+      "path": "/home/sandbox/.openclaw/extensions/xiaoyi-channel",
+      "type": "plugin",
+      "name": "xiaoyi-channel",
+      "description": "",
+      "features": []
+    }
+  },
+  "categories": {
+    "memory": [
+      "brainstorming",
+      "vector-memory-hack",
+      "llm-memory-integration",
+      "brainhole-factory",
+      "git-notes-memory",
+      "2nd-brain"
+    ],
+    "search": [
+      "xiaoyi-image-search",
+      "deep-search-and-insight-synthesize",
+      "find-skills",
+      "multi-search-engine",
+      "xiaoyi-web-search"
+    ],
+    "document": [
+      "nano-pdf",
+      "excel-analysis",
+      "docx",
+      "xiaoyi-doc-convert",
+      "pdf"
+    ],
+    "ai": [
+      "Humanizer-zh-main",
+      "imap-smtp-email"
+    ],
+    "utility": [
+      "skillhub-preference",
+      "axton-obsidian-visual-skills-excalidraw-diagram",
+      "davila7-claude-code-templates-ship-learn-next",
+      "ima-skill",
+      "xiaoyi-claw-omega-final",
+      "pptx",
+      "weather",
+      "proactive-tasks",
+      "xiaoyi-image-understanding",
+      "fitness-coach",
+      "webapp-testing",
+      "xiaoyi-report",
+      "natural-language-planner",
+      "ontology",
+      "calcom-cal.com-web-design-guidelines-1.0.2",
+      "react-best-practices",
+      "openclaw-skills-agent-builder-1.0.3",
+      "today-task",
+      "markitdown",
+      "hz-proactive-agent",
+      "superdesign",
+      "self-improving-agent",
+      "xiaoyi-health",
+      "skill-creator",
+      "seedream-image_gen",
+      "best-minds",
+      "xiao-gui-agent",
+      "openclaw-skills-soulcraft",
+      "autonomous-tasks",
+      "xiaoyi-file-upload"
+    ],
+    "integration": [
+      "huawei-drive"
+    ]
+  },
+  "layer_mapping": {
+    "L1_Core": {
+      "skills": [
+        "xiaoyi-claw-omega-final"
+      ],
+      "description": "核心认知、身份、规则"
+    },
+    "L2_Memory": {
+      "skills": [
+        "llm-memory-integration",
+        "git-notes-memory",
+        "vector-memory-hack"
+      ],
+      "plugins": [
+        "memory-tencentdb"
+      ],
+      "description": "记忆存储、检索、上下文"
+    },
+    "L3_Orchestration": {
+      "skills": [
+        "autonomous-tasks",
+        "hz-proactive-agent"
+      ],
+      "description": "任务路由、工作流、调度"
+    },
+    "L4_Execution": {
+      "skills": [
+        "brainstorming",
+        "skillhub-preference",
+        "axton-obsidian-visual-skills-excalidraw-diagram",
+        "davila7-claude-code-templates-ship-learn-next",
+        "ima-skill",
+        "vector-memory-hack",
+        "xiaoyi-claw-omega-final",
+        "pptx",
+        "xiaoyi-image-search",
+        "weather",
+        "Humanizer-zh-main",
+        "proactive-tasks",
+        "deep-search-and-insight-synthesize",
+        "nano-pdf",
+        "xiaoyi-image-understanding",
+        "fitness-coach",
+        "webapp-testing",
+        "xiaoyi-report",
+        "llm-memory-integration",
+        "natural-language-planner",
+        "excel-analysis",
+        "ontology",
+        "find-skills",
+        "calcom-cal.com-web-design-guidelines-1.0.2",
+        "brainhole-factory",
+        "react-best-practices",
+        "docx",
+        "openclaw-skills-agent-builder-1.0.3",
+        "today-task",
+        "git-notes-memory",
+        "markitdown",
+        "hz-proactive-agent",
+        "superdesign",
+        "self-improving-agent",
+        "xiaoyi-health",
+        "imap-smtp-email",
+        "skill-creator",
+        "xiaoyi-doc-convert",
+        "seedream-image_gen",
+        "best-minds",
+        "2nd-brain",
+        "xiao-gui-agent",
+        "openclaw-skills-soulcraft",
+        "multi-search-engine",
+        "autonomous-tasks",
+        "pdf",
+        "huawei-drive",
+        "xiaoyi-web-search",
+        "xiaoyi-file-upload"
+      ],
+      "description": "技能执行、结果验证"
+    },
+    "L5_Governance": {
+      "skills": [
+        "skill-scope",
+        "execution-validator-skill"
+      ],
+      "description": "安全验证、权限管理、审计"
+    },
+    "L6_Infrastructure": {
+      "skills": [
+        "find-skills",
+        "skill-creator"
+      ],
+      "plugins": [
+        "xiaoyi-channel"
+      ],
+      "description": "初始化、注册、通信"
+    }
+  },
+  "plugin_integration": {
+    "memory-tencentdb": {
+      "layer": "L2",
+      "features": [
+        "auto_capture",
+        "auto_recall",
+        "embedding",
+        "pipeline",
+        "persona_update"
+      ],
+      "config": {
+        "dimensions": 4096,
+        "model": "Qwen3-Embedding-8B",
+        "provider": "gitee-ai"
+      }
+    },
+    "xiaoyi-channel": {
+      "layer": "L6",
+      "features": [
+        "messaging",
+        "file_transfer",
+        "notifications",
+        "xiaoyi_integration"
+      ],
+      "config": {
+        "ws_url": "wss://celia-claw-drcn.ai.dbankcloud.cn/openclaw/v1/xiaoyi/ws/link"
+      }
+    }
+  }
+}

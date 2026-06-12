@@ -1,0 +1,35 @@
+{
+  "version": "4.1.0",
+  "monitoring": {
+    "enabled": true,
+    "health_check_interval_seconds": 300,
+    "metrics": {
+      "response_time": true,
+      "memory_usage": true,
+      "cache_hit_rate": true,
+      "error_rate": true
+    },
+    "alerts": {
+      "response_time_threshold_ms": 5000,
+      "memory_usage_threshold_percent": 80,
+      "error_rate_threshold_percent": 5
+    }
+  },
+  "logging": {
+    "level": "INFO",
+    "rotation": {
+      "enabled": true,
+      "max_size_mb": 10,
+      "backup_count": 5
+    },
+    "audit": {
+      "enabled": true,
+      "sensitive_fields": [
+        "api_key",
+        "auth_code",
+        "password",
+        "token"
+      ]
+    }
+  }
+}
