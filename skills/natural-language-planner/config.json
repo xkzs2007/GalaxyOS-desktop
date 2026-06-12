@@ -1,0 +1,16 @@
+{
+  "version": "1.0.0",
+  "description": "自然语言规划器配置",
+  "planner": {
+    "storage_path": "~/.openclaw/workspace/.nlplanner",
+    "auto_create": true
+  },
+  "tasks": {
+    "max_active": 100,
+    "auto_archive_days": 30
+  },
+  "ui": {
+    "show_progress": true,
+    "verbose": false
+  }
+}
