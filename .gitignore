@@ -2,11 +2,13 @@
 __pycache__/
 *.py[cod]
 *.egg-info/
-dist/
 build/
 *.so
 .venv/
 venv/
+
+# GalaxyOS 的 dist/ 和 native target 必须入库
+!extensions/galaxyos/dist/
 
 # ── Node.js ──
 node_modules/
@@ -61,3 +63,6 @@ Thumbs.db
 # *.onnx 已在 models/embeddings/ 中
 # *.bin 不入（382MB RCCAM 权重）
 # *.pkl 入（127KB 分类器模型）
+
+# Rust/Cargo build cache
+extensions/galaxyos/native/target/
