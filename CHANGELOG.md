@@ -5,18 +5,14 @@
 ### Added
 - **补录全部遗漏文件** — extensions/galaxyos/scripts/ 从 4 个增至 170 个 Python 模块
 - **extensions/galaxyos/privileged/** — 70 个加速/优化模块首次入库
-- **extensions/galaxyos/dist/index.js + dist/scripts/** — JS ContextEngine 构建产物和 224 个编译脚本入库
-
 ### Changed
 - **install_wizard.py 路径修复** — 从 galaxyos/engine/ 硬编码改为自动从 __file__ 推演
 - **Worker socket 检测** — claw-worker.sock → claw-worker-worker-*.sock（多 Worker 适配）
 - **SLEEP_CORE 路径** — galaxy_engine → galaxy_scripts
-- **.gitignore** — 放开 extensions/galaxyos/dist/ 入库（之前全局 dist/ 排除）
 
 ### Fixed
 - 删除两套 _OPENCLAW_HOME 声明覆盖导致的运行时路径歧义
 - 删除旧 galaxyos/engine/pipeline_engine.py / pipeline_registry.py（已被 galaxy_pipeline.py 替代）
-- 删除 galaxyos/engine/__pycache__
 
 ## [8.0.0] — 2026-06-12
 
