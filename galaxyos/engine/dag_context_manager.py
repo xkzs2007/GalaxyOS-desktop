@@ -1412,6 +1412,27 @@ class DAGContextManager:
                 import logging
                 logging.getLogger(__name__).warning(f"write_capability_node failed: {e}")
 
+    def query_capability_nodes(self, limit: int = 5, session_key: str = 'xiaoyi-claw-dag') -> List[Dict]:
+        """查询最近的 evolved_capability 节点（APO/ThinkingEnhanced 自优化结果）"""
+        import json
+        with self._lock:
+            try:
+                conn = sqlite3.connect(self.db_path)
+                conn.row_factory = sqlite3.Row
+                cursor = conn.execute(
+                    "SELECT content, timestamp, node_id FROM rccam_nodes "
+                    "WHERE session_key=? AND node_type='evolved_capability' "
+                    "ORDER BY timestamp DESC LIMIT ?",
+                    (session_key, limit))
+                rows = cursor.fetchall()
+                conn.close()
+                return [json.loads(r["content"]) for r in rows if r["content"]]
+            except Exception as e:
+                import logging
+                logging.getLogger(__name__).warning(f"query_capability_nodes failed: {e}")
+                return []
+
+
     def write_cycle_summary(self, session_key, cycle_id, cycle_index,
                              user_intent, key_findings, conclusion,
                              confidence=0.5, source_phases=None):

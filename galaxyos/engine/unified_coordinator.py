@@ -154,13 +154,6 @@ class ModuleType(Enum):
     HYBRID_MEMORY_SEARCH = "hybrid_memory_search"
     REFLECTION_NL = "reflection_nl"
 
-    # Layer 13: MemGAS-SkVM 融合层
-    KNOWLEDGE_ASSET = "knowledge_asset"
-    CAPABILITY_REGISTRY = "capability_registry"
-    MULTI_GRANULARITY = "multi_granularity"
-    SKILL_COMPILER = "skill_compiler"
-    ENTROPY_ROUTER = "entropy_router"
-
 
 @dataclass
 class ModuleInfo:
@@ -2573,55 +2566,6 @@ EXTENDED_MODULES_P3 = {
 
 # 合并 P3 扩展模块
 MODULE_REGISTRY.update(EXTENDED_MODULES_P3)
-
-
-# ==================== MemGAS-SkVM 融合层 (Layer 13) ====================
-
-_MEMGAS_SKVM_MODULES = {
-    "knowledge_asset": ModuleInfo(
-        name="knowledge_asset",
-        module_type=ModuleType.KNOWLEDGE_ASSET,
-        description="KnowledgeAsset 封装 + AssetRegistry — 将检索结果封装为结构化资产，支持 26 维 capability 画像匹配",
-        triggers=["资产封装", "资产注册", "AssetRegistry"],
-        script_path=str(CORE_DIR / "knowledge_asset.py"),
-        layer=13,
-        dependencies=["capability_registry"]
-    ),
-    "capability_registry": ModuleInfo(
-        name="capability_registry",
-        module_type=ModuleType.CAPABILITY_REGISTRY,
-        description="CapabilityProfile 26维画像 + ProfileMatcher — 资产能力描述、匹配与路由",
-        triggers=["能力画像", "CapabilityProfile", "画像匹配"],
-        script_path=str(CORE_DIR / "capability_registry.py"),
-        layer=13,
-    ),
-    "multi_granularity": ModuleInfo(
-        name="multi_granularity",
-        module_type=ModuleType.MULTI_GRANULARITY,
-        description="多粒度提取 + GMM 关联 — 对检索结果做粗/中/细三粒度表示，GMM 计算关联权重",
-        triggers=["多粒度", "多粒度提取", "GMM关联"],
-        script_path=str(CORE_DIR / "multi_granularity.py"),
-        layer=13,
-    ),
-    "skill_compiler": ModuleInfo(
-        name="skill_compiler",
-        module_type=ModuleType.SKILL_COMPILER,
-        description="SkillCompiler — CapabilityProfile 匹配 → 环境绑定 → 裁剪 → 优化，返回 CompiledArtifact",
-        triggers=["技能编译", "SkillCompiler", "编译技能"],
-        script_path=str(CORE_DIR / "skill_compiler.py"),
-        layer=13,
-    ),
-    "entropy_router": ModuleInfo(
-        name="entropy_router",
-        module_type=ModuleType.ENTROPY_ROUTER,
-        description="EntropyRouter — 基于语义熵计算检索/推理/记忆各通道权重，支撑自适应融合路由",
-        triggers=["熵路由", "EntropyRouter", "通道权重"],
-        script_path=str(CORE_DIR / "entropy_router.py"),
-        layer=13,
-    ),
-}
-
-MODULE_REGISTRY.update(_MEMGAS_SKVM_MODULES)
 
 
 # ==================== P1: 扩展工作流 ====================

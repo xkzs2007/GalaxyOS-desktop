@@ -7,9 +7,6 @@ build/
 .venv/
 venv/
 
-# GalaxyOS 的 dist/ 和 native target 必须入库
-!extensions/galaxyos/dist/
-
 # ── Node.js ──
 node_modules/
 package-lock.json

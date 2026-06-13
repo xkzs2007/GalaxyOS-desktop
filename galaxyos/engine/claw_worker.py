@@ -138,7 +138,9 @@ def _resolve_var_path(subpath, mkdirs=True):
     # 最后尝试：创建 galaxyos/var/
     return primary
 
-UDS_PATH = _resolve_var_path("claw-worker.sock")
+_WORKER_ID = os.environ.get('WORKER_ID', 'worker')
+_WORKER_SUFFIX = _WORKER_ID.replace(':', '-')  # worker:1 → worker-1
+UDS_PATH = _resolve_var_path(f"claw-worker-{_WORKER_SUFFIX}.sock")
 ZMQ_PUB_PORT = 5559
 MMAP_PATH = _resolve_var_path("claw_worker_mmap")
 
@@ -779,198 +781,111 @@ class ClawWorker:
         return self._entry.store(p.get("content", ""), source=p.get("source", "user"),
                                  session_id=p.get("session_id", ""))
 
-        def context_assemble(self, p: dict) -> dict:
-            """全论文模块编排上下文组装 — PipelineEngine 驱动版
+    def context_assemble(self, p: dict) -> dict:
+        """全论文模块编排上下文组装 — 声明式流水线驱动
 
-            所有模块通过 PipelineEngine 自动注册、推导依赖图、
-            拓扑排序调度、产出自动被下游消费。
+        供 JS ContextEngine assemble() 调用。
+        所有 Phase 在 galaxy_pipeline.py 中以清单声明，
+        自动执行、跳过、依赖管理。
+        """
+        query = p.get("query", "")
+        session_id = p.get("session_id", "")
+        top_k = p.get("top_k", 5)
+        mode = p.get("mode", "full")  # quick | full
+        try:
+            result: Dict[str, Any] = {"session_id": session_id, "layers": {}, "decisions": {}}
 
-            供 JS ContextEngine assemble() 调用。
-            """
-            # ═══ Value Gate 快速路径: 分析注入利用率 ────
-            if p.get("_value_gate"):
+            # ═══ quick 模式：只跑 IsREL（几百微秒），JS 用来决定是否要跑全量 ═══
+            if mode == "quick":
                 try:
-                    from value_gate import ValueGate
-                    from impact_tracker import ImpactTracker
-                    gate = ValueGate()
-                    tracker = ImpactTracker()
-                    inject = p.get("_injection", "")
-                    response = p.get("_response", "")
-                    results = gate.analyze(inject, response)
-                    # 回传给 Impact Tracker
-                    sid = p.get("session_id", "")
-                    for key, rate in results.items():
-                        tracker.report_usage(sid, key, "usage_rate", rate)
-                    return {"success": True, "value_gate": results}
-                except Exception as e:
-                    return {"success": False, "value_gate_error": str(e)}
+                    from galaxy_pipeline import _phase_isrel
+                    _ctx: Dict[str, Any] = {}
+                    _phase_isrel(query, session_id, top_k, result, _ctx, self)
+                except Exception:
+                    pass
+                result["success"] = True
+                return result
 
-            query = p.get("query", "")
-            session_id = p.get("session_id", "")
-            top_k = p.get("top_k", 5)
-            prefetch_ids = p.get("prefetch_ids", [])
-            isrel_threshold_override = p.get("isrel_threshold_override", None)
-            ltm_profile_in = p.get("ltm_profile", "")
-
+            # ═══ 声明式流水线执行（galaxy_pipeline.py 驱动）═══
             try:
-                from pipeline_engine import PipelineEngine
-                from pipeline_registry import register_all_modules
+                from galaxy_pipeline import build_pipeline, run_pipeline
+                _pipeline = build_pipeline()
+                _ctx: Dict[str, Any] = {}
+                run_pipeline(_pipeline, query, session_id, top_k, result, _ctx, self)
+            except Exception as e:
+                result["pipeline_error"] = str(e)
 
-                engine = PipelineEngine()
-                register_all_modules(engine)
+            # ═══ IsREL 跳过时直接返回 ═══
+            if result.get("skipped") == "isrel_no_retrieve":
+                result["injection"] = ""
+                result["success"] = True
+                return result
 
-                ctx = {
-                    "query": query,
-                    "session_id": session_id,
-                    "top_k": top_k,
-                    "prefetch_ids": prefetch_ids,
-                    "isrel_threshold_override": isrel_threshold_override,
-                    "ltm_profile_in": ltm_profile_in,
-                    "errors": {},
-                    "timings": {},
-                }
+            # ── 汇总：合并所有 layer 为单一注入文本 ────
+            parts = []
 
-                ctx = engine.run(ctx, timeout=12.0)
-
-                should_retrieve = ctx.get("should_retrieve", True)
-                if not should_retrieve:
-                    return {
-                        "success": True,
-                        "skipped": "isrel_no_retrieve",
-                        "injection": "",
-                        "session_id": session_id,
-                        "layers": {},
-                        "decisions": {
-                            "isrel": {
-                                "should_retrieve": False,
-                                "confidence": ctx.get("isrel_confidence", 0),
-                                "reason": ctx.get("isrel_reason", ""),
-                                "threshold_override": isrel_threshold_override,
-                            }
-                        },
-                    }
-
-                parts = []
-                if ctx.get("reranked_results"):
-                    results = ctx["reranked_results"]
-                    parts.append("[检索增强]\n" + "\n".join(
-                        f"  - {r.get('content', str(r))[:500]}" for r in results[:5]
-                    ))
-                if ctx.get("memgpt_context"):
-                    parts.append(f"[分层记忆] {ctx['memgpt_context'][:2000]}")
-                if ctx.get("arigraph_context"):
-                    parts.append(f"[空间场景] {str(ctx['arigraph_context'])[:500]}")
-                if ctx.get("ssm_predicted"):
-                    preds = ", ".join(
-                        f"{p.get('id', p) if isinstance(p, dict) else p}({p.get('prob', 0.5) if isinstance(p, dict) else 0.5})"
-                        for p in ctx["ssm_predicted"][:3]
-                    )
-                    parts.append(f"[记忆预测] 下一步可能需要: {preds}")
-                if ctx.get("memoryos_profile"):
-                    parts.append(f"[长期画像] {ctx['memoryos_profile'][:1000]}")
-                if ltm_profile_in and ltm_profile_in not in (ctx.get("memoryos_profile", "") or ""):
-                    parts.append(f"[跨会话画像] {ltm_profile_in}")
-                if ctx.get("kora_pattern"):
-                    parts.append(f"[行为模式] {str(ctx['kora_pattern'])[:500]}")
-                if ctx.get("thinking_enhanced"):
-                    parts.append(f"[多路推理] {str(ctx['thinking_enhanced'])[:500]}")
-                if ctx.get("raptor_summaries"):
-                    parts.append("[历史摘要] " + "\n".join(ctx["raptor_summaries"][:3]))
-                if ctx.get("proposition_results"):
-                    props = ctx["proposition_results"]
-                    parts.append("[命题检索] " + "\n".join(
-                        f"  - {p.get('proposition', p.get('content', str(p)))[:300]}"
-                        for p in props[:3]
-                    ))
-                if ctx.get("hyde_rewritten") and ctx.get("hyde_rewritten_query"):
-                    parts.append(f"[HyDE改写] {ctx['hyde_rewritten_query'][:500]}")
-                if ctx.get("compressed_context"):
-                    ratio = ctx.get("compression_ratio", 0)
-                    parts.append(f"[压缩上下文] (压缩比 {ratio}) {ctx['compressed_context'][:2000]}")
-                if ctx.get("cove_fix"):
-                    parts.append(f"[CoVe修正] {str(ctx['cove_fix'])[:500]}")
-
-                injection = "\n\n".join(parts)[:6000]
-
-                loop_overrides = {}
-                decisions = {
-                    "isrel": {"should_retrieve": True,
-                        "confidence": ctx.get("isrel_confidence", 1.0),
-                        "reason": ctx.get("isrel_reason", ""),
-                        "threshold_override": isrel_threshold_override,
-                    },
-                    "cognitive_load": ctx.get("cognitive_load", 0.5),
-                    "crag": {"quality": ctx.get("crag_quality", 0.5),
-                        "action": ctx.get("crag_action", "USE"),
-                    },
-                    "cove": {"verified_ratio": ctx.get("cove_verified_ratio", 0.5)},
-                    "coevolve": {"failure_detected": ctx.get("coevolve_failure", False),
-                        "pattern": ctx.get("coevolve_pattern", None),
-                    },
-                    "skill0": {"stage": ctx.get("skill_stage", None),
-                        "delta": ctx.get("skill_delta", None),
-                    },
-                    "memcoe": {"guideline": ctx.get("memcoe_guideline", "maintain")},
-                    "hyper_route": ctx.get("fusion_strategy", "auto"),
-                    "hallucination_params": ctx.get("hallucination_params", {}),
-                }
-                if ctx.get("turn_recovery"):
-                    decisions["turn_recovery"] = {"degraded": True,
-                        "action": ctx.get("turn_action", "dag_restore"),
-                    }
-
-                layers = {}
-                for key in [
-                    "ssm_predicted", "memoryos_profile",
-                    "kora_pattern", "heat_top",
-                    "turn_recovery", "ltm_injected",
-                    "blob_records", "memgpt_context",
-                    "arigraph_context", "raptor_summaries",
-                    "thinking_enhanced", "cove_fix",
-                    "cfc_intent", "cfc_seq_predictions",
-                    "ltc_synapse_stats", "neural_pipeline_result",
-                    "synapse_stats", "emotion_state",
-                    "causal_insight", "memory_gate",
-                    "consolidation_triggered", "biorhythm_cycle",
-                    "auto_learner_done",
-                    "proposition_results", "hyde_rewritten",
-                    "hyde_rewritten_query", "hyde_docs",
-                    "compressed_context", "compression_ratio",
-                ]:
-                    if key in ctx:
-                        layers[key] = ctx[key]
-                layers["_errors"] = ctx.get("errors", {})
-                layers["_timings"] = ctx.get("timings", {})
-                layers["_pipeline_stages"] = list(engine._stages.keys())
-                # ═══ 闭环5: MetaOptimizer 计算下一轮的参数覆盖 ────
+            # ═══ SKILL0 课程状态：报告哪些技能已内化（不再注入）═
+            _s0 = result["decisions"].get("skill0", {})
+            if _s0:
                 try:
-                    from meta_optimizer import MetaOptimizer
-                    from impact_tracker import ImpactTracker
-                    _tracker = ImpactTracker()
-                    _opt = MetaOptimizer()
-                    _overrides = _opt.compute(session_id, _tracker, ctx)
-                    if _overrides:
-                        loop_overrides = _overrides
+                    if hasattr(self, '_skill_curriculum'):
+                        _sc = self._skill_curriculum
+                        _active = sorted(_sc.active_skills)
+                        _removed = sorted(set(_sc._all_skills) - _sc.active_skills) if hasattr(_sc, '_all_skills') else []
+                        _lines = [f"[SKILL0] Stage {_s0.get('stage',0)+1}/5 | 可用 {len(_active)}/{len(_sc._all_skills) if hasattr(_sc,'_all_skills') else len(_active)+len(_removed)}"]
+                        if _active:
+                            _lines.append(f"  可用: {', '.join(_active)}")
+                        if _removed:
+                            _lines.append(f"  已内化: {', '.join(_removed)}")
+                        parts.append('\n'.join(_lines))
                 except Exception:
                     pass
 
-                return {
-                    "success": True,
-                    "injection": injection,
-                    "session_id": session_id,
-                    "layers": layers,
-                    "decisions": decisions,
-                    "loop_overrides": loop_overrides,
-                }
+            # ═══ DAG 能力节点：APO/ThinkingEnhanced 产出的改进建议 ══
+            try:
+                _dag = self._get_dag() if hasattr(self, '_get_dag') else None
+                if _dag:
+                    _caps = _dag.query_capability_nodes(limit=3, session_key='xiaoyi-claw-dag')
+                    if _caps:
+                        _cap_lines = []
+                        for _c in _caps:
+                            _name = _c.get('name', '')[:60]
+                            _sug = _c.get('suggestion', '')[:120]
+                            if _name and _sug:
+                                _cap_lines.append(f"[{_name}] {_sug}")
+                        if _cap_lines:
+                            parts.append("[APO 优化建议]\n" + '\n'.join(_cap_lines))
+            except Exception:
+                pass
+            if result["layers"].get("blob_arena_restored"):
+                blob_parts = []
+                for b in result["layers"]["blob_arena_restored"][:3]:
+                    blob_parts.append(f"[Blob#{b['blob_id'][:8]}] {b['content'][:400]}")
+                parts.append("[无损上下文还原]\n" + "\n".join(blob_parts))
+            if result["layers"].get("memgpt_context"):
+                parts.append(result["layers"]["memgpt_context"])
+            if result["layers"].get("spatial_scene"):
+                parts.append(f"[场景] {result['layers']['spatial_scene']}")
+            if result["layers"].get("ssm_predicted"):
+                preds = ", ".join(f"{p['id']}({p['prob']})" for p in result["layers"]["ssm_predicted"][:3])
+                parts.append(f"[记忆预测] 下一步可能需要: {preds}")
+            if result["layers"].get("memoryos_profile"):
+                parts.append(f"[长期画像] {result['layers']['memoryos_profile']}")
+            if result["layers"].get("kora_pattern"):
+                parts.append(f"[行为模式] {result['layers']['kora_pattern']}")
+            if result["layers"].get("code_aware"):
+                parts.append(f"[代码分析] {result['layers']['code_aware']}")
+            if result["layers"].get("thinking_enhanced"):
+                parts.append(f"[多路推理] {result['layers']['thinking_enhanced']}")
+            if result["layers"].get("raptor_summaries"):
+                parts.append("[历史摘要] " + "\n".join(result["layers"]["raptor_summaries"]))
+            result["injection"] = "\n\n".join(parts)[:6000]
+            result["success"] = True
+            return result
 
-            except Exception as e:
-                import traceback
-                return {
-                    "success": False,
-                    "error": f"{type(e).__name__}: {e}",
-                    "traceback": traceback.format_exc(),
-                    "session_id": session_id,
-                }
+        except Exception as e:
+            return {"success": False, "error": str(e), "session_id": session_id}
+
     def verify(self, p: dict) -> dict:
         """验证 — 走 MultiSourceCrossValidator 多源交叉验证"""
         claim = p.get("claim", "")
@@ -2937,6 +2852,7 @@ def main():
 
                 # 周期任务（每 ~50 轮）
                 if _rccam_count >= 50:
+                    # ── ThinkingEnhanced 模式发现 ──
                     try:
                         from thinking_enhanced import ThinkingEnhanced
                         _te = ThinkingEnhanced(_flash_client)
@@ -2956,6 +2872,40 @@ def main():
                                     except Exception:
                                         pass
                             sys.stderr.write(f'[galaxy-kernel] 自进化完成 (patterns={len(_result["patterns"])})\n')
+                    except Exception:
+                        pass
+
+                    # ── SelfEvolutionEngine (含 APO) 自优化 ──
+                    try:
+                        _w = _get_worker()
+                        if _w and getattr(_w, '_entry', None) and getattr(_w._entry, 'xiaoyi_claw', None):
+                            _xc = _w._entry.xiaoyi_claw
+                            _se = getattr(_xc, '_self_evolution', None)
+                            if _se:
+                                # 从最近事件取 query+answer（_galaxy_pending 是 kernel 闭包变量）
+                                _se_ev = _galaxy_pending[-1] if _galaxy_pending else {}
+                                _se_q = _se_ev.get('query', '')
+                                _se_a = _se_ev.get('answer', '')
+                                if _se_q or _se_a:
+                                    _se_ev_result = _se.evolve(
+                                        query=_se_q[:500], rewritten=_se_q[:500],
+                                        results=[], summary=_se_a[:1000],
+                                        session_id='xiaoyi-claw-dag')
+                                    if _se_ev_result.get('suggestions'):
+                                        _dag = _get_dag()
+                                        if _dag:
+                                            for _s in _se_ev_result['suggestions']:
+                                                try:
+                                                    _dag.write_capability_node({
+                                                        'name': _s.get('target', 'apo_improvement')[:80],
+                                                        'trigger': str(_s.get('suggestion',''))[:120],
+                                                        'suggestion': str(_s.get('suggestion',''))[:200],
+                                                        'confidence': 0.7,
+                                                        'source': 'self_evolution', 'created_at': time.time(),
+                                                    }, session_key='xiaoyi-claw-dag')
+                                                except Exception:
+                                                    pass
+                                        sys.stderr.write(f'[galaxy-kernel] APO 自优化: {len(_se_ev_result["suggestions"])} 条建议\n')
                     except Exception:
                         pass
 

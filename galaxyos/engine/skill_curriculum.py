@@ -84,7 +84,7 @@ class SkillCurriculum:
         # 2. 初始化预算: 线性递减
         n = len(self._all_skills)
         self._budget = [
-            max(1, round(n * (self._stages - 1 - s) / (self._stages - 1)))
+            max(1, round(n * (self._stages - s) / (self._stages - 1)))
             if s < self._stages - 1 else 0
             for s in range(self._stages)
         ]
