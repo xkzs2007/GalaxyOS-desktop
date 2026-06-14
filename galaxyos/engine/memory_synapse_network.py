@@ -148,6 +148,7 @@ class MemoryNeuron:
     nlp_entities: str = ""  # JSON: {实体类型: [实体文本列表]}
     nlp_sentiment: str = ""  # JSON: {label, score, confidence}
     nlp_importance: float = 0.5  # NLP 重要度 [0,1]
+    neuron_type: str = ""  # 神经元类型：general/conversation/entity/concept/system
 
     # ────────── 内存缓存（不序列化） ──────────
     _cell_cache: Optional[LTCCell] = None
@@ -224,17 +225,21 @@ class MemoryNeuron:
             return None
 
     def to_dict(self) -> Dict:
-        return asdict(self)
+        d = asdict(self)
+        d.pop('_cell_cache', None)  # 排除内存缓存对象
+        return d
 
     @classmethod
     def from_dict(cls, data: Dict) -> 'MemoryNeuron':
         # 向后兼容：旧文件不含 ltc / nlp 字段
+        data.pop('_cell_cache', None)
         data.setdefault('ltc_cell_params', '')
         data.setdefault('ltc_hidden', 0.0)
         data.setdefault('nlp_keywords', '')
         data.setdefault('nlp_entities', '')
         data.setdefault('nlp_sentiment', '')
         data.setdefault('nlp_importance', 0.5)
+        data.setdefault('neuron_type', '')
         return cls(**data)
 
 
@@ -436,6 +441,9 @@ class NeuronManager:
         # NLP 特征提取
         keywords, entities, sentiment, importance = self._nlp_extract(content)
 
+        # 推断神经元类型
+        neuron_type = self._infer_neuron_type(content, entities, keywords)
+
         neuron = MemoryNeuron(
             id=neuron_id or self.network._generate_id("NRN"),
             content=content,
@@ -450,13 +458,41 @@ class NeuronManager:
             nlp_entities=json.dumps(entities, ensure_ascii=False),
             nlp_sentiment=json.dumps(sentiment, ensure_ascii=False),
             nlp_importance=round(importance, 3),
+            neuron_type=neuron_type,
         )
+
+        # 计算初始激活状态（evaluate_state 基于 ltc_hidden 初始值 + 时间编码）
+        neuron.evaluate_state()
 
         self.network._neurons_cache[neuron.id] = neuron
         self.network._save_neuron(neuron)
 
         return neuron
-    
+
+    @staticmethod
+    def _infer_neuron_type(content: str, entities: dict, keywords: list) -> str:
+        """根据内容、实体、关键词推断神经元类型"""
+        if not content:
+            return "general"
+        content_lower = content.lower()
+        if any(kw in content_lower for kw in ["system", "指令", "命令", "config", "heartbeat", "健康检查"]):
+            return "system"
+        if content.startswith("Q:") or content.startswith("["):
+            return "conversation"
+        if entities:
+            ent_types = set()
+            if isinstance(entities, dict):
+                ent_types = set(entities.keys())
+            elif isinstance(entities, list):
+                for e in entities:
+                    if isinstance(e, dict):
+                        ent_types.add(e.get("type", ""))
+            if ent_types & {"PER", "LOC", "ORG", "person", "location", "organization"}:
+                return "entity"
+        if any(kw in content_lower for kw in ["架构", "算法", "论文", "模型", "网络", "系统", "memory", "rag", "ltc", "神经网络"]):
+            return "concept"
+        return "general"
+
     def get_neuron(self, neuron_id: str) -> Optional[MemoryNeuron]:
         """获取神经元"""
         self.network._load()
