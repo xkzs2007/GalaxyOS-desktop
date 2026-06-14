@@ -77,28 +77,85 @@ class KunpengDetector:
             with open('/proc/cpuinfo', 'r') as f:
                 cpuinfo = f.read()
 
-                # 检测 CPU 型号
+                # 检测 CPU 型号（优先使用 CPU part 编号映射）
+                cpu_part_map = {
+                    # 华为海思/鲲鹏
+                    '0xd02': 'Kunpeng 920-6426 / HiSilicon TSV200',
+                    '0xd40': 'Kunpeng 920',
+                    '0xd41': 'Kunpeng 920',
+                    '0xd42': 'Kunpeng 920',
+                    # ARM Cortex
+                    '0xd03': 'Cortex-A53',
+                    '0xd04': 'Cortex-A35',
+                    '0xd05': 'Cortex-A55',
+                    '0xd06': 'Cortex-A65',
+                    '0xd07': 'Cortex-A57',
+                    '0xd08': 'Cortex-A72',
+                    '0xd09': 'Cortex-A73',
+                    '0xd0a': 'Cortex-A75',
+                    '0xd0b': 'Cortex-A76',
+                    '0xd0c': 'Cortex-A77',
+                    '0xd0d': 'Cortex-A78',
+                    '0xd0e': 'Cortex-A78AE',
+                    '0xd13': 'Cortex-X1',
+                    '0xd14': 'Cortex-X2',
+                    '0xd15': 'Cortex-X3',
+                    # Ampere
+                    '0x0a0': 'Ampere eMAG',
+                    '0x0a1': 'Ampere Altra',
+                    '0x0a2': 'Ampere Altra Max',
+                }
+                cpu_part = None
                 for line in cpuinfo.split('\n'):
-                    if 'model name' in line.lower() or 'cpu model' in line.lower():
-                        info['cpu_model'] = line.split(':')[1].strip()
+                    if 'CPU part' in line.strip():
+                        cpu_part = line.split(':')[1].strip().lower()
                         break
-                    elif 'hardware' in line.lower():
-                        hw = line.split(':')[1].strip().lower()
-                        if 'kunpeng' in hw or 'hisi' in hw or 'huawei' in hw:
+                if cpu_part and cpu_part in cpu_part_map:
+                    info['cpu_model'] = cpu_part_map[cpu_part]
+                else:
+                    # 兜底：从 model name / hardware 字段提取
+                    for line in cpuinfo.split('\n'):
+                        if 'model name' in line.lower() or 'cpu model' in line.lower():
                             info['cpu_model'] = line.split(':')[1].strip()
                             break
+                        elif 'hardware' in line.lower():
+                            hw = line.split(':')[1].strip().lower()
+                            if 'kunpeng' in hw or 'hisi' in hw or 'huawei' in hw:
+                                info['cpu_model'] = line.split(':')[1].strip()
+                                break
 
-                # 检测厂商
+                # 检测厂商（文本 + ARM implementer 编号）
                 cpuinfo_lower = cpuinfo.lower()
-                if 'kunpeng' in cpuinfo_lower or 'hisi' in cpuinfo_lower:
-                    info['is_kunpeng'] = True
-                    info['is_hisilicon'] = True
-                    info['cpu_vendor'] = 'Huawei Kunpeng'
-                elif 'hisilicon' in cpuinfo_lower:
-                    info['is_hisilicon'] = True
-                    info['cpu_vendor'] = 'HiSilicon'
-                elif 'arm' in cpuinfo_lower:
-                    info['cpu_vendor'] = 'ARM'
+                
+                # 检测 CPU implementer（ARM 官方厂商 ID）
+                implementer_to_vendor = {
+                    '0x48': ('Huawei Kunpeng', 'HiSilicon'),  # 海思/鲲鹏
+                    '0x41': ('ARM', 'ARM'),
+                    '0x42': ('Ampere', 'Ampere'),
+                    '0x43': ('Ampere', 'Ampere'),
+                }
+                for line in cpuinfo.split('\n'):
+                    if 'cpu implementer' in line.lower():
+                        impl_id = line.split(':')[1].strip().lower()
+                        for impl_pattern, (vendor, hisi_check) in implementer_to_vendor.items():
+                            if impl_id == impl_pattern:
+                                info['cpu_vendor'] = vendor
+                                if hisi_check == 'HiSilicon':
+                                    info['is_kunpeng'] = True
+                                    info['is_hisilicon'] = True
+                                break
+                
+                # 文本匹配（兜底）
+                if not info['is_kunpeng']:
+                    if 'kunpeng' in cpuinfo_lower or 'hisi' in cpuinfo_lower:
+                        info['is_kunpeng'] = True
+                        info['is_hisilicon'] = True
+                        info['cpu_vendor'] = 'Huawei Kunpeng'
+                    elif 'hisilicon' in cpuinfo_lower:
+                        info['is_hisilicon'] = True
+                        info['cpu_vendor'] = 'HiSilicon'
+                    elif 'arm' in cpuinfo_lower:
+                        info['cpu_vendor'] = 'ARM' if info['cpu_vendor'] == 'unknown' else info['cpu_vendor']
 
                 # 检测核心数
                 info['cores'] = cpuinfo.count('processor')
