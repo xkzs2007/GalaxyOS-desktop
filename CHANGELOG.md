@@ -1,5 +1,45 @@
 # Changelog
 
+## [8.1.0] — 2026-06-14
+
+### Added
+- **全部22个论文方向实现 + 3个融合方向** — 从第一批到第三批全量覆盖
+- **18个新论文模块（~11K行代码）**：
+
+  #### 第一批（核心底座）
+  - **Engram 条件记忆** (`engram_memory.py`) — N-gram 哈希 O(1) 查找，替代 MoE 部分计算 (arXiv:2601.07372)
+  - **KAN 网络** (`kan_network.py`) — B-spline 可学习激活函数，替代 MLP (arXiv:2404.19756)
+  - **Neural ODE 底座** (`neural_ode.py`) — Euler/RK4/DOPRI5 求解器，连续深度模型 (arXiv:1806.07366)
+  - **LTC-SE 统一框架** (`ltc_se_framework.py`) — LTC/CfC/LIF/CTRNN/GRU-ODE/NeuralODE 6合1 (arXiv:2304.08691)
+
+  #### 第二批（LFM 系列）
+  - **LFM 自适应算子** (`lfm_adaptive_operator.py`) — 输入依赖权重生成，替代自注意力 (Liquid AI 2024)
+  - **LFM 端侧推理** (`lfm_edge.py`) — FP16/INT8量化，<1GB运行，流式推理 (LFM-2.5, 2026)
+  - **LFM 多模态** (嵌入 operator) — 像素解混 + 原生分辨率视觉输入
+  - **LFM + Engram 融合** (`lfm_engram_fusion.py`) — 动态时序 × 静态知识门控融合
+
+  #### 第二批（SSM 系列）
+  - **LGTC 图时间常数** (`liquid_graph_time_constant.py`) — GNN+LTC 连续时间图控制
+  - **Mamba-3 SSM** (`mamba3_ssm.py`) — 复数值 + MIMO 状态更新
+  - **液体 SSM** (`liquid_ssm.py`) — 融合 Mamba 选择机制 + LTC 连续动态
+  - **ss-Mamba + KAN 融合** (`ssm_kan_fusion.py`) — KAN B-spline 作为 SSM 状态更新函数
+
+  #### 第二批（理论增强）
+  - **ODE-RNN 持续学习** (`ode_rnn_continual.py`) — 记忆增强 + EWC 防灾难遗忘 (Scientific Reports 2025)
+  - **NCD 闭式微分** (`neural_closed_form_derivative.py`) — CfC 严格闭式解形式化
+  - **Lipschitz 液体** (`lipschitz_liquid.py`) — 谱范数约束，保证训练稳定性
+  - **MoE + Engram 融合** (`moe_engram_hybrid.py`) — U 型缩放律，稀疏分配优化
+
+  #### 收尾整合
+  - **稀疏设计空间统一视图** (`unified_sparsity_view.py`) — Compute×Memory×Time 三维设计空间
+  - **Liquid Weight 独立模块** (`liquid_weight.py`) — LTC 时间常数驱动的动态权重生成
+  - **DAG + Liquid 融合** (`dag_liquid_fusion.py`) — LTC 时间常数驱动的 DAG compact 策略
+- **ModuleType 新增 19 种**→ 总计 116 种模块分类
+- **所有模块注册到 unified_coordinator.py** EXTENDED_MODULES
+
+### Changed
+- **版本号**: v8.0.1 → v8.1.0
+- **README.md/SKILL.md/paper-roadmap.md**: 全量同步更新
 ## [8.0.1] — 2026-06-14
 
 ### Fixed

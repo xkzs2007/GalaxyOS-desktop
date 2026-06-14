@@ -1,17 +1,17 @@
 # 🌌 GalaxyOS — 认知增强引擎
 
 > OpenClaw 的开源认知增强引擎，为 AI Assistant 提供记忆、检索、推理、验证、自进化等全套认知能力
-> 版本: v8.0.0 · MemGAS-SkVM 融合架构 + APO 自优化 + PipelineEngine 重构 + 七情六欲集成
+> 版本: v8.1.0 · 全部22个论文方向实现 + 3个融合方向 + 18个新论文模块
 
 ## 总览
 
-`GalaxyOS` 是 **OpenClaw 的底层认知增强引擎**。提供 **统一包架构 (313 files)、470+ 功能项**，覆盖从记忆管理到认知推理的全链路。
+`GalaxyOS` 是 **OpenClaw 的底层认知增强引擎**。提供 **统一包架构 (335 files)、530+ 功能项**，覆盖从记忆管理到认知推理的全链路。
 
 ### 核心能力
 
 | 能力 | 说明 |
 |------|------|
-| **记忆** | 三层记忆体系 + 记忆巩固引擎 + 神经突触记忆网络 (ncps LTC+CfC) + BlobArena mmap 无损存储 |
+| **记忆** | 三层记忆体系 + Engram条件记忆(O(1)查找) + 记忆巩固引擎 + 神经突触记忆网络(ncps LTC+CfC) + BlobArena mmap |
 | **检索** | RetrievalHub 7通道 (KG/Local/DAG/MN-RU/Synapse/Paper/Cognitive/Web) + bge-reranker 重排序 |
 | **智能处理** | SmartProcessor 三模型通道 (Flash/Pro/VLM) + Visual RAG 自动 OCR2 |
 | **认知循环** | R-CCAM 五阶段结构化认知 (Retrieval→Cognition→Control→Action→Memory) |
@@ -19,6 +19,7 @@
 | **PIL 隔离** | 独立子进程图像处理 (Python/Rust/PyO3)，零 GIL 竞争 |
 | **防幻觉** | 10 重交叉验证 + 多源证据 + 突触双向闭环 (LTP/LTD) |
 | **IPC 通信** | UDS RPC + ZMQ PUB/SUB + mmap 大 payload 路由 + batch RPC + R-CCAM 流式进度 |
+| **论文集成** | 22方向论文实现(液神经/LFM/KAN/Engram/SSM/LGTC/NeuralODE等) + DAG/Liquid融合 |
 
 ## 目录结构
 
@@ -236,7 +237,7 @@ GALAXYOS_REPO=. python3 -m galaxyos.engine.unified_entry recall --query "查询"
 
 | 版本 | 文件 | 说明 |
 |------|------|------|
-| **v8.0.0 (最新)** | — | **MemGAS-SkVM 融合架构 + APO 自优化 + PipelineEngine 重构 + 七情六欲集成** |
+| **v8.1.0 (最新)** | 2026-06-14 | **22方向论文全量实现 + 18新论文模块(~11K行) + 融合架构增强** |
 | **v7.3.2** | — | **GAT 双路径稀疏化 + HNSW 端到端 + 5.8GB 容器适配 + OpenClaw 路径解析** |
 | **v7.3** | — | **全论文模块接入ContextEngine决策链 + session_id全面隔离 + Gateway防塞爆** |
 | **v7.2** | — | **GalaxyPool 统一管理 + 负载感知调度 + batch RPC + Rust PyO3 + 神经网络全量修复 + CLI-Anything** |
@@ -258,6 +259,39 @@ GALAXYOS_REPO=. python3 -m galaxyos.engine.unified_entry recall --query "查询"
 | v3.0.0 | `docs/xiaoyi-claw-core-architecture-v3.0.0.md` | 16 层架构、R-CCAM 认知循环 |
 
 **完整架构文档（含 17 层全景图、470+ 功能列表、更新日志）：** 👉 [📖 查看 Skills 文档栏](https://cnb.cool/llm-memory-integrat/GalaxyOS?tabValue=SKILLS-ov-file)
+
+### v8.1.0 新特性 (22方向论文全量实现 + 融合架构增强)
+
+**核心更新**: 22 个论文方向全部实现，新增 18 个模块（~11K 行代码），覆盖液神经网络、条件记忆、动态计算三大方向。
+
+#### ▶ 新增论文模块
+
+| 类别 | 模块 | 论文/参考 |
+|------|------|-----------|
+| **核心底座** | Engram 条件记忆 | arXiv:2601.07372 (DeepSeek) |
+| | KAN 可学习激活 | arXiv:2404.19756 |
+| | Neural ODE 底座 | arXiv:1806.07366 (NeurIPS 2018) |
+| | LTC-SE 统一框架 | arXiv:2304.08691 |
+| **LFM 系列** | 自适应算子 + 多模态 | Liquid AI 2024-2025 |
+| | 端侧推理 (INT8 <1GB) | LFM-2.5, Liquid AI 2026 |
+| | LFM + Engram 门控融合 | — |
+| **SSM 系列** | LGTC 图时间常数 | GNN + LTC 融合 |
+| | Mamba-3 SSM (复数值 MIMO) | Mamba 系列扩展 |
+| | 液体 SSM (LTC+SSM) | 融合方向 |
+| | ss-Mamba + KAN 融合 | arXiv 2025 |
+| **理论增强** | ODE-RNN 持续学习 (+ EWC) | Scientific Reports 2025 |
+| | NCD 闭式微分 | CfC 严格解形式化 |
+| | Lipschitz 稳定性约束 | 谱范数正则 |
+| | MoE + Engram U 型缩放律 | arXiv:2601.07372 |
+| **收尾整合** | 稀疏设计空间 (三维视图) | Compute×Memory×Time |
+| | Liquid Weight 独立模块 | LTC 动态权重 |
+| | DAG + Liquid 融合 | LTC 驱动 compact 策略 |
+
+#### ▶ 集成变更
+- `unified_coordinator.py`: ModuleType 87→116，协调器注册模块 129→148
+- 所有模块已注册到 EXTENDED_MODULES_P1，可通过 UnifiedCoordinator 调用
+- `paper-roadmap.md` 全量标记 ✅
+- 总能力项: 490+ → 530+
 
 ### v8.0.0 新特性 (MemGAS-SkVM 融合架构 + APO 自优化 + PipelineEngine 重构 + 七情六欲集成)
 

@@ -1,21 +1,21 @@
 ---
 name: galaxyos
-description: GalaxyOS v8.0 — MemGAS-SkVM 融合架构 + APO 自优化 + PipelineEngine 重构 + 七情六欲集成
+description: GalaxyOS v8.1 — 22方向论文全量实现 + 18新论文模块 + 融合架构增强
 author: xkzs2007
 license: MIT-0
 tags: [architecture, memory, llm, rccam, dag, kora, knowledge-graph, ncps, neural-synapse-network, context-engine, galaxy-pool, load-aware-scheduling, batch-rpc, cli-anything, rust-pyo3, vector-api]
 ---
 
-# GalaxyOS v8.0
+# GalaxyOS v8.1
 
 > **定位**: OpenClaw 的核心底层能力引擎
-> **更新时间**: 2026-06-12
+> **更新时间**: 2026-06-14
 > **架构**: 统一包 `galaxyos/` + GalaxyPool 统一管理 + OpenClaw 插件 `extensions/galaxyos/`
-> **总能力项**: 490+ 项
+> **总能力项**: 530+ 项
 > **模型**: ONNX bge-small-zh-v1.5 (512d) + LTC 液态神经网络 + CfC 序列预测 + Synapse 预训练 + 4 GNN 模型
 > **IPC**: UDS RPC + ZMQ PUB/SUB + mmap 大 payload 路由 + batch RPC + R-CCAM 流式进度
 > **弹性**: GalaxyPool 统一管理 6 类组件 + WorkerPool 负载感知调度 + CircuitBreaker 断路器
-> **v8.0 新特性** ✅: MemGAS-SkVM 融合架构(Layer 13) | APO 自优化 | PipelineEngine 重构 | 七情六欲集成 | 安全加固
+> **v8.1 新特性** ✅: 22方向论文全量实现(液神经/LFM/Engram/KAN/SSM等) | 18新论文模块(~11K行) | 融合架构增强 | DAG/Liquid融合 | 注册集成
 
 ---
 
@@ -27,19 +27,19 @@ GalaxyOS是 OpenClaw 的**核心底层能力引擎**，提供：
 2. **检索能力** — RetrievalHub 7通道（KG + Local + DAG/MN-RU + Synapse/GNN+CfC + Paper + Cognitive/MN-RU三通道 + Web）+ 向量检索 + 知识图谱 + Self-RAG + CRAG 混合检索 + CRAG 动态纠错 + 场景锚定注入 + bge-reranker-v2-m3 重排序 + 预测编码冲突检测 + GraphRAG [MS 2024] + RAPTOR [Sarthi 2024] + **BlobArena v2 无损存储（mmap）** + **ONNX bge-small-zh-v1.5（512d, ~42ms）** + **MN-RU siliconflow BAAI/bge-m3（1024d）** + **SparseGAT（O(E·d) 稀疏注意力, 3078 节点 ~3MB）**
 3. **智能处理能力** — 查询改写（Pro）+ 结果总结（Flash）+ 语义过滤 + 图像理解（SmartProcessor 三模型通道：Flash/Pro/VLM）+ 自进化上下文注入 + Flash 开推理场景编码 + KV 缓存优化 + Flash NLP 路由 + **用户画像驱动内在元认知分析（Flash以用户视角分析体验数据→惰性激活下游模块）**
 4. **思考能力** — IntelligentThinkingTrigger v2.0 (RCR-Router动态评分 + Springdrift CBR记忆 + A-ToM认知推断) + 20方法论 + 10工程技能 + 决策引擎 + Reflexion 反思 [Shinn 2023] + Self-Refine 迭代精炼 [Madaan 2023] + Multi-Path 多路径并行探索 [Yao 2023] + Toolformer 工具路由 [Meta 2023] + GA 反思 [Park 2023]
-5. **执行能力** — 44 个工作流全 IPC 并行调度 + R-CCAM 结构化认知循环（统一深度管线）+ DAG 上下文中继 + Worker UDS 主通道（Plugin直连，无stdin/stdout）+ ZMQ 事件推送 + mmap 共享内存 + Worker 自动重启 + **Merge Gate** + 后台4论文引擎并行 + **Galaxy DAG 三维绑定（semantic_map/function_map/design_ref 全链路传递）**
-6. **多模态能力** — 图像理解（三引擎: xiaoyi + DeepSeek-OCR-2 + GLM-4.6V-Flash VLM）+ 图像生成（seedream）+ OCR2 深度整合 + VLM 第三通道 + Visual RAG（Cognition 阶段自动 OCR2/VLM 提取→上下文注入）
+5. **论文集成能力** — **22方向论文全量实现**：LTC液态神经网络系列(LTC/CfC/NCP/LTC-SE)、Engram条件记忆(O(1)查找)、KAN可学习激活(B-spline)、Neural ODE连续深度、LFM自适应算子/端侧推理(FP16/INT8 <1GB)、Mamba-3 SSM(复数值MIMO)、LGTC图时间常数、ODE-RNN持续学习(EWC防遗忘)、ss-Mamba+KAN融合、MoE+Engram U型缩放律等 | DAG/Liquid融合(LTC驱动compact)
+6. **多模态能力** — 图像理解（三引擎: xiaoyi + DeepSeek-OCR-2 + GLM-4.6V-Flash VLM）+ 图像生成（seedream）+ LFM-VL 多模态视觉Patch Embedding + OCR2 深度整合 + VLM 第三通道 + Visual RAG（Cognition 阶段自动 OCR2/VLM 提取→上下文注入）
 7. **可靠性能力** — 防幻觉 10 重检测 + 自我修复 + 故障转移 + ACP 持久化通道 + 全局上下文窗口比例压缩 + 自进化决策执行层 + 系统消息噪声过滤 + **Rails 护栏增强版** + 隐式偏好学习 + Worker 自动重启 + Merge Gate 合入门禁 + **人格视觉** + **用户画像驱动内在元认知进化** + **Galaxy KoRa 主动能力（行为建模+模式识别）** + **Galaxy Kernel 持续元认知后台** + **防幻觉→神经网络双向闭环（LTP/LTD + verified_memories 持久化）**
 
 ---
 
-| **文档版本**: v8.0 | 2026-06-12 | MemGAS-SkVM 融合架构 + APO 自优化 + PipelineEngine 重构 + 七情六欲集成 |
+| **文档版本**: v8.1 | 2026-06-14 | 22方向论文全量实现 + 18新论文模块(~11K行) + 融合架构增强 |
 | **上次版本**: v7.3 | 2026-06-10 | 全论文模块接入ContextEngine决策链 + session_id全面隔离 + Gateway防塞爆 |
 
 ---
 
 *GalaxyOS — OpenClaw 的核心底层能力引擎*
-*文档版本: v8.0 | 最后更新: 2026-06-12 | MemGAS-SkVM 融合架构 + APO 自优化 + PipelineEngine 重构*
+*文档版本: v8.1 | 最后更新: 2026-06-14 | 22方向论文全量实现 + 18新论文模块*
 
 ---
 
@@ -53,7 +53,7 @@ GalaxyOS是 OpenClaw 的**核心底层能力引擎**，提供：
                                     │
                                     ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                      GalaxyOS v8.0 — MemGAS-SkVM 融合架构 + APO 自优化 + PipelineEngine 重构        │
+│                      GalaxyOS v8.1 — 22方向论文全量实现 + 18新论文模块 + 融合架构增强        │
 │                         (核心底层能力引擎 · 17层)                            │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
@@ -673,7 +673,7 @@ claw.rccam_cycle("用户输入", max_cycles=1)
 - **七情六欲 skill 集成** — qiqing-liuyu 表达风格技能纳入 GalaxyOS 生态
 - **安全加固** — llm_config.json 脱敏 + .gitignore 强化
 - **install_wizard PyG 索引修复** — torch>2.11 回落到 torch-2.10.0+cpu.html
-- 📊 **统计数据更新**：总能力项 490+，新增 v8.0 8 项指标
+- 📊 **统计数据更新**：总能力项 530+，新增 v8.1 18 个论文模块(~11K行)，ModuleType 87→116 种
 
 ### v7.3 (2026-06-10) — 全论文模块接入ContextEngine决策链 + session_id全面隔离 + Gateway防塞爆
 
@@ -932,9 +932,9 @@ claw.rccam_cycle("用户输入", max_cycles=1)
 
 | 加载器 | 模块数 | 说明 |
 |-------|--------|------|
-| **协调器 (UnifiedCoordinator)** | **129 个** | 注册式模块，支持工作流编排 |
+| **协调器 (UnifiedCoordinator)** | **148 个** | 注册式模块，支持工作流编排（+19 论文模块） |
 | **弹性系统** | **57 个** | 动态加载组件，故障隔离 |
-| **ModuleType 种类** | **87 种** | 模块类型分类 |
+| **ModuleType 种类** | **116 种** | 模块类型分类（+19 论文模块） |
 
 协调器注册的 129 个模块中，约 10 个为核心活跃模块（记忆、检索、防幻觉等），其余为懒加载注册（按需加载）。模块加载率为 0% 是预期行为——系统设计为懒加载架构，非系统闲置。
 
@@ -943,7 +943,7 @@ claw.rccam_cycle("用户输入", max_cycles=1)
 | 能力分类 | 数量 | 说明 |
 |---------|------|------|
 | 思考方法论 | 20 | 9 个思考技能 + 11 个 qiushi 方法论 |
-| GalaxyOS 生态 | 12+ | xiaoyi-* 系列技能（搜索/图像/文档等） |
+| GalaxyOS 生态 | 30+ | xiaoyi-* 系列技能（搜索/图像/文档等） |
 | 记忆系统 | 9 | 记忆存储/检索/遗忘/场景等 |
 | 智能体 | 3 | 多智能体协作/agent-reach/agent-builder |
 | 设计创意 | 3 | 前端设计/可视化等 |
