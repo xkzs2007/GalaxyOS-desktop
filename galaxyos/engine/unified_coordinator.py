@@ -154,6 +154,29 @@ class ModuleType(Enum):
     HYBRID_MEMORY_SEARCH = "hybrid_memory_search"
     REFLECTION_NL = "reflection_nl"
 
+    # 新论文模块（2026-06-14）
+    ENGRAM_MEMORY = "engram_memory"
+    KAN_NETWORK = "kan_network"
+    NEURAL_ODE = "neural_ode"
+    LIQUID_FRAMEWORK = "liquid_framework"
+    ENGRAM_HEAT_INTEGRATION = "engram_heat_integration"
+
+    # 第二批论文模块（2026-06-14）
+    LFM_OPERATOR = "lfm_operator"
+    LFM_EDGE = "lfm_edge"
+    LFM_ENGRAM_FUSION = "lfm_engram_fusion"
+    LGTC_NETWORK = "lgtc_network"
+    MAMBA3_SSM = "mamba3_ssm"
+    LIQUID_SSM = "liquid_ssm"
+    SSM_KAN_FUSION = "ssm_kan_fusion"
+    ODE_RNN_CONTINUAL = "ode_rnn_continual"
+    NCD_DERIVATIVE = "ncd_derivative"
+    LIPSCHITZ_LIQUID = "lipschitz_liquid"
+    MOE_ENGRAM_HYBRID = "moe_engram_hybrid"
+    UNIFIED_SPARSITY = "unified_sparsity"
+    LIQUID_WEIGHT = "liquid_weight"
+    DAG_LIQUID = "dag_liquid"
+
 
 @dataclass
 class ModuleInfo:
@@ -2372,6 +2395,56 @@ EXTENDED_MODULES_P1 = {
         description="CRAG流水线 - 完整流程",
         triggers=["CRAG流程", "纠错流水线"],
         script_path="crag_pipeline.py"
+    ),
+    # 新论文模块（2026-06-14）
+    "engram_memory": ModuleInfo(
+        name="engram_memory",
+        module_type=ModuleType.ENGRAM_MEMORY,
+        description="Engram 条件记忆 - N-gram 哈希查找 O(1) 条件记忆",
+        triggers=["条件记忆", "查找记忆", "Engram"],
+        script_path="engram_memory.py",
+        layer=1
+    ),
+    "kan_network": ModuleInfo(
+        name="kan_network",
+        module_type=ModuleType.KAN_NETWORK,
+        description="KAN 网络 - 可学习 B-spline 激活函数，替代 MLP",
+        triggers=["KAN", "样条网络", "可学习激活"],
+        script_path="kan_network.py",
+        layer=4
+    ),
+    "neural_ode": ModuleInfo(
+        name="neural_ode",
+        module_type=ModuleType.NEURAL_ODE,
+        description="Neural ODE - 连续深度模型，ODE 求解器替代离散层",
+        triggers=["Neural ODE", "连续深度", "ODE求解"],
+        script_path="neural_ode.py",
+        layer=4
+    ),
+    "ltc_se_framework": ModuleInfo(
+        name="ltc_se_framework",
+        module_type=ModuleType.LIQUID_FRAMEWORK,
+        description="LTC-SE 统一框架 - LTC/CfC/LIF/CTRNN/GRU-ODE/NeuralODE 统一接口",
+        triggers=["液体框架", "LTC-SE", "连续时间单元"],
+        script_path="ltc_se_framework.py",
+        layer=4
+    ),
+    # 第二批论文模块（2026-06-14）
+    "liquid_weight": ModuleInfo(
+        name="liquid_weight",
+        module_type=ModuleType.LIQUID_WEIGHT,
+        description="P19: Liquid Weight 独立模块 - 液态权重生成、融合、液态+静态混合",
+        triggers=["液态权重", "LiquidWeight", "权重生成"],
+        script_path="liquid_weight.py",
+        layer=1
+    ),
+    "dag_liquid_fusion": ModuleInfo(
+        name="dag_liquid_fusion",
+        module_type=ModuleType.DAG_LIQUID,
+        description="P21: DAG + Liquid 融合 - LTC 时间常数驱动的 DAG 上下文压缩策略",
+        triggers=["DAG液态", "液态压缩", "上下文压缩"],
+        script_path="dag_liquid_fusion.py",
+        layer=9
     ),
 }
 
