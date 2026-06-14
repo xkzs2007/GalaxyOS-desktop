@@ -13,8 +13,6 @@ GalaxyOS — 安装向导 + 配置向导
   python3 install_wizard.py --sleep-test    # 仿生睡眠巩固引擎专项测试
   python3 install_wizard.py --kg-test       # 知识图谱功能专项测试
   python3 install_wizard.py --all            # 全量模式（体检 + 睡眠测试 + 修复）
-  python3 install_wizard.py --update         # 增量更新：版本检测 + 仅同步变更，保护已有配置
-  python3 install_wizard.py --check --hardware  # 仅硬件/设备环境检测
 """
 
 import os
@@ -224,239 +222,6 @@ def check_environment() -> Dict[str, Any]:
         if not p.exists():
             warn(f"{name} 目录不存在: {p}", indent=1)
 
-    return results
-
-
-# ════════════════════════════════════════════════════════════════
-# 阶段 0.1：硬件/设备环境检测
-# ════════════════════════════════════════════════════════════════
-
-def check_hardware() -> Dict[str, Any]:
-    """检测 CPU/内存/磁盘/GPU/SIMD 等硬件环境"""
-    import platform
-    results = {
-        "cpu": {},
-        "memory": {},
-        "disk": {},
-        "simd": {},
-        "numa": {},
-        "container": {},
-    }
-
-    print()
-    heading("🖥️ 阶段 0.1：硬件/设备环境检测")
-
-    # ── CPU ──
-    try:
-        with open("/proc/cpuinfo") as f:
-            cpuinfo = f.read()
-    except FileNotFoundError:
-        cpuinfo = ""
-
-    cpu_model = ""
-    cpu_cores = 0
-    cpu_arch = platform.machine() or os.uname().machine
-    results["cpu"]["arch"] = cpu_arch
-
-    # 解析 /proc/cpuinfo
-    if cpuinfo:
-        for line in cpuinfo.splitlines():
-            if line.startswith("model name"):
-                cpu_model = line.split(":")[-1].strip()
-            elif line.startswith("CPU part"):
-                results["cpu"]["part"] = line.split(":")[-1].strip()
-            elif line.startswith("CPU implementer"):
-                results["cpu"]["implementer"] = line.split(":")[-1].strip()
-        # 计数 processor 行 = 核数
-        cpu_cores = sum(1 for line in cpuinfo.splitlines() if line.startswith("processor"))
-
-    if not cpu_model:
-        # ARM 机型从 implementer + part 反查
-        impl = results["cpu"].get("implementer", "")
-        part = results["cpu"].get("part", "")
-        if impl == "0x48" or impl == "0x41":
-            cpu_model = "华为鲲鹏 (HiSilicon)"
-            results["cpu"]["vendor"] = "HiSilicon/Kunpeng"
-        elif impl == "0x42":
-            cpu_model = "通用 ARM"
-            results["cpu"]["vendor"] = "ARM"
-
-    cpu_cores = max(cpu_cores, os.cpu_count() or 1)
-    results["cpu"]["model"] = cpu_model or f"{cpu_arch} 处理器"
-    results["cpu"]["cores"] = cpu_cores
-
-    info(f"架构: {results['cpu']['arch']}", indent=1)
-    info(f"型号: {results['cpu']['model']}", indent=1)
-    info(f"核心: {cpu_cores}", indent=1)
-    if results["cpu"].get("implementer"):
-        info(f"Implementer: {results['cpu']['implementer']}", indent=1)
-
-    # ── 内存 ──
-    try:
-        with open("/proc/meminfo") as f:
-            meminfo = f.read()
-        mem_total_kb = 0
-        mem_avail_kb = 0
-        for line in meminfo.splitlines():
-            if line.startswith("MemTotal:"):
-                mem_total_kb = int(line.split()[1])
-            elif line.startswith("MemAvailable:"):
-                mem_avail_kb = int(line.split()[1])
-        mem_total_gb = round(mem_total_kb / 1024 / 1024, 1)
-        mem_avail_gb = round(mem_avail_kb / 1024 / 1024, 1)
-        mem_used_pct = round((1 - mem_avail_kb / mem_total_kb) * 100, 1) if mem_total_kb else 0
-        results["memory"]["total_gb"] = mem_total_gb
-        results["memory"]["available_gb"] = mem_avail_gb
-        results["memory"]["used_pct"] = mem_used_pct
-        info(f"内存: {mem_total_gb}GB 总量 / {mem_avail_gb}GB 可用 ({mem_used_pct}% 已用)", indent=1)
-    except Exception:
-        warn("无法读取内存信息", indent=1)
-
-    # ── 磁盘 ──
-    try:
-        if hasattr(shutil, "disk_usage"):
-            du = shutil.disk_usage(WORKSPACE)
-            disk_total_gb = round(du.total / (1024 ** 3), 1)
-            disk_used_gb = round(du.used / (1024 ** 3), 1)
-            disk_free_gb = round(du.free / (1024 ** 3), 1)
-            disk_used_pct = round(du.used / du.total * 100, 1) if du.total else 0
-            results["disk"]["total_gb"] = disk_total_gb
-            results["disk"]["used_gb"] = disk_used_gb
-            results["disk"]["free_gb"] = disk_free_gb
-            results["disk"]["used_pct"] = disk_used_pct
-            info(f"磁盘: {disk_total_gb}GB 总量 / {disk_free_gb}GB 剩余 ({disk_used_pct}% 已用)", indent=1)
-            if disk_free_gb < 1:
-                err(f"磁盘空间不足: 仅剩 {disk_free_gb}GB", indent=1)
-            elif disk_free_gb < 5:
-                warn(f"磁盘空间紧张: 仅剩 {disk_free_gb}GB", indent=1)
-    except Exception:
-        warn("无法读取磁盘信息", indent=1)
-
-    # ── GPU ──
-    results["gpu"] = {}
-    # 检查 nvidia-smi
-    gpu_available = False
-    gpu_info = ""
-    try:
-        r = subprocess.run(["nvidia-smi", "--query-gpu=name,memory.total", "--format=csv,noheader"],
-                           capture_output=True, text=True, timeout=3)
-        if r.returncode == 0 and r.stdout.strip():
-            gpu_available = True
-            gpu_info = r.stdout.strip().splitlines()
-    except (FileNotFoundError, subprocess.TimeoutExpired):
-        pass
-    # 检查 PyTorch CUDA
-    if not gpu_available:
-        try:
-            import torch
-            if torch.cuda.is_available():
-                gpu_available = True
-                gpu_info = [f"CUDA: {torch.cuda.get_device_name(0)}"]
-        except (ImportError, RuntimeError):
-            pass
-    results["gpu"]["available"] = gpu_available
-    results["gpu"]["info"] = gpu_info
-    if gpu_available:
-        ok(f"GPU 可用: {gpu_info}", indent=1)
-    else:
-        info("GPU: 不可用（纯 CPU 环境）", indent=1)
-
-    # ── SIMD 特性检测 ──
-    simd_features = []
-    # 检查 flags 行
-    if cpuinfo:
-        for line in cpuinfo.splitlines():
-            if line.startswith("flags"):
-                flags = line.split(":")[-1].strip().split()
-                if "avx512f" in flags:
-                    simd_features.append("AVX-512")
-                elif "avx2" in flags or "avx" in flags:
-                    simd_features.append("AVX/AVX2")
-                if "neon" in line.lower():
-                    simd_features.append("NEON")
-                    break
-                break
-        # ARM: 检查 Features 行
-        for line in cpuinfo.splitlines():
-            if line.startswith("Features"):
-                feats = line.split(":")[-1].strip().lower()
-                if "sve" in feats:
-                    # 尝试获取 SVE 向量长度
-                    import re as _re
-                    sve_matches = _re.findall(r"sve(\d+)", feats)
-                    if sve_matches:
-                        simd_features.append(f"SVE{max(int(x) for x in sve_matches)}")
-                    else:
-                        simd_features.append("SVE")
-                if "neon" in feats:
-                    simd_features.append("NEON")
-                    break
-                break
-
-    # 通过 Python 平台检测补充
-    if cpu_arch in ("aarch64", "arm64"):
-        if "NEON" not in simd_features:
-            simd_features.append("NEON(by-arch)")
-    elif cpu_arch in ("x86_64", "amd64"):
-        if not any("AVX" in f for f in simd_features):
-            # 用 Python 尝试检测
-            try:
-                import struct
-                # x86 cpuid 模拟检测 — 简单版：从 /proc/cpuinfo flags 补
-                pass
-            except Exception:
-                pass
-
-    results["simd"]["features"] = simd_features
-    if simd_features:
-        info(f"SIMD: {', '.join(simd_features)}", indent=1)
-    else:
-        info("SIMD: 未知", indent=1)
-
-    # ── NUMA ──
-    numa_nodes = 0
-    try:
-        r = subprocess.run(["numactl", "--hardware"], capture_output=True, text=True, timeout=3)
-        if r.returncode == 0:
-            for line in r.stdout.splitlines():
-                if "available:" in line:
-                    import re as _re
-                    m = _re.search(r"(\d+)\s+nodes?", line)
-                    if m:
-                        numa_nodes = int(m.group(1))
-                    break
-    except (FileNotFoundError, subprocess.TimeoutExpired):
-        pass
-    results["numa"]["nodes"] = numa_nodes
-    if numa_nodes > 0:
-        info(f"NUMA 节点: {numa_nodes}", indent=1)
-
-    # ── 容器/VM 检测 ──
-    in_container = False
-    in_vm = False
-    try:
-        if os.path.exists("/.dockerenv"):
-            in_container = True
-        if os.path.exists("/run/.containerenv"):
-            in_container = True
-        # cgroup 检测
-        try:
-            with open("/proc/1/cgroup") as f:
-                cg = f.read()
-            if "docker" in cg or "kubepods" in cg or "containerd" in cg:
-                in_container = True
-        except FileNotFoundError:
-            pass
-    except Exception:
-        pass
-    results["container"]["in_container"] = in_container
-    results["container"]["in_vm"] = in_vm
-    if in_container:
-        info("运行环境: 容器", indent=1)
-    else:
-        info("运行环境: 裸机/VM", indent=1)
-
-    print()
     return results
 
 
@@ -1821,45 +1586,17 @@ def test_kg() -> Dict[str, Any]:
 # 修复功能
 # ════════════════════════════════════════════════════════════════
 
-def auto_fix(sync_result: Dict[str, Any], import_result: Optional[Dict[str, Any]] = None, incremental: bool = False) -> Dict[str, Any]:
-    """自动执行可修复的内容。
-
-    Args:
-        sync_result: check_file_sync() 的返回结果
-        import_result: test_all_modules() 的返回结果（可选）
-        incremental: 增量更新模式 — 版本检测、配置保护、只同步变更
-    """
-    version = get_core_version()
-    installed_version = _read_version_marker()
-
-    # ── 版本检测 ──
+def auto_fix(sync_result: Dict[str, Any], import_result: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """自动执行可修复的内容"""
     heading("🔧 自动修复")
-    if incremental:
-        if installed_version:
-            info(f"当前安装版本: v{installed_version}", indent=1)
-            info(f"远程版本: v{version}", indent=1)
-            if installed_version == version:
-                ok(f"已是最新版 v{version}，无需操作")
-                return {"synced": 0, "failed": 0, "details": [], "skipped": True, "reason": "already_latest"}
-            else:
-                info(f"版本更新: v{installed_version} → v{version}", indent=1)
-        else:
-            info(f"未检测到安装标记（首次安装），将安装 v{version}", indent=1)
 
-    fixed = {"synced": 0, "failed": 0, "details": [], "config_protected": []}
-
-    # ── 需保护的配置文件（增量更新时不覆盖） ──
-    PROTTECTED_FILES = {"llm_config.json", "unified_config.json", "huawei_key.json", ".env"}
+    fixed = {"synced": 0, "failed": 0, "details": []}
 
     # 同步文件
     if DIST_DIR.exists():
         for entry in sync_result.get("files", []):
             fn = entry["file"]
             if entry["status"] in ("missing", "stale"):
-                # 增量模式下跳过配置文件
-                if incremental and fn in PROTTECTED_FILES:
-                    fixed["config_protected"].append(fn)
-                    continue
                 # 修正:fn 可能是 "engine/X.py" 这种带前缀的,源路径要拆开
                 if fn.startswith("engine/"):
                     src = galaxy_engine / fn[len("engine/"):]
@@ -1914,29 +1651,7 @@ def auto_fix(sync_result: Dict[str, Any], import_result: Optional[Dict[str, Any]
         if fixed["synced"] > 0:
             ok(f"已同步: {label} ({fixed['synced']} 文件)")
 
-    # ── 写入版本标记 ──
-    if fixed["synced"] > 0:
-        _write_version_marker(version)
-        ok(f"版本标记已更新: v{version}")
-    elif incremental and not installed_version:
-        # 首次安装但没有文件需要同步（可能之前已手动同步过），也写标记
-        _write_version_marker(version)
-        ok(f"版本标记已写入: v{version}")
-
-    # ── 配置保护报告 ──
-    if fixed["config_protected"]:
-        info("已保护以下配置文件（未被覆盖）:", indent=1)
-        for pf in fixed["config_protected"]:
-            info(f"  - {pf}", indent=2)
-
-    # ── 增量模式汇总 ──
-    if incremental:
-        if fixed["synced"] > 0:
-            ok(f"增量更新完成: 同步 {fixed['synced']} 个文件")
-        elif installed_version == version:
-            pass  # 已提前返回
-        else:
-            ok("所有文件已是最新")
+    # ── 同步睡眠引擎模块（如不存在则复制） ──
 
     return fixed
 
@@ -1946,17 +1661,8 @@ def auto_fix(sync_result: Dict[str, Any], import_result: Optional[Dict[str, Any]
 # ════════════════════════════════════════════════════════════════
 
 def get_core_version() -> str:
-    """从 galaxyos 读版本号（优先级：VERSION > package.json > CHANGELOG）"""
-    # 最高优先级：VERSION 文件
-    ver_file = EXT_DIR / "VERSION"
-    try:
-        if ver_file.exists():
-            v = ver_file.read_text().strip()
-            if v:
-                return v
-    except Exception:
-        pass
-    # package.json
+    """从 galaxyos/engine 或 extensions 读版本号"""
+    # 优先从 galaxyos 插件读
     pkg = EXT_DIR / "package.json"
     try:
         if pkg.exists():
@@ -1964,38 +1670,17 @@ def get_core_version() -> str:
                 return json.load(f).get("version", "1.0.0")
     except Exception:
         pass
-    # CHANGELOG 最新版本号
-    changelog = EXT_DIR / "CHANGELOG.md"
-    if changelog.exists():
+    # 从 README 读
+    readme = EXT_DIR / "README.md"
+    if readme.exists():
         try:
-            with open(changelog) as f:
+            with open(readme) as f:
                 for line in f:
-                    m = re.match(r"^## \[([\d.]+)\]", line)
-                    if m:
-                        return m.group(1)
+                    if "版本:" in line:
+                        return line.split("版本:")[-1].strip().split("·")[0].strip()
         except Exception:
             pass
-    return "1.0.0"
-
-
-def _read_version_marker() -> Optional[str]:
-    """读取已安装版本标记"""
-    marker = VAR_DIR / ".galaxyos_version"
-    try:
-        if marker.exists():
-            return marker.read_text().strip()
-    except Exception:
-        pass
-    return None
-
-
-def _write_version_marker(version: str):
-    """写入已安装版本标记"""
-    try:
-        VAR_DIR.mkdir(parents=True, exist_ok=True)
-        (VAR_DIR / ".galaxyos_version").write_text(version)
-    except Exception as e:
-        warn(f"无法写入版本标记: {e}", indent=1)
+    return "7.1"
 
 
 def generate_report(all_results: Dict[str, Any]) -> Dict[str, Any]:
@@ -2175,7 +1860,6 @@ def main():
     parser.add_argument("--install-plugin", action="store_true", help="安装/检测 GalaxyOS OpenClaw 插件")
     parser.add_argument("--fix-torch", action="store_true", help="自动补齐 torch/torch_geometric/hnswlib 等 ML 栈（清华源 + PyG wheel + CPU 索引）")
     parser.add_argument("--python", default=None, help="显式指定 Python 解释器路径（覆盖自动检测，常用于生产环境/容器固定运行时）")
-    parser.add_argument("--update", action="store_true", help="增量更新模式：版本检测 + 仅同步变更文件，保护已有配置")
     parser.add_argument("--openclaw-home", default=None, help="显式指定 OpenClaw 用户配置目录（覆盖 OPENCLAW_HOME 环境变量，覆盖 dev/prod 自动检测）")
     args = parser.parse_args()
 
@@ -2226,97 +1910,7 @@ def main():
             sys.stdout.flush()
         return
 
-    # ── --update 模式：增量更新，轻量快速 ──
-    if args.update:
-        heading("🔄 增量更新模式")
-        version = get_core_version()
-        installed_version = _read_version_marker()
-        if installed_version:
-            info(f"当前: v{installed_version}", indent=1)
-        else:
-            info("首次安装，无版本标记", indent=1)
-
-        # ── 从 CNB 远程拉取最新代码 ──
-        _cur = Path(__file__).resolve().parent
-        _git_root = _cur
-        for _ in range(6):
-            if (_cur / ".git").exists():
-                _git_root = _cur
-                break
-            _cur = _cur.parent
-        if (_git_root / ".git").exists():
-            info(f"Git 仓库: {_git_root}", indent=1)
-            try:
-                r = subprocess.run(
-                    ["git", "fetch", "cnb"],
-                    cwd=str(_git_root), capture_output=True, text=True, timeout=15
-                )
-                if r.returncode == 0:
-                    ok("远程 fetch 成功")
-                    # 检查远程版本
-                    r2 = subprocess.run(
-                        ["git", "rev-list", "--count", "HEAD..cnb/main"],
-                        cwd=str(_git_root), capture_output=True, text=True, timeout=5
-                    )
-                    behind = int(r2.stdout.strip()) if r2.returncode == 0 else 0
-                    if behind > 0:
-                        info(f"远程有 {behind} 个新提交", indent=1)
-                        r3 = subprocess.run(
-                            ["git", "pull", "--ff-only", "cnb", "main"],
-                            cwd=str(_git_root), capture_output=True, text=True, timeout=15
-                        )
-                        if r3.returncode == 0:
-                            ok(f"已拉取远程更新 ({behind} 个提交)")
-                            # 重新读取版本
-                            version = get_core_version()
-                            info(f"当前版本: v{version}", indent=1)
-                        else:
-                            warn(f"git pull 失败: {r3.stderr[:200]}", indent=1)
-                    else:
-                        if installed_version == version:
-                            ok(f"已是最新版 v{version}，无需更新")
-                            # 硬件检测快速过
-                            all_results["hardware"] = check_hardware()
-                            return
-                        else:
-                            info(f"远程版本 v{version}，本地标记 v{installed_version}，执行同步", indent=1)
-                else:
-                    warn(f"git fetch 失败: {r.stderr[:100]}", indent=1)
-                    info("使用本地代码继续...", indent=1)
-            except (subprocess.TimeoutExpired, FileNotFoundError) as e:
-                warn(f"Git 操作异常: {e}", indent=1)
-                info("使用本地代码继续...", indent=1)
-        else:
-            warn(f"未找到 Git 仓库", indent=1)
-            info("使用本地代码继续...", indent=1)
-
-        # 硬件检测 + 环境检测（轻量）
-        all_results["hardware"] = check_hardware()
-        all_results["env"] = check_environment()
-        all_results["sync"] = check_file_sync()
-
-        # 增量修复
-        all_results["fixed"] = auto_fix(
-            all_results.get("sync", {"files": []}),
-            incremental=True
-        )
-        if all_results["fixed"].get("skipped"):
-            return  # 已是最新版
-
-        # 增量更新后重新检查
-        all_results["sync"] = check_file_sync()
-
-        # 版本变更时提示重启
-        if installed_version and installed_version != version:
-            print()
-            heading("💡 升级提示")
-            info(f"GalaxyOS v{installed_version} → v{version} 升级完成", indent=1)
-            info("建议重启 OpenClaw Gateway 使变更生效:", indent=1)
-            warn("  supervisorctl restart openclaw-gateway", indent=2)
-        return
-
     # ── 执行各阶段 ──
-    all_results["hardware"] = check_hardware()
     all_results["env"] = check_environment()
     # v2026.6.11+: 互动模式自动问是否 --fix-torch（CI/--check/--report 时不阻塞）
     _interactive_torch = (
