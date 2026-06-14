@@ -51,6 +51,9 @@ service-account.json
 .DS_Store
 Thumbs.db
 
+# ── 构建产物 ──
+**/dist/
+
 # ── 大文件 / 模型 ──
 *.tar.gz
 *.zip
