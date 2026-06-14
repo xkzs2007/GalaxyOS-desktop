@@ -2107,7 +2107,8 @@ def _install_plugin_guide():
             info(f"描述: {desc}...", indent=1)
             info(f"注册工具: {', '.join(tools[:6])}{'...' if len(tools) > 6 else ''}", indent=1)
 
-            # 检测 OpenClaw 注册状态
+            # 检测 OpenClaw 注册状态 + 禁用冲突插件
+            _memory_core_disabled = False
             try:
                 r = subprocess.run(
                     ["openclaw", "plugins", "list"],
@@ -2121,8 +2122,35 @@ def _install_plugin_guide():
                 else:
                     warn("GalaxyOS 插件未在 OpenClaw 中注册")
                     info("安装路径已在 extensions/，重启 Gateway 生效", indent=1)
-            except Exception:
-                info("无法查询 OpenClaw 插件列表", indent=1)
+
+                # 禁用 memory-core 插件（GalaxyOS 有自己的 ContextEngine + 记忆系统）
+                if "memory-core" in r.stdout and "disabled" not in r.stdout.split("memory-core")[1][:30]:
+                    warn("memory-core 插件与 GalaxyOS 自研记忆系统冲突")
+                    info("正在自动禁用 memory-core...", indent=1)
+                    r2 = subprocess.run(
+                        ["openclaw", "plugins", "disable", "memory-core"],
+                        capture_output=True, text=True, timeout=10
+                    )
+                    if r2.returncode == 0:
+                        ok("memory-core 已禁用（GalaxyOS ContextEngine 接管记忆管理）", indent=1)
+                        _memory_core_disabled = True
+                    else:
+                        err(f"memory-core 禁用失败: {r2.stderr[:100]}", indent=1)
+                        info("可手动运行: openclaw plugins disable memory-core", indent=1)
+                elif "memory-core" in r.stdout:
+                    ok("memory-core 已禁用，无冲突", indent=1)
+                    _memory_core_disabled = True
+                else:
+                    info("未发现 memory-core 插件", indent=1)
+            except Exception as e:
+                info(f"无法查询 OpenClaw 插件列表: {e}", indent=1)
+
+            if _memory_core_disabled:
+                print(
+                    f"\n  {Y}⚠️  注意: GalaxyOS 使用自研 ContextEngine + DAG + 突触网络{N}"
+                    f"\n  {Y}    管理记忆，memory-core 已被禁用以免冲突。{N}"
+                    f"\n  {Y}    如需回退，运行: openclaw plugins enable memory-core{N}"
+                )
         except Exception as e:
             err(f"读取插件配置失败: {e}")
     else:
@@ -2141,17 +2169,13 @@ def _install_plugin_guide():
         if socks:
             ok(f"Worker UDS 已就绪 ({len(socks)} 个): {', '.join(s.split('/')[-1] for s in socks)}")
         else:
-            sock = VAR_DIR / "claw-worker.sock"
-            if sock.exists():
+            legacy_sock = VAR_DIR / "claw-worker.sock"
+            if legacy_sock.exists():
                 warn("旧版单 Worker socket，当前为多 worker 模式")
+                ok(f"Worker UDS 已就绪（旧版）: {legacy_sock}", indent=1)
             else:
                 warn("Worker UDS socket 未就绪（Worker 未运行或未完全启动）")
-                info("检查: python3 -m supervisor.supervisorctl status", indent=1)
-        if sock.exists():
-            ok(f"Worker UDS 已就绪: {sock}")
-        else:
-            warn("Worker UDS socket 未就绪（Worker 未运行或未完全启动）")
-            info("检查: supervisorctl status claw-worker", indent=1)
+                info("检查: supervisorctl status claw-worker", indent=1)
     else:
         warn(f"Worker var 目录不存在: {VAR_DIR}")
 
