@@ -1034,7 +1034,7 @@ def check_file_sync() -> Dict[str, Any]:
     results = {"files": [], "out_of_sync": 0}
 
     if not DIST_DIR.exists():
-        warn(f"dist 目录不存在: {DIST_DIR}")
+        info(f"dist 目录不存在: {DIST_DIR}（插件模式预期行为，dist 同步是开发态操作）")
         return results
 
     for fn in os.listdir(galaxy_scripts):
