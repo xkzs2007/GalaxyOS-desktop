@@ -2446,6 +2446,14 @@ def main():
         sys.stderr.write(f"[claw-worker] 三论文集成注册: RLM + SKILL0 + MemoryOS\n")
     except Exception as e:
         sys.stderr.write(f"[claw-worker] 三论文集成跳过: {e}\n")
+
+    # v8.1 论文全量集成: 18新模块 × 4管线
+    try:
+        from galaxyos.engine.paper_integration_v81 import integrate_v81
+        _v81_addon = integrate_v81(worker, _METHODS)
+        sys.stderr.write(f"[claw-worker] v8.1 论文全量集成注册: 22 UDS 方法\n")
+    except Exception as e:
+        sys.stderr.write(f"[claw-worker] v8.1 论文全量集成跳过: {e}\n")
     
     # 启动记忆巩固后台
     try:
@@ -2707,6 +2715,25 @@ def main():
             except Exception:
                 pass
 
+        # ── 后处理：v8.1 论文全量后处理（每次 rccam 后）──
+        def _run_v81_post_response(query, answer, confidence=0.5):
+            """运行 v8.1 集成后处理：Engram/ODE-RNN/Sparsity/LFM 等"""
+            if not answer:
+                return
+            try:
+                # _v81_addon 是同作用域闭包变量（在 if __name__ 中定义）
+                if _v81_addon:
+                    _vi = _v81_addon.run_post_response(query[:200], answer[:400], confidence)
+                    if _vi:
+                        _v81_path = os.path.join(WORKSPACE, '.learnings', 'v81_insights.jsonl')
+                        os.makedirs(os.path.dirname(_v81_path), exist_ok=True)
+                        _vi['ts'] = time.time()
+                        _vi['query_prefix'] = str(query)[:40]
+                        with open(_v81_path, 'a') as _f:
+                            _f.write(json.dumps(_vi, ensure_ascii=False, default=str) + '\n')
+            except Exception:
+                pass
+
         # ── 周期任务：重论文功能（每 ~50 轮）──
         def _run_periodic_paper_tasks():
             """时空认知 + 引擎集成 + 增强推理的后台构造"""
@@ -2848,6 +2875,9 @@ def main():
                                 _ev.get('query',''), _ev.get('answer',''), _ev.get('confidence',0.5))
                         if _ev.get('type') == 'post_response':
                             _run_paper_post_response(
+                                _ev.get('query',''), _ev.get('answer',''), _ev.get('confidence',0.5))
+                        if _ev.get('type') == 'post_response':
+                            _run_v81_post_response(
                                 _ev.get('query',''), _ev.get('answer',''), _ev.get('confidence',0.5))
 
                 # 周期任务（每 ~50 轮）

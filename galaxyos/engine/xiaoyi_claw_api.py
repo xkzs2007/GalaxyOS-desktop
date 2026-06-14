@@ -211,6 +211,7 @@ class XiaoYiClawLLM:
         self._smn = None
         self._paper_int = None
         self._consolidation = None
+        self._galaxy_engine = None
 
         self._init_vector_store()
         self._init_ontology_bridge()
@@ -239,6 +240,7 @@ class XiaoYiClawLLM:
         self._init_dag_integration()
         # 修复 BUG-1: _paper_int 从未被初始化，导致 30+ 处论文级增强全部静默失效
         self._init_paper_integration()
+        self._init_galaxy_engine()
 
         logger.info("小艺 Claw 大模型初始化完成")
 
@@ -792,6 +794,24 @@ class XiaoYiClawLLM:
         except Exception as e:
             logger.warning(f"PaperIntegration 初始化失败（30+ 处增强会降级）: {e}")
 
+    def _init_galaxy_engine(self):
+        """初始化 Galaxy Engine 集成（Engram/DAGLiquid/LFM/SSM/持续学习）
+        
+        在 _init_paper_integration 之后调用，
+        为 _retrieval/_cognition/_action/_memory 四阶段提供新模块 hook。
+        """
+        self._galaxy_engine = None
+        try:
+            from galaxy_engine_integration import get_galaxy_engine
+            self._galaxy_engine = get_galaxy_engine()
+            _status = 'ok' if self._galaxy_engine else 'none'
+            if self._galaxy_engine:
+                _cnt = self._galaxy_engine.get_enabled_count()
+                logger.info(f"GalaxyEngine 初始化: status={_status}, enabled_modules={_cnt}")
+            else:
+                logger.info("GalaxyEngine 返回空实例")
+        except Exception as e:
+            logger.warning(f"GalaxyEngine 初始化失败: {e}")
 
     def set_rci_publisher(self, zmq_fn=None, mmap_fn=None):
         """设置 RCI 三通道发布回调(供 claw_worker invoke)"""
@@ -2270,6 +2290,17 @@ class XiaoYiClawLLM:
             logger.info(f"问候快速通路: 直接回复 '{raw_query}'")
             return state
 
+        # ═══ GalaxyEngine: Engram 条件记忆预检索 ═══
+        try:
+            if getattr(self, '_galaxy_engine', None):
+                _ge_info = self._galaxy_engine.pre_retrieval(raw_query)
+                if _ge_info and _ge_info.get("hit", False):
+                    state.analysis['engram_pre_hit'] = True
+                    state.analysis['engram_hit_rate'] = _ge_info.get("hit_rate", 0.0)
+                    state.analysis['engram_embedding_norm'] = _ge_info.get("embedding_norm", 0.0)
+        except Exception:
+            pass
+
         # ═══ KG as Memory Backbone: 实体提取 & 图写入 ═══
         try:
             sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -2634,6 +2665,33 @@ class XiaoYiClawLLM:
         except Exception:
             pass
 
+        # ═══ GalaxyEngine: 检索后 confidence 微调 + Engram 写入 ═══
+        try:
+            if getattr(self, '_galaxy_engine', None):
+                _mems = getattr(state, 'retrieved_memories', []) or []
+                _adj = self._galaxy_engine.post_retrieval(
+                    raw_query, state.retrieval_confidence, len(_mems)
+                )
+                if _adj != state.retrieval_confidence:
+                    state.retrieval_confidence = _adj
+                    logger.debug(f"GalaxyEngine confidence bias: {_adj:.3f}")
+        except Exception:
+            pass
+
+        # ═══ GalaxyEngine: DAGLiquid 压缩建议 ═══
+        try:
+            if getattr(self, '_galaxy_engine', None):
+                _dag_nodes = self.dag._get_all_nodes() if getattr(self, 'dag', None) and hasattr(self.dag, '_get_all_nodes') else []
+                if _dag_nodes:
+                    _advice = self._galaxy_engine.get_compact_advice(
+                        raw_tokens=len(raw_query) // 3,
+                        max_tokens=16000,
+                        dag_nodes=_dag_nodes
+                    )
+                    if _advice and _advice.get('should_compact'):
+                        logger.info(f"DAGLiquid: 建议压缩 (readiness={_advice.get('readiness', 0):.3f}, candidates={_advice.get('candidate_count', 0)})")
+        except Exception:
+            pass
 
         return state
 
@@ -3222,6 +3280,25 @@ class XiaoYiClawLLM:
         except Exception:
             pass
 
+        # ═══ GalaxyEngine: SSM 状态追踪 + LFM 分析（非 greeting/minimal 预算） ═══
+        if _budget not in ("greeting", "minimal"):
+            try:
+                if getattr(self, '_galaxy_engine', None):
+                    # SSM 状态追踪
+                    _ssm = self._galaxy_engine.track_ssm_state(
+                        query, topic=state.analysis.get('intent', '')
+                    )
+                    if _ssm and _ssm.get('status') == 'ok':
+                        state.analysis['ssm_switch_prob'] = _ssm.get('switch_probability', 0.0)
+                        state.analysis['ssm_engagement'] = _ssm.get('engagement', 0.5)
+                        state.analysis['ssm_should_refresh'] = _ssm.get('should_refresh', False)
+
+                    # LFM 推理分析
+                    _lfm = self._galaxy_engine.analyze_with_lfm(query)
+                    if _lfm and _lfm.get('reasoning_available'):
+                        state.analysis['lfm_complexity'] = _lfm.get('complexity', 0.5)
+            except Exception:
+                pass
 
         return state
 
@@ -4069,6 +4146,28 @@ class XiaoYiClawLLM:
                     logger.info(f"跨会话记忆恢复: {len(_restored)} chars")
         except Exception as e:
             logger.debug(f"cross_session_memory_restore failed: {e}")
+
+        # ═══ GalaxyEngine: SSM 记忆访问记录 + Engram 记住 + 持续学习交互记录 ═══
+        try:
+            if getattr(self, '_galaxy_engine', None):
+                # SSM 记录记忆访问
+                for _mid in getattr(state, 'memory_ids', []) or []:
+                    self._galaxy_engine.record_memory_access_ssm(str(_mid))
+
+                # Engram 记住本轮查询
+                self._galaxy_engine.remember_retrieved(query, answer or '')
+
+                # 持续学习交互记录
+                self._galaxy_engine.record_interaction_continual(
+                    query, answer or '',
+                    metadata={
+                        'strategy': getattr(state, 'strategy', 'answer'),
+                        'success': getattr(state, 'action_success', True),
+                        'confidence': getattr(state, 'answer_confidence', 0.5),
+                    }
+                )
+        except Exception:
+            pass
 
         return state
 
