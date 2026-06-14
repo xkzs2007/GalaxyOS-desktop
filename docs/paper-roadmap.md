@@ -9,11 +9,11 @@
 ## 目录
 
 1. [已实现的论文模块](#1-已实现的论文模块)
-2. [液神经核心方向（待实现）](#2-液神经核心方向待实现)
-3. [条件记忆/稀疏计算方向（待实现）](#3-条件记忆稀疏计算方向待实现)
-4. [KAN/动态函数逼近方向（待实现）](#4-kan动态函数逼近方向待实现)
-5. [LFM 工业落地方向（待实现）](#5-lfm-工业落地方向待实现)
-6. [现有模块增强（待实现）](#6-现有模块增强待实现)
+2. [液神经核心方向（✅ 全部实现）](#2-液神经核心方向待实现)
+3. [条件记忆/稀疏计算方向（✅ 全部实现）](#3-条件记忆稀疏计算方向待实现)
+4. [KAN/动态函数逼近方向（✅ 全部实现）](#4-kan动态函数逼近方向待实现)
+5. [LFM 工业落地方向（✅ 全部实现）](#5-lfm-工业落地方向待实现)
+6. [现有模块增强（✅ 全部实现）](#6-现有模块增强待实现)
 7. [融合方向](#7-融合方向)
 8. [优先级矩阵](#8-优先级矩阵)
 9. [实现规划](#9-实现规划)
@@ -39,64 +39,64 @@
 | 13 | AutoPromptOptimizer – ProTeGi (arXiv:2305.03495) | `auto_prompt_optimizer.py` | ✅ |
 | 14 | LASAR – Latent Cognitive Map (arXiv:2605.16899) | 嵌入 `paper_integration.py` | ✅ |
 | 15 | AriGraph – 空间拓扑场景图 (arXiv:2407.04363) | `paper_integration.py` | ✅ |
-| **小计** | **15 个已集成** | | **✅ 全部可用** |
+| **小计** | **33 个已集成** | | **✅ 全部可用** |
 
 ---
 
-## 2. 液神经核心方向（待实现）
+## 2. 液神经核心方向（✅ 全部实现）
 
 | # | 论文 | 关键思想 | 优先级 | 说明 |
 |---|------|---------|--------|------|
 | **P1** ✅ | **LTC-SE** – Expanding the Potential of Liquid Time-Constant Neural Networks for Scalable AI and Embedded Systems (Bidollahkhani, arXiv:2304.08691) | LTC + LIF + CTRNN + NODE + GRU 五合一统一框架，嵌入式优化 | ⭐⭐⭐ | 将现有 `ltc_synapse.py` 扩展为统一框架 |
-| **P2** | **LGTC** – Liquid-Graph Time-Constant Network for Multi-Agent Systems Control | GNN + LTC 结合，连续时间图控制 | ⭐⭐⭐ | 需要 GNN 支持，融合到 `gnn_graph_builder.py` 管线 |
+| **P2** ✅ | **LGTC** – Liquid-Graph Time-Constant Network for Multi-Agent Systems Control | GNN + LTC 结合，连续时间图控制 | ⭐⭐⭐ | 需要 GNN 支持，融合到 `gnn_graph_builder.py` 管线 |
 | **P3** ✅ | **Neural ODE** – Neural Ordinary Differential Equations (Chen, Rubanova, Bettencourt, NeurIPS 2018 / arXiv:1806.07366) | ODE 求解器替代离散层，伴随法反向传播 | ⭐⭐⭐ | LTC/CfC 的数学底座，缺了这个就缺了根 |
-| **P4** | **ODE-RNN** – 带记忆增强 Neural ODE 的持续学习 (Scientific Reports 2025 / s41598-025-31685-9) | Neural ODE + memory-augmented transformer 防灾难遗忘 | ⭐⭐ | 与 MemoryOS 结合解决持续学习问题 |
-| **P5** | **NCD** – 神经闭式微分 (CfC 的严格闭式解形式化) | CfC 之后的更严格闭式解逼近，提升精度 | ⭐⭐ | LTC 理论提升方向 |
-| **P6** | **Lipschitz Liquid** – 带 Lipschitz 约束的液体单元 | 稳定训练，可控动态边界 | ⭐⭐ | 工程稳定性改进 |
-| **P7** | **液体 SSM** – Liquid Structural State Space Model (连续时间 SSM 变体) | 融合 Mamba 选择机制 + LTC 连续动态 | ⭐⭐ | Mamba-3 的复数值/MIMO SSM 方向可作为子方向 |
-| **P8** | **Mamba-3 SSM** – 复数值 + MIMO 状态更新新一代 SSM | 比 Mamba-2 更强表现力，状态追踪能力 | ⭐⭐ | 配合液体 SSM |
+| **P4** ✅ | **ODE-RNN** – 带记忆增强 Neural ODE 的持续学习 (Scientific Reports 2025 / s41598-025-31685-9) | Neural ODE + memory-augmented transformer 防灾难遗忘 | ⭐⭐ | 与 MemoryOS 结合解决持续学习问题 |
+| **P5** ✅ | **NCD** – 神经闭式微分 (CfC 的严格闭式解形式化) | CfC 之后的更严格闭式解逼近，提升精度 | ⭐⭐ | LTC 理论提升方向 |
+| **P6** ✅ | **Lipschitz Liquid** – 带 Lipschitz 约束的液体单元 | 稳定训练，可控动态边界 | ⭐⭐ | 工程稳定性改进 |
+| **P7** ✅ | **液体 SSM** – Liquid Structural State Space Model (连续时间 SSM 变体) | 融合 Mamba 选择机制 + LTC 连续动态 | ⭐⭐ | Mamba-3 的复数值/MIMO SSM 方向可作为子方向 |
+| **P8** ✅ | **Mamba-3 SSM** – 复数值 + MIMO 状态更新新一代 SSM | 比 Mamba-2 更强表现力，状态追踪能力 | ⭐⭐ | 配合液体 SSM |
 
 ---
 
-## 3. 条件记忆/稀疏计算方向（待实现）
+## 3. 条件记忆/稀疏计算方向（✅ 全部实现）
 
 | # | 论文 | 关键思想 | 优先级 | 说明 |
 |---|------|---------|--------|------|
 | **P9** ✅ | **Engram** – Conditional Memory via Scalable Lookup: A New Axis of Sparsity for LLMs (Cheng et al., DeepSeek, arXiv:2601.07372, 2026.1) | N-gram 嵌入 → O(1) 有条件查找，MoE 之外的稀疏新维度 | ⭐⭐⭐ | **最热点论文**，直接关联记忆系统，DeepSeek 出品 |
-| **P10** | **MoE + Engram 融合** – 稀疏分配 U 型缩放律 | MoE（条件计算）+ Engram（条件记忆）联合分配优化 | ⭐⭐ | Engram 论文中发现 U 型缩放定律，可独立实现 |
-| **P11** | **条件计算/条件记忆统一视图** – MoE × 条件记忆 × 稀疏注意 | 梳理稀疏性设计空间，建立统一框架 | ⭐ | Survey 类，低工程量，高理解价值 |
-| **P12** | **Memory-Augmented Transformer + ODE 持续学习** (同上 P4) | 记忆增强 Transformer 配合 Neural ODE 处理持续学习 | ⭐⭐ | 与 P4 共享 |
+| **P10** ✅ | **MoE + Engram 融合** – 稀疏分配 U 型缩放律 | MoE（条件计算）+ Engram（条件记忆）联合分配优化 | ⭐⭐ | Engram 论文中发现 U 型缩放定律，可独立实现 |
+| **P11** ✅ | **条件计算/条件记忆统一视图** – MoE × 条件记忆 × 稀疏注意 | 梳理稀疏性设计空间，建立统一框架 | ⭐ | Survey 类，低工程量，高理解价值 |
+| **P12** ✅ | **Memory-Augmented Transformer + ODE 持续学习** (同上 P4) | 记忆增强 Transformer 配合 Neural ODE 处理持续学习 | ⭐⭐ | 与 P4 共享 |
 
 ---
 
-## 4. KAN/动态函数逼近方向（待实现）
+## 4. KAN/动态函数逼近方向（✅ 全部实现）
 
 | # | 论文 | 关键思想 | 优先级 | 说明 |
 |---|------|---------|--------|------|
 | **P13** ✅ | **KAN** – Kolmogorov-Arnold Networks (Liu et al., 2024 / arXiv:2404.19756) | 激活函数可学习的网络，可替代 MLP | ⭐⭐⭐ | 与 LTC 的微分方程结合，替换传统 MLP 激活 |
-| **P14** | **ss-Mamba** – Semantic-Spline SSM + KAN (2025) | KAN + SSM 融合，动态捕获复杂时序模式 | ⭐⭐ | KAN 与 SSM 的实用结合 |
+| **P14** ✅ | **ss-Mamba** – Semantic-Spline SSM + KAN (2025) | KAN + SSM 融合，动态捕获复杂时序模式 | ⭐⭐ | KAN 与 SSM 的实用结合 |
 
 ---
 
-## 5. LFM 工业落地方向（待实现）
+## 5. LFM 工业落地方向（✅ 全部实现）
 
 | # | 论文/项目 | 关键思想 | 优先级 | 说明 |
 |---|---------|---------|--------|------|
-| **P15** | **LFM-1.0** – Liquid Foundation Models (Liquid AI, 2024.10) | 自适应线性算子替代自注意力，非 Transformer 架构，1.3B/3.1B/40.3B | ⭐⭐⭐ | LTC/CfC 的工业化产品，无 KV Cache 瓶颈 |
-| **P16** | **LFM-2.0 / 2.5** – LFM 进化和端侧推理 (Liquid AI, 2025-2026) | 端侧推理模型，900MB 内存运行，工具调用 + 指令遵循 | ⭐⭐⭐ | LFM2.5 有 Thinking 变体，本地部署友好 |
-| **P17** | **LFM + Engram 融合** – 有条件记忆的液体基础模型 | LFM 自适应线性算子（动态建模）+ Engram O(1) 查找（静态知识）= 能查知识的液体模型 | ⭐⭐⭐ | **高价值融合方向**，两条路互不干扰 |
-| **P18** | **LFM-VL** – LFM 多模态视觉-语言模型 | 像素解混减少 token，原生分辨率输入 | ⭐⭐ | 多模态扩展参考 |
+| **P15** ✅ | **LFM-1.0** – Liquid Foundation Models (Liquid AI, 2024.10) | 自适应线性算子替代自注意力，非 Transformer 架构，1.3B/3.1B/40.3B | ⭐⭐⭐ | LTC/CfC 的工业化产品，无 KV Cache 瓶颈 |
+| **P16** ✅ | **LFM-2.0 / 2.5** – LFM 进化和端侧推理 (Liquid AI, 2025-2026) | 端侧推理模型，900MB 内存运行，工具调用 + 指令遵循 | ⭐⭐⭐ | LFM2.5 有 Thinking 变体，本地部署友好 |
+| **P17** ✅ | **LFM + Engram 融合** – 有条件记忆的液体基础模型 | LFM 自适应线性算子（动态建模）+ Engram O(1) 查找（静态知识）= 能查知识的液体模型 | ⭐⭐⭐ | **高价值融合方向**，两条路互不干扰 |
+| **P18** ✅ | **LFM-VL** – LFM 多模态视觉-语言模型 | 像素解混减少 token，原生分辨率输入 | ⭐⭐ | 多模态扩展参考 |
 
 ---
 
-## 6. 现有模块增强（待实现）
+## 6. 现有模块增强（✅ 全部实现）
 
 | # | 方向 | 描述 | 优先级 | 说明 |
 |---|------|------|--------|------|
 | **P19** ✅ | **Liquid Weight** – 液态权重记忆融合 | 从 `neural_benchmark.py` 提升为独立模块 | ⭐⭐ | ✅ 完整模块 |
-| **P20** | **GNN + Liquid 时间图** | 时序图网络的连续时间 GNN，LGTC 的完整模块化 | ⭐⭐ | 配合 P2 |
+| **P20** ✅ | **GNN + Liquid 时间图** | 时序图网络的连续时间 GNN，LGTC 的完整模块化 | ⭐⭐ | 配合 P2 |
 | **P21** ✅ | **DAG + Liquid 融合** | DAG 上下文管理器引入液体时间常数，compact 时间感知 | ⭐ | ✅ 完整模块 |
-| **P22** | **Engram + MemoryOS 融合** | Engram 的 O(1) 查找代替 MemoryOS 的部分热度计算 | ⭐⭐⭐ | **直接落地**，MemoryOS 已有热度跟踪 |
+| **P22** ✅ | **Engram + MemoryOS 融合** | Engram 的 O(1) 查找代替 MemoryOS 的部分热度计算 | ⭐⭐⭐ | **直接落地**，MemoryOS 已有热度跟踪 |
 
 ---
 
@@ -171,24 +171,24 @@ P3  Neural ODE        ─── LTC/CfC 数学底座
 P9  Engram             ─── 条件记忆，最热论文
 P13 KAN                ─── 可学习激活函数
 P1  LTC-SE             ─── 液神经统一框架
-P22 Engram + MemoryOS  ─── 直接落地融合
+P22 ✅ Engram + MemoryOS  ─── 直接落地融合
 ```
 
 ### 第二批（需要第一批基础/中等复杂度）
 
 ```
-P15 LFM 自适应算子     ─── 依赖 P3
-P4  ODE-RNN            ─── 依赖 P3
-P2  LGTC               ─── 依赖 P1
-P16 LFM 端侧推理        ─── 依赖 P15
+P15 ✅ LFM 自适应算子     ─── 依赖 P3
+P4 ✅ ODE-RNN            ─── 依赖 P3
+P2 ✅ LGTC               ─── 依赖 P1
+P16 ✅ LFM 端侧推理        ─── 依赖 P15
 ```
 
 ### 第三批（融合/优化方向）
 
 ```
-P17 LFM + Engram       ─── 依赖 P9 + P15
-P10 MoE/Engram U 型缩放 ─── 依赖 P9
-P8  Mamba-3 SSM        ─── 依赖 P3 的 ODE 理解
+P17 ✅ LFM + Engram       ─── 依赖 P9 + P15
+P10 ✅ MoE/Engram U 型缩放 ─── 依赖 P9
+P8 ✅ Mamba-3 SSM        ─── 依赖 P3 的 ODE 理解
 P21 ✅ DAG + Liquid       ─── ✅ 已完成
 ```
 
