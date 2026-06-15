@@ -3026,6 +3026,39 @@ def main():
                         )
                         if r3.returncode == 0:
                             ok(f"已拉取远程更新 ({behind} 个提交)")
+                            # 同步 git repo extensions → 运行时 EXT_DIR
+                            _git_ext = _git_root / "extensions" / "galaxyos"
+                            if _git_ext.exists():
+                                info("同步 git 源码到运行时目录...", indent=1)
+                                _sync_cnt = 0
+                                for _src_fn in os.listdir(str(_git_ext / "scripts")):
+                                    if not _src_fn.endswith(".py"):
+                                        continue
+                                    _src_f = _git_ext / "scripts" / _src_fn
+                                    _dst_f = EXT_DIR / "scripts" / _src_fn
+                                    try:
+                                        shutil.copy2(str(_src_f), str(_dst_f))
+                                        _sync_cnt += 1
+                                    except Exception as _e:
+                                        warn(f"同步 {_src_fn} 失败: {_e}", indent=2)
+                                # 同步 index.js
+                                _js_src = _git_ext / "index.js"
+                                _js_dst = EXT_DIR / "index.js"
+                                if _js_src.exists():
+                                    try:
+                                        shutil.copy2(str(_js_src), str(_js_dst))
+                                        _sync_cnt += 1
+                                    except Exception as _e:
+                                        pass
+                                # VERSION
+                                _v_src = _git_ext / "VERSION"
+                                _v_dst = EXT_DIR / "VERSION"
+                                if _v_src.exists():
+                                    try:
+                                        shutil.copy2(str(_v_src), str(_v_dst))
+                                    except Exception:
+                                        pass
+                                ok(f"已同步 {_sync_cnt} 个文件到运行时")
                             # 重新读取版本
                             version = get_core_version()
                             info(f"当前版本: v{version}", indent=1)
