@@ -646,6 +646,110 @@ class ConsolidationEngine:
         except Exception as e:
             results["lfm_full_integration"] = {"error": str(e)[:120]}
         
+        # 9. NeuralMemoryGate — 召回模式预测 + 惊奇度门控
+        try:
+            from neural_memory_gate import NeuralMemoryGate
+            _net = self._get_synapse_network()
+            _net._load()
+            _neuron_ids = list(getattr(_net, '_neurons_cache', {}).keys())
+            _synapse_ids = list(getattr(_net, '_synapses_cache', {}).keys())
+            
+            _nm_gate = NeuralMemoryGate(prediction_top_k=5, surprise_k=1.5)
+            if _neuron_ids:
+                _nm_gate.record_recall(_neuron_ids[:20])
+                _predicted = _nm_gate.predict_recall(_neuron_ids[:3])
+                _actual = _neuron_ids[:5]
+                _surprise = _nm_gate.compute_surprise(_predicted, _actual)
+            else:
+                _surprise = {"action": "none", "surprise_score": 0.0}
+            
+            results["neural_memory_gate"] = {
+                "neuron_count": len(_neuron_ids),
+                "synapse_count": len(_synapse_ids),
+                "gate_action": _surprise.get("action", "unknown"),
+                "surprise_score": round(_surprise.get("surprise", 0.0), 4),
+            }
+        except Exception as e:
+            results["neural_memory_gate"] = {"error": str(e)[:120]}
+
+        # 10. CognitiveMap — 空间认知锚点 + 语义密度分析
+        try:
+            from cognitive_map import CognitiveMap
+            _cog_map = CognitiveMap(lfm_dim=2048)
+            
+            _net = self._get_synapse_network()
+            _net._load()
+            
+            _anchored = 0
+            _spatial_scores = []
+            for n_id, n in list(getattr(_net, '_neurons_cache', {}).items())[:50]:
+                emb = np.array(n.embedding[:2048], dtype=np.float32) if n.embedding else None
+                if emb is not None and len(emb) >= 128:
+                    _cog_map.add_anchor(n_id, n.content[:256], embedding=emb)
+                    _anchored += 1
+            _anchors = _cog_map.get_all()
+            _density = _cog_map.get_anchor_density(
+                np.zeros(2048, dtype=np.float32).tolist()
+            ) if _anchored > 0 else 0.0
+            
+            results["cognitive_map"] = {
+                "anchors_added": _anchored,
+                "total_anchors": len(_anchors),
+                "anchor_density": round(float(_density), 4),
+            }
+        except Exception as e:
+            results["cognitive_map"] = {"error": str(e)[:120]}
+
+        # 11. AutoLearner — 从 consolidation 结果中学习模式
+        try:
+            from auto_learner import AutoLearner
+            _auto_learner = AutoLearner()
+            
+            _cls_cnt = results.get("cls", {}).get("consolidated", 0)
+            _prune_cnt = results.get("adaptive_prune", {}).get("prune_candidates", 0)
+            _replay_cnt = results.get("replay", {}).get("ltp_replayed", 0)
+            _titans_norm = results.get("titans", {}).get("memory_norm", 0.0)
+            
+            _auto_learner.learn_pattern(f"consolidation_cls:{_cls_cnt}")
+            _auto_learner.learn_pattern(f"consolidation_prune:{_prune_cnt}")
+            _auto_learner.learn_pattern(f"consolidation_replay:{_replay_cnt}")
+            
+            if _titans_norm:
+                _auto_learner.learn_preference("titans_memory_norm", float(_titans_norm))
+            
+            results["auto_learner"] = {
+                "patterns_learned": 3,
+                "total_preferences": len(getattr(_auto_learner, 'preferences', {})),
+            }
+        except Exception as e:
+            results["auto_learner"] = {"error": str(e)[:120]}
+
+        # 12. DreamDrivenLearner — 如果梦境日志有数据，执行一轮对比学习
+        try:
+            from dream_driven_learner import DreamDrivenLearner
+            _dream_learner = DreamDrivenLearner(self.workspace)
+            
+            _dream_log = os.path.join(self.workspace, ".learnings", "dreams", "dream_log.jsonl")
+            if os.path.exists(_dream_log):
+                _fragments = _dream_learner.collect_dream_fragments(_dream_log, max_fragments=20)
+                if _fragments and len(_fragments) >= 2:
+                    _train_result = _dream_learner.train_step(_fragments)
+                else:
+                    _train_result = {"skipped": "too_few_fragments", "count": len(_fragments or [])}
+            else:
+                _train_result = {"skipped": "no_dream_log"}
+            
+            results["dream_learner"] = {
+                "result": str(_train_result.get("skipped", "trained"))[:80],
+            }
+            if "loss" in _train_result:
+                results["dream_learner"]["loss"] = round(float(_train_result["loss"]), 4)
+            if "pairs" in _train_result:
+                results["dream_learner"]["pairs"] = _train_result["pairs"]
+        except Exception as e:
+            results["dream_learner"] = {"error": str(e)[:120]}
+
+        # 记录统计
         # 记录统计
         try:
             stats_record = {
