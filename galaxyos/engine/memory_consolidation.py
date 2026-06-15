@@ -531,21 +531,26 @@ class ConsolidationEngine:
         if self._sleep_consolidator is None and not self._sleep_consolidator_imported:
             self._sleep_consolidator_imported = True
             try:
-                # v2026.6.11: biorhythm 实际在 galaxyos/engine/, 不在 workspace/GalaxyOS/skills/...
-                # 优先尝试 import galaxyos.engine.biorhythm_sleep_consolidation (标准导入)
+                # v2026.6.11: biorhythm 在 galaxyos/engine/ 下，不用包导入
+                # 2026-06-15 修复：两条旧路径都断了（galaxyos 包不存在 + 旧 workspace 路径不存在）
+                # 改用 __file__ 相对路径或 EXT_DIR 运行时路径
                 try:
-                    from galaxyos.engine.biorhythm_sleep_consolidation import BioRhythmSleepConsolidator as _BRS
-                    self._sleep_consolidator = _BRS(self.workspace)
-                except ImportError:
-                    # 兼容旧版 monolithic GalaxyOS: 从 workspace/GalaxyOS/skills/... 路径动态加载
                     import importlib.util
-                    sleep_path = os.path.join(self.workspace,
-                        "GalaxyOS/skills/llm-memory-integration/core/biorhythm_sleep_consolidation.py")
-                    spec = importlib.util.spec_from_file_location("biorhythm_sleep_consolidation", sleep_path)
-                    if spec and spec.loader:
-                        mod = importlib.util.module_from_spec(spec)
-                        spec.loader.exec_module(mod)
-                        self._sleep_consolidator = mod.BioRhythmSleepConsolidator(self.workspace)
+                    # 优先从本文件同级目录加载（运行时 engine/）
+                    _this_dir = os.path.dirname(os.path.abspath(__file__))
+                    _sleep_path = os.path.join(_this_dir, "biorhythm_sleep_consolidation.py")
+                    if not os.path.exists(_sleep_path):
+                        # 回退到 EXT_DIR 运行时路径
+                        _ext_dir = os.environ.get("EXT_DIR", "")
+                        _sleep_path = os.path.join(_ext_dir, "engine", "biorhythm_sleep_consolidation.py") if _ext_dir else _sleep_path
+                    if os.path.exists(_sleep_path):
+                        spec = importlib.util.spec_from_file_location("biorhythm_sleep_consolidation", _sleep_path)
+                        if spec and spec.loader:
+                            mod = importlib.util.module_from_spec(spec)
+                            spec.loader.exec_module(mod)
+                            self._sleep_consolidator = mod.BioRhythmSleepConsolidator(self.workspace)
+                except Exception:
+                    pass
                 if self._sleep_consolidator:
                     self._sleep_consolidator.start_background()
             except Exception as e:
