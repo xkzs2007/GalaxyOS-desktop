@@ -28,7 +28,7 @@ GalaxyOS是 OpenClaw 的**核心底层能力引擎**，提供：
 3. **智能处理能力** — 查询改写（Pro）+ 结果总结（Flash）+ 语义过滤 + 图像理解（SmartProcessor 三模型通道：Flash/Pro/VLM）+ 自进化上下文注入 + Flash 开推理场景编码 + KV 缓存优化 + Flash NLP 路由 + **用户画像驱动内在元认知分析（Flash以用户视角分析体验数据→惰性激活下游模块）**
 4. **思考能力** — IntelligentThinkingTrigger v2.0 (RCR-Router动态评分 + Springdrift CBR记忆 + A-ToM认知推断) + 20方法论 + 10工程技能 + 决策引擎 + Reflexion 反思 [Shinn 2023] + Self-Refine 迭代精炼 [Madaan 2023] + Multi-Path 多路径并行探索 [Yao 2023] + Toolformer 工具路由 [Meta 2023] + GA 反思 [Park 2023]
 5. **论文集成能力** — **22方向论文全量实现**：LTC液态神经网络系列(LTC/CfC/NCP/LTC-SE)、Engram条件记忆(O(1)查找)、KAN可学习激活(B-spline)、Neural ODE连续深度、LFM自适应算子/端侧推理(FP16/INT8 <1GB)、Mamba-3 SSM(复数值MIMO)、LGTC图时间常数、ODE-RNN持续学习(EWC防遗忘)、ss-Mamba+KAN融合、MoE+Engram U型缩放律等 | DAG/Liquid融合(LTC驱动compact)
-6. **多模态能力** — 图像理解（三引擎: xiaoyi + DeepSeek-OCR-2 + GLM-4.6V-Flash VLM）+ 图像生成（seedream）+ LFM-VL 多模态视觉Patch Embedding + OCR2 深度整合 + VLM 第三通道 + Visual RAG（Cognition 阶段自动 OCR2/VLM 提取→上下文注入）
+6. **多模态能力** — 图像理解（Qwen3-VL-8B-Instruct 远端 VLM）+ 图像生成（seedream）+ LFM-VL 多模态视觉Patch Embedding + Visual RAG（Cognition 阶段自动 VLM 提取→上下文注入）
 7. **可靠性能力** — 防幻觉 10 重检测 + 自我修复 + 故障转移 + ACP 持久化通道 + 全局上下文窗口比例压缩 + 自进化决策执行层 + 系统消息噪声过滤 + **Rails 护栏增强版** + 隐式偏好学习 + Worker 自动重启 + Merge Gate 合入门禁 + **人格视觉** + **用户画像驱动内在元认知进化** + **Galaxy KoRa 主动能力（行为建模+模式识别）** + **Galaxy Kernel 持续元认知后台** + **防幻觉→神经网络双向闭环（LTP/LTD + verified_memories 持久化）**
 
 ---
@@ -170,7 +170,7 @@ GalaxyOS是 OpenClaw 的**核心底层能力引擎**，提供：
 │  │  ├─ Pro 通道 (DeepSeek V4 Pro):                                     │   │
 │  │  │  查询改写、结果总结、语义过滤（带 KV Cache 前缀共享）             │   │
 │  │  │                                                                  │   │
-│  │  ├─ VLM 通道 (GLM-4.6V-Flash):                                      │   │
+│  │  ├─ VLM 通道 (Qwen3-VL-8B-Instruct via 硅基流动):                    │   │
 │  │  │  图像理解、场景分析、视觉语义提取                                │   │
 │  │  │  ├─ API: https://open.bigmodel.cn/api/paas/v4                    │   │
 │  │  │  ├─ OpenAI 兼容格式 (image_url + text prompt)                    │   │
@@ -407,21 +407,20 @@ GalaxyOS是 OpenClaw 的**核心底层能力引擎**，提供：
 │                                    │                                        │
 │  ┌─────────────────────────────────────────────────────────────────────┐   │
 │  │                    Layer 13: 多模态层                               │   │
-│  │  ├─ 图像理解: xiaoyi-image + deepseek-ocr2 + GLM-4.6V-Flash (三引擎)│   │
-│  │  │  ├─ xiaoyi-image: 通用图像描述                                  │   │
-│  │  │  ├─ deepseek-ocr2: 文字提取、表格/文档结构化                     │   │
-│  │  │  └─ GLM-4.6V-Flash: VLM 视觉理解 (场景/关系/情感)               │   │
+│  │  ├─ 图像理解: Qwen3-VL-8B-Instruct (VLM, 远端 API)                  │   │
+│  │  │  ├─ OCR/表格/文档/图表: 统一提示词路由                           │   │
+│  │  │  └─ 视觉理解: 场景/关系/情感/防幻觉                              │   │
 │  │  ├─ 图像生成: seedream-image-gen (主力) + PIL (辅助)               │   │
 │  │  ├─ 视觉呈现: 记忆可视化 + 知识图谱可视化 + 报告增强                │   │
-│  │  ├─ **Visual RAG**: Cognition阶段VLM/OCR2自动提取→上下文注入       │   │
-│  │  │  检测 has_image/视觉关键词 → 调VLM语义理解或OCR2文字提取        │   │
-│  │  │  智能路由: 场景理解→VLM / 文字提取→OCR2 / 图表→OCR2 CHART      │   │
+│  │  ├─ **Visual RAG**: Cognition阶段VLM自动提取→上下文注入            │   │
+│  │  │  检测 has_image/视觉关键词 → 调VLM统一处理                       │   │
+│  │  │  模式路由: 文字/文档/图表/通用 → 不同prompt                      │   │
 │  │  ├─ VLM 深度整合:                                                  │   │
 │  │  │  understand_image / analyze_scene / verify_image_claim           │   │
 │  │  │  与防幻觉联动: 图像声明 VLM 验证                                │   │
 │  │  │  与记忆系统联动: 图像语义描述 → 记忆存储                        │   │
 │  │  │  与Plugin联动: claw_understand_image 工具注册                    │   │
-│  │  └─ API: deepseek-ocr-2 (免费) / GLM-4.6V-Flash (智谱)             │   │
+│  │  └─ API: Qwen/Qwen3-VL-8B-Instruct (硅基流动)                       │   │
 │  └─────────────────────────────────────────────────────────────────────┘   │
 │                                    │                                        │
 │  ┌─────────────────────────────────────────────────────────────────────┐   │
@@ -863,7 +862,7 @@ claw.rccam_cycle("用户输入", max_cycles=1)
   - SmartProcessor 接受外部 `llm_flash`/`llm_pro` 实例，复用 XiaoYiClawLLM 的 OpenAI 客户端
   - `llm_pro_model` 参数确保模型名与 R-CCAM 一致，修复 Pro 0 调用问题
   - 人格注入统一: 构造时传 `persona_context`，所有 Flash/Pro system prompt 自动注入
-  - VLM 第三通道（GLM-4V-Plus）保留为独立方法
+  - VLM 第三通道（Qwen3-VL-8B-Instruct，从 llm_config.json 读取配置）
   - Worker RPC `smart_process` 端点注册
 - ✨ **Gateway-Worker 三通道透明互通（★核心升级）**：
   - **UDS 升级双向 RPC 注册表**：Gateway `startGatewayUdsServer` switch-case → 动态 `_gatewayMethods`（14 预注册 + 自动 `tool.*` 暴露）

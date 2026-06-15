@@ -9,7 +9,7 @@
 2. 多源检索（向量 + DAG + Web）— 通过 retrieval_hub 统一入口
 3. 结果总结（Flash）— 证据摘要
 4. 回答合成（Flash）— 带人格和参考资料的最终回答
-5. VLM 图像理解（GLM-4V-Plus）— 第三通道
+5. VLM 图像理解（llm_config.json 路由）— 第三通道
 
 架构定位 — Layer 4:
   R-CCAM _action_phase 不再内联 Flash/Pro 调用，统一走 SmartProcessor。
@@ -23,10 +23,7 @@ import sys, json, os
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 
-# VLM 第三通道 — glm-4v-plus
-VLM_API_KEY = "YOUR_VLM_API_KEY"
-VLM_BASE_URL = "https://open.bigmodel.cn/api/paas/v4"
-VLM_MODEL = "glm-4v-plus"
+# VLM 第三通道 — 从 llm_config.json 读取
 
 CORE = Path.home() / ".openclaw/workspace/skills/xiaoyi-claw-omega-final/skills/llm-memory-integration/core"
 sys.path.insert(0, str(CORE))
@@ -91,16 +88,23 @@ class SmartProcessor:
             except Exception:
                 pass
 
-        # VLM — 图像理解（glm-4v-plus）
+        # VLM — 图像理解（从 llm_config.json 读取配置）
         self.vlm = None
-        try:
-            from openai import OpenAI as OpenAIClient
-            self.vlm = OpenAIClient(
-                api_key=VLM_API_KEY,
-                base_url=VLM_BASE_URL,
-            )
-        except Exception:
-            pass
+        self.vlm_model = ""
+        vlm_cfg = config.get("vlm", {})
+        vlm_key = vlm_cfg.get("api_key", "")
+        vlm_url = vlm_cfg.get("base_url", "")
+        vlm_model = vlm_cfg.get("model", "")
+        if vlm_key and vlm_url and vlm_model:
+            try:
+                from openai import OpenAI as OpenAIClient
+                self.vlm = OpenAIClient(
+                    api_key=vlm_key,
+                    base_url=vlm_url,
+                )
+                self.vlm_model = vlm_model
+            except Exception:
+                pass
 
     def _get_flash(self):
         """获取 Flash 客户端（优先外部注入）"""
@@ -393,7 +397,8 @@ class SmartProcessor:
     def understand_image(self, image_url: str,
                           prompt: str = "请详细描述这张图片的内容",
                           max_tokens: int = 1000) -> dict:
-        """图像理解入口 — VLM 第三通道 (GLM-4V-Plus)"""
+        """图像理解入口 — VLM 第三通道"""
+
         return self._call_vlm(prompt, image_url, max_tokens)
 
     def _call_vlm(self, prompt: str, image_url: str,
@@ -404,7 +409,7 @@ class SmartProcessor:
                     "error": "VLM client not initialized"}
         try:
             resp = self.vlm.chat.completions.create(
-                model=VLM_MODEL,
+                model=self.vlm_model,
                 messages=[{"role": "user", "content": [
                     {"type": "image_url", "image_url": {"url": image_url}},
                     {"type": "text", "text": prompt},
@@ -417,10 +422,10 @@ class SmartProcessor:
             reasoning = getattr(msg, "reasoning_content", None) or ""
             if not content and reasoning:
                 content = reasoning
-            return {"content": content, "model": "glm-4v-plus",
+            return {"content": content, "model": self.vlm_model,
                     "success": True, "error": ""}
         except Exception as e:
-            return {"content": "", "model": VLM_MODEL,
+            return {"content": "", "model": self.vlm_model,
                     "success": False, "error": str(e)}
 
 

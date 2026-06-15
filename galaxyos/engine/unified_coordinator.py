@@ -1175,14 +1175,6 @@ MODULE_REGISTRY: Dict[str, ModuleInfo] = {
         script_path=str(CORE_DIR / "dep_checker.py"),
         layer=8
     ),
-    "deepseek_ocr2_adapter": ModuleInfo(
-        name="deepseek_ocr2_adapter",
-        module_type=ModuleType.NLP_PROCESSOR,
-        description="DeepSeek OCR2 适配器 - 高级 OCR 能力",
-        triggers=["OCR", "DeepSeek"],
-        script_path=str(CORE_DIR / "deepseek_ocr2_adapter.py"),
-        layer=1
-    ),
     "xiaoyi_claw_api": ModuleInfo(
         name="xiaoyi_claw_api",
         module_type=ModuleType.XIAOYI_MEMORY_V2,

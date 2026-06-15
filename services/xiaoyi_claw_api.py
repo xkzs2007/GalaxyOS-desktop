@@ -222,7 +222,6 @@ class XiaoYiClawLLM:
         self._init_learner()
         self._init_dag()
         self._init_task_bridge()
-        self._init_ocr2()
         self._init_memory_v2()
         self._init_llm_client()
         self._init_kora()
@@ -320,15 +319,7 @@ class XiaoYiClawLLM:
             logger.warning(f"任务桥接初始化失败: {e}")
             self.task_bridge = None
 
-    def _init_ocr2(self):
-        """初始化 DeepSeek-OCR-2 适配器"""
-        try:
-            from deepseek_ocr2_adapter import get_adapter
-            self.ocr2 = get_adapter()
-            logger.info("DeepSeek-OCR-2 初始化成功")
-        except Exception as e:
-            logger.warning(f"DeepSeek-OCR-2 初始化失败: {e}")
-            self.ocr2 = None
+
 
     def _init_memory_v2(self):
         """初始化 XiaoyiMemoryV2 底层引擎(作为子模块挂入)"""
@@ -4677,8 +4668,6 @@ class XiaoYiClawLLM:
                 'links': len(self.task_bridge.links)
             }
 
-        if self.ocr2:
-            status['ocr2'] = self.ocr2.get_stats()
 
         return status
 

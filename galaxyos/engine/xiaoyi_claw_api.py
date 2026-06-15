@@ -224,7 +224,6 @@ class XiaoYiClawLLM:
         self._init_learner()
         self._init_dag()
         self._init_task_bridge()
-        self._init_ocr2()
         self._init_memory_v2()
         self._init_llm_client()
         self._init_kora()
@@ -336,16 +335,6 @@ class XiaoYiClawLLM:
         except Exception as e:
             logger.warning(f"任务桥接初始化失败: {e}")
             self.task_bridge = None
-
-    def _init_ocr2(self):
-        """初始化 DeepSeek-OCR-2 适配器"""
-        try:
-            from deepseek_ocr2_adapter import get_adapter
-            self.ocr2 = get_adapter()
-            logger.info("DeepSeek-OCR-2 初始化成功")
-        except Exception as e:
-            logger.warning(f"DeepSeek-OCR-2 初始化失败: {e}")
-            self.ocr2 = None
 
     def _init_memory_v2(self):
         """初始化 XiaoyiMemoryV2 底层引擎(作为子模块挂入)"""
@@ -1445,115 +1434,82 @@ class XiaoYiClawLLM:
             return self.multimodal_store.search(query, top_k)
         return []
 
-    # ==================== OCR2 图像理解 API ====================
+    # ==================== VLM 图像理解 API ====================
+
+    def _get_vlm(self):
+        """获取 SmartProcessor 的 VLM 客户端"""
+        sp = getattr(self, '_smart_processor', None)
+        if sp and getattr(sp, 'vlm', None):
+            return sp
+        return None
 
     def understand_image(self,
-                         image_source,
+                         image_source: str,
                          mode: str = 'general',
                          prompt: Optional[str] = None) -> Dict[str, Any]:
         """
-        图像理解(DeepSeek-OCR-2)
+        图像理解(VLM 远程 API)
 
         Args:
-            image_source: 图片源(URL、文件路径、二进制数据)
-            mode: 理解模式
-                - general: 通用理解
-                - ocr: 文字识别
-                - document: 文档解析
-                - chart: 图表分析
-                - table: 表格识别
-                - handwriting: 手写识别
-                - complex: 复杂版式
+            image_source: 图片 URL
+            mode: 理解模式（仅做提示词调整）
             prompt: 自定义提示词(可选)
 
         Returns:
             {
                 'success': bool,
                 'content': str,
-                'mode': str,
-                'tokens_used': int,
-                'latency_ms': float
+                'model': str,
+                'mode': str
             }
         """
-        if not self.ocr2:
+        sp = self._get_vlm()
+        if not sp:
             return {
                 'success': False,
-                'content': 'OCR2 未初始化',
-                'mode': mode,
-                'tokens_used': 0,
-                'latency_ms': 0
+                'content': 'VLM 未初始化',
+                'model': '',
+                'mode': mode
             }
 
-        from deepseek_ocr2_adapter import ImageUnderstandingMode
-
-        # 映射模式字符串到枚举
-        mode_map = {
-            'general': ImageUnderstandingMode.GENERAL,
-            'ocr': ImageUnderstandingMode.OCR,
-            'document': ImageUnderstandingMode.DOCUMENT,
-            'chart': ImageUnderstandingMode.CHART,
-            'table': ImageUnderstandingMode.TABLE,
-            'handwriting': ImageUnderstandingMode.HANDWRITING,
-            'complex': ImageUnderstandingMode.COMPLEX_LAYOUT
+        mode_prompts = {
+            'ocr': '请提取这张图片中的所有文字内容，保持原格式',
+            'document': '请识别并结构化解析这份文档的内容',
+            'chart': '请分析这张图表的趋势和数据要点',
+            'table': '请提取表格中的所有数据',
+            'handwriting': '请识别手写文字内容',
+            'complex': '请详细描述这张图片的内容和布局',
         }
+        final_prompt = prompt or mode_prompts.get(mode, '请详细描述这张图片的内容')
 
-        ocr_mode = mode_map.get(mode, ImageUnderstandingMode.GENERAL)
-
-        result = self.ocr2.understand(image_source, prompt=prompt, mode=ocr_mode)
-
+        result = sp._call_vlm(final_prompt, image_source)
         return {
-            'success': result.success,
-            'content': result.content,
-            'mode': mode,
-            'tokens_used': result.tokens_used,
-            'latency_ms': result.latency_ms,
-            'confidence': result.confidence
+            'success': result.get('success', False),
+            'content': result.get('content', ''),
+            'model': result.get('model', ''),
+            'mode': mode
         }
 
     def ocr_image(self, image_source) -> Dict[str, Any]:
-        """
-        OCR 文字识别(快捷方法)
-
-        Args:
-            image_source: 图片源
-
-        Returns:
-            识别结果
-        """
+        """OCR 文字识别(快捷方法)"""
         return self.understand_image(image_source, mode='ocr')
 
     def parse_document(self, image_source) -> Dict[str, Any]:
-        """
-        文档解析(快捷方法)
-
-        Args:
-            image_source: 图片源
-
-        Returns:
-            解析结果
-        """
+        """文档解析(快捷方法)"""
         return self.understand_image(image_source, mode='document')
 
     def analyze_chart(self, image_source) -> Dict[str, Any]:
-        """
-        图表分析(快捷方法)
-
-        Args:
-            image_source: 图片源
-
-        Returns:
-            分析结果
-        """
+        """图表分析(快捷方法)"""
         return self.understand_image(image_source, mode='chart')
 
     def verify_image_claim(self,
-                           image_source,
+                           image_source: str,
                            claim: str) -> Dict[str, Any]:
         """
-        验证图像声明(防幻觉)
+        验证图像声明(防幻觉) — 通过 VLM 核实
 
         Args:
-            image_source: 图片源
+            image_source: 图片 URL
             claim: 待验证的声明
 
         Returns:
@@ -1563,19 +1519,23 @@ class XiaoYiClawLLM:
                 'evidence': str
             }
         """
-        if not self.ocr2:
+        sp = self._get_vlm()
+        if not sp:
             return {
                 'verified': False,
                 'confidence': 0,
-                'evidence': 'OCR2 未初始化'
+                'evidence': 'VLM 未初始化'
             }
 
-        result = self.ocr2.verify_claim(image_source, claim)
+        prompt = f"请验证以下关于这张图片的描述是否准确：\n\"{claim}\"\n\n只回答"是"或"否"并简要说明原因。"
+        result = sp._call_vlm(prompt, image_source)
+        content = result.get('content', '').lower()
+        verified = '是' in content or '准确' in content or '正确' in content
 
         return {
-            'verified': result.get('verified', False),
-            'confidence': result.get('confidence', 0),
-            'evidence': result.get('evidence', '')
+            'verified': verified,
+            'confidence': 0.7 if verified else 0.3,
+            'evidence': result.get('content', '')[:300]
         }
 
     # ==================== 智能遗忘 API ====================
@@ -2976,34 +2936,36 @@ class XiaoYiClawLLM:
             has_image_msg = hasattr(state, 'has_image') and state.has_image
             has_media = any(kw in query.lower() for kw in visual_keywords)
 
-            if (has_image_msg or has_media) and self.ocr2:
-                # 调用 OCR2 提取图片文字/结构化数据
-                from deepseek_ocr2_adapter import ImageUnderstandingMode, get_adapter
-                ocr2 = get_adapter()
-
-                # 尝试从 state 获取图片路径
+            if (has_image_msg or has_media) and self._get_vlm():
+                # 调用 VLM 提取图片内容
+                sp = self._get_vlm()
                 image_source = getattr(state, 'image_source', None) or query
 
-                # 确定 OCR 模式:含"表格/图表"关键词走 CHART,否则走 OCR
-                ocr_mode = ImageUnderstandingMode.OCR
+                vlm_mode = 'general'
+                mode_prompt = f'请回答：{query[:200]}'
                 if any(kw in query.lower() for kw in ["表格", "图表", "柱状", "折线", "饼图", "数据"]):
-                    ocr_mode = ImageUnderstandingMode.CHART
+                    vlm_mode = 'chart'
+                    mode_prompt = '请分析这张图表的趋势和数据要点'
                 elif any(kw in query.lower() for kw in ["文档", "海报", "截图", "文章"]):
-                    ocr_mode = ImageUnderstandingMode.DOCUMENT
+                    vlm_mode = 'document'
+                    mode_prompt = '请识别并结构化解析这份文档的内容'
+                elif any(kw in query.lower() for kw in ["文字", "写什么", "字"]):
+                    vlm_mode = 'ocr'
+                    mode_prompt = '请提取这张图片中的所有文字内容'
 
-                result = ocr2.understand(image_source, prompt=query[:200], mode=ocr_mode)
+                result = sp._call_vlm(mode_prompt, image_source)
 
                 if result and result.get('content'):
-                    visual_context = f"[OCR2提取] {result['content'][:1000]}"
+                    visual_context = f"[VLM提取] {result['content'][:1000]}"
                     if state.analysis.get('skill_guide'):
                         state.analysis['skill_guide'] += f"\n\n{visual_context}"
                     else:
                         state.analysis['skill_guide'] = visual_context
                     state.analysis['visual_rag_used'] = True
-                    state.analysis['ocr_mode'] = str(ocr_mode) if not isinstance(ocr_mode, str) else ocr_mode
-                    logger.info(f"Visual RAG: OCR2 提取成功 ({len(result['content'])} 字符)")
+                    state.analysis['vlm_model'] = result.get('model', '')
+                    logger.info(f"Visual RAG: VLM 提取成功 ({len(result['content'])} 字符)")
         except Exception as e:
-            logger.warning(f"Visual RAG OCR2 调用失败: {e}")
+            logger.warning(f"Visual RAG VLM 调用失败: {e}")
 
         # ── L1 入场保护:自动注入人格摘要 ──
         # 不依赖 OpenClaw hook,从 persona 文件自读
@@ -4584,7 +4546,7 @@ class XiaoYiClawLLM:
             'forgetter': None,
             'learner': None,
             'task_bridge': None,
-            'ocr2': None
+
         }
 
         if self.vector_store:
@@ -4619,8 +4581,6 @@ class XiaoYiClawLLM:
                 'links': len(self.task_bridge.links)
             }
 
-        if self.ocr2:
-            status['ocr2'] = self.ocr2.get_stats()
 
         return status
 
@@ -4640,7 +4600,7 @@ class XiaoYiClawLLM:
             'forgetter': self.forgetter is not None,
             'learner': self.learner is not None,
             'task_bridge': self.task_bridge is not None,
-            'ocr2': self.ocr2 is not None,
+
             'memory_v2': self.memory_v2 is not None,
             'llm_flash': self.llm_flash is not None,
             'llm_pro': self.llm_pro is not None,

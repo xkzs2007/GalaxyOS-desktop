@@ -413,10 +413,10 @@ class MultiSourceCrossValidator:
 
     def verify_image_claim(self, image_source: str, claim: str) -> List[VerificationSource]:
         """
-        使用 OCR2 验证图像相关声明
+        使用 VLM 验证图像相关声明
 
         Args:
-            image_source: 图片源（URL、路径、Base64）
+            image_source: 图片 URL
             claim: 待验证的声明
 
         Returns:
@@ -425,17 +425,15 @@ class MultiSourceCrossValidator:
         results = []
 
         try:
-            from deepseek_ocr2_adapter import get_adapter
-            adapter = get_adapter()
+            from xiaoyi_claw_api import XiaoYiClawLLM
+            claw = XiaoYiClawLLM()
+            vlm_result = claw.verify_image_claim(image_source, claim)
 
-            # 调用 OCR2 验证声明
-            verify_result = adapter.verify_claim(image_source, claim)
-
-            if verify_result.get('verified', False):
+            if vlm_result.get('verified', False):
                 results.append(VerificationSource(
                     source_type=SourceType.IMAGE_ANALYSIS,
-                    content=f"图像验证通过: {verify_result.get('evidence', '')}",
-                    confidence=verify_result.get('confidence', 0.8),
+                    content=f"图像验证通过: {vlm_result.get('evidence', '')}",
+                    confidence=vlm_result.get('confidence', 0.7),
                     timestamp=datetime.now().isoformat(),
                     metadata={
                         'image_source': image_source[:100] if len(image_source) > 100 else image_source,
@@ -445,8 +443,8 @@ class MultiSourceCrossValidator:
             else:
                 results.append(VerificationSource(
                     source_type=SourceType.IMAGE_ANALYSIS,
-                    content=f"图像验证未通过: {verify_result.get('evidence', '')}",
-                    confidence=1.0 - verify_result.get('confidence', 0.5),
+                    content=f"图像验证未通过: {vlm_result.get('evidence', '')}",
+                    confidence=1.0 - vlm_result.get('confidence', 0.5),
                     timestamp=datetime.now().isoformat(),
                     metadata={
                         'image_source': image_source[:100] if len(image_source) > 100 else image_source,
@@ -456,7 +454,7 @@ class MultiSourceCrossValidator:
                 ))
 
         except Exception as e:
-            logger.warning(f"OCR2 图像验证失败: {e}")
+            logger.warning(f"VLM 图像验证失败: {e}")
 
         return results
     
@@ -967,15 +965,15 @@ class EnhancedHallucinationGuard:
         self,
         image_source: str,
         claim: str,
-        use_ocr2: bool = True
+        use_vlm: bool = True
     ) -> Dict:
         """
         验证图像相关声明
 
         Args:
-            image_source: 图片源
+            image_source: 图片 URL
             claim: 关于图片的声明
-            use_ocr2: 是否使用 OCR2 验证
+            use_vlm: 是否使用 VLM 验证
 
         Returns:
             {
@@ -996,8 +994,8 @@ class EnhancedHallucinationGuard:
             "analysis": ""
         }
 
-        # 1. 使用 OCR2 验证
-        if use_ocr2:
+        # 1. 使用 VLM 验证
+        if use_vlm:
             ocr_sources = self.cross_validator.verify_image_claim(image_source, claim)
             result["sources"].extend([{
                 "type": s.source_type.value,
