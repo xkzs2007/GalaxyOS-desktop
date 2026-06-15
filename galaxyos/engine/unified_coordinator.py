@@ -53,6 +53,7 @@ class ModuleType(Enum):
     # Layer 1.6: 集成与管理模块
     RULES_MANAGER = "rules_manager"
     AUTONOMOUS_INTEGRATOR = "autonomous_integrator"
+    FULL_INTEGRATION = "full_integration"
     XIAOYI_MEMORY_V2 = "xiaoyi_memory_v2"
     OPTIMIZATION_INTEGRATION = "optimization_integration"
     HEARTBEAT_EXECUTOR = "heartbeat_executor"
