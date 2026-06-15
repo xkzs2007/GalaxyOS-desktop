@@ -29,6 +29,7 @@ logger = logging.getLogger("paper_integration_v81")
 # 管线 1: 记忆增强
 # ============================================================
 
+
 def _lazy_engram():
     from engram_memory import EngramMemory, EngramConfig, EngramEnhancedHeatTracker
     return EngramMemory, EngramConfig, EngramEnhancedHeatTracker
@@ -292,9 +293,9 @@ class V81IntegrationAddon:
         # 管线 3
         try:
             m3_cls, ls_cls, sk_cls, _, _ = _lazy_ssm()
-            self.mamba3 = m3_cls(input_dim=128, state_dim=64, output_dim=128)
-            self.liquid_ssm = ls_cls(state_dim=64, input_dim=128, output_dim=128)
-            self.ssm_kan = sk_cls(state_dim=64, input_dim=128, output_dim=128)
+            self.mamba3 = m3_cls(input_dim=2048, state_dim=64, output_dim=2048)
+            self.liquid_ssm = ls_cls(state_dim=64, input_dim=2048, output_dim=2048)
+            self.ssm_kan = sk_cls(state_dim=64, input_dim=2048, output_dim=2048)
             logger.debug("  SSM 系列 ✅")
         except Exception as e:
             logger.warning(f"  SSM 系列初始化失败: {e}")
@@ -309,14 +310,14 @@ class V81IntegrationAddon:
         # 管线 4
         try:
             ode_cls, _, _ = _lazy_ode()
-            self.neural_ode = ode_cls(state_dim=64, hidden_dim=128)
+            self.neural_ode = ode_cls(state_dim=64, hidden_dim=2048)
             logger.debug("  NeuralODE ✅")
         except Exception as e:
             logger.warning(f"  NeuralODE 初始化失败: {e}")
 
         try:
             ode_rnn_cls, ewc_cls, _ = _lazy_ode_rnn()
-            self.ode_rnn = ode_rnn_cls(input_dim=128, hidden_dim=64)
+            self.ode_rnn = ode_rnn_cls(input_dim=2048, hidden_dim=64)
             self.ewc = ewc_cls(lambda_reg=100.0)
             logger.debug("  ODERNNContinual ✅")
         except Exception as e:
@@ -324,7 +325,7 @@ class V81IntegrationAddon:
 
         try:
             moe_cls, _, usl_cls = _lazy_moe_engram()
-            self.moe_engram = moe_cls(input_dim=128, hidden_dim=64)
+            self.moe_engram = moe_cls(input_dim=2048, hidden_dim=64)
             self._u_shape = usl_cls()
             logger.debug("  MoeEngramHybrid ✅")
         except Exception as e:
@@ -354,6 +355,47 @@ class V81IntegrationAddon:
     # ============================================================
     # 公共入口: 后处理（在 _run_paper_post_response 中调用）
     # ============================================================
+
+    # 固定随机投影矩阵（Johnson-Lindenstrauss）：任意高维 → 128 维
+    _PROJ_MAT = None  # lazy init
+    _PROJ_SEED = 42
+    _PROJ_TARGET = 128
+
+    def _get_embedding(self, text: str) -> np.ndarray:
+        """获取文本的神经网络 embedding 向量（2048 维统一出口）
+
+        优先级：
+          1. ONNX bge-small-zh（512维，~50ms，自动 padding 到 2048）
+          2. LFM2.5 真实模型（bf16 2.2GB, ~1s, 原生 2048 维）
+          3. MD5 确定性 fallback（2048 维，~0ms）
+        """
+        # 1. ONNX embedding（最快，bge-small-zh 512维 → padding 到 2048）
+        try:
+            from onnx_embedding import get_onnx_embedding
+            svc = get_onnx_embedding()
+            if not getattr(svc, '_initialized', None):
+                svc.initialize()
+            _raw = svc.embed_query(text)
+            if _raw.shape[0] == 2048:
+                return _raw
+            # padding 到 2048
+            _pad = np.zeros(2048, dtype=np.float32)
+            _pad[:_raw.shape[0]] = _raw
+            return _pad
+        except Exception:
+            pass
+
+        # 2. LFM 真实模型（已有加载则复用，原生 2048 维）
+        if hasattr(self, "lfm_network") and self.lfm_network is not None:
+            if hasattr(self.lfm_network, "embed_text"):
+                vec = self.lfm_network.embed_text(text)
+                if vec is not None:
+                    return vec
+
+        # 3. 确定性 fallback（2048 维）
+        import hashlib
+        rng = np.random.RandomState(int(hashlib.md5(text.encode()).hexdigest()[:8], 16))
+        return rng.randn(2048).astype(np.float32) * 0.01
 
     def run_post_response(self, query: str, answer: str, confidence: float = 0.5) -> dict:
         """
@@ -387,15 +429,14 @@ class V81IntegrationAddon:
             except Exception as e:
                 logger.debug(f"Engram 后处理失败: {e}")
 
-        # 2. 管线 4: ODE-RNN 持续学习
+        # 2. 管线 4: ODE-RNN 持续学习（真实文本向量）
         if self.ode_rnn and query and answer:
             try:
-                import numpy as np
-                # 用输入向量的模式模拟 "学习"
-                _inp = np.random.randn(1, 128).astype(np.float64) * 0.01
-                _ = self.ode_rnn.forward(_inp)
+                _inp = self._get_embedding(query + " " + answer).reshape(1, -1)
+                _out, _h = self.ode_rnn.forward(_inp)
+                insights["ode_rnn_h_norm"] = float(np.linalg.norm(_h))
                 # EWC 注册参数
-                if self.ewc and hasattr(self.ode_rnn, 'get_params'):
+                if self.ewc and hasattr(self.ode_rnn, "get_params"):
                     try:
                         self.ewc.register_params(self.ode_rnn.get_params())
                     except Exception:
@@ -416,26 +457,43 @@ class V81IntegrationAddon:
                 logger.debug(f"Sparsity 分析跳过: {e}")
 
         # 4. 管线 4: LiquidWeight
+        # 4. 管线 4: LiquidWeight（真实文本向量加权）
         if self.liquid_weight and query:
             try:
-                import numpy as np
-                _vec = np.random.randn(128).astype(np.float64) * 0.01
+                _vec = self._get_embedding(query)
                 _w = self.liquid_weight.generate_weight(_vec)
                 if _w is not None:
-                    insights["liquid_weight_shape"] = str(getattr(_w, 'shape', 'scalar'))
+                    insights["liquid_weight_shape"] = str(getattr(_w, "shape", "scalar"))
+                    insights["liquid_weight_mean"] = float(np.mean(_w) if hasattr(_w, "__len__") else _w)
             except Exception as e:
                 logger.debug(f"LiquidWeight 跳过: {e}")
-
         # 5. SSM 管道: 轻量状态追踪（对 query 做 state update）
+        # 5. SSM 管道: 状态追踪（query 文本向量驱动）
         if self.mamba3 and query:
             try:
-                import numpy as np
-                _u = np.random.randn(128).astype(np.float64) * 0.01
-                _h, _y = self.mamba3.forward_step(np.zeros(64).astype(np.float64), _u)
+                _u = self._get_embedding(query)
+                _h = np.zeros(64, dtype=np.float64)
+                _h, _y = self.mamba3.forward_step(_h, _u)
                 insights["ssm_h_norm"] = float(np.linalg.norm(_h))
+                insights["ssm_y_norm"] = float(np.linalg.norm(_y))
             except Exception as e:
                 logger.debug(f"SSM 跳过: {e}")
 
+        # 7. 管线 2: LFM 轻量推理（真实 query 文本）
+        if self.lfm_network and query:
+            try:
+                if hasattr(self.lfm_network, "_forward_text"):
+                    _lfm_res = self.lfm_network._forward_text(query[:200])
+                    if _lfm_res:
+                        insights["lfm_reasoning"] = _lfm_res.get("reasoning_available", False)
+                        insights["lfm_tokens"] = _lfm_res.get("token_count", 0)
+                        insights["lfm_complexity"] = _lfm_res.get("complexity", 0.0)
+                else:
+                    _x = self._get_embedding(query).reshape(1, 1, -1)
+                    _out = self.lfm_network.forward(_x)
+                    insights["lfm_out_mean"] = float(np.mean(_out))
+            except Exception as e:
+                logger.debug(f"LFM 推理跳过: {e}")
         # 6. DAG compact 建议
         if self.dag_liquid_strategy:
             try:
@@ -468,14 +526,13 @@ class V81IntegrationAddon:
             except Exception:
                 pass
 
-        # LiquidWeight 加权
+        # LiquidWeight 加权（真实 query 文本）
         if self.liquid_weight and query:
             try:
-                import numpy as np
-                _vec = np.random.randn(128).astype(np.float64) * 0.01
+                _vec = self._get_embedding(query)
                 _w = self.liquid_weight.generate_weight(_vec)
                 if _w is not None:
-                    _bias = float(np.mean(_w)) if hasattr(_w, '__len__') else float(_w)
+                    _bias = float(np.mean(_w)) if hasattr(_w, "__len__") else float(_w)
                     for r in results:
                         r["v81_liquid_weight"] = _bias
             except Exception:

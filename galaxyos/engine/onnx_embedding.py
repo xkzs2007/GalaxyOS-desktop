@@ -44,6 +44,8 @@ _candidates.append(os.path.join(_cwd, "models", "embeddings"))
 _candidates.append(os.path.join(_cwd, "..", "models", "embeddings"))
 # user 目录兜底
 _candidates.append(os.path.expanduser("~/.openclaw/workspace/GalaxyOS/models/embeddings"))
+# GalaxyOS 运行时安装目录
+_candidates.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "models", "embeddings"))
 
 _MODEL_DIR = ""
 for _c in _candidates:

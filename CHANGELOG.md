@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.1.2] - 2026-06-15
+### Added
+- **RealLFMNetwork.embed_text()**: 真实模型隐状态 mean-pooling，返回 2048 维 float32 向量
+- **ONNX bge-small-zh 路径修复**: 新增运行时候选目录 galaxyos/models/embeddings
+
+### Changed
+- **paper_integration_v81.py**: `_get_embedding()` 统一输出 2048 维，三条通道（ONNX padding→2048 / LFM 原生 2048 / MD5 2048）
+- **下游模块全部 2048 维化**: Mamba-3、LiquidSSM、SSM-KAN、NeuralODE、ODE-RNN、MoE-Engram input_dim → 2048
+- **enrich_recall_context() 修复**: 清除 docstring 混入的随机代码，用真实 embedding 替代 random.randn
+
+### Removed
+- **`_text_to_vec()` 字符级随机投影**: 彻底删除，替换为神经网络 embedding
+
+
 ## [8.1.1] — 2026-06-15
 
 ### Added

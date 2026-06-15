@@ -721,6 +721,26 @@ class RealLFMNetwork:
             logger.debug(f"RealLFMNetwork forward_text 失败: {e}")
             return {"reasoning_available": False}
     
+
+    def embed_text(self, text: str) -> Optional[np.ndarray]:
+        """返回文本的 LFM 隐状态向量（mean pooling，float32）
+        
+        输出: (2048,) numpy 向量（bf16→float32 转换）
+        """
+        if not self._ensure():
+            return None
+        try:
+            import torch
+            import numpy as np
+            inputs = self._tokenizer(text, return_tensors="pt")
+            with torch.no_grad():
+                outputs = self._model(**inputs, output_hidden_states=True)
+                hidden = outputs.hidden_states[-1]  # (1, seq_len, 2048) bf16
+                vec = hidden.float().mean(dim=1).squeeze(0)  # (2048,) float32
+            return vec.cpu().numpy()
+        except Exception as e:
+            logger.debug(f"RealLFMNetwork embed_text 失败: {e}")
+            return None
     def generate(self, prompt: str, max_new_tokens: int = 128,
                  temperature: float = 0.7) -> str:
         """真实文本生成"""
