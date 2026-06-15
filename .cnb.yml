@@ -131,26 +131,19 @@ stages:
           run: |
             echo "Tag: $CNB_BRANCH"
             cat VERSION
-            python -c "
-import sys
-sys.path.insert(0, '.')
-v = open('VERSION').read().strip()
-tag = '$CNB_BRANCH'.lstrip('v')
-assert tag == v, f'Tag {tag} != VERSION {v}'
-print(f'✅ Tag {tag} matches VERSION')
-"
+            python3 bin/ci-check-version.py "$CNB_BRANCH"
         - name: verify-imports
           run: |
-            python -c "import numpy, scipy, sklearn, torch, pydantic, faiss, jieba"
+            python3 -c 'import numpy, scipy, sklearn, torch, pydantic, faiss, jieba'
             echo "✅ Core deps loaded"
         - name: run-tests
           run: |
             pip install pytest pytest-cov
-            python -m pytest tests/ -v --tb=short -p no:warnings || true
+            python3 -m pytest tests/ -v --tb=short -p no:warnings || true
         - name: build-package
           run: |
             pip install build
-            python -m build
+            python3 -m build
             echo "✅ 包构建成功"
 
 # ── 通知 ──
