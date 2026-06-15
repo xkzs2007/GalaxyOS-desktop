@@ -516,6 +516,15 @@ class ConsolidationEngine:
         except Exception as e:
             results["replay"] = {"error": str(e)}
         
+        # 3. 自适应突触修剪
+        try:
+            from memory_synapse_network import AdaptiveSynapsePruner
+            pruner = AdaptiveSynapsePruner(self._get_synapse_network())
+            prune_stats = pruner.run_prune()
+            results["adaptive_prune"] = prune_stats
+        except Exception as e:
+            results["adaptive_prune"] = {"error": str(e)}
+        
         # 记录统计
         try:
             stats_record = {

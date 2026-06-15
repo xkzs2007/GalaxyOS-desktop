@@ -995,3 +995,215 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+# ==================== 自适应突触修剪引擎 ====================
+
+class AdaptiveSynapsePruner:
+    """
+    自适应突触修剪引擎
+    
+    动态保留分数 = f(weight, access_freq, recency, emotional_valence, nlp_importance)
+    修剪阈值根据全量突触的保留分数分布自适应调整（mean - k * std）
+    """
+    
+    # 特征权重
+    W_WEIGHT = 0.30
+    W_FREQ = 0.25
+    W_RECENCY = 0.20
+    W_EMOTION = 0.10
+    W_IMPORTANCE = 0.15
+    
+    # 自适应阈值系数：保留分数低于 mean - k * std 的修剪
+    THRESHOLD_K = 0.5
+    # 下限保留分数绝对阈值
+    MIN_RETENTION = 0.15
+    
+    def __init__(self, network: 'MemorySynapseNetwork', config: Optional[Dict] = None):
+        self.network = network
+        if config:
+            for k, v in config.items():
+                if hasattr(self, k.upper()):
+                    setattr(self, k.upper(), v)
+    
+    def compute_retention_score(self, synapse: 'Synapse',
+                                src_neuron: Optional['MemoryNeuron'] = None,
+                                now: Optional[datetime] = None) -> float:
+        """
+        计算突触保留分数 [0, 1]
+        
+        多因子加权综合：
+        - 权重因子：当前权重值
+        - 频率因子：reinforcement_count 归一化
+        - 时效因子：最近使用时间衰减
+        - 情感因子：源神经元情感强度
+        - 重要度因子：源神经元 NLP 重要度
+        """
+        now = now or datetime.now(timezone.utc)
+        
+        # 1. 权重因子 [0, 1]
+        w_weight = synapse.weight
+        
+        # 2. 频率因子 [0, 1]：log 归一化
+        w_freq = min(1.0, math.log10(synapse.reinforcement_count + 1) / 3.0)
+        
+        # 3. 时效因子 [0, 1]：指数衰减，7天半衰期
+        try:
+            last = datetime.fromisoformat(synapse.last_reinforced)
+            days = (now - last).total_seconds() / 86400.0
+        except Exception:
+            days = 365.0
+        w_recency = math.exp(-days * math.log(2) / 7.0)  # 7天半衰期
+        
+        # 4. 情感因子 [0, 1]：从源神经元的 nlp_sentiment 提取
+        w_emotion = 0.5
+        if src_neuron and src_neuron.nlp_sentiment:
+            try:
+                sentiment = json.loads(src_neuron.nlp_sentiment)
+                w_emotion = sentiment.get("score", 0.5)
+            except Exception:
+                pass
+        
+        # 5. 重要度因子 [0, 1]：源神经元 NLP 重要度
+        w_importance = src_neuron.nlp_importance if src_neuron else 0.5
+        
+        # 综合保留分数
+        retention = (
+            self.W_WEIGHT * w_weight +
+            self.W_FREQ * w_freq +
+            self.W_RECENCY * w_recency +
+            self.W_EMOTION * w_emotion +
+            self.W_IMPORTANCE * w_importance
+        )
+        return round(max(0.0, min(1.0, retention)), 4)
+    
+    def compute_adaptive_threshold(self, retention_scores: List[float]) -> float:
+        """
+        自适应修剪阈值
+        
+        基于保留分数分布：
+        threshold = max(mean - k * std, MIN_RETENTION)
+        """
+        if not retention_scores:
+            return self.MIN_RETENTION
+        
+        n = len(retention_scores)
+        mean = sum(retention_scores) / n
+        variance = sum((s - mean) ** 2 for s in retention_scores) / n
+        std = math.sqrt(variance)
+        
+        threshold = max(mean - self.THRESHOLD_K * std, self.MIN_RETENTION)
+        return round(threshold, 4)
+    
+    def get_prune_candidates(self, threshold: Optional[float] = None) -> List[Tuple[str, float, float]]:
+        """
+        获取待修剪的突触候选列表
+        
+        Returns:
+            [(synapse_id, retention_score, current_weight), ...]
+        """
+        self.network._load()
+        now = datetime.now(timezone.utc)
+        neurons = self.network._neurons_cache
+        synapses = self.network._synapses_cache
+        
+        # 计算每条突触的保留分数
+        scored = []
+        for s_id, s in synapses.items():
+            src = neurons.get(s.source_id)
+            score = self.compute_retention_score(s, src_neuron=src, now=now)
+            scored.append((s_id, score, s.weight))
+        
+        # 排序按保留分数升序
+        scored.sort(key=lambda x: x[1])
+        
+        # 计算自适应阈值
+        scores_only = [x[1] for x in scored]
+        cutoff = threshold if threshold is not None else self.compute_adaptive_threshold(scores_only)
+        
+        # 低于阈值的候选
+        candidates = [(sid, sc, w) for sid, sc, w in scored if sc < cutoff]
+        return candidates
+    
+    def run_prune(self, dry_run: bool = False) -> Dict[str, Any]:
+        """
+        执行一次自适应修剪
+        
+        Returns:
+            统计结果
+        """
+        self.network._load()
+        candidates = self.get_prune_candidates()
+        scores_only = [sc for _, sc, _ in candidates]
+        threshold = self.compute_adaptive_threshold(
+            [self.compute_retention_score(self.network._synapses_cache[s],
+                                          src_neuron=self.network._neurons_cache.get(
+                                              self.network._synapses_cache[s].source_id))
+             for s in self.network._synapses_cache] if self.network._synapses_cache else []
+        )
+        
+        result = {
+            "total_synapses": len(self.network._synapses_cache),
+            "prune_candidates": len(candidates),
+            "adaptive_threshold": threshold,
+            "dry_run": dry_run,
+            "pruned": [],
+        }
+        
+        if not dry_run:
+            for sid, score, weight in candidates:
+                synapse = self.network._synapses_cache.pop(sid, None)
+                if synapse:
+                    result["pruned"].append({
+                        "id": sid, "retention_score": score, "weight": weight,
+                        "source_id": synapse.source_id, "target_id": synapse.target_id,
+                        "reinforcement_count": synapse.reinforcement_count
+                    })
+            
+            # 重写突触文件（保留未被修剪的）
+            if result["pruned"]:
+                kept_ids = set(self.network._synapses_cache.keys())
+                tmp_path = self.network.synapses_path.with_suffix(".jsonl.tmp")
+                with open(self.network.synapses_path, "r", encoding="utf-8") as f_in, \
+                     open(tmp_path, "w", encoding="utf-8") as f_out:
+                    for line in f_in:
+                        if not line.strip():
+                            continue
+                        try:
+                            entry = json.loads(line)
+                            if entry.get("id") in kept_ids:
+                                f_out.write(line)
+                        except Exception:
+                            pass
+                tmp_path.replace(self.network.synapses_path)
+        
+        if result["pruned"]:
+            result["avg_retention_of_pruned"] = round(
+                sum(p["retention_score"] for p in result["pruned"]) / len(result["pruned"]), 4
+            )
+        
+        return result
+    
+    def get_stats(self) -> Dict[str, Any]:
+        """获取修剪统计信息"""
+        self.network._load()
+        synapses = self.network._synapses_cache
+        neurons = self.network._neurons_cache
+        
+        now = datetime.now(timezone.utc)
+        retention_scores = []
+        for s in synapses.values():
+            src = neurons.get(s.source_id)
+            retention_scores.append(self.compute_retention_score(s, src_neuron=src, now=now))
+        
+        threshold = self.compute_adaptive_threshold(retention_scores) if retention_scores else 0
+        
+        return {
+            "total_synapses": len(synapses),
+            "total_neurons": len(neurons),
+            "retention_min": round(min(retention_scores), 4) if retention_scores else 0,
+            "retention_max": round(max(retention_scores), 4) if retention_scores else 0,
+            "retention_mean": round(sum(retention_scores) / len(retention_scores), 4) if retention_scores else 0,
+            "adaptive_threshold": threshold,
+            "would_prune": sum(1 for s in retention_scores if s < threshold),
+        }

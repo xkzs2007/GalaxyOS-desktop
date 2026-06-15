@@ -889,6 +889,24 @@ class BioRhythmSleepConsolidator:
         except Exception:
             pass
         
+        # Phase 6: 梦境驱动学习（异步，用新梦境碎片训练 adapter）
+        try:
+            from dream_driven_learner import DreamDrivenLearner
+            _learner = DreamDrivenLearner(self.workspace)
+            _learn_result = _learner.learn_from_dreams(
+                str(self.dream_log_path), current_cycle=cycle_num
+            )
+            if "skipped" not in _learn_result:
+                results["dream_learning"] = {
+                    "status": "trained",
+                    "pairs": _learn_result.get("train_pairs", 0),
+                    "loss": _learn_result.get("avg_loss"),
+                }
+                logger.info(f"梦境学习完成: {_learn_result.get('train_pairs')} pairs, "
+                            f"loss={_learn_result.get('avg_loss')}")
+        except Exception as e:
+            logger.debug(f"梦境学习跳过: {e}")
+        
         return results
     
     # ════════════════════════════════════════════════════════
