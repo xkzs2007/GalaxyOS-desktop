@@ -1864,10 +1864,12 @@ def auto_fix(sync_result: Dict[str, Any], import_result: Optional[Dict[str, Any]
                 if fn.startswith("engine/"):
                     src = galaxy_engine / fn[len("engine/"):]
                 elif fn.startswith("core/"):
-                    src = galaxy_engine / fn[len("core/"):]  # 旧版兼容
+                    stem = fn[len("core/"):]
+                    src = galaxy_engine / stem  # 旧版兼容
+                    dst = DIST_DIR / stem       # 去掉 core/ 前缀，文件是平放的
                 else:
                     src = galaxy_scripts / fn
-                dst = DIST_DIR / fn
+                    dst = DIST_DIR / fn
                 try:
                     if src.exists():
                         shutil.copy2(str(src), str(dst))

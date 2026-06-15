@@ -213,6 +213,8 @@ class XiaoYiClawLLM:
         self._consolidation = None
         self._galaxy_engine = None
 
+        # 从 llm_config.json 读取 embedding 维度，避免硬编码
+        self.embedding_dim = self._get_embedding_dim()
         self._init_vector_store()
         self._init_ontology_bridge()
         self._init_brain_sync()
@@ -244,14 +246,29 @@ class XiaoYiClawLLM:
 
         logger.info("小艺 Claw 大模型初始化完成")
 
+    def _get_embedding_dim(self) -> int:
+        """从 llm_config.json 读取 embedding dimensions，读不到 fallback 128"""
+        try:
+            import json
+            config_path = Path(__file__).parent.parent / "config" / "llm_config.json"
+            if config_path.exists():
+                with open(config_path, "r", encoding="utf-8") as f:
+                    llm_cfg = json.load(f)
+                embedding_cfg = llm_cfg.get("embedding", {})
+                dim = embedding_cfg.get("dimensions", 1024)
+                logger.info(f"embedding dim from config: {dim}")
+                return dim
+        except Exception as e:
+            logger.warning(f"读取 embedding dimensions 失败，fallback 128: {e}")
+        return 128
+
     def _init_vector_store(self):
-        """初始化向量存储(sqllite, 128维, 与 text-embedding-v1.0 一致)"""
+        """初始化向量存储(维度从 config 动态读取，匹配实际 embedding 模型)"""
         try:
             from unified_vector_store import UnifiedVectorStore
-            # 数据已迁移为 128 维 text-embedding-v1.0，使用 SQLite 后端
             self.vector_store = UnifiedVectorStore(
                 backend='sqlite',
-                dim=128
+                dim=self.embedding_dim
             )
         except Exception as e:
             logger.warning(f"向量存储初始化失败: {e}")
@@ -464,40 +481,45 @@ class XiaoYiClawLLM:
             logger.info(f"LLM 客户端初始化: flash={self.llm_flash is not None}, pro={self.llm_pro is not None}")
 
             # ===== 嵌入客户端(用于 recall 自动生成查询向量) =====
-            # 使用 OpenClaw 内置 text-embedding-v1.0（128d），与 memory_core_import 数据维度一致
+            # llm_config.json.embedding (硅基流动 BAAI/bge-m3, 1024d)
             self.embedding = None
             self.embedding_model = ""
-            self.embedding_dim = 128
+            # self.embedding_dim 已在 __init__ 开头从 config 读取
+
+            # 加载 llm_config.json embedding 配置（多个候选路径）
             try:
                 import json as _j2
-                oc_cfg_path = os.path.expanduser("~/.openclaw/openclaw.json")
-                if os.path.exists(oc_cfg_path):
-                    with open(oc_cfg_path, "r", encoding="utf-8") as f:
-                        _oc = _j2.load(f)
-                    _ms = _oc.get("agents",{}).get("defaults",{}).get("memorySearch",{})
-                    _remote = _ms.get("remote",{})
-                    _base = _remote.get("baseUrl","").rstrip("/")
-                    _headers = dict(_remote.get("headers",{}))
-                    if _base and _headers.get("x-api-key"):
-                        # 使用兼容 OpenAI 的 client，把 headers 作为 default headers
-                        from openai import OpenAI as _O
-                        import httpx as _httpx
-                        _client_kw = dict(
-                            api_key=_headers.get("x-api-key",""),
-                            base_url=_base,
-                        )
-                        # 额外 headers 通过 httpx client 传入
-                        _custom_headers = {k:v for k,v in _headers.items() 
-                                          if k.lower() not in ("content-type",)}
-                        if _custom_headers:
-                            _http_client = _httpx.Client(headers=_custom_headers)
-                            _client_kw["http_client"] = _http_client
-                        self.embedding = _O(**_client_kw)
-                        self.embedding_model = _ms.get("model", "xiaoyiprovider/text-embedding-v1.0")
-                        self.embedding_dim = 128
-                        logger.info(f"嵌入客户端初始化: model={self.embedding_model}, dim=128, base={_base[:40]}...")
+                from openai import OpenAI as _O
+
+                _candidate_paths = [
+                    Path(__file__).parent.parent / "config" / "llm_config.json",
+                    Path.home() / ".openclaw" / "galaxyos" / "config" / "llm_config.json",
+                    Path.home() / ".openclaw" / "workspace" / "skills" / "xiaoyi-claw-omega-final" / "config" / "llm_config.json",
+                ]
+                _loaded_emb = None
+                for _p in _candidate_paths:
+                    if _p.exists():
+                        with open(_p, "r", encoding="utf-8") as f:
+                            _llm_cfg = _j2.load(f)
+                        _emb = _llm_cfg.get("embedding", {})
+                        if _emb.get("api_key") and _emb.get("base_url"):
+                            _loaded_emb = _emb
+                            logger.info(f"嵌入配置取自: {_p}")
+                            break
+                if _loaded_emb:
+                    _api_key = _loaded_emb["api_key"]
+                    _base_url = _loaded_emb["base_url"].rstrip("/")
+                    _model = _loaded_emb.get("model", "BAAI/bge-m3")
+                    self.embedding = _O(api_key=_api_key, base_url=_base_url, timeout=20.0)
+                    self.embedding_model = _model
+                    logger.info(f"嵌入客户端(llm_config): model={_model}, dim={self.embedding_dim}, base={_base_url[:50]}...")
             except Exception as e:
-                logger.warning(f"嵌入客户端初始化失败: {e}")
+                logger.warning(f"嵌入客户端(llm_config)初始化失败: {e}")
+
+            if self.embedding:
+                logger.info(f"嵌入客户端就绪: model={self.embedding_model}, dim={self.embedding_dim}")
+            else:
+                logger.warning("嵌入客户端不可用，store/recall 将跳过向量检索")
 
             # 增强思考引擎(Reflexion + Self-Refine + MultiPath + Flash NLP)
             self.thinking_enhanced = None
