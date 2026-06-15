@@ -53,7 +53,6 @@ class ModuleType(Enum):
     # Layer 1.6: 集成与管理模块
     RULES_MANAGER = "rules_manager"
     AUTONOMOUS_INTEGRATOR = "autonomous_integrator"
-    FULL_INTEGRATION = "full_integration"
     XIAOYI_MEMORY_V2 = "xiaoyi_memory_v2"
     OPTIMIZATION_INTEGRATION = "optimization_integration"
     HEARTBEAT_EXECUTOR = "heartbeat_executor"
@@ -292,14 +291,14 @@ MODULE_REGISTRY: Dict[str, ModuleInfo] = {
         layer=1,
         dependencies=["proactive_tasks", "brain", "today_task"]
     ),
-    "full_integration": ModuleInfo(
-        name="full_integration",
+    "xiaoyi_claw_api": ModuleInfo(
+        name="xiaoyi_claw_api",
         module_type=ModuleType.FULL_INTEGRATION,
-        description="完整集成层 - CRAG/混合检索/思考技能/自主任务/向量记忆",
-        triggers=["完整集成", "全量集成", "集成入口"],
-        script_path=str(CORE_DIR / "full_integration.py"),
+        description="统一 API 层 - smart_recall/smart_answer/enhanced_recall",
+        triggers=["统一入口", "smart_recall", "smart_answer"],
+        script_path=str(CORE_DIR / "xiaoyi_claw_api.py"),
         layer=1,
-        dependencies=["crag", "hybrid_search", "skill_coordinator", "autonomous_integrator"]
+        dependencies=["crag", "retrieval_hub", "skill_coordinator", "autonomous_integrator"]
     ),
     "xiaoyi_memory_v2": ModuleInfo(
         name="xiaoyi_memory_v2",
@@ -308,7 +307,7 @@ MODULE_REGISTRY: Dict[str, ModuleInfo] = {
         triggers=["统一入口", "smart_recall", "smart_answer"],
         script_path=str(CORE_DIR / "xiaoyi_memory.py"),
         layer=1,
-        dependencies=["full_integration", "memgpt_memory", "self_rag"]
+        dependencies=["xiaoyi_claw_api", "memgpt_memory", "self_rag"]
     ),
     "optimization_integration": ModuleInfo(
         name="optimization_integration",
@@ -1561,24 +1560,24 @@ class UnifiedCoordinator:
             
             # 完整集成流程
             "full_integrated_recall": [
-                ("full_integration", "CRAG 纠错检索"),
-                ("full_integration", "混合检索 Dense+Sparse"),
-                ("full_integration", "思考技能路由"),
-                ("full_integration", "自主任务检查"),
-                ("full_integration", "向量记忆优化"),
+                ("crag", "CRAG 纠错检索"),
+                ("retrieval_hub", "混合检索"),
+                ("skill_coordinator", "思考技能路由"),
+                ("autonomous_integrator", "自主任务检查"),
+                ("xiaoyi_memory", "向量记忆优化"),
             ],
             
             # 统一入口
             "smart_recall_flow": [
                 ("xiaoyi_memory_v2", "smart_recall 入口"),
-                ("full_integration", "完整集成检索"),
+                ("xiaoyi_claw_api", "enhanced_recall 检索"),
                 ("memgpt_memory", "三级内存补充"),
                 ("self_rag", "结果验证"),
             ],
             "smart_answer_flow": [
                 ("xiaoyi_memory_v2", "smart_answer 入口"),
                 ("self_rag", "IsREL 检索决策"),
-                ("full_integration", "知识检索"),
+                ("xiaoyi_claw_api", "smart_answer 知识检索"),
                 ("enhanced_hallucination_guard", "多源验证"),
                 ("self_rag", "IsUSE 可靠性验证"),
             ],
@@ -2922,7 +2921,7 @@ INTEGRATED_WORKFLOWS = {
         ("emotion_memory", "计算重要性")
     ],
     "full_recall": [
-        ("full_integration", "完整集成入口"),
+        ("xiaoyi_claw_api", "smart_recall 入口"),
         ("crag_pipeline", "CRAG纠错"),
         ("hybrid_search", "混合检索"),
         ("skill_coordinator", "技能协调"),

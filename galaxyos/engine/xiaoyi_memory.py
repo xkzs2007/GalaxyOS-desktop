@@ -397,8 +397,11 @@ class XiaoyiMemoryV2:
         # 1. 基础检索（本地直查）
         result["basic_results"] = self.recall(query, top_k=top_k, use_enhanced=False)
         
-        # 2. 增强检索：尝试加载 Layer 2 模块
-        for module_name in ["crag_pipeline", "hybrid_search", "proposition_retrieval"]:
+        # 2. 增强检索：尝试加载 Layer 2 模块（use_crag 控制 CRAG 开关）
+        _layers = ["hybrid_search", "proposition_retrieval"]
+        if use_crag and self._lazy_load("crag_pipeline"):
+            _layers.insert(0, "crag_pipeline")
+        for module_name in _layers:
             try:
                 module = self._lazy_load(module_name)
                 if module:

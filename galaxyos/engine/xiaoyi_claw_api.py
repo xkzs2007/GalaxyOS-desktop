@@ -1922,8 +1922,24 @@ class XiaoYiClawLLM:
         return self.enhanced_recall(query, top_k=top_k)
 
     def smart_answer(self, query: str) -> Dict[str, Any]:
-        """智能回答(降级到基础 answer)"""
-        return self.answer(query)
+        """智能回答(SmartProcessor 路由优先)"""
+        try:
+            from smart_processor import SmartProcessor
+            sp = SmartProcessor(
+                llm_flash=getattr(self, 'llm_flash', None),
+                llm_pro=getattr(self, 'llm_pro', None),
+            )
+            result = sp.process(query, top_k=5)
+            if result.get("results"):
+                # 有检索结果 → 走 answer_synthesis
+                context = "\n".join([f"- {r.get('content','')[:200]}" for r in result["results"][:3]])
+                answer = sp.answer_synthesis(query, context)
+                if answer:
+                    return {"answer": answer, "source": "smart_processor", "results": result["results"]}
+            # 降级: 无结果或合成失败时回到基础 answer
+            return self.answer(query)
+        except Exception:
+            return self.answer(query)
 
     # ==================== 弹性系统集成(从 resilience_system 融合)====================
 
