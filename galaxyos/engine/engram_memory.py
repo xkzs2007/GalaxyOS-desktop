@@ -378,6 +378,15 @@ class EngramMemory:
         ngrams = _ngrams(tokens, self.config.ngram_n)
         
         # 如果没有提供嵌入，生成一个
+        if embedding is None and self.config.embed_dim == 2048:
+            try:
+                from lfm_adaptive_operator import RealLFMNetwork
+                _lfm = RealLFMNetwork()
+                emb_lfm = _lfm.embed_text(text[:512])
+                if emb_lfm is not None:
+                    embedding = emb_lfm.astype(np.float32)
+            except Exception:
+                pass
         if embedding is None:
             embedding = np.random.randn(self.config.embed_dim).astype(np.float32)
             embedding = embedding / (np.linalg.norm(embedding) + 1e-8)

@@ -746,6 +746,55 @@ class RealLFMNetwork:
         """真实文本生成"""
         if not self._ensure():
             return ""
+
+    # ── LFM → Engram 桥接 ──
+
+    def embed_and_store_engram(self, text: str, engram_memory=None) -> Optional[np.ndarray]:
+        """embed_text + 自动存入 EngramMemory
+
+        Args:
+            text: 输入文本
+            engram_memory: 可选的 EngramMemory 实例
+
+        Returns:
+            (2048,) 向量或 None
+        """
+        emb = self.embed_text(text)
+        if emb is not None and engram_memory is not None:
+            try:
+                engram_memory.remember(text[:256], emb)
+            except Exception:
+                pass
+        return emb
+
+    def embed_with_engram_gate(self, text: str, engram_memory=None) -> Dict:
+        """embed + Engram 门控 — 返回 embedding + gating 信号
+
+        Args:
+            text: 输入文本
+            engram_memory: EngramMemory 实例
+
+        Returns:
+            {"embedding": (2048,), "hit_rate": float, "gate_alpha": float}
+        """
+        emb = self.embed_text(text)
+        hit_rate = 0.0
+        gate_alpha = 0.5
+
+        if emb is not None and engram_memory is not None:
+            try:
+                _, e_stat = engram_memory.lookup(text[:128])
+                hit_rate = e_stat.get("hit_rate", 0.0)
+                gate_alpha = min(1.0, 0.3 + hit_rate * 0.7)
+            except Exception:
+                pass
+
+        return {
+            "embedding": emb,
+            "hit_rate": hit_rate,
+            "gate_alpha": gate_alpha,
+        }
+
         try:
             import torch
             inputs = self._tokenizer(prompt, return_tensors='pt')

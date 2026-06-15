@@ -292,6 +292,14 @@ MODULE_REGISTRY: Dict[str, ModuleInfo] = {
         layer=1,
         dependencies=["proactive_tasks", "brain", "today_task"]
     ),
+    "lfm_engram_full_integration": ModuleInfo(
+        name="lfm_engram_full_integration",
+        module_type=ModuleType.ENGRAM_MEMORY,
+        description="LFM→Engram→LiquidWeight→SSM 全链路集成桥",
+        triggers=["LFM集成", "Engram集成", "全链路"],
+        script_path=str(CORE_DIR / "lfm_engram_fusion.py"),
+        layer=1,
+    ),
     "xiaoyi_claw_api": ModuleInfo(
         name="xiaoyi_claw_api",
         module_type=ModuleType.FULL_INTEGRATION,
@@ -1174,6 +1182,14 @@ MODULE_REGISTRY: Dict[str, ModuleInfo] = {
         triggers=["依赖检查"],
         script_path=str(CORE_DIR / "dep_checker.py"),
         layer=8
+    ),
+    "lfm_engram_full_integration": ModuleInfo(
+        name="lfm_engram_full_integration",
+        module_type=ModuleType.ENGRAM_MEMORY,
+        description="LFM→Engram→LiquidWeight→SSM 全链路集成桥",
+        triggers=["LFM集成", "Engram集成", "全链路"],
+        script_path=str(CORE_DIR / "lfm_engram_fusion.py"),
+        layer=1,
     ),
     "xiaoyi_claw_api": ModuleInfo(
         name="xiaoyi_claw_api",

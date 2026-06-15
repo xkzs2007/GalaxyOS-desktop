@@ -312,3 +312,54 @@ if __name__ == "__main__":
             "embed_dim": binder.embed_dim,
         }
         print(json.dumps(info, indent=2, ensure_ascii=False))
+
+
+    # ── Engram 感知 embedding ──
+
+    def text_to_embedding_with_engram(self, text: str, 
+                                       engram_memory=None) -> np.ndarray:
+        """文本→embedding，优先用 Engram 命中
+        
+        Args:
+            text: 输入文本
+            engram_memory: EngramMemory 实例
+            
+        Returns:
+            (2048,) 向量
+        """
+        import numpy as np
+        
+        # Engram 查找
+        if engram_memory is not None:
+            try:
+                engram_emb, engram_stat = engram_memory.lookup(text[:128])
+                if engram_emb is not None and engram_stat.get("hit_rate", 0) > 0.3:
+                    return engram_emb.astype(np.float32)
+            except Exception:
+                pass
+        
+        # 降级到 LFM
+        return self.text_to_embedding(text) or self._fallback_embedding(text)
+    
+    def blend_embeddings(self, lfm_emb: np.ndarray, 
+                          engram_emb: np.ndarray,
+                          alpha: float = 0.5) -> np.ndarray:
+        """加权融合 LFM + Engram 的 embedding
+        
+        Args:
+            lfm_emb: (2048,) LFM embedding
+            engram_emb: (2048,) Engram embedding
+            alpha: LFM 权重 [0,1]
+            
+        Returns:
+            (2048,) 融合向量
+        """
+        import numpy as np
+        if lfm_emb is None or engram_emb is None:
+            return lfm_emb if lfm_emb is not None else engram_emb
+        blended = alpha * lfm_emb + (1 - alpha) * engram_emb
+        norm = np.linalg.norm(blended)
+        if norm > 0:
+            blended = blended / norm * 2048  # 保持 norm 约 2048
+        return blended.astype(np.float32)
+

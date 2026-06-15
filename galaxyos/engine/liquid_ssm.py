@@ -479,3 +479,49 @@ if __name__ == "__main__":
     print("=" * 55)
     print("✅ Liquid SSM 全部测试通过")
     print("=" * 55)
+
+
+    # ── LFM embedding 时序预测 ──
+
+    def predict_embedding(self, recent_embeddings: list, 
+                          steps: int = 1) -> np.ndarray:
+        """对 LFM embedding 序列做时序预测
+        
+        Args:
+            recent_embeddings: [(2048,) ...] 最近 N 个 embedding
+            steps: 预测步数
+            
+        Returns:
+            (2048,) 预测的 embedding
+        """
+        import numpy as np
+        if not recent_embeddings:
+            return np.zeros(2048, dtype=np.float32)
+        
+        u_seq = np.stack(recent_embeddings[-self.state_dim:], axis=0)
+        if len(u_seq) < 2:
+            return u_seq[-1]
+        
+        # 调整维度: (seq, 2048) → (seq, input_dim)
+        if u_seq.shape[-1] != self.input_dim and self.input_dim == 2048:
+            pass  # 匹配
+        elif u_seq.shape[-1] != self.input_dim:
+            # 降/升维匹配
+            import numpy as np
+            if not hasattr(self, '_proj_emb'):
+                self._proj_emb = np.random.randn(self.input_dim, u_seq.shape[-1]).astype(np.float32) * 0.02
+            u_seq = u_seq @ self._proj_emb.T
+        
+        h = np.zeros(self.state_dim, dtype=np.float32)
+        for t in range(len(u_seq)):
+            h = self.forward_step(h, u_seq[t], dt=0.1)
+        
+        # 预测未来 steps 步
+        last_u = u_seq[-1]
+        for _ in range(steps):
+            h = self.forward_step(h, last_u, dt=0.1)
+            last_u = h[:self.input_dim] if self.input_dim <= self.state_dim else h
+        
+        out = last_u[:2048] if len(last_u) >= 2048 else np.pad(last_u, (0, 2048 - len(last_u)))
+        return out.astype(np.float32)
+

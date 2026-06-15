@@ -691,3 +691,40 @@ if __name__ == "__main__":
     
     print()
     print("✅ P17 全部测试通过")
+
+
+    # ── LFM 真实集成 ──
+
+    def gate_from_lfm(self, lfm_embedding: np.ndarray, 
+                       engram_hit_rate: float = 0.0) -> float:
+        """接收 LFM 2048-dim embedding，输出门控 alpha
+        
+        Args:
+            lfm_embedding: (2048,) LFM embedding
+            engram_hit_rate: Engram 命中率 [0,1]
+            
+        Returns:
+            alpha: [0,1] 门控系数
+        """
+        # 降维：2048 → engram_dim (投影到门控网络能处理的维度)
+        if lfm_embedding.shape[0] != self.engram_dim:
+            import numpy as np
+            if not hasattr(self, '_proj_2048_to_engram'):
+                limit = np.sqrt(6.0 / lfm_embedding.shape[0])
+                self._proj_2048_to_engram = np.random.uniform(
+                    -limit, limit, 
+                    (self.engram_dim, lfm_embedding.shape[0])
+                ).astype(np.float32)
+            proj = self._proj_2048_to_engram @ lfm_embedding
+        else:
+            proj = lfm_embedding
+        
+        # 用门控网络计算 alpha
+        alpha = self.compute_alpha(proj, per_head=False)
+        if isinstance(alpha, np.ndarray):
+            alpha = float(alpha.mean())
+        
+        # engram hit_rate 增强
+        alpha = alpha * 0.7 + engram_hit_rate * 0.3
+        return min(1.0, max(0.0, alpha))
+

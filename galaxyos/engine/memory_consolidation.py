@@ -580,6 +580,61 @@ class ConsolidationEngine:
         except Exception as e:
             results["cross_modal"] = {"error": str(e)}
         
+        # 6. Engram 条件记忆 — 用 LFM embedding 更新 n-gram 表
+        try:
+            from engram_memory import EngramMemory, EngramConfig
+            from lfm_adaptive_operator import RealLFMNetwork
+            _engram_mem = EngramMemory(EngramConfig(embed_dim=2048, ngram_n=3))
+            _engram_lfm = RealLFMNetwork()
+            
+            _net = self._get_synapse_network()
+            _net._load()
+            _engram_hit_total = 0
+            _engram_count = 0
+            for n_id, n in list(getattr(_net, '_neurons_cache', {}).items()):
+                if n.content and len(n.content) > 10:
+                    _engram_lfm.embed_and_store_engram(n.content[:256], _engram_mem)
+                    _engram_count += 1
+            results["engram"] = {
+                "neurons_indexed": _engram_count,
+                "hit_rate": _engram_mem.get_hit_rate(),
+            }
+        except Exception as e:
+            results["engram"] = {"error": str(e)[:120]}
+        
+        # 7. LiquidWeight 动态权重融合 — 用 Engram hit_rate 调 prune 阈值
+        try:
+            from liquid_weight import LiquidWeightGenerator
+            _lw = LiquidWeightGenerator()
+            _hit = results.get("engram", {}).get("hit_rate", 0.0)
+            lw_info = _lw.get_info()
+            results["liquid_weight"] = {
+                "hit_rate_gated_weight": round(_hit, 3),
+                "liquid_weight_dim": lw_info.get("dim", 0),
+            }
+        except Exception as e:
+            results["liquid_weight"] = {"error": str(e)[:120]}
+        
+        # 8. SSM embedding 时序预测 — 嵌入 consolidation 后处理
+        try:
+            from liquid_ssm import LiquidSSM
+            _ssm = LiquidSSM(state_dim=128, input_dim=2048, output_dim=2048)
+            # 收集最近 N 个 embedding
+            _recent_embs = []
+            for n_id, n in list(getattr(_net, '_neurons_cache', {}).items())[:10]:
+                if hasattr(n, 'embedding') and n.embedding:
+                    _recent_embs.append(np.array(n.embedding[:2048], dtype=np.float32))
+            if len(_recent_embs) >= 2:
+                _predicted = _ssm.predict_embedding(_recent_embs, steps=1)
+                results["ssm_predict"] = {
+                    "input_count": len(_recent_embs),
+                    "predicted_norm": float(np.linalg.norm(_predicted)) if _predicted is not None else 0,
+                }
+            else:
+                results["ssm_predict"] = {"input_count": len(_recent_embs), "skipped": True}
+        except Exception as e:
+            results["ssm_predict"] = {"error": str(e)[:120]}
+        
         # 记录统计
         try:
             stats_record = {
