@@ -121,8 +121,16 @@ rustup-cn:
 	@if command -v cargo >/dev/null 2>&1; then \
 		echo "✅ Rust already installed: $$(rustc --version)"; \
 	else \
-		echo "  → Downloading rustup-init from TUNA mirror..."; \
-		curl --proto '=https' --tlsv1.2 -sSf https://mirrors.tuna.tsinghua.edu.cn/rustup/rustup/archive/1.28.1/x86_64-unknown-linux-gnu/rustup-init -o /tmp/rustup-init; \
+		echo "  → Detecting architecture..."; \
+		ARCH=$$(uname -m); \
+		case "$$ARCH" in \
+			x86_64) RUSTUP_ARCH="x86_64-unknown-linux-gnu" ;; \
+			aarch64|arm64) RUSTUP_ARCH="aarch64-unknown-linux-gnu" ;; \
+			armv7l) RUSTUP_ARCH="armv7-unknown-linux-gnueabihf" ;; \
+			*) echo "❌ Unsupported arch: $$ARCH"; exit 1 ;; \
+		esac; \
+		echo "  → Arch: $$ARCH, downloading rustup-init from TUNA mirror..."; \
+		curl --proto '=https' --tlsv1.2 -sSf "https://mirrors.tuna.tsinghua.edu.cn/rustup/rustup/archive/1.28.1/$$RUSTUP_ARCH/rustup-init" -o /tmp/rustup-init; \
 		chmod +x /tmp/rustup-init; \
 		RUSTUP_DIST_SERVER=https://mirrors.tuna.tsinghua.edu.cn/rustup \
 		RUSTUP_UPDATE_ROOT=https://mirrors.tuna.tsinghua.edu.cn/rustup/rustup \

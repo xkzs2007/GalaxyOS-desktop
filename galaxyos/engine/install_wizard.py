@@ -14,6 +14,8 @@ GalaxyOS — 安装向导 + 配置向导
   python3 install_wizard.py --kg-test       # 知识图谱功能专项测试
   python3 install_wizard.py --all            # 全量模式（体检 + 睡眠测试 + 修复）
   python3 install_wizard.py --update         # 增量更新：版本检测 + 仅同步变更，保护已有配置
+  python3 install_wizard.py --download-lfm  # 下载 LFM2.5-1.2B-Thinking 真实权重（~2.2GB）
+  python3 install_wizard.py --setup-rust     # 安装 Rust 工具链（国内镜像，ARM64/x86_64自动识别）
   python3 install_wizard.py --check --hardware  # 仅硬件/设备环境检测
 """
 
@@ -2000,6 +2002,273 @@ def _write_version_marker(version: str):
         warn(f"无法写入版本标记: {e}", indent=1)
 
 
+# ════════════════════════════════════════════════════════════════
+# Phase 1.5: v8.1 液态神经网络管线（新增）
+# ════════════════════════════════════════════════════════════════
+
+def check_lfm_weights() -> Dict[str, Any]:
+    """检查 LFM2.5-1.2B-Thinking 真实权重是否存在"""
+    heading("🧠 模块检查：LFM2.5 真实权重")
+    results = {"present": False, "size_mb": 0, "model_path": ""}
+    
+    candidates = [
+        WORKSPACE / "models" / "LFM2.5-1.2B",
+        WORKSPACE / "skills" / "xiaoyi-claw-omega-final" / "models" / "LFM2.5-1.2B",
+    ]
+    for mp in candidates:
+        weights = mp / "model.safetensors"
+        if weights.exists():
+            results["present"] = True
+            results["model_path"] = str(mp)
+            size = weights.stat().st_size
+            results["size_mb"] = round(size / 1024 / 1024, 1)
+            results["size_gb"] = round(size / 1024 / 1024 / 1024, 2)
+            ok(f"LFM2.5-1.2B 实际权重: {results['size_mb']} MB")
+            # 检查额外文件
+            for extra in ["config.json", "tokenizer.json", "generation_config.json"]:
+                if (mp / extra).exists():
+                    results[f"has_{extra.replace('.', '_')}"] = True
+            return results
+    
+    warn("LFM2.5-1.2B 权重未下载（管线 2 将降级到随机 NumPy）", indent=1)
+    info("使用 --download-lfm 一键下载", indent=2)
+    return results
+
+
+def _download_hf_file(url: str, dst: Path, desc: str = "") -> bool:
+    """从 hf-mirror 下载单文件（带进度）"""
+    import urllib.request
+    try:
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=300) as resp:
+            total = int(resp.headers.get("Content-Length", 0))
+            dl = 0
+            with open(str(dst), "wb") as f:
+                while True:
+                    chunk = resp.read(131072)
+                    if not chunk:
+                        break
+                    f.write(chunk)
+                    dl += len(chunk)
+                    if total > 0:
+                        pct = dl * 100 // total
+                        _print(f"\r  {desc}: {pct}% ({dl//1024//1024}/{total//1024//1024} MB)", end="")
+            _print()
+        return True
+    except Exception as e:
+        err(f"下载失败 {desc}: {e}", indent=1)
+        return False
+
+
+LFM_MODEL_FILES = [
+    ("https://hf-mirror.com/LiquidAI/LFM2.5-1.2B-Thinking/resolve/main/model.safetensors", "model.safetensors", "权重文件(2.2GB)"),
+    ("https://hf-mirror.com/LiquidAI/LFM2.5-1.2B-Thinking/resolve/main/config.json", "config.json", "模型配置"),
+    ("https://hf-mirror.com/LiquidAI/LFM2.5-1.2B-Thinking/resolve/main/tokenizer.json", "tokenizer.json", "分词器"),
+    ("https://hf-mirror.com/LiquidAI/LFM2.5-1.2B-Thinking/resolve/main/tokenizer_config.json", "tokenizer_config.json", "分词器配置"),
+    ("https://hf-mirror.com/LiquidAI/LFM2.5-1.2B-Thinking/resolve/main/generation_config.json", "generation_config.json", "生成配置"),
+    ("https://hf-mirror.com/LiquidAI/LFM2.5-1.2B-Thinking/resolve/main/special_tokens_map.json", "special_tokens_map.json", "特殊token"),
+    ("https://hf-mirror.com/LiquidAI/LFM2.5-1.2B-Thinking/resolve/main/chat_template.jinja", "chat_template.jinja", "对话模板"),
+]
+
+
+def download_lfm_weights(target_dir: Optional[Path] = None) -> bool:
+    """从 hf-mirror 下载 LFM2.5-1.2B-Thinking 全部文件"""
+    heading("📥 下载 LFM2.5-1.2B-Thinking")
+    if target_dir is None:
+        target_dir = WORKSPACE / "models" / "LFM2.5-1.2B"
+    info(f"目标目录: {target_dir}")
+    if (target_dir / "model.safetensors").exists():
+        sz = (target_dir / "model.safetensors").stat().st_size / 1024**3
+        ok(f"权重已存在: {sz:.1f} GB")
+        return True
+    ok("开始下载（来源: hf-mirror.com）...")
+    start = time.time()
+    ok_cnt = 0
+    for url, fn, desc in LFM_MODEL_FILES:
+        dst = target_dir / fn
+        if dst.exists():
+            ok_cnt += 1
+            continue
+        ok_cnt += 1 if _download_hf_file(url, dst, desc) else 0
+    elapsed = time.time() - start
+    _print()
+    if ok_cnt == len(LFM_MODEL_FILES):
+        ok(f"全部完成 ({ok_cnt}/{len(LFM_MODEL_FILES)})，耗时 {elapsed:.0f}s")
+        info(f"路径: {target_dir}")
+        return True
+    warn(f"部分完成 ({ok_cnt}/{len(LFM_MODEL_FILES)})，重试运行 --download-lfm 续传", indent=1)
+    return False
+def _setup_rust(use_make: bool = True):
+    """跨平台安装 Rust：Windows / Linux / macOS
+    使用 TUNA 镜像加速，自动识别 ARM64/x86_64。
+    """
+    import subprocess, sys, os, platform
+    from pathlib import Path
+
+    print()
+    heading("🦀 安装 Rust 工具链")
+
+    # ── 方案 A：有 Makefile 且 make 可用 ──
+    if use_make:
+        mk = Path(__file__).resolve().parent.parent.parent / "Makefile"
+        if mk.exists():
+            info("运行: make rustup-cn")
+            r = subprocess.run(["make", "rustup-cn"], cwd=str(mk.parent))
+            sys.exit(0 if r.returncode == 0 else 1)
+
+    # ── 方案 B：直接下载 rustup-init ──
+    is_windows = sys.platform.startswith("win")
+    arch = platform.machine().lower()
+
+    # 架构映射
+    arch_map = {
+        "x86_64":   "x86_64-unknown-linux-gnu",
+        "amd64":    "x86_64-pc-windows-msvc",
+        "aarch64":  "aarch64-unknown-linux-gnu",
+        "arm64":    "aarch64-pc-windows-msvc",
+    }
+    if is_windows:
+        # Windows: amd64 → x86_64-pc-windows-msvc, arm64 → aarch64-pc-windows-msvc
+        win_arch = {"x86_64": "x86_64-pc-windows-msvc", "amd64": "x86_64-pc-windows-msvc",
+                     "aarch64": "aarch64-pc-windows-msvc", "arm64": "aarch64-pc-windows-msvc"}
+        rarch = win_arch.get(arch)
+        if not rarch:
+            err(f"不支持的 Windows 架构: {arch}")
+            sys.exit(1)
+    else:
+        rarch = {"x86_64": "x86_64-unknown-linux-gnu", "aarch64": "aarch64-unknown-linux-gnu",
+                  "arm64": "aarch64-unknown-linux-gnu"}.get(arch)
+        if not rarch:
+            err(f"不支持的架构: {arch}")
+            sys.exit(1)
+
+    info(f"平台: {'Windows' if is_windows else 'Linux/Mac'}")
+    info(f"架构: {arch} → rustup target: {rarch}")
+
+    # 临时目录（跨平台）
+    tmp_dir = Path(os.environ.get("TEMP", "/tmp")) if is_windows else Path("/tmp")
+    tmp_dir.mkdir(parents=True, exist_ok=True)
+    exe_name = "rustup-init.exe" if is_windows else "rustup-init"
+    tmp_path = tmp_dir / exe_name
+
+    # 下载（跨平台）
+    url = f"https://mirrors.tuna.tsinghua.edu.cn/rustup/rustup/archive/1.28.1/{rarch}/{exe_name}"
+    info(f"下载地址: {url}")
+
+    try:
+        import urllib.request
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=120) as resp:
+            total = int(resp.headers.get("Content-Length", 0))
+            dl = 0
+            with open(str(tmp_path), "wb") as f:
+                while True:
+                    chunk = resp.read(131072)
+                    if not chunk:
+                        break
+                    f.write(chunk)
+                    dl += len(chunk)
+                    if total > 0:
+                        pct = dl * 100 // total
+                        _print(f"\r  下载中: {pct}% ({dl//1024}/{total//1024} KB)", end="")
+            _print()
+        if not is_windows:
+            tmp_path.chmod(0o755)
+        ok("下载完成")
+    except Exception as e:
+        err(f"下载失败: {e}")
+        info("可以手动下载并运行 rustup-init", indent=1)
+        info(url, indent=2)
+        sys.exit(1)
+
+    # 安装
+    info("运行 rustup-init...")
+    env = os.environ.copy()
+    env["RUSTUP_DIST_SERVER"] = "https://mirrors.tuna.tsinghua.edu.cn/rustup"
+    env["RUSTUP_UPDATE_ROOT"] = "https://mirrors.tuna.tsinghua.edu.cn/rustup/rustup"
+    r = subprocess.run([str(tmp_path), "-y", "--default-toolchain", "stable"], env=env)
+    tmp_path.unlink(missing_ok=True)
+
+    if r.returncode == 0:
+        ok("Rust 安装完成")
+        if is_windows:
+            info("请重启终端或运行: $env:Path = [System.Environment]::GetEnvironmentVariable('Path','User') + ';' + $env:USERPROFILE + '\\.cargo\\bin'", indent=1)
+        else:
+            info("运行: source $HOME/.cargo/env", indent=1)
+        sys.exit(0)
+    else:
+        err("安装失败")
+        sys.exit(1)
+
+
+
+def check_v81_pipelines() -> Dict[str, Any]:
+    """验证 v8.1 四条液态神经网络管线的模块初始化"""
+    heading("🔬 v8.1 液态神经网络管线初始化")
+    results = {"pipelines": {}, "total": 0, "ok": 0, "fail": 0}
+    
+    for p in [str(galaxy_scripts), str(galaxy_engine)]:
+        if os.path.isdir(p):
+            sys.path.insert(0, p)
+    
+    try:
+        from paper_integration_v81 import V81IntegrationAddon
+        addon = V81IntegrationAddon()
+        addon._lazy_init_all()
+        
+        pipeline_checks = {
+            "p1_engram_memory": ["engram", "engram_heat", "dag_liquid_strategy", "dag_node_ranker", "kan_ltc_merger"],
+            "p2_lfm_reasoning": ["lfm_network", "lfm_edge", "lfm_engram"],
+            "p3_ssm_tracking": ["mamba3", "liquid_ssm", "ssm_kan", "lgct"],
+            "p4_continual_learning": ["neural_ode", "ode_rnn", "moe_engram", "sparsity", "liquid_weight", "lipschitz", "ewc"],
+        }
+        
+        for pipeline, components in pipeline_checks.items():
+            ok_count = sum(1 for c in components if getattr(addon, c, None) is not None)
+            total = len(components)
+            results["pipelines"][pipeline] = {"ok": ok_count, "total": total, "components": {}}
+            for c in components:
+                val = getattr(addon, c, None)
+                inst_ok = val is not None
+                results["pipelines"][pipeline]["components"][c] = inst_ok
+                if inst_ok:
+                    results["ok"] += 1
+                else:
+                    results["fail"] += 1
+            results["total"] += total
+            
+            pipeline_names = {
+                "p1_engram_memory": "管线1: 记忆增强（Engram/DAG/KAN/LTC）",
+                "p2_lfm_reasoning": "管线2: LFM 推理引擎",
+                "p3_ssm_tracking": "管线3: SSM 状态追踪",
+                "p4_continual_learning": "管线4: 持续学习 / 理论增强",
+            }
+            if ok_count == total:
+                ok(f"{pipeline_names.get(pipeline, pipeline)}: {ok_count}/{total}")
+            else:
+                missing = [c for c in components if getattr(addon, c, None) is None]
+                warn(f"{pipeline_names.get(pipeline, pipeline)}: {ok_count}/{total} (缺: {', '.join(missing)})")
+        
+        # LFM 权重类型
+        lfm = addon.lfm_network
+        if lfm is not None and hasattr(lfm, '_forward_text'):
+            ok("  LFM: 真实权重 (LFM2.5-1.2B-Thinking) ✅")
+            results["lfm_type"] = "real_weight"
+        elif lfm is not None:
+            info("  LFM: 随机 NumPy 版（降级）")
+            results["lfm_type"] = "numpy_random"
+        else:
+            warn("  LFM: 未加载")
+            results["lfm_type"] = "none"
+        
+    except Exception as e:
+        results["error"] = str(e)[:200]
+        err(f"V81IntegrationAddon 初始化失败: {e}", indent=1)
+    
+    return results
+
+
 def generate_report(all_results: Dict[str, Any]) -> Dict[str, Any]:
     """生成汇总报告"""
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -2639,6 +2908,8 @@ def main():
     parser.add_argument("--install-plugin", action="store_true", help="安装/检测 GalaxyOS OpenClaw 插件")
     parser.add_argument("--fix-torch", action="store_true", help="自动补齐 torch/torch_geometric/hnswlib 等 ML 栈（清华源 + PyG wheel + CPU 索引）")
     parser.add_argument("--python", default=None, help="显式指定 Python 解释器路径（覆盖自动检测，常用于生产环境/容器固定运行时）")
+    parser.add_argument("--download-lfm", action="store_true", help="从 hf-mirror 下载 LFM2.5-1.2B-Thinking 真实权重（~2.2GB）")
+    parser.add_argument("--setup-rust", action="store_true", help="安装 Rust 工具链（国内镜像，自动识别 ARM64/x86_64）")
     parser.add_argument("--update", action="store_true", help="增量更新模式：版本检测 + 仅同步变更文件，保护已有配置")
     parser.add_argument("--migrate", action="store_true", help="数据迁移向导：检测并迁移历史数据到当前版本")
     parser.add_argument("--migrate-auto", action="store_true", help="数据迁移（非互动模式）：自动迁移所有可迁移数据")
@@ -2659,6 +2930,18 @@ def main():
     if args.install_plugin:
         _install_plugin_guide()
         return
+
+    if args.download_lfm:
+        ok = download_lfm_weights()
+        sys.exit(0 if ok else 1)
+
+
+    if args.setup_rust:
+        _setup_rust(
+            use_make=Path(__file__).resolve().parent.parent.parent.joinpath("Makefile").exists()
+        )
+        sys.exit(0)
+
 
     if args.fix_torch:
         rc = fix_torch_stack(python_exe=args.python)
@@ -2804,6 +3087,8 @@ def main():
     )
     all_results["torch"] = check_torch_stack(interactive_offer=_interactive_torch)
     all_results["modules"] = test_all_modules()
+    all_results["v81_models"] = check_lfm_weights()
+    all_results["v81_pipes"] = check_v81_pipelines()
     all_results["sync"] = check_file_sync()
     all_results["services"] = check_services()
     all_results["breakers"] = scan_breakers()

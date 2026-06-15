@@ -13,5 +13,5 @@ Usage:
     from galaxyos.orchestration import WorkflowEngine
 """
 
-__version__ = "7.3.2"
+__version__ = "8.1.1"
 __author__ = "xiaoyi-claw"

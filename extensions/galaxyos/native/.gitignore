@@ -7,3 +7,7 @@ Cargo.lock.bak
 *.swp
 *.swo
 .DS_Store
+
+# 本地 vendored 依赖缓存（cargo 构建）
+vendor/
+

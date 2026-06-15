@@ -198,7 +198,7 @@ from .module_coordinator import (
 
 
 # 版本信息
-__version__ = "9.0.1"
+__version__ = "8.1.1"
 __author__ = "xkzs2007"
 
 

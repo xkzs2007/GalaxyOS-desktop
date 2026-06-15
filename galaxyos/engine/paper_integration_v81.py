@@ -9,7 +9,7 @@ v8.1 论文全量运行时桥接器 — 18新模块 × 4管线 集成
   4. 持续学习 (NeuralODE + ODE-RNN+EWC + MoE/Engram U型律 + Sparsity)
 
 安装方式:
-  from galaxyos.engine.paper_integration_v81 import V81IntegrationAddon
+  from paper_integration_v81 import V81IntegrationAddon
   addon = V81IntegrationAddon(worker)
   addon.register_all()  # 注册 UDS 方法 + hooks
 """
@@ -30,36 +30,36 @@ logger = logging.getLogger("paper_integration_v81")
 # ============================================================
 
 def _lazy_engram():
-    from galaxyos.engine.engram_memory import EngramMemory, EngramConfig, EngramEnhancedHeatTracker
+    from engram_memory import EngramMemory, EngramConfig, EngramEnhancedHeatTracker
     return EngramMemory, EngramConfig, EngramEnhancedHeatTracker
 
 def _lazy_dag_liquid():
-    from galaxyos.engine.dag_liquid_fusion import (
+    from dag_liquid_fusion import (
         DAGLiquidFusionConfig, LTCConstantComputer, TimeAwareNodeRanker,
         LTCDAGCompactStrategy, NodeScore
     )
     return DAGLiquidFusionConfig, LTCConstantComputer, TimeAwareNodeRanker, LTCDAGCompactStrategy, NodeScore
 
 def _lazy_kan_ltc():
-    from galaxyos.engine.kan_network import KANNetwork, KanLtcMerger
-    from galaxyos.engine.ltc_se_framework import LTCUnit, CfCUnit, LiquidCellConfig, LiquidCellType
-    from galaxyos.engine.neural_closed_form_derivative import ClosedFormDerivative
-    return KANNetwork, KanLtcMerger, LTCUnit, CfCUnit, LiquidCellConfig, LiquidCellType, ClosedFormDerivative
+    from kan_network import KANNetwork, KanLtcMerger
+    from ltc_se_framework import LTCUnit, CfCUnit, LiquidCellConfig, LiquidCellType
+    from neural_closed_form_derivative import ClosedFormODESolver
+    return KANNetwork, KanLtcMerger, LTCUnit, CfCUnit, LiquidCellConfig, LiquidCellType, ClosedFormODESolver
 
 # ============================================================
 # 管线 2: 推理引擎
 # ============================================================
 
 def _lazy_lfm():
-    from galaxyos.engine.lfm_adaptive_operator import LFMNetwork, LFMConfig, AdaptiveLinearOperator
+    from lfm_adaptive_operator import LFMNetwork, LFMConfig, AdaptiveLinearOperator
     return LFMNetwork, LFMConfig, AdaptiveLinearOperator
 
 def _lazy_lfm_edge():
-    from galaxyos.engine.lfm_edge import LFMEdgeEngine, EdgeInferenceConfig, QuantType
+    from lfm_edge import LFMEdgeEngine, EdgeInferenceConfig, QuantType
     return LFMEdgeEngine, EdgeInferenceConfig, QuantType
 
 def _lazy_lfm_engram():
-    from galaxyos.engine.lfm_engram_fusion import EngramLFMNetwork, EngramLFMConfig, EngramLFMGate, EngramAugmentedLFMLayer
+    from lfm_engram_fusion import EngramLFMNetwork, EngramLFMConfig, EngramLFMGate, EngramAugmentedLFMLayer
     return EngramLFMNetwork, EngramLFMConfig, EngramLFMGate, EngramAugmentedLFMLayer
 
 # ============================================================
@@ -67,44 +67,44 @@ def _lazy_lfm_engram():
 # ============================================================
 
 def _lazy_ssm():
-    from galaxyos.engine.mamba3_ssm import Mamba3SSM
-    from galaxyos.engine.liquid_ssm import LiquidSSM
-    from galaxyos.engine.ssm_kan_fusion import SSMWithKAN, KANStateUpdate, KANProjection
+    from mamba3_ssm import Mamba3SSM
+    from liquid_ssm import LiquidSSM
+    from ssm_kan_fusion import SSMWithKAN, KANStateUpdate, KANProjection
     return Mamba3SSM, LiquidSSM, SSMWithKAN, KANStateUpdate, KANProjection
 
 def _lazy_liquid_graph():
-    from galaxyos.engine.liquid_graph_time_constant import (
-        LiquidGraphTimeConstant, LGTConfig, LGTCNode, EdgeType
+    from liquid_graph_time_constant import (
+        LiquidGraphNetwork, LTCTimeGraphSimulator
     )
-    return LiquidGraphTimeConstant, LGTConfig, LGTCNode, EdgeType
+    return LiquidGraphNetwork, LTCTimeGraphSimulator
 
 # ============================================================
 # 管线 4: 持续学习
 # ============================================================
 
 def _lazy_ode():
-    from galaxyos.engine.neural_ode import NeuralODE, ODESolver, LTCNeuralODEWrapper
+    from neural_ode import NeuralODE, ODESolver, LTCNeuralODEWrapper
     return NeuralODE, ODESolver, LTCNeuralODEWrapper
 
 def _lazy_ode_rnn():
-    from galaxyos.engine.ode_rnn_continual import ODERNNContinual, EWC, MemoryAugmentedBlock
+    from ode_rnn_continual import ODERNNContinual, EWC, MemoryAugmentedBlock
     return ODERNNContinual, EWC, MemoryAugmentedBlock
 
 def _lazy_moe_engram():
-    from galaxyos.engine.moe_engram_hybrid import MoeEngramBlock, MoeEngramRouter, U_ShapeScalingLaw
+    from moe_engram_hybrid import MoeEngramBlock, MoeEngramRouter, U_ShapeScalingLaw
     return MoeEngramBlock, MoeEngramRouter, U_ShapeScalingLaw
 
 def _lazy_sparsity():
-    from galaxyos.engine.unified_sparsity_view import UnifiedSparsityView, SparsityAnalyzer, SparsityPoint3D
+    from unified_sparsity_view import UnifiedSparsityView, SparsityAnalyzer, SparsityPoint3D
     return UnifiedSparsityView, SparsityAnalyzer, SparsityPoint3D
 
 def _lazy_liquid_weight():
-    from galaxyos.engine.liquid_weight import LiquidWeightGenerator, LiquidWeightFusion, LiquidWeightConfig
+    from liquid_weight import LiquidWeightGenerator, LiquidWeightFusion, LiquidWeightConfig
     return LiquidWeightGenerator, LiquidWeightFusion, LiquidWeightConfig
 
 def _lazy_lipschitz():
-    from galaxyos.engine.lipschitz_liquid import LipschitzLiquid, LipschitzConfig
-    return LipschitzLiquid, LipschitzConfig
+    from lipschitz_liquid import LipschitzConstraint, LipschitzLTCUnit
+    return LipschitzConstraint, LipschitzLTCUnit
 
 
 class V81IntegrationAddon:
@@ -253,14 +253,23 @@ class V81IntegrationAddon:
         except Exception as e:
             logger.warning(f"  KanLtcMerger 初始化失败: {e}")
 
-        # 管线 2
+        # 管线 2 — 使用全局共享 RealLFMNetwork（与 LFMReasoningChannel 共用）
+        self.lfm_network = None
         try:
-            lfm_net, lfm_cfg, _ = _lazy_lfm()
-            cfg = lfm_cfg(hidden_dim=256)
-            self.lfm_network = lfm_net(cfg)
-            logger.debug("  LFMNetwork ✅")
-        except Exception as e:
-            logger.warning(f"  LFMNetwork 初始化失败: {e}")
+            from galaxy_engine_integration import _get_lfm_real
+            self.lfm_network = _get_lfm_real()
+            if self.lfm_network is not None:
+                logger.info("  RealLFMNetwork (LFM2.5-1.2B 共享实例) ✅")
+            else:
+                raise RuntimeError("模型加载失败")
+        except Exception:
+            try:
+                lfm_net, lfm_cfg, _ = _lazy_lfm()
+                cfg = lfm_cfg(hidden_dim=256)
+                self.lfm_network = lfm_net(cfg)
+                logger.warning("  RealLFMNetwork 不可用，降级到随机 LFMNetwork")
+            except Exception as e2:
+                logger.warning(f"  LFMNetwork 降级也失败: {e2}")
 
         try:
             lfm_edge_cls, edge_cfg_cls, qt_cls = _lazy_lfm_edge()
@@ -274,7 +283,7 @@ class V81IntegrationAddon:
             elfm_net, elfm_cfg, elfm_gate, _ = _lazy_lfm_engram()
             if self.engram:
                 cfg = elfm_cfg()
-                self.lfm_engram = elfm_net(cfg, self.engram)
+                self.lfm_engram = elfm_net(cfg)
                 self.lfm_engram_gate = elfm_gate()
                 logger.debug("  EngramLFMNetwork ✅")
         except Exception as e:
@@ -291,8 +300,8 @@ class V81IntegrationAddon:
             logger.warning(f"  SSM 系列初始化失败: {e}")
 
         try:
-            lgct_cls, lgct_cfg, _, _ = _lazy_liquid_graph()
-            self.lgct = lgct_cls()
+            lgct_cls, _ = _lazy_liquid_graph()
+            self.lgct = lgct_cls(feature_dim=64, hidden_dims=[128, 64])
             logger.debug("  LiquidGraphTimeConstant ✅")
         except Exception as e:
             logger.warning(f"  LGCT 初始化失败: {e}")
@@ -337,7 +346,7 @@ class V81IntegrationAddon:
 
         try:
             lip_cls, lip_cfg = _lazy_lipschitz()
-            self.lipschitz = lip_cls()
+            self.lipschitz = lip_cls(shape=(256, 256))
             logger.debug("  LipschitzLiquid ✅")
         except Exception as e:
             logger.warning(f"  LipschitzLiquid 初始化失败: {e}")
@@ -557,15 +566,33 @@ class V81IntegrationAddon:
         if not self.lfm_network:
             return {"ok": False, "error": "not initialized"}
         try:
-            import numpy as np
-            seq_len = p.get("seq_len", 32)
-            x = np.random.randn(1, seq_len, 256).astype(np.float64) * 0.01
-            out = self.lfm_network.forward(x)
-            return {
-                "ok": True,
-                "output_shape": str(out.shape),
-                "mean": float(np.mean(out)),
-            }
+            text = p.get("text", "")
+            # duck-typing: RealLFMNetwork 有 _forward_text 方法，随机版没有
+            if hasattr(self.lfm_network, '_forward_text'):
+                # 真实 LFM2.5 模型 — 文本推理
+                import numpy as np
+                import math
+                result = self.lfm_network._forward_text(text) if text else {}
+                tokens = self.lfm_network._tokenizer.encode(text) if text else []
+                hidden_norm = result.get('embedding_norm', 0.0) if result else 0.0
+                return {
+                    "ok": True,
+                    "token_count": len(tokens),
+                    "embedding_norm": hidden_norm,
+                    "complexity": min(1.0, len(tokens) / 128.0),
+                    "hidden_dim": self.lfm_network.config.hidden_dim,
+                }
+            else:
+                # 随机 NumPy 版
+                import numpy as np
+                seq_len = p.get("seq_len", 32)
+                x = np.random.randn(1, seq_len, 256).astype(np.float64) * 0.01
+                out = self.lfm_network.forward(x)
+                return {
+                    "ok": True,
+                    "output_shape": str(out.shape),
+                    "mean": float(np.mean(out)),
+                }
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
@@ -573,7 +600,7 @@ class V81IntegrationAddon:
         if not self.lfm_network:
             return {"ok": False, "error": "not initialized"}
         try:
-            info = self.lfm_network.get_info()
+            info = self.lfm_network.get_info() if hasattr(self.lfm_network, 'get_info') else {}
             return {"ok": True, **info}
         except Exception as e:
             return {"ok": False, "error": str(e)}

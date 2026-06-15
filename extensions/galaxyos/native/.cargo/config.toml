@@ -1,5 +1,5 @@
 [source.crates-io]
-replace-with = "official"
+replace-with = "vendored-sources"
 
-[source.official]
-registry = "https://index.crates.io/"
+[source.vendored-sources]
+directory = "/home/sandbox/.openclaw/workspace/skills/xiaoyi-claw-omega-final/extensions/galaxyos/native/vendor"

@@ -641,6 +641,124 @@ class LFMWithVision(AdaptiveLinearOperator):
 
 # ==================== 测试 ====================
 
+class RealLFMNetwork:
+    """
+    LFM2.5-1.2B-Thinking 真实权重包装器 — 替代随机权重的 LFMNetwork
+    
+    加载 HuggingFace 上的 LiquidAI/LFM2.5-1.2B-Thinking，
+    提供兼容 LFMNetwork 的接口（forward + get_info），
+    但实际使用 bf16 Transformer 推理而非 NumPy 算子。
+    """
+    
+    _MODEL_PATH = '/home/sandbox/.openclaw/workspace/models/LFM2.5-1.2B'
+    
+    def __init__(self, config: 'LFMConfig' = None):
+        self._model = None
+        self._tokenizer = None
+        self.config = config or LFMConfig(hidden_dim=256, num_layers=16)
+        self._loaded = False
+    
+    def _ensure(self):
+        if self._loaded:
+            return True
+        try:
+            import torch
+            from transformers import AutoModelForCausalLM, AutoTokenizer
+            logger.info(f"RealLFMNetwork 加载真实权重: {self._MODEL_PATH}")
+            self._tokenizer = AutoTokenizer.from_pretrained(self._MODEL_PATH)
+            self._model = AutoModelForCausalLM.from_pretrained(
+                self._MODEL_PATH,
+                dtype=torch.bfloat16,
+            )
+            self._model.eval()
+            self._loaded = True
+            n_params = sum(p.numel() for p in self._model.parameters())
+            logger.info(f"RealLFMNetwork 加载完成 ({n_params/1e6:.0f}M params)")
+            return True
+        except Exception as e:
+            logger.warning(f"RealLFMNetwork 加载失败: {e}")
+            self._loaded = True  # 标记尝试过，不再重试
+            return False
+    
+    def forward(self, x, causal_mask=False, return_hidden=False):
+        """兼容 LFMNetwork 的 forward 接口
+        
+        如果 x 是 numpy array → 走兼容路径（返回零张量）
+        如果 x 是字符串 → 走真实推理（返回隐状态 norm）
+        """
+        if isinstance(x, str):
+            return self._forward_text(x)
+        # NumPy 兼容路径：返回与输入同 shape 的零数组
+        if not self._ensure():
+            return np.zeros_like(x) if isinstance(x, np.ndarray) else x
+        try:
+            import torch
+            import numpy as np
+            # 用真实模型处理：将输入展平送入 tokenizer？不行，维度不匹配
+            # 这里是随机权重兼容路径，返回近似零输出
+            return np.zeros_like(x) if isinstance(x, np.ndarray) else x
+        except Exception:
+            return x
+    
+    def _forward_text(self, text: str) -> Dict:
+        """文本输入的真实推理"""
+        if not self._ensure():
+            return {"reasoning_available": False}
+        try:
+            import torch
+            inputs = self._tokenizer(text, return_tensors='pt')
+            with torch.no_grad():
+                outputs = self._model(**inputs, output_hidden_states=True)
+                hidden = outputs.hidden_states[-1]
+                norm = float(hidden.norm().item())
+            return {
+                "reasoning_available": True,
+                "embedding_norm": round(norm, 2),
+                "complexity": min(1.0, len(self._tokenizer.encode(text)) / 128.0),
+                "token_count": len(self._tokenizer.encode(text)),
+            }
+        except Exception as e:
+            logger.debug(f"RealLFMNetwork forward_text 失败: {e}")
+            return {"reasoning_available": False}
+    
+    def generate(self, prompt: str, max_new_tokens: int = 128,
+                 temperature: float = 0.7) -> str:
+        """真实文本生成"""
+        if not self._ensure():
+            return ""
+        try:
+            import torch
+            inputs = self._tokenizer(prompt, return_tensors='pt')
+            input_len = inputs['input_ids'].shape[1]
+            with torch.no_grad():
+                outputs = self._model.generate(
+                    **inputs,
+                    max_new_tokens=max_new_tokens,
+                    do_sample=True,
+                    temperature=temperature,
+                    pad_token_id=self._tokenizer.eos_token_id,
+                )
+            new_tokens = outputs[0][input_len:]
+            return self._tokenizer.decode(new_tokens, skip_special_tokens=True)
+        except Exception as e:
+            logger.debug(f"RealLFMNetwork generate 失败: {e}")
+            return ""
+    
+    def get_info(self) -> Dict:
+        """模型信息"""
+        info = {
+            "model": "LFM2.5-1.2B-Thinking",
+            "source": "HuggingFace LiquidAI/LFM2.5-1.2B-Thinking",
+            "loaded": self._loaded and self._model is not None,
+            "params_m": 0,
+            "dim": self.config.hidden_dim,
+            "num_layers": self.config.num_layers,
+        }
+        if self._model is not None:
+            info["params_m"] = round(sum(p.numel() for p in self._model.parameters()) / 1e6, 1)
+        return info
+
+
 def test_adaptive_linear_operator():
     """测试自适应线性算子"""
     # 小规模测试

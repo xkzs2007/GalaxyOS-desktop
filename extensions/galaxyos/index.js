@@ -1902,62 +1902,6 @@ export default function register(api) {
     });
 
     // ==========================================
-    // Tool: claw_recall - Enhanced recall via workflow
-    // ==========================================
-    api.registerTool({
-        name: "claw_recall",
-        label: "Claw Memory Recall",
-        description: "Enhanced memory retrieval using the full xiaoyi-claw-omega-final workflow engine.\n" +
-            "Runs the enhanced_recall workflow (CRAG pipeline → hybrid search → hallucination guard).\n" +
-            "Use this for deep semantic memory retrieval with automatic correction.",
-        parameters: {
-            type: "object",
-            properties: {
-                query: {
-                    type: "string",
-                    description: "Search query for retrieving memories",
-                },
-                top_k: {
-                    type: "number",
-                    description: "Maximum results to return (default: 5)",
-                    default: 5,
-                },
-            },
-            required: ["query"],
-        },
-        async execute(_toolCallId, params) {
-            const query = String(params.query ?? "");
-            const topK = Math.min(Math.max(Number(params.top_k) || 5, 1), 20);
-            const startMs = Date.now();
-            api.logger.debug?.(`${TAG} [tool] claw_recall: query="${query.slice(0, 80)}", top_k=${topK}`);
-            try {
-                const w = getWorker(ws);
-                const result = await w.call("recall", { query, top_k: topK }, 30000);
-                const elapsedMs = Date.now() - startMs;
-                const text = formatResults(result);
-                api.logger.debug?.(`${TAG} [tool] claw_recall completed via Worker (${elapsedMs}ms)`);
-                return { content: [{ type: "text", text }], details: { elapsedMs, worker: true } };
-            }
-            catch (err) {
-                api.logger.warn?.(`${TAG} [tool] claw_recall Worker failed, falling back to spawnSync: ${err.message}`);
-                const result = runClawScript(ws, "workflow", {
-                    scenario: "smart_recall",
-                    input: JSON.stringify({ query, top_k: topK }),
-                }, 30000);
-                const elapsedMs = Date.now() - startMs;
-                if (result.error) {
-                    api.logger.warn?.(`${TAG} [tool] claw_recall (fallback) also failed: ${result.message}`);
-                    const fbResult = runClawScript(ws, "workflow", {
-                        scenario: "enhanced_recall",
-                        input: JSON.stringify({ query, top_k: topK }),
-                    }, 20000);
-                    return { content: [{ type: "text", text: formatResults(fbResult) }], details: { count: 0, elapsedMs, fallback: true, fallback_error: result.message } };
-                }
-                return { content: [{ type: "text", text: formatResults(result) }], details: { elapsedMs } };
-            }
-        },
-    });
-    // ==========================================
     // Tool: claw_lobster - Run Lobster pipelines
     // ==========================================
     api.registerTool({

@@ -250,78 +250,131 @@ class DAGLiquidAdviceProvider:
 # 2. LFM 系列 → 推理替代通道
 # ===========================================================================
 
+# ── LFM 全局共享实例（与 V81IntegrationAddon 共用同一个模型加载）──
+_LFM_REAL_NET = None
+
+def _get_lfm_real() -> Optional[Any]:
+    """获取/创建全局共享的 RealLFMNetwork 单例"""
+    global _LFM_REAL_NET
+    if _LFM_REAL_NET is not None:
+        return _LFM_REAL_NET
+    try:
+        from lfm_adaptive_operator import RealLFMNetwork
+        _LFM_REAL_NET = RealLFMNetwork()
+        if _LFM_REAL_NET._ensure():
+            logger.info("LFMReasoningChannel 共享 RealLFMNetwork (LFM2.5-1.2B) ✅")
+            return _LFM_REAL_NET
+        _LFM_REAL_NET = False
+    except Exception as e:
+        logger.warning(f"RealLFMNetwork 加载失败: {e}")
+        _LFM_REAL_NET = False
+    return None
+
+
 class LFMReasoningChannel:
     """
-    LFM 自适应算子 → Cognition / Action 阶段的推理替代通道
+    LFM 推理通道 — 委托到全局 RealLFMNetwork（与 v8.1 管线共享模型实例）
     
-    提供：
-      - lfm_reason(query, context) → 用 LFM 生成推理结果
-      - 与常规 LLM 推理并行，结果加权融合
-      - 纯 NumPy 实现，CPU 友好
+    提供 analyze_query / lfm_reason 接口，
+    底层使用 LFM2.5-1.2B-Thinking 真实权重。
     """
     
     def __init__(self):
-        self._lfm = None
+        self._real = None
         self._initialized = False
     
     def _ensure(self):
         if self._initialized:
-            return self._lfm is not None
-        try:
-            from lfm_adaptive_operator import AdaptiveLinearOperator
-            # AdaptiveLinearOperator 真实签名：
-            #   (hidden_dim=512, num_heads=8, head_dim=None, weight_rank=None,
-            #    use_gating=True, use_residual=True, dropout=0.0)
-            # 轻量配置：小状态空间，CPU 友好
-            self._lfm = AdaptiveLinearOperator(
-                hidden_dim=64,
-                num_heads=4,
-                use_gating=True,
-                use_residual=True,
-            )
-            self._initialized = True
-            logger.info("LFMReasoningChannel 初始化: hidden_dim=64, heads=4")
-            return True
-        except Exception as e:
-            logger.warning(f"LFM 初始化失败: {e}")
-            self._initialized = True
-            return False
+            return self._real is not None
+        self._real = _get_lfm_real()
+        self._initialized = True
+        return self._real is not None
     
-    def analyze_query(self, query: str) -> Dict:
-        """
-        对查询进行 LFM 自适应分析
-        
-        AdaptiveLinearOperator.forward 签名：
-          forward(x: np.ndarray, ...) -> np.ndarray
-          输入: [B, L, d] 输出: [B, L, d]
-        
-        Returns:
-            {"complexity": float, "embedding_norm": float,
-             "reasoning_available": bool}
-        """
+    def _forward_text(self, text: str) -> Dict:
+        """委托给 RealLFMNetwork 的隐状态分析"""
         if not self._ensure():
             return {"reasoning_available": False}
+        return self._real._forward_text(text)
+    
+    def generate(self, prompt: str, max_new_tokens: int = 128,
+                 temperature: float = 0.7) -> str:
+        """委托给 RealLFMNetwork 的文本生成"""
+        if not self._ensure():
+            return ""
+        return self._real.generate(prompt, max_new_tokens, temperature)
+    
+    def analyze_query(self, query: str) -> Dict:
+        """语义分析 — 隐状态 norm + 关键字意图"""
+        ft = self._forward_text(query)
+        if not ft.get('reasoning_available'):
+            return {"reasoning_available": False}
         try:
-            import numpy as np
-            # 将 text 向量化（简易词袋 + 位置编码，d=hidden_dim=64）
-            tokens = query.lower().split()
-            B, L, d = 1, max(1, min(len(tokens), 64)), 64
-            x = np.zeros((B, L, d), dtype=np.float32)
-            for i, tok in enumerate(tokens[:64]):
-                h = hash(tok) % 64
-                x[0, i, h] = 1.0
+            import torch
+            inputs = self._real._tokenizer(query, return_tensors='pt')
+            with torch.no_grad():
+                outputs = self._real._model(**inputs, output_hidden_states=True)
+                hidden = outputs.hidden_states[-1]
+                norm = float(hidden.norm().item())
             
-            # LFM 前向
-            output = self._lfm.forward(x)
-            norm = float(np.linalg.norm(output)) if output is not None else 0.0
+            token_cnt = len(self._real._tokenizer.encode(query))
+            intent_patterns = {
+                "query": ["什么", "怎么", "为什么", "如何", "谁是", "哪里", "多少", "何时"],
+                "action": ["帮我", "请", "做", "创建", "生成", "写", "画", "调", "设置", "打开"],
+                "memory": ["记住", "回忆", "忘了", "之前", "保存", "笔记", "记录"],
+                "command": ["执行", "运行", "启动", "停止", "配置", "查看状态", "检查"],
+            }
+            intent = "unknown"
+            for it, kws in intent_patterns.items():
+                if any(kw in query for kw in kws):
+                    intent = it
+                    break
             
             return {
                 "reasoning_available": True,
-                "embedding_norm": norm,
-                "complexity": min(1.0, norm / (L * 10.0 + 1e-8)),
+                "embedding_norm": round(norm, 2),
+                "complexity": round(min(1.0, token_cnt / 128.0), 4),
+                "intent_analysis": intent,
+                "token_count": token_cnt,
             }
         except Exception as e:
             logger.debug(f"LFM analyze 跳过: {e}")
+            return ft
+    
+    def lfm_reason(self, query: str, context: str = "") -> Dict:
+        """完整推理"""
+        if not self._ensure():
+            return {"reasoning_available": False}
+        try:
+            if context:
+                prompt = f"""<|im_start|>system
+分析上下文并回答用户问题。
+<|im_end|>
+<|im_start|>user
+Context: {context}
+
+Query: {query}
+<|im_end|>
+<|im_start|>assistant
+"""
+            else:
+                prompt = f"""<|im_start|>system
+你是一个有用的助手。
+<|im_end|>
+<|im_start|>user
+{query}
+<|im_end|>
+<|im_start|>assistant
+"""
+            reason = self._real.generate(prompt, max_new_tokens=128)
+            if not reason:
+                return {"reasoning_available": False}
+            return {
+                "reasoning_available": True,
+                "reason": reason,
+                "confidence": 0.85,
+            }
+        except Exception as e:
+            logger.debug(f"LFM reason 失败: {e}")
             return {"reasoning_available": False}
 
 

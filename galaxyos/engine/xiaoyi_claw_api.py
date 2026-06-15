@@ -3315,10 +3315,12 @@ class XiaoYiClawLLM:
                         state.analysis['ssm_engagement'] = _ssm.get('engagement', 0.5)
                         state.analysis['ssm_should_refresh'] = _ssm.get('should_refresh', False)
 
-                    # LFM 推理分析
+                    # LFM 推理分析（真实 LFM2.5-1.2B 权重）
                     _lfm = self._galaxy_engine.analyze_with_lfm(query)
                     if _lfm and _lfm.get('reasoning_available'):
                         state.analysis['lfm_complexity'] = _lfm.get('complexity', 0.5)
+                        state.analysis['lfm_intent'] = _lfm.get('intent_analysis', '')
+                        state.analysis['lfm_token_count'] = _lfm.get('token_count', 0)
             except Exception:
                 pass
 

@@ -7,7 +7,7 @@ to their new locations under `galaxyos.engine` and `galaxyos.privileged`.
 import sys
 import os
 
-__version__ = "6.6.0"
+__version__ = "8.1.1"
 __author__ = "xkzs2007"
 
 # Ensure galaxyos packages are importable as galaxyos.engine / galaxyos.privileged
