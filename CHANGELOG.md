@@ -1,6 +1,18 @@
 # Changelog
 
-## [8.1.2] - 2026-06-15
+## [8.2.0] - 2026-06-15
+### Added
+- **自适应突触修剪 (AdaptiveSynapsePruner)**: 从单阈值(0.3)一刀切升级为多因子保留分数(权重×0.30+频率×0.25+时效×0.20+情感×0.10+重要度×0.15)，阈值自动从分布统计(mean−0.5×std)计算，下限保护 MIN_RETENTION=0.15。集成到 ConsolidationEngine 的背景周期第三阶段
+- **Titans 神经记忆模块 (TitansNeuralMemory)**: 2048-dim 在线记忆向量，遗忘门/更新门双门控，每次 store() 直接更新无需空闲等待。持久化到 .learnings/titans_memory/neural_memory.json
+- **跨模态记忆绑定 (CrossModalMemoryBinder)**: 文本→LFM 2048 embedding、图像→VisualPatchEmbedding→投影2048、caption桥接路径兜底。统一多模态检索空间
+- **梦境驱动学习 (DreamDrivenLearner)**: 2048×2048 adapter 参数(4M)，梦境碎片→对比学习训练，每次睡眠周期末尾自动触发。持久化到 .learnings/dream_learning/dream_adapter.npy
+- **梦境学习集成**: biorhythm_sleep_consolidation run_full_sleep_cycle 末尾 Phase 6 自动挂载
+
+### Changed
+- **版本号**: v8.1.4 → v8.2.0
+
+## [8.1.4] - 2026-06-15 (v8.1.2→v8.1.4 合并)
+### Added
 
 ## [8.1.3] - 2026-06-15
 

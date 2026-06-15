@@ -1,7 +1,7 @@
 # 🌌 GalaxyOS — 认知增强引擎
 
 > OpenClaw 的开源认知增强引擎，为 AI Assistant 提供记忆、检索、推理、验证、自进化等全套认知能力
-> 版本: v8.1.0 · 全部22个论文方向实现 + 3个融合方向 + 18个新论文模块
+> 版本: v8.2.0 · 四篇论文方向落地（自适应突触修剪/Titans神经记忆/跨模态绑定/梦境驱动学习）
 
 ## 总览
 
@@ -237,7 +237,8 @@ GALAXYOS_REPO=. python3 -m galaxyos.engine.unified_entry recall --query "查询"
 
 | 版本 | 文件 | 说明 |
 |------|------|------|
-| **v8.1.0 (最新)** | 2026-06-14 | **22方向论文全量实现 + 18新论文模块(~11K行) + 融合架构增强** |
+| **v8.2.0 (最新)** | 2026-06-15 | **自适应突触修剪 + Titans神经记忆 + 跨模态绑定 + 梦境驱动学习** |
+| **v8.1.0** | 2026-06-14 | **22方向论文全量实现 + 18新论文模块(~11K行) + 融合架构增强** |
 | **v7.3.2** | — | **GAT 双路径稀疏化 + HNSW 端到端 + 5.8GB 容器适配 + OpenClaw 路径解析** |
 | **v7.3** | — | **全论文模块接入ContextEngine决策链 + session_id全面隔离 + Gateway防塞爆** |
 | **v7.2** | — | **GalaxyPool 统一管理 + 负载感知调度 + batch RPC + Rust PyO3 + 神经网络全量修复 + CLI-Anything** |
@@ -259,6 +260,24 @@ GALAXYOS_REPO=. python3 -m galaxyos.engine.unified_entry recall --query "查询"
 | v3.0.0 | `docs/xiaoyi-claw-core-architecture-v3.0.0.md` | 16 层架构、R-CCAM 认知循环 |
 
 **完整架构文档（含 17 层全景图、470+ 功能列表、更新日志）：** 👉 [📖 查看 Skills 文档栏](https://cnb.cool/llm-memory-integrat/GalaxyOS?tabValue=SKILLS-ov-file)
+
+### v8.2.0 新特性 (自适应突触修剪 + Titans神经记忆 + 跨模态绑定 + 梦境驱动学习)
+
+**核心更新**: 四个论文方向全部落地，巩固引擎从被动等待升级为在线主动学习。
+
+#### ▶ 新增模块
+
+| 模块 | 论文/参考 | 核心机制 |
+|------|-----------|----------|
+| **自适应突触修剪 (AdaptiveSynapsePruner)** | Distributed pruning + 多因子 retention | 五因子加权保留评分(权重/频率/时效/情感/重要度) → 分布动态阈值 → consolidation 周期第三阶段自动触发 |
+| **Titans 神经记忆 (TitansNeuralMemory)** | Google 2501.00663 | 遗忘门(f=σ(0.5cos+0.3)) + 更新门(g=σ(0.4·‖x‖+0.2)) → 在线记忆向量，store 即更新 |
+| **跨模态记忆绑定 (CrossModalMemoryBinder)** | VisualPatchEmbedding + LFM | 文本→2048(LFM embed_text)、图像→VisualPatchEmbedding→投影2048、caption桥接兜底 |
+| **梦境驱动学习 (DreamDrivenLearner)** | Dream replay → contrastive learning | 高新颖度梦境碎片→对比学习→训练2048×2048 adapter，睡眠周期末尾自动执行 |
+
+#### ▶ 集成变更
+- `memory_synapse_network.py`: 新增 `AdaptiveSynapsePruner` 类
+- `memory_consolidation.py`: `_run_consolidation_cycle()` 扩展为3阶段(consolidation→replay→adaptive_prune)
+- `biorhythm_sleep_consolidation.py`: run_full_sleep_cycle 追加 Phase 6 梦境学习
 
 ### v8.1.0 新特性 (22方向论文全量实现 + 融合架构增强)
 
