@@ -1,6 +1,12 @@
 # Changelog
 
 ## [8.1.2] - 2026-06-15
+
+## [8.1.3] - 2026-06-15
+### Fixed
+- **xiaoyi_claw_api.py**: 移除 `full_integration`、`speculative_hybrid`、`full_recovery` 三个已删除文件的悬挂引用，替换为降级实现
+- **v4_services.py**: `_fast_generation` 移除 `SmartHybridGenerator` 依赖，改为纯 cache recall
+
 ### Added
 - **RealLFMNetwork.embed_text()**: 真实模型隐状态 mean-pooling，返回 2048 维 float32 向量
 - **ONNX bge-small-zh 路径修复**: 新增运行时候选目录 galaxyos/models/embeddings

@@ -1915,22 +1915,15 @@ class XiaoYiClawLLM:
         """获取知识库条目"""
         return self._get_autonomous_integrator().get_brain_entries(category)
 
-    # ==================== 全量集成(从 full_integration 融合)====================
-
-    def _get_full_integration(self):
-        """懒加载 FullIntegration"""
-        if not hasattr(self, '_full_integration') or self._full_integration is None:
-            from full_integration import FullIntegration
-            self._full_integration = FullIntegration()
-        return self._full_integration
+    # ==================== 全量集成(已移除 full_integration.py) ====================
 
     def smart_recall(self, query: str, top_k: int = 10) -> Dict[str, Any]:
-        """智能检索(CRAG + 混合检索)"""
-        return self._get_full_integration().smart_recall(query, top_k)
+        """智能检索(降级到 enhanced_recall)"""
+        return self.enhanced_recall(query, top_k=top_k)
 
     def smart_answer(self, query: str) -> Dict[str, Any]:
-        """智能回答"""
-        return self._get_full_integration().smart_answer(query)
+        """智能回答(降级到基础 answer)"""
+        return self.answer(query)
 
     # ==================== 弹性系统集成(从 resilience_system 融合)====================
 
@@ -1956,9 +1949,8 @@ class XiaoYiClawLLM:
     # ==================== 完整恢复集成(从 full_recovery 融合)====================
 
     def check_recovery_status(self) -> Dict:
-        """检查恢复状态"""
-        from full_recovery import check_status
-        return check_status()
+        """检查恢复状态（full_recovery.py 已移除，返回空）"""
+        return {"status": "unavailable", "reason": "full_recovery.py removed"}
 
     # ==================== 增强检索集成(从 XiaoyiMemoryV2 enhanced_* 融合,走统一API)====================
 
@@ -1972,99 +1964,9 @@ class XiaoYiClawLLM:
         }
 
     def fast_generate(self, query: str, top_k: int = 3) -> Dict:
-        """快速生成(投机解码混合策略三层加速)
-
-        使用 SmartHybridGenerator 的 L1+L2 并行 + L3 兜底:
-        - L1: 检索型投机解码(向量检索草稿 → DeepSeek Flash 验证)
-        - L2: NVIDIA NIM 并发(多小模型)
-        - L3: DeepSeek V4 Flash + XiaoYi 通道并行兜底
-        """
-        import asyncio
-        import requests
-
-        # 确保 SmartHybridGenerator 可导入
-        try:
-            from speculative_hybrid import SmartHybridGenerator
-        except ImportError as e:
-            logger.warning(f"投机解码不可用,回退到基础 recall: {e}")
-            memories = self.recall(query, top_k=top_k)
-            answer_data = self.answer(query, top_k=top_k)
-            return {
-                "answer": answer_data.get("answer", ""),
-                "latency_ms": 0,
-                "confidence": answer_data.get("confidence", 0)
-            }
-
-        # 构建 embedding 函数(无问芯穹 bge-m3)
-        embed_config = self.config.get('embedding', {})
-        embed_api_key = embed_config.get('api_key', os.environ.get('EMBEDDING_API_KEY', ''))
-        embed_base_url = embed_config.get('base_url', 'https://cloud.infini-ai.com/maas/v1')
-        embed_model = embed_config.get('model', 'bge-m3')
-
-        def query_to_vector(text: str):
-            try:
-                resp = requests.post(
-                    f"{embed_base_url}/embeddings",
-                    headers={
-                        'Authorization': f'Bearer {embed_api_key}',
-                        'Content-Type': 'application/json'
-                    },
-                    json={'input': text, 'model': embed_model},
-                    timeout=10
-                )
-                if resp.status_code == 200:
-                    data = resp.json()
-                    return data['data'][0]['embedding']
-                else:
-                    logger.warning(f"Embedding API error {resp.status_code}")
-                    return None
-            except Exception as e:
-                logger.debug(f"Embedding call failed: {e}")
-                return None
-
-        async def _run():
-            generator = SmartHybridGenerator(
-                vector_store=self.vector_store,
-                embedding_fn=query_to_vector,
-                deepseek_api_key=self.config.get('deepseek_api_key', os.environ.get('DEEPSEEK_API_KEY', '')),
-            )
-
-            # 设置 KV Cache 会话 ID(复用 X-Conversation-Id)
-            session_id = getattr(self, '_kv_session_id', None)
-            if session_id:
-                generator.set_session(session_id)
-
-            # 全量三层并发(L1 检索 + L2 NIM + L3 兜底)
-            response, info = await generator.generate(
-                prompt=query,
-                use_retrieval=True,
-                use_nim=True,
-            )
-
-            level = info.get("level", 0)
-            latency = info.get("latency_ms", info.get("total_latency_ms", 0))
-
-            return {
-                "answer": response,
-                "latency_ms": latency,
-                "confidence": 0.9 if level >= 1 else 0.0,
-                "level": level,
-                "method": info.get("method", "unknown")
-            }
-
-        try:
-            result = asyncio.run(_run())
-            return result
-        except Exception as e:
-            logger.warning(f"投机解码生成失败: {e}")
-            # 回退到基础 recall
-            memories = self.recall(query, top_k=top_k)
-            answer_data = self.answer(query, top_k=top_k)
-            return {
-                "answer": answer_data.get("answer", ""),
-                "latency_ms": 0,
-                "confidence": answer_data.get("confidence", 0)
-            }
+        """快速生成(speculative_hybrid.py 已移除，降级到基础 generation)"""
+        logger.warning("fast_generate: speculative_hybrid.py 已移除，走基础 answer")
+        return self.answer(query, top_k=top_k)
 
     def smart_cache(self, content: str, metadata: Dict = None) -> Dict:
         """智能缓存"""

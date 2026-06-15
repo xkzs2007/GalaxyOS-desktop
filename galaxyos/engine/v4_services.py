@@ -356,25 +356,13 @@ class ParallelWorkflowEngine:
         return {"workflow": "enhanced_recall", "results": results, "took_ms": took_ms}
     
     def _fast_generation(self, params: dict, t0: float) -> dict:
-        """快速生成——投机解码 + 缓存并行"""
+        """快速生成——缓存检索(speculative_hybrid.py 已移除)"""
         query = params.get("query", "")
         top_k = params.get("top_k", 3)
         
-        # speculative cache + retrieval 并行
-        cache_future = self._pool.submit(self._entry.recall, query, top_k)
-        
-        try:
-            from speculative_hybrid import SmartHybridGenerator
-            gen = SmartHybridGenerator(top_k=top_k)
-            draft_future = self._pool.submit(gen.generate_sync, query)
-            results = cache_future.result()
-            draft = draft_future.result()
-        except Exception:
-            results = cache_future.result()
-            draft = None
-        
+        results = self._entry.recall(query, top_k)
         took_ms = round((time.time() - t0) * 1000, 1)
-        return {"workflow": "fast_generation", "results": results, "draft": draft, "took_ms": took_ms}
+        return {"workflow": "fast_generation", "results": results, "took_ms": took_ms}
     
     def _safe_generation(self, params: dict, t0: float) -> dict:
         """安全生成——防幻觉 + 验证并行"""
