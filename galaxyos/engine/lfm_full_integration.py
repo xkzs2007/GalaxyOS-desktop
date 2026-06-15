@@ -28,34 +28,33 @@ logger = logging.getLogger("lfm_full_integration")
 def ode_rnn_predict(embedding: np.ndarray, recent_embs: List[np.ndarray] = None) -> Dict:
     """ODE-RNN 持续学习: 接收 LFM 2048-dim 序列, 预测下一状态
     
+    ODERNNContinual.forward(x_seq) 接收 (seq_len, input_dim) 的序列，
+    返回 (seq_len, hidden_dim) 的隐状态 + (seq_len, output_dim) 预测。
+    
     Args:
         embedding: 当前文本的 LFM embedding (2048,)
         recent_embs: 最近的 N 个 embedding 列表
 
     Returns:
-        {"predicted_next": 预测向量, "prediction_error": 误差,
-         "fisher_reg": EWC 正则损失, "task_count": 任务计数}
+        {"hidden_norm": 末态隐状态 norm,
+         "prediction_norm": 输出预测 norm,
+         "task_count": 任务计数}
     """
     from ode_rnn_continual import ODERNNContinual
     ode_rnn = ODERNNContinual(input_dim=2048, hidden_dim=128, memory_size=32)
     params = ode_rnn.get_params()
     
-    result = {}
+    result = {"task_count": getattr(ode_rnn, 'task_count', 0)}
     if recent_embs and len(recent_embs) >= 2:
         x_seq = np.stack(recent_embs[-10:], axis=0)
-        h0 = np.zeros(128, dtype=np.float32)
-        states = []
-        for t in range(len(x_seq)):
-            h0 = ode_rnn.forward(x_seq[t], h0=h0)["next_state"]
-            states.append(h0)
-        result["predicted_next"] = states[-1].tolist()[:128]  # 截断
-        # 预测误差: ODE-RNN 预测与真实 embedding 的差异
-        result["prediction_error"] = float(np.linalg.norm(
-            states[-1][:2048] if len(states[-1]) >= 2048 else 
-            np.pad(states[-1], (0, 2048 - len(states[-1])))
-        ))
+        try:
+            h_states, y_pred = ode_rnn.forward(x_seq)
+            result["hidden_norm"] = float(np.linalg.norm(h_states[-1]))
+            result["prediction_norm"] = float(np.linalg.norm(y_pred[-1]))
+            result["seq_len"] = len(x_seq)
+        except Exception as e:
+            result["error"] = str(e)[:80]
     
-    result["task_count"] = ode_rnn.task_count if hasattr(ode_rnn, 'task_count') else 0
     return result
 
 
@@ -144,8 +143,7 @@ def ltc_dynamics(embedding: np.ndarray, dt: float = 0.1) -> Dict:
     h_ltc = np.zeros(256, dtype=np.float32)
     h_cfc = np.zeros(256, dtype=np.float32)
     
-    # 取 embedding 前 256 维作为输入
-    x = embedding[:256].astype(np.float32)
+    x = embedding.astype(np.float32)
     h_ltc = ltc.forward(h_ltc, x, dt)
     h_cfc = cfc.forward(h_cfc, x, dt)
     
@@ -172,13 +170,15 @@ def moe_route(embedding: np.ndarray, engram_hit_rate: float = 0.0) -> Dict:
     from moe_engram_hybrid import MoeEngramRouter, MoeEngramBlock, U_ShapeScalingLaw
     
     router = MoeEngramRouter(input_dim=2048, hidden_dim=64)
-    route = router.route(embedding)
+    decision = router.route(embedding)
     stats = router.get_route_stats()
     
     return {
-        "route_moe_weight": float(route.get("moe_weight", 0.5)),
-        "route_engram_weight": float(route.get("engram_weight", 0.5)),
-        "num_experts": stats.get("num_experts", 2),
+        "route_decision": decision.value,
+        "route_moe_pct": float(stats.get("moe_pct", 0.33)),
+        "route_engram_pct": float(stats.get("engram_pct", 0.33)),
+        "route_hybrid_pct": float(stats.get("hybrid_pct", 0.33)),
+        "total_routes": int(stats.get("total", 0)),
         "engram_hit_gated": float(engram_hit_rate),
     }
 
@@ -273,17 +273,25 @@ def sparsity_analyze(embedding: np.ndarray) -> Dict:
     
     analyzer = SparsityAnalyzer()
     
+    # 计算 embedding 稀疏性指标
+    emb_sparsity = float(np.mean(np.abs(embedding) < 0.1))
+    emb_activity = float(np.mean(np.abs(embedding) > 0.1))
+    
     # 注册 embedding 作为 sparsity 组件
     emb_config = SparsityConfig(
-        weight_density=float(np.mean(np.abs(embedding) > 0.1)),
-        activation_sparsity=float(np.mean(embedding == 0)),
+        dim=SparsityDimension.COMPUTE,
+        sparsity_ratio=emb_sparsity,
+        efficiency_gain=emb_activity * 0.5,
+        quality_loss=emb_sparsity * 0.3,
     )
     analyzer.register_component("lfm_embedding", emb_config)
     
     # 注册 engram hit rate 组件
     hit_config = SparsityConfig(
-        weight_density=0.3,
-        activation_sparsity=0.7,
+        dim=SparsityDimension.MEMORY,
+        sparsity_ratio=0.7,
+        efficiency_gain=0.3,
+        quality_loss=0.2,
     )
     analyzer.register_component("engram_cache", hit_config)
     
@@ -291,10 +299,10 @@ def sparsity_analyze(embedding: np.ndarray) -> Dict:
     opt = analyzer.suggest_optimization()
     
     return {
-        "weight_density": float(emb_config.weight_density),
-        "activation_sparsity": float(emb_config.activation_sparsity),
-        "efficiency_score": getattr(analysis, "efficiency_score", lambda: 0.5)(),
-        "pareto_frontier": getattr(analysis, "pareto_frontier", lambda: 0.3)(),
+        "sparsity_ratio": round(emb_sparsity, 4),
+        "active_ratio": round(emb_activity, 4),
+        "efficiency_score": round(float(getattr(analysis, "efficiency_score", lambda: 0.5)()), 4),
+        "pareto_frontier": round(float(getattr(analysis, "pareto_frontier", lambda: 0.3)()), 4),
         "optimization_suggestion": str(opt.get("strategy", "none"))[:80],
     }
 
@@ -335,7 +343,7 @@ def kan_ltc_fuse(embedding: np.ndarray) -> Dict:
     merger = KanLtcMerger(state_dim=128, input_dim=2048)
     
     h0 = np.zeros(128, dtype=np.float32)
-    x_seq = embedding[:256].reshape(1, 256).astype(np.float32)
+    x_seq = embedding.reshape(1, 2048).astype(np.float32)
     traj = merger.forward_euler(h0, x_seq, dt=0.1)
     
     merger_info = merger.get_info()
@@ -367,10 +375,9 @@ def dag_liquid_score(embedding: np.ndarray) -> Dict:
         recency=0.5,
     )
     readiness = ltc.estimate_compact_readiness(
-        age_days=1.0,
-        access_count=5,
-        similarity_score=0.7,
-        tau=tau
+        raw_tokens=1024,
+        max_tokens=8192,
+        avg_tau=tau
     )
     
     ranker = TimeAwareNodeRanker(config)
