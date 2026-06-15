@@ -20,6 +20,10 @@ import threading
 import time
 import hashlib
 import random
+import logging
+import numpy as np
+
+logger = logging.getLogger(__name__)
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Dict, List, Any, Optional, Tuple
@@ -540,6 +544,9 @@ class ConsolidationEngine:
             results["adaptive_prune"] = prune_stats
         except Exception as e:
             results["adaptive_prune"] = {"error": str(e)}
+            _prune_candidates = 0
+        else:
+            _prune_candidates = prune_stats.get("prune_candidates", 0)
         
         # 4. Titans 神经记忆更新 — 将本轮 consolidation 编码到在线记忆向量
         try:
@@ -551,7 +558,7 @@ class ConsolidationEngine:
                     content=f"consolidation_cycle: {cls_count} cls, {results.get('replay', {}).get('ltp_replayed', 0)} replayed",
                     metadata={"source": "consolidation_cycle",
                               "cls_count": cls_count,
-                              "prune_count": prune_stats.get("prune_candidates", 0)}
+                              "prune_count": _prune_candidates}
                 )
             _state = _titans.get_state()
             results["titans"] = {
@@ -566,16 +573,14 @@ class ConsolidationEngine:
             from cross_modal_memory import CrossModalMemoryBinder
             _binder = CrossModalMemoryBinder(self.workspace)
             _net = self._get_synapse_network()
-            _net._load()
+            _net.network._load()
             _bound = 0
-            for n_id, n in list(getattr(_net, '_neurons_cache', {}).items()):
+            for n_id, n in list(getattr(_net.network, '_neurons_cache', {}).items()):
                 if not n.embedding or len(n.embedding) < 128:
                     emb = _binder.text_to_embedding(n.content[:512])
                     if emb is not None:
                         n.embedding = emb.tolist()
                         _bound += 1
-            if _bound > 0:
-                _net._save()
             results["cross_modal"] = {"bound_neurons": _bound}
         except Exception as e:
             results["cross_modal"] = {"error": str(e)}
@@ -588,10 +593,10 @@ class ConsolidationEngine:
             _engram_lfm = RealLFMNetwork()
             
             _net = self._get_synapse_network()
-            _net._load()
+            _net.network._load()
             _engram_hit_total = 0
             _engram_count = 0
-            for n_id, n in list(getattr(_net, '_neurons_cache', {}).items()):
+            for n_id, n in list(getattr(_net.network, '_neurons_cache', {}).items()):
                 if n.content and len(n.content) > 10:
                     _engram_lfm.embed_and_store_engram(n.content[:256], _engram_mem)
                     _engram_count += 1
@@ -617,17 +622,19 @@ class ConsolidationEngine:
         
         # 8. LFM 全链路集成 — 14 个液态/条件记忆模块同步运行
         try:
+            import numpy as _np
             from lfm_full_integration import run_full_integration
             from lfm_adaptive_operator import RealLFMNetwork
             
             _full_lfm = RealLFMNetwork()
             _hit = results.get("engram", {}).get("hit_rate", 0.0)
             _recent_embs = []
-            for n_id, n in list(getattr(_net, '_neurons_cache', {}).items())[:30]:
+            _ref_net = self._get_synapse_network()
+            for n_id, n in list(getattr(_ref_net.network, '_neurons_cache', {}).items())[:30]:
                 if hasattr(n, 'embedding') and n.embedding:
-                    _recent_embs.append(np.array(n.embedding[:2048], dtype=np.float32))
+                    _recent_embs.append(_np.array(n.embedding[:2048], dtype=_np.float32))
             
-            _sample_emb = _recent_embs[0] if _recent_embs else np.random.randn(2048).astype(np.float32)
+            _sample_emb = _recent_embs[0] if _recent_embs else _np.random.randn(2048).astype(_np.float32)
             _integration = run_full_integration(_sample_emb, _recent_embs, _hit)
             
             # 提取关键指标汇总
@@ -650,9 +657,9 @@ class ConsolidationEngine:
         try:
             from neural_memory_gate import NeuralMemoryGate
             _net = self._get_synapse_network()
-            _net._load()
-            _neuron_ids = list(getattr(_net, '_neurons_cache', {}).keys())
-            _synapse_ids = list(getattr(_net, '_synapses_cache', {}).keys())
+            _net.network._load()
+            _neuron_ids = list(getattr(_net.network, '_neurons_cache', {}).keys())
+            _synapse_ids = list(getattr(_net.network, '_synapses_cache', {}).keys())
             
             _nm_gate = NeuralMemoryGate(prediction_top_k=5, surprise_k=1.5)
             if _neuron_ids:
@@ -675,26 +682,26 @@ class ConsolidationEngine:
         # 10. CognitiveMap — 空间认知锚点 + 语义密度分析
         try:
             from cognitive_map import CognitiveMap
-            _cog_map = CognitiveMap(lfm_dim=2048)
+            _cog_map = CognitiveMap(dim=2048)
             
             _net = self._get_synapse_network()
-            _net._load()
+            _net.network._load()
             
             _anchored = 0
             _spatial_scores = []
-            for n_id, n in list(getattr(_net, '_neurons_cache', {}).items())[:50]:
+            for n_id, n in list(getattr(_net.network, '_neurons_cache', {}).items())[:50]:
                 emb = np.array(n.embedding[:2048], dtype=np.float32) if n.embedding else None
                 if emb is not None and len(emb) >= 128:
-                    _cog_map.add_anchor(n_id, n.content[:256], embedding=emb)
+                    _cog_map.add_anchor(n_id, n.content[:256], embedding=emb.tolist())
                     _anchored += 1
-            _anchors = _cog_map.get_all()
+            _anchor_count = _anchored  # _anchor_cache 只在 add_anchor 后更新
             _density = _cog_map.get_anchor_density(
                 np.zeros(2048, dtype=np.float32).tolist()
             ) if _anchored > 0 else 0.0
             
             results["cognitive_map"] = {
                 "anchors_added": _anchored,
-                "total_anchors": len(_anchors),
+                "total_anchors": _anchor_count,
                 "anchor_density": round(float(_density), 4),
             }
         except Exception as e:

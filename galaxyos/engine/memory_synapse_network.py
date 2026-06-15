@@ -907,6 +907,26 @@ class MemorySynapseNetwork:
         """查找关联记忆"""
         return self.activation_spreader.find_associated_memories(neuron_id, top_k)
     
+    def _load(self):
+        """加载所有神经元和突触（委托内部 SynapseNetwork）"""
+        self.network._load()
+
+    @property
+    def synapses_path(self):
+        return self.network.synapses_path
+
+    @property
+    def neurons_path(self):
+        return self.network.neurons_path
+
+    @property
+    def _neurons_cache(self):
+        return self.network._neurons_cache
+
+    @property
+    def _synapses_cache(self):
+        return self.network._synapses_cache
+
     def apply_decay(self):
         """应用突触衰减"""
         self.synapse_manager.apply_decay_to_all()

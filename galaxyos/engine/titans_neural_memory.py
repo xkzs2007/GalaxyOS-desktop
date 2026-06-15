@@ -163,6 +163,10 @@ class TitansNeuralMemory:
                 x[h] = 0.3
             embedding = x
 
+        # 确保 embedding 是 ndarray（可能来自 _lfm.embed_text 返回 list）
+        if isinstance(embedding, (list, tuple)):
+            embedding = np.array(embedding, dtype=np.float32)
+
         # Titans 更新门控
         m_prev = self.memory_vector  # (2048,)
         x = embedding  # (2048,)

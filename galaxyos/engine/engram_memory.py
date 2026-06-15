@@ -435,6 +435,10 @@ class EngramMemory:
             self._table.lookup(ng)  # 热访问
             self._prefetch_hits += 1
     
+    def get_hit_rate(self) -> float:
+        """转发到 NgramHashTable"""
+        return self._table.get_hit_rate()
+
     def get_status(self) -> dict:
         """获取系统状态"""
         return {
