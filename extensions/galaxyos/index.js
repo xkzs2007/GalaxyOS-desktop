@@ -1031,63 +1031,65 @@ function startZmqRouter(api) {
             api.logger.info?.(`${TAG} [zmq-router] listening on tcp://127.0.0.1:5560`);
         } catch (err) {
             api.logger.warn?.(`${TAG} [zmq-router] bind failed: ${err.message}`);
+            return;
         }
-    })();
 
-    (async () => {
-        for await (const [identity, _, ...frames] of router) {
-            // 每帧是一个完整 JSON 请求{method, params, id?}
-            // 回复发回同一个 identity
-            const sendReply = (replyPayload) => {
-                try {
-                    router.send([identity, "", Buffer.from(JSON.stringify(replyPayload))]);
-                } catch (e) {}
-            };
-            for (const frame of frames) {
-                try {
-                    const msg = JSON.parse(frame.toString());
-                    if (msg.method) {
-                        const method = msg.method;
-                        const params = msg.params || {};
-                        // Worker → Worker 转发
-                        if (method === 'worker_send') {
-                            const target = params.target || '';
-                            const payload = params.payload || {};
-                            if (target && _zmqRouter) {
+        // bind 完成后才进入消息循环，避免 "Socket is blocked by a bind or unbind operation"
+        try {
+            for await (const [identity, _, ...frames] of router) {
+                // 每帧是一个完整 JSON 请求{method, params, id?}
+                // 回复发回同一个 identity
+                const sendReply = (replyPayload) => {
+                    try {
+                        router.send([identity, "", Buffer.from(JSON.stringify(replyPayload))]);
+                    } catch (e) {}
+                };
+                for (const frame of frames) {
+                    try {
+                        const msg = JSON.parse(frame.toString());
+                        if (msg.method) {
+                            const method = msg.method;
+                            const params = msg.params || {};
+                            // Worker → Worker 转发
+                            if (method === 'worker_send') {
+                                const target = params.target || '';
+                                const payload = params.payload || {};
+                                if (target && _zmqRouter) {
+                                    try {
+                                        _zmqRouter.send([Buffer.from(target), '', Buffer.from(JSON.stringify({ worker_send: true, from: identity.toString(), payload }))]);
+                                        sendReply({ id: msg.id, result: { ok: true, target } });
+                                        api.logger.debug?.(`${TAG} [zmq-router] forwarded ${identity.toString()} → ${target}`);
+                                    } catch (e) {
+                                        sendReply({ id: msg.id, error: `forward failed: ${e.message}` });
+                                    }
+                                } else {
+                                    sendReply({ id: msg.id, error: 'target or router unavailable' });
+                                }
+                                continue;
+                            }
+                            const handler = _gatewayMethods[method];
+                            if (handler) {
                                 try {
-                                    _zmqRouter.send([Buffer.from(target), '', Buffer.from(JSON.stringify({ worker_send: true, from: identity.toString(), payload }))]);
-                                    sendReply({ id: msg.id, result: { ok: true, target } });
-                                    api.logger.debug?.(`${TAG} [zmq-router] forwarded ${identity.toString()} → ${target}`);
+                                    const result = await handler(params, { identity: identity.toString() });
+                                    sendReply({ id: msg.id, result });
                                 } catch (e) {
-                                    sendReply({ id: msg.id, error: `forward failed: ${e.message}` });
+                                    sendReply({ id: msg.id, error: e.message });
                                 }
                             } else {
-                                sendReply({ id: msg.id, error: 'target or router unavailable' });
+                                // 透传事件(无 handler 即 pub-sub 事件)
+                                api.logger.debug?.(`${TAG} [zmq-router] event from ${identity.toString()}: ${method} ${JSON.stringify(params).slice(0, 200)}`);
                             }
-                            continue;
+                        } else if (msg.event) {
+                            // 纯粹的事件通知(不需要回复)
+                            api.logger.debug?.(`${TAG} [zmq-router] event ${msg.event} from ${identity.toString()}`);
                         }
-                        const handler = _gatewayMethods[method];
-                        if (handler) {
-                            try {
-                                const result = await handler(params, { identity: identity.toString() });
-                                sendReply({ id: msg.id, result });
-                            } catch (e) {
-                                sendReply({ id: msg.id, error: e.message });
-                            }
-                        } else {
-                            // 透传事件(无 handler 即 pub-sub 事件)
-                            api.logger.debug?.(`${TAG} [zmq-router] event from ${identity.toString()}: ${method} ${JSON.stringify(params).slice(0, 200)}`);
-                        }
-                    } else if (msg.event) {
-                        // 纯粹的事件通知(不需要回复)
-                        api.logger.debug?.(`${TAG} [zmq-router] event ${msg.event} from ${identity.toString()}`);
-                    }
-                } catch (e) {}
+                    } catch (e) {}
+                }
             }
+        } catch (e) {
+            api.logger.warn?.(`${TAG} [zmq-router] loop error: ${e.message}`);
         }
-    })().catch((e) => {
-        api.logger.warn?.(`${TAG} [zmq-router] loop error: ${e.message}`);
-    });
+    })();
 
     _zmqRouter = router;
     return router;
@@ -1901,6 +1903,62 @@ export default function register(api) {
         },
     });
 
+    // ==========================================
+    // Tool: claw_recall - Enhanced recall via workflow
+    // ==========================================
+    api.registerTool({
+        name: "claw_recall",
+        label: "Claw Memory Recall",
+        description: "Enhanced memory retrieval using the full xiaoyi-claw-omega-final workflow engine.\n" +
+            "Runs the enhanced_recall workflow (CRAG pipeline → hybrid search → hallucination guard).\n" +
+            "Use this for deep semantic memory retrieval with automatic correction.",
+        parameters: {
+            type: "object",
+            properties: {
+                query: {
+                    type: "string",
+                    description: "Search query for retrieving memories",
+                },
+                top_k: {
+                    type: "number",
+                    description: "Maximum results to return (default: 5)",
+                    default: 5,
+                },
+            },
+            required: ["query"],
+        },
+        async execute(_toolCallId, params) {
+            const query = String(params.query ?? "");
+            const topK = Math.min(Math.max(Number(params.top_k) || 5, 1), 20);
+            const startMs = Date.now();
+            api.logger.debug?.(`${TAG} [tool] claw_recall: query="${query.slice(0, 80)}", top_k=${topK}`);
+            try {
+                const w = getWorker(ws);
+                const result = await w.call("recall", { query, top_k: topK }, 30000);
+                const elapsedMs = Date.now() - startMs;
+                const text = formatResults(result);
+                api.logger.debug?.(`${TAG} [tool] claw_recall completed via Worker (${elapsedMs}ms)`);
+                return { content: [{ type: "text", text }], details: { elapsedMs, worker: true } };
+            }
+            catch (err) {
+                api.logger.warn?.(`${TAG} [tool] claw_recall Worker failed, falling back to spawnSync: ${err.message}`);
+                const result = runClawScript(ws, "workflow", {
+                    scenario: "smart_recall",
+                    input: JSON.stringify({ query, top_k: topK }),
+                }, 30000);
+                const elapsedMs = Date.now() - startMs;
+                if (result.error) {
+                    api.logger.warn?.(`${TAG} [tool] claw_recall (fallback) also failed: ${result.message}`);
+                    const fbResult = runClawScript(ws, "workflow", {
+                        scenario: "enhanced_recall",
+                        input: JSON.stringify({ query, top_k: topK }),
+                    }, 20000);
+                    return { content: [{ type: "text", text: formatResults(fbResult) }], details: { count: 0, elapsedMs, fallback: true, fallback_error: result.message } };
+                }
+                return { content: [{ type: "text", text: formatResults(result) }], details: { elapsedMs } };
+            }
+        },
+    });
     // ==========================================
     // Tool: claw_lobster - Run Lobster pipelines
     // ==========================================
