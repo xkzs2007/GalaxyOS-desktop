@@ -1,5 +1,45 @@
 # Changelog
 
+## [8.2.9] - 2026-06-15
+### Fixed
+- **Consolidation 12 个 phase 全部通过**: 修复 `_load()` 调用路径 (`net._load()` → `net.network._load()`)、Python 作用域 (`_np` import 前使用、`prune_stats` 跨 try 块)、类型转换 (Titans embed_text 返回 list 非 ndarray)、CognitiveMap 旧 DB 256 维冲突、MemorySynapseNetwork 缺 `synapses_path` 转发、EngramMemory 缺 `get_hit_rate` 转发
+- **CognitiveMap**: numpy truth value 歧义修复 (`bool(cache)` → `len(cache) == 0`)
+- **MemorySynapseNetwork**: 补齐 `_load()`, `_neurons_cache`, `_synapses_cache`, `synapses_path`, `neurons_path` 属性转发
+- **EngramMemory**: 补齐 `get_hit_rate()` 方法
+
+### Added
+- **Titans 持久化路径**: `titans_neural_memory.py` 添加 `persist_state()`/`load_state()` 持久化能力
+
+## [8.2.8] - 2026-06-15
+### Fixed
+- **Phase 12 DreamDrivenLearner 属性名**: `workspace` → `workspace_path`
+
+## [8.2.7] - 2026-06-15
+### Added
+- **Consolidation Phase 9-12**: 四块神经记忆 (ReplayBuffer/NeuralMemoryGate/AdaptivePruner/DreamDrivenLearner) 接入 `_run_consolidation_cycle()`
+
+## [8.2.6] - 2026-06-15
+### Fixed
+- **lfm_full_integration.py**: `moe_engram` 命名一致性修复
+
+## [8.2.5] - 2026-06-15
+### Added
+- **LFM 全链路 14 模块集成**: ODE-RNN、Neural ODE、KAN、LTC、MoE、SSM(LiquidSSM)、Lipschitz、Sparsity、Edge、NCD、DAG 全部桥接到 `lfm_full_integration.py`
+
+## [8.2.4] - 2026-06-15
+### Added
+- **LFM→Engram→LiquidWeight→SSM 全链路集成**: engram 融合写入、liquid_weight gated retrieval、liquid_ssm 时序编码、cross_modal 绑定、unified_coordinator 注册
+
+## [8.2.3] - 2026-06-15
+### Changed
+- **删除 deepseek-ocr2 模块**: 全链路切换至 Qwen3-VL-8B-Instruct VLM
+- **SKILL.md/paper-roadmap.md**: 同步更新移除 deepseek-ocr2
+- **enhanced_hallucination_guard/smart_processor**: VLM 接口替换
+
+## [8.2.2] - 2026-06-15
+### Changed
+- **LFM 模型预加载常驻 Worker**: claw_worker.py 启动时加载 LFM，避免每次调用重新加载 2.2GB
+
 ## [8.2.1] - 2026-06-15
 ### Added
 - **自动循环集成**: TitansNeuralMemory、CrossModalMemoryBinder 挂入 `ConsolidationEngine._run_consolidation_cycle()` Phase 4+5
