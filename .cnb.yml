@@ -118,6 +118,41 @@ stages:
           echo "✅ Rust 构建完成"
           ls -lh target/release/galaxyos-native 2>/dev/null || true
 
+# ── Tag 推送触发 ──
+"v*":
+  tag_push:
+    - stages:
+        - name: setup
+          run: |
+            apt-get update -qq && apt-get install -y -qq build-essential
+            pip install --upgrade pip
+            pip install -r requirements.txt
+        - name: verify-version
+          run: |
+            echo "Tag: $CNB_BRANCH"
+            cat VERSION
+            python -c "
+import sys
+sys.path.insert(0, '.')
+v = open('VERSION').read().strip()
+tag = '$CNB_BRANCH'.lstrip('v')
+assert tag == v, f'Tag {tag} != VERSION {v}'
+print(f'✅ Tag {tag} matches VERSION')
+"
+        - name: verify-imports
+          run: |
+            python -c "import numpy, scipy, sklearn, torch, pydantic, faiss, jieba"
+            echo "✅ Core deps loaded"
+        - name: run-tests
+          run: |
+            pip install pytest pytest-cov
+            python -m pytest tests/ -v --tb=short -p no:warnings || true
+        - name: build-package
+          run: |
+            pip install build
+            python -m build
+            echo "✅ 包构建成功"
+
 # ── 通知 ──
 notifications:
   - type: webhook
