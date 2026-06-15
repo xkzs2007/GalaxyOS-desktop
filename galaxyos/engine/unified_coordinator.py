@@ -508,14 +508,6 @@ MODULE_REGISTRY: Dict[str, ModuleInfo] = {
         script_path=str(PRIVILEGED_DIR / "speculative_decoder.py"),
         layer=4
     ),
-    "speculative_hybrid": ModuleInfo(
-        name="speculative_hybrid",
-        module_type=ModuleType.SPECULATIVE_DECODER,
-        description="投机解码混合策略 - 检索型+NIM+GLM5三层架构",
-        triggers=["混合策略", "智能生成", "三层架构"],
-        script_path=str(PRIVILEGED_DIR / "speculative_hybrid.py"),
-        layer=4
-    ),
     "streaming_llm": ModuleInfo(
         name="streaming_llm",
         module_type=ModuleType.STREAMING_LLM,
@@ -797,7 +789,7 @@ MODULE_REGISTRY: Dict[str, ModuleInfo] = {
         triggers=["上下文管理", "DAG", "上下文压缩", "无损上下文", "人格保护", "回溯"],
         script_path=str(PRIVILEGED_DIR / "dag_context_manager.py"),
         layer=9,
-        dependencies=["speculative_hybrid", "nlp_processor", "mkl_accelerator"]
+        dependencies=["nlp_processor", "mkl_accelerator"]
     ),
     "conversation": ModuleInfo(
         name="conversation",
@@ -1373,11 +1365,7 @@ class UnifiedCoordinator:
                 ("speculative_decoder", "投机解码加速"),
                 ("model_performance", "性能监控"),
             ],
-            "speculative_hybrid": [
-                ("speculative_hybrid", "Level 1 检索型投机解码"),
-                ("speculative_hybrid", "Level 2 NVIDIA NIM 调用"),
-                ("speculative_hybrid", "Level 3 小艺 GLM5 兜底"),
-            ],
+
             
             # 新增工作流 - 缓存优化
             "smart_caching": [
@@ -2329,13 +2317,6 @@ def get_coordinator_status() -> Dict:
 
 EXTENDED_MODULES_P1 = {
     # 投机解码
-    "speculative_hybrid": ModuleInfo(
-        name="speculative_hybrid",
-        module_type=ModuleType.SPECULATIVE_DECODER,
-        description="投机解码混合策略 - 三层架构",
-        triggers=["加速生成", "投机解码", "快速响应"],
-        script_path="speculative_hybrid.py"
-    ),
     "speculative_decoder": ModuleInfo(
         name="speculative_decoder",
         module_type=ModuleType.SPECULATIVE_DECODER,
@@ -2647,7 +2628,6 @@ EXTENDED_WORKFLOWS_P1 = {
     "fast_generation": [
         ("rag_cache", "检查缓存"),
         ("semantic_cache", "语义缓存查询"),
-        ("speculative_hybrid", "投机解码生成"),
         ("hallucination_guard", "输出验证")
     ],
     "long_conversation": [
@@ -2813,7 +2793,6 @@ INTEGRATED_WORKFLOWS = {
     "fast_generation": [
         ("rag_cache", "检查缓存"),
         ("semantic_cache", "语义缓存查询"),
-        ("speculative_hybrid", "投机解码生成"),
         ("hallucination_guard", "输出验证")
     ],
     "llm_optimize": [

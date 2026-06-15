@@ -288,16 +288,6 @@ COMPONENT_REGISTRY: Dict[str, ComponentInfo] = {
         dependencies=["memory_core"],
         fallback_component="text_only"
     ),
-    "speculative_hybrid": ComponentInfo(
-        id="speculative_hybrid",
-        name="投机解码混合策略",
-        tier=ComponentTier.ENHANCED,
-        module_path="speculative_hybrid",
-        class_name="SmartHybridGenerator",
-        description="三层投机解码（检索+NIM+GLM5）",
-        dependencies=[],
-        fallback_component="direct_generation"
-    ),
     "crag_pipeline": ComponentInfo(
         id="crag_pipeline",
         name="CRAG流水线",
