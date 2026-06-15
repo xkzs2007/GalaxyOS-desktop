@@ -1,5 +1,21 @@
 # Changelog
 
+## [8.1.1] — 2026-06-15
+
+### Added
+- **`--download-lfm` 参数** — `install_wizard.py` 新增 `download_lfm_weights()`, 从 hf-mirror 一键下载 LFM2.5-1.2B-Thinking 真实权重（~2.2GB），纯 urllib 无需 huggingface_hub，断点续传
+- **`--setup-rust` 参数** — 跨平台 Rust 安装（Linux/Windows + x86_64/ARM64），TUNA 镜像加速
+- **`extensions/galaxyos/VERSION`** — 版本号统一管理
+
+### Fixed
+- **Rust 安装 ARM64 崩溃** — `make rustup-cn` 硬编码 `x86_64-unknown-linux-gnu`，ARM64 下载 404。改为 `uname -m` 自动检测：aarch64/aarch64-unknown-linux-gnu、armv7l/armv7-unknown-linux-gnueabihf
+- **`--setup-rust` Windows 兼容** — 原实现依赖 `os.uname()`（仅 Unix）和 `/tmp/`，Windows 直接崩溃。改用 `platform.machine()` + `sys.platform`，临时目录用 `%TEMP%`，下载用 `urllib` 替代 `curl`
+- **重复 `check_v81_pipelines()` 定义** — 删除残留的空桩函数
+
+### Changed
+- **版本号统一**: 三处 `__init__.py` + VERSION → `8.1.1`
+- **`.gitignore`** — `extensions/galaxyos/native/.gitignore` 新增 `vendor/`（vendored 依赖缓存不入库）
+
 ## [8.1.0] — 2026-06-14
 
 ### Added
