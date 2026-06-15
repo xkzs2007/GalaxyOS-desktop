@@ -45,6 +45,7 @@ import math
 import random
 import time
 import hashlib
+import sqlite3
 import threading
 import logging
 from datetime import datetime, timezone, timedelta
@@ -721,6 +722,7 @@ class BioRhythmSleepConsolidator:
         stats = {"disambiguated": 0, "communities": 0, "expired_edges": 0}
 
         try:
+            import sys
             sys.path.insert(0, str(Path(__file__).parent))
             from temporal_kg import get_temporal_kg
             kg = get_temporal_kg()

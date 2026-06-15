@@ -184,8 +184,16 @@ class ConsolidationEngine:
                 # 创建新神经元
                 neuron = network.create_neuron(content[:500])
                 
-                # 链接到同一 session 的其他节点
-                if node["node_type"] or node["phase_name"]:
+                # 链接到同一 session 的其他节点（兼容 dag_nodes/rccam_nodes 列名差异）
+                link_type = None
+                for _col in ("node_type", "phase_name"):
+                    try:
+                        link_type = node[_col]
+                        if link_type:
+                            break
+                    except (KeyError, AttributeError, IndexError):
+                        continue
+                if link_type:
                     try:
                         session_cursor = conn.execute(
                             "SELECT node_id FROM dag_nodes WHERE session_key = "
