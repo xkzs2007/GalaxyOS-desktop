@@ -615,25 +615,36 @@ class ConsolidationEngine:
         except Exception as e:
             results["liquid_weight"] = {"error": str(e)[:120]}
         
-        # 8. SSM embedding 时序预测 — 嵌入 consolidation 后处理
+        # 8. LFM 全链路集成 — 14 个液态/条件记忆模块同步运行
         try:
-            from liquid_ssm import LiquidSSM
-            _ssm = LiquidSSM(state_dim=128, input_dim=2048, output_dim=2048)
-            # 收集最近 N 个 embedding
+            from lfm_full_integration import run_full_integration
+            from lfm_adaptive_operator import RealLFMNetwork
+            
+            _full_lfm = RealLFMNetwork()
+            _hit = results.get("engram", {}).get("hit_rate", 0.0)
             _recent_embs = []
-            for n_id, n in list(getattr(_net, '_neurons_cache', {}).items())[:10]:
+            for n_id, n in list(getattr(_net, '_neurons_cache', {}).items())[:30]:
                 if hasattr(n, 'embedding') and n.embedding:
                     _recent_embs.append(np.array(n.embedding[:2048], dtype=np.float32))
-            if len(_recent_embs) >= 2:
-                _predicted = _ssm.predict_embedding(_recent_embs, steps=1)
-                results["ssm_predict"] = {
-                    "input_count": len(_recent_embs),
-                    "predicted_norm": float(np.linalg.norm(_predicted)) if _predicted is not None else 0,
-                }
-            else:
-                results["ssm_predict"] = {"input_count": len(_recent_embs), "skipped": True}
+            
+            _sample_emb = _recent_embs[0] if _recent_embs else np.random.randn(2048).astype(np.float32)
+            _integration = run_full_integration(_sample_emb, _recent_embs, _hit)
+            
+            # 提取关键指标汇总
+            _summary = {k: {} for k in _integration}
+            for k, v in _integration.items():
+                if isinstance(v, dict):
+                    for kk, vv in v.items():
+                        if isinstance(vv, (int, float)):
+                            _summary[k][kk] = round(vv, 4)
+            
+            results["lfm_full_integration"] = {
+                "modules_run": len(_integration),
+                "summary": _summary,
+            }
+            logger.info(f"LFM 全链路集成完成: {len(_integration)} 模块")
         except Exception as e:
-            results["ssm_predict"] = {"error": str(e)[:120]}
+            results["lfm_full_integration"] = {"error": str(e)[:120]}
         
         # 记录统计
         try:

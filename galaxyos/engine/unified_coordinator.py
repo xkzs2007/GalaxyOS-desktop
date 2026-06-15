@@ -295,9 +295,17 @@ MODULE_REGISTRY: Dict[str, ModuleInfo] = {
     "lfm_engram_full_integration": ModuleInfo(
         name="lfm_engram_full_integration",
         module_type=ModuleType.ENGRAM_MEMORY,
-        description="LFM→Engram→LiquidWeight→SSM 全链路集成桥",
-        triggers=["LFM集成", "Engram集成", "全链路"],
+        description="LFM→Engram 门控融合",
+        triggers=["LFM集成", "Engram集成"],
         script_path=str(CORE_DIR / "lfm_engram_fusion.py"),
+        layer=1,
+    ),
+    "lfm_full_integration": ModuleInfo(
+        name="lfm_full_integration",
+        module_type=ModuleType.ENGRAM_MEMORY,
+        description="LFM 全链路 14 模块集成桥 — ODE-RNN/Neural ODE/KAN/LTC/MoE/SSM/Lipschitz/Sparsity/Edge/NCD/DAG",
+        triggers=["LFM全链路", "液态集成", "全模块"],
+        script_path=str(CORE_DIR / "lfm_full_integration.py"),
         layer=1,
     ),
     "xiaoyi_claw_api": ModuleInfo(
@@ -1186,9 +1194,17 @@ MODULE_REGISTRY: Dict[str, ModuleInfo] = {
     "lfm_engram_full_integration": ModuleInfo(
         name="lfm_engram_full_integration",
         module_type=ModuleType.ENGRAM_MEMORY,
-        description="LFM→Engram→LiquidWeight→SSM 全链路集成桥",
-        triggers=["LFM集成", "Engram集成", "全链路"],
+        description="LFM→Engram 门控融合",
+        triggers=["LFM集成", "Engram集成"],
         script_path=str(CORE_DIR / "lfm_engram_fusion.py"),
+        layer=1,
+    ),
+    "lfm_full_integration": ModuleInfo(
+        name="lfm_full_integration",
+        module_type=ModuleType.ENGRAM_MEMORY,
+        description="LFM 全链路 14 模块集成桥 — ODE-RNN/Neural ODE/KAN/LTC/MoE/SSM/Lipschitz/Sparsity/Edge/NCD/DAG",
+        triggers=["LFM全链路", "液态集成", "全模块"],
+        script_path=str(CORE_DIR / "lfm_full_integration.py"),
         layer=1,
     ),
     "xiaoyi_claw_api": ModuleInfo(
