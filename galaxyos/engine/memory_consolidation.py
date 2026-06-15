@@ -729,7 +729,7 @@ class ConsolidationEngine:
             from dream_driven_learner import DreamDrivenLearner
             _dream_learner = DreamDrivenLearner(self.workspace)
             
-            _dream_log = os.path.join(self.workspace, ".learnings", "dreams", "dream_log.jsonl")
+            _dream_log = os.path.join(str(_dream_learner.workspace_path), ".learnings", "dreams", "dream_log.jsonl")
             if os.path.exists(_dream_log):
                 _fragments = _dream_learner.collect_dream_fragments(_dream_log, max_fragments=20)
                 if _fragments and len(_fragments) >= 2:
