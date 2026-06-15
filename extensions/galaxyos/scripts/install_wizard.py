@@ -727,7 +727,6 @@ def check_torch_stack(interactive_offer: bool = True) -> Dict[str, Any]:
         "hnswlib": "HNSW 近似最近邻索引",
         "faiss": "FAISS 向量索引",
         "ncps": "LTC 神经回路神经元",
-        "transformers": "HuggingFace Transformers（LM 加载）",
     }
     results = {"packages": {}, "torch_version": None}
     for pkg, desc in pkgs.items():
@@ -1866,6 +1865,7 @@ def auto_fix(sync_result: Dict[str, Any], import_result: Optional[Dict[str, Any]
                 # 修正:fn 可能是 "engine/X.py" 这种带前缀的,源路径要拆开
                 if fn.startswith("engine/"):
                     src = galaxy_engine / fn[len("engine/"):]
+                    dst = DIST_DIR / fn[len("engine/"):]
                 elif fn.startswith("core/"):
                     stem = fn[len("core/"):]
                     src = galaxy_engine / stem  # 旧版兼容
@@ -2004,7 +2004,7 @@ def _write_version_marker(version: str):
 
 
 # ════════════════════════════════════════════════════════════════
-# Phase 1.5: v8.1 液态神经网络管线（新增）
+# Phase 1.5: v8.2 液态神经网络 & 神经记忆管线（新增）
 # ════════════════════════════════════════════════════════════════
 
 def check_lfm_weights() -> Dict[str, Any]:
@@ -2204,9 +2204,14 @@ def _setup_rust(use_make: bool = True):
 
 
 
-def check_v81_pipelines() -> Dict[str, Any]:
-    """验证 v8.1 四条液态神经网络管线的模块初始化"""
-    heading("🔬 v8.1 液态神经网络管线初始化")
+def check_v82_pipelines() -> Dict[str, Any]:
+    # 兼容旧调用名
+    return _check_v82_pipelines_impl()
+
+
+def _check_v82_pipelines_impl() -> Dict[str, Any]:
+    """验证 v8.2 四条液态神经网络管线的模块初始化"""
+    heading("🔬 v8.2 液态神经网络管线初始化")
     results = {"pipelines": {}, "total": 0, "ok": 0, "fail": 0}
     
     for p in [str(galaxy_scripts), str(galaxy_engine)]:
@@ -2270,12 +2275,117 @@ def check_v81_pipelines() -> Dict[str, Any]:
     return results
 
 
+# ════════════════════════════════════════════════════════════════
+# Phase 1.6: v8.2 神经记忆 & 梦境学习模块检查
+# ════════════════════════════════════════════════════════════════
+
+def check_v82_modules() -> Dict[str, Any]:
+    """验证 v8.2 新增模块的导入和加载状态"""
+    heading("🧬 v8.2 神经记忆 & 梦境学习模块")
+    results: Dict[str, Any] = {"modules": {}, "ok": 0, "fail": 0}
+    
+    modules_to_check = [
+        ("TitansNeuralMemory", "titans_neural_memory", "在线神经记忆(遗忘门+更新门,2048-d)"),
+        ("CrossModalMemoryBinder", "cross_modal_memory", "跨模态记忆绑定(文本/图像→2048)"),
+        ("DreamDrivenLearner", "dream_driven_learner", "梦境驱动学习(对比学习adapter)"),
+        ("AdaptiveSynapsePruner", "memory_synapse_network", "自适应突触修剪(多因子保留分)"),
+    ]
+    
+    for cls_name, module, desc in modules_to_check:
+        try:
+            spec = importlib.util.spec_from_file_location(
+                module,
+                os.path.join(os.path.dirname(__file__), f"{module}.py")
+            )
+            if spec is None or spec.loader is None:
+                results["modules"][cls_name] = {"ok": False, "error": "spec_not_found"}
+                results["fail"] += 1
+                warn(f"{cls_name} ({desc}): 文件未找到", indent=1)
+                continue
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            cls = getattr(mod, cls_name, None)
+            if cls is None:
+                results["modules"][cls_name] = {"ok": False, "error": "class_not_found"}
+                results["fail"] += 1
+                warn(f"{cls_name}: 类定义缺失", indent=1)
+                continue
+            # 实例化检查
+            if cls_name == "AdaptiveSynapsePruner":
+                obj = cls(None)  # 需要 network，传 None 仅验证 import
+                has_init = hasattr(obj, "run_prune")
+            elif cls_name == "TitansNeuralMemory":
+                obj = cls()
+                has_init = hasattr(obj, "store") and hasattr(obj, "recall")
+            elif cls_name == "CrossModalMemoryBinder":
+                obj = cls()
+                has_init = hasattr(obj, "text_to_embedding") and hasattr(obj, "image_to_embedding")
+            elif cls_name == "DreamDrivenLearner":
+                obj = cls()
+                has_init = hasattr(obj, "learn_from_dreams") and hasattr(obj, "embed_with_dream_adapter")
+            else:
+                try:
+                    obj = cls(workspace_path=str(WORKSPACE))
+                    has_init = True
+                except Exception:
+                    obj = cls()
+                    has_init = True
+            results["modules"][cls_name] = {"ok": True, "methods_ok": has_init}
+            results["ok"] += 1
+            label = f"{cls_name} ({desc})"
+            ok(f"{label}: 导入 + 方法检测{' ✅' if has_init else ''}")
+        except Exception as e:
+            results["modules"][cls_name] = {"ok": False, "error": str(e)[:200]}
+            results["fail"] += 1
+            warn(f"{cls_name} ({desc}): {e}", indent=1)
+    
+    # 检查持久化目录
+    learnings_path = WORKSPACE / ".learnings"
+    if learnings_path.exists():
+        dirs = [
+            ("titans_memory", "Titans 神经记忆"),
+            ("dream_learning", "梦境 adapter"),
+        ]
+        for d, label in dirs:
+            p = learnings_path / d
+            if p.exists():
+                ok(f"{label} 持久化目录: {p}")
+    else:
+        info(".learnings/ 目录未创建（首次运行后自动生成）")
+    
+    # 检查自动循环集成状态
+    try:
+        # 验证 memory_consolidation.py 中的集成
+        mc_path = os.path.join(os.path.dirname(__file__), "memory_consolidation.py")
+        if os.path.exists(mc_path):
+            content = open(mc_path).read()
+            checks = {
+                "Titans 集成": "from titans_neural_memory import TitansNeuralMemory" in content,
+                "CrossModal 集成": "from cross_modal_memory import CrossModalMemoryBinder" in content,
+                "Consolidation调用": "results[\"titans\"]" in content,
+            }
+            all_ok = all(checks.values())
+            results["auto_cycle_integrated"] = all_ok
+            if all_ok:
+                ok("自动循环集成: consolidation + sleep 周期均已挂载")
+            else:
+                missing = [k for k, v in checks.items() if not v]
+                warn(f"自动循环集成不完整: {missing}")
+        else:
+            info("memory_consolidation.py 不在引擎目录，跳过自动循环检查")
+    except Exception as e:
+        info(f"自动循环检查跳过: {e}")
+    
+    return results
+
+
 def generate_report(all_results: Dict[str, Any]) -> Dict[str, Any]:
     """生成汇总报告"""
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     env = all_results.get("env", {})
     mod = all_results.get("modules", {})
+    v82_mod = all_results.get("v82_modules", {})
     sync = all_results.get("sync", {})
     svc = all_results.get("services", {})
     brk = all_results.get("breakers", {})
@@ -2295,6 +2405,9 @@ def generate_report(all_results: Dict[str, Any]) -> Dict[str, Any]:
             "modules_ok": mod.get("ok", 0),
             "modules_fail": mod.get("fail", 0),
             "modules_total": mod.get("total", 0),
+            "v82_modules_ok": v82_mod.get("ok", 0),
+            "v82_modules_fail": v82_mod.get("fail", 0),
+            "v82_modules_total": v82_mod.get("ok", 0) + v82_mod.get("fail", 0),
             "files_out_of_sync": sync.get("out_of_sync", 0),
             "breakers": brk.get("total_breaks", 0),
             "worker_alive": svc.get("worker", {}).get("ping", False),
@@ -2314,6 +2427,8 @@ def generate_report(all_results: Dict[str, Any]) -> Dict[str, Any]:
     score = 100
     if mod.get("fail", 0) > 0:
         score -= mod["fail"] * 8
+    if v82_mod.get("fail", 0) > 0:
+        score -= v82_mod["fail"] * 5
     if adj_out_of_sync > 0:
         score -= adj_out_of_sync * 2
     if adj_breakers > 0:
@@ -2347,6 +2462,10 @@ def print_report(report: Dict[str, Any]):
     print(f"  {'G' if s.get('worker_alive', False) else R} Worker: {'在线' if s.get('worker_alive', False) else '离线'}{N}")
     print(f"  {'⚠️ ' if s.get('config_issues', 0) > 0 else '✅ '} 配置问题: {s.get('config_issues', 0)}")
     print(f"  {'G' if s.get('supervisor_ok', False) else R} Supervisor: {'运行中' if s.get('supervisor_ok', False) else '异常'}{N}")
+    v82_ok = s.get('v82_modules_ok', 0)
+    v82_total = s.get('v82_modules_total', 0)
+    if v82_total > 0:
+        print(f"  {G}🧬{N} v8.2 神经记忆模块: {v82_ok}/{v82_total}")
     slp_ok = s.get('sleep_stages_ok', 0)
     slp_total = s.get('sleep_stages_total', 0)
     if slp_total > 0:
@@ -3027,39 +3146,6 @@ def main():
                         )
                         if r3.returncode == 0:
                             ok(f"已拉取远程更新 ({behind} 个提交)")
-                            # 同步 git repo extensions → 运行时 EXT_DIR
-                            _git_ext = _git_root / "extensions" / "galaxyos"
-                            if _git_ext.exists():
-                                info("同步 git 源码到运行时目录...", indent=1)
-                                _sync_cnt = 0
-                                for _src_fn in os.listdir(str(_git_ext / "scripts")):
-                                    if not _src_fn.endswith(".py"):
-                                        continue
-                                    _src_f = _git_ext / "scripts" / _src_fn
-                                    _dst_f = EXT_DIR / "scripts" / _src_fn
-                                    try:
-                                        shutil.copy2(str(_src_f), str(_dst_f))
-                                        _sync_cnt += 1
-                                    except Exception as _e:
-                                        warn(f"同步 {_src_fn} 失败: {_e}", indent=2)
-                                # 同步 index.js
-                                _js_src = _git_ext / "index.js"
-                                _js_dst = EXT_DIR / "index.js"
-                                if _js_src.exists():
-                                    try:
-                                        shutil.copy2(str(_js_src), str(_js_dst))
-                                        _sync_cnt += 1
-                                    except Exception as _e:
-                                        pass
-                                # VERSION
-                                _v_src = _git_ext / "VERSION"
-                                _v_dst = EXT_DIR / "VERSION"
-                                if _v_src.exists():
-                                    try:
-                                        shutil.copy2(str(_v_src), str(_v_dst))
-                                    except Exception:
-                                        pass
-                                ok(f"已同步 {_sync_cnt} 个文件到运行时")
                             # 重新读取版本
                             version = get_core_version()
                             info(f"当前版本: v{version}", indent=1)
@@ -3121,8 +3207,9 @@ def main():
     )
     all_results["torch"] = check_torch_stack(interactive_offer=_interactive_torch)
     all_results["modules"] = test_all_modules()
-    all_results["v81_models"] = check_lfm_weights()
-    all_results["v81_pipes"] = check_v81_pipelines()
+    all_results["v82_models"] = check_lfm_weights()
+    all_results["v82_pipes"] = check_v82_pipelines()
+    all_results["v82_modules"] = check_v82_modules()
     all_results["sync"] = check_file_sync()
     all_results["services"] = check_services()
     all_results["breakers"] = scan_breakers()

@@ -170,6 +170,14 @@ class ConsolidationEngine:
             except Exception:
                 pass  # rccam_nodes 表可能不存在时静默跳过
             
+            # 懒加载跨模态绑定器（DAG 固化时生成 embedding）
+            _binder = None
+            try:
+                from cross_modal_memory import CrossModalMemoryBinder
+                _binder = CrossModalMemoryBinder(self.workspace)
+            except Exception:
+                pass
+            
             for node in nodes:
                 content = node["content"] if node["content"] else ""
                 if len(content) < 10:
@@ -181,8 +189,16 @@ class ConsolidationEngine:
                     network.neuron_manager.activate_neuron(existing.id)
                     continue
                 
-                # 创建新神经元
-                neuron = network.create_neuron(content[:500])
+                # 创建新神经元（带真实 embedding）
+                _emb = None
+                if _binder is not None:
+                    try:
+                        _emb_np = _binder.text_to_embedding(content[:512])
+                        if _emb_np is not None:
+                            _emb = _emb_np.tolist()
+                    except Exception:
+                        pass
+                neuron = network.create_neuron(content[:500], embedding=_emb)
                 
                 # 链接到同一 session 的其他节点（兼容 dag_nodes/rccam_nodes 列名差异）
                 link_type = None
@@ -524,6 +540,45 @@ class ConsolidationEngine:
             results["adaptive_prune"] = prune_stats
         except Exception as e:
             results["adaptive_prune"] = {"error": str(e)}
+        
+        # 4. Titans 神经记忆更新 — 将本轮 consolidation 编码到在线记忆向量
+        try:
+            from titans_neural_memory import TitansNeuralMemory
+            _titans = TitansNeuralMemory(self.workspace)
+            cls_count = results.get("cls", {}).get("consolidated", 0)
+            if cls_count > 0 or results.get("replay", {}).get("ltp_replayed", 0) > 0:
+                _titans.store(
+                    content=f"consolidation_cycle: {cls_count} cls, {results.get('replay', {}).get('ltp_replayed', 0)} replayed",
+                    metadata={"source": "consolidation_cycle",
+                              "cls_count": cls_count,
+                              "prune_count": prune_stats.get("prune_candidates", 0)}
+                )
+            _state = _titans.get_state()
+            results["titans"] = {
+                "update_count": _state.get("update_count"),
+                "memory_norm": _state.get("memory_norm"),
+            }
+        except Exception as e:
+            results["titans"] = {"error": str(e)}
+        
+        # 5. 跨模态 embedding 绑定 — 补神经元缺失的 embedding
+        try:
+            from cross_modal_memory import CrossModalMemoryBinder
+            _binder = CrossModalMemoryBinder(self.workspace)
+            _net = self._get_synapse_network()
+            _net._load()
+            _bound = 0
+            for n_id, n in list(getattr(_net, '_neurons_cache', {}).items()):
+                if not n.embedding or len(n.embedding) < 128:
+                    emb = _binder.text_to_embedding(n.content[:512])
+                    if emb is not None:
+                        n.embedding = emb.tolist()
+                        _bound += 1
+            if _bound > 0:
+                _net._save()
+            results["cross_modal"] = {"bound_neurons": _bound}
+        except Exception as e:
+            results["cross_modal"] = {"error": str(e)}
         
         # 记录统计
         try:

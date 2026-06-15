@@ -907,6 +907,32 @@ class BioRhythmSleepConsolidator:
         except Exception as e:
             logger.debug(f"梦境学习跳过: {e}")
         
+        # Phase 7: Titans 神经记忆 — 睡眠周期结束后编码整体状态
+        try:
+            from titans_neural_memory import TitansNeuralMemory
+            _titans = TitansNeuralMemory(self.workspace)
+            _dream_count = sum(
+                len(p.get("fragments_detail", []))
+                for p in [results.get("phases", {}).get("rem_generative", {})]
+                if isinstance(p, dict)
+            )
+            _prune_count = results.get("phases", {}).get("nrem_cascade", {}).get("spindle_pruned", 0)
+            _titans.store(
+                content=f"sleep_cycle_{cycle_num}: dreams={_dream_count}, pruned={_prune_count}, gain={results.get('total_consolidation_gain', 0):.3f}",
+                metadata={"source": "sleep_cycle",
+                          "cycle": cycle_num,
+                          "dream_fragments": _dream_count,
+                          "consolidation_gain": results.get('total_consolidation_gain')}
+            )
+            _state = _titans.get_state()
+            results["titans"] = {
+                "memory_norm": _state.get("memory_norm"),
+                "update_count": _state.get("update_count"),
+            }
+            logger.info(f"Titans 神经记忆更新: norm={_state.get('memory_norm')}")
+        except Exception as e:
+            logger.debug(f"Titans 更新跳过: {e}")
+        
         return results
     
     # ════════════════════════════════════════════════════════
