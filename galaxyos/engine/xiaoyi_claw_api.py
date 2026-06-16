@@ -262,16 +262,28 @@ class XiaoYiClawLLM:
         return 128
 
     def _init_vector_store(self):
-        """初始化向量存储(维度从 config 动态读取，匹配实际 embedding 模型)"""
+        """初始化向量存储(优先 HNSW，降级 SQLite)"""
         try:
             from unified_vector_store import UnifiedVectorStore
+            import os
+            from pathlib import Path
+            openclaw_home = os.environ.get('OPENCLAW_HOME', Path.home() / '.openclaw')
             self.vector_store = UnifiedVectorStore(
-                backend='sqlite',
+                backend='hnswlib',
+                index_path=str(Path(openclaw_home) / 'memory-tdai' / 'unified_vectors.hnsw'),
                 dim=self.embedding_dim
             )
         except Exception as e:
-            logger.warning(f"向量存储初始化失败: {e}")
-            self.vector_store = None
+            logger.warning(f"向量存储 HNSW 初始化失败 ({e})，降级到 SQLite")
+            try:
+                from unified_vector_store import UnifiedVectorStore
+                self.vector_store = UnifiedVectorStore(
+                    backend='sqlite',
+                    dim=self.embedding_dim
+                )
+            except Exception as e2:
+                logger.warning(f"向量存储 SQLite 降级也失败: {e2}")
+                self.vector_store = None
 
     def _init_ontology_bridge(self):
         """初始化知识图谱桥接"""
