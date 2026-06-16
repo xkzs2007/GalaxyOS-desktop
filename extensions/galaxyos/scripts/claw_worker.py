@@ -604,6 +604,24 @@ class ClawWorker:
                     open(_RCI_MARKER, "a").write(_tb.format_exc() + "\n")
                 # 触发一次健康检查，让模块懒加载
                 self._entry.health_check()
+                
+                # 预加载 LFM2.5-1.2B 模型到内存（神经网络常驻）
+                try:
+                    sys.stderr.write("[claw-worker] 预加载 LFM2.5-1.2B-Thinking...\n")
+                    _t0 = time.time()
+                    from lfm_adaptive_operator import RealLFMNetwork
+                    _lfm = RealLFMNetwork()
+                    _lfm._ensure()
+                    # 触发一次 embedding 让模型完全预热（+ KV cache init）
+                    _lfm.embed_text("预热")
+                    _t1 = time.time()
+                    # 赋值到 self 防止 GC
+                    self._lfm_preloaded = _lfm
+                    sys.stderr.write(f"[claw-worker] LFM2.5-1.2B 预加载完成 ({_t1-_t0:.1f}s)\n")
+                except Exception as _e:
+                    sys.stderr.write(f"[claw-worker] LFM 预加载跳过: {_e}\n")
+                    self._lfm_preloaded = None
+                
                 self._load_hardware()
                 self._load_time_ms = round((time.time() - t0) * 1000, 1)
             except Exception as e:
@@ -1930,8 +1948,7 @@ def _send_http_reply(conn, status, data):
 
 
 def _uds_server_thread(methods_map):
-    """单线程串行 UDS HTTP 服务端 — selectors + 逐个处理，零并发竞争"""
-    import selectors as _sel_mod
+    """阻塞式 UDS HTTP 服务端 — blocking accept，无 selectors"""
     import socket as _sock
 
     try:
@@ -1943,61 +1960,41 @@ def _uds_server_thread(methods_map):
     server = _sock.socket(_sock.AF_UNIX, _sock.SOCK_STREAM)
     server.bind(UDS_PATH)
     server.listen(8)
-    server.setblocking(False)
+    server.settimeout(1.0)
     os.chmod(UDS_PATH, 0o600)
 
-    sel = _sel_mod.DefaultSelector()
-    sel.register(server, _sel_mod.EVENT_READ, data=None)
-
-    sys.stderr.write(f"[claw-worker] UDS (serial, timeout={REQUEST_TIMEOUT}s) listening on {UDS_PATH}\n")
+    sys.stderr.write(f"[claw-worker] UDS (blocking, timeout={REQUEST_TIMEOUT}s) listening on {UDS_PATH}\n")
 
     while not _shutdown_flag:
-        events = sel.select(timeout=0.5)
-        for key, mask in events:
-            if key.data is None:
-                # 新连接
-                try:
-                    conn, _addr = server.accept()
-                    conn.setblocking(False)
-                    sel.register(conn, _sel_mod.EVENT_READ, data=b"")
-                except Exception:
-                    pass
-            else:
-                conn = key.fileobj
-                try:
-                    chunk = conn.recv(65536)
-                    if chunk:
-                        key.data += chunk
-                        if b"\r\n\r\n" in key.data and b"Content-Length:" in key.data:
-                            # 完整 HTTP 请求头已到达 → 处理
-                            sel.unregister(conn)
-                            _handle_one_http_request(conn, key.data, methods_map)
-                            try:
-                                conn.close()
-                            except Exception:
-                                pass
-                    else:
-                        sel.unregister(conn)
-                        try:
-                            conn.close()
-                        except Exception:
-                            pass
-                except (BlockingIOError, InterruptedError):
-                    pass
-                except Exception:
-                    sel.unregister(conn)
-                    try:
-                        conn.close()
-                    except Exception:
-                        pass
+        try:
+            conn, _addr = server.accept()
+        except _sock.timeout:
+            continue
+        except Exception:
+            break
+        try:
+            conn.settimeout(REQUEST_TIMEOUT)
+            raw = b""
+            while b"\r\n\r\n" not in raw:
+                chunk = conn.recv(65536)
+                if not chunk:
+                    break
+                raw += chunk
+            if raw:
+                _handle_one_http_request(conn, raw, methods_map)
+        except Exception as _e:
+            sys.stderr.write(f"[claw-worker] UDS handler error: {_e}\n")
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
 
-    sel.unregister(server)
     server.close()
     try:
         os.unlink(UDS_PATH)
     except Exception:
         pass
-
 
 def _handle_one_http_request(conn, raw_data, methods_map):
     """解析 HTTP 请求 → 串行执行 → 返回 JSON 响应
@@ -2369,6 +2366,46 @@ signal.signal(signal.SIGINT, _handle_shutdown)
 # ============================================================
 
 def _http_serve(methods_map):
+    """阻塞式 HTTP JSON-RPC — blocking accept，无 selectors"""
+    import socket as _sock
+
+    server = _sock.socket(_sock.AF_INET, _sock.SOCK_STREAM)
+    server.setsockopt(_sock.SOL_SOCKET, _sock.SO_REUSEADDR, 1)
+    server.bind(("127.0.0.1", HTTP_PORT))
+    server.listen(8)
+    server.settimeout(1.0)
+
+    sys.stderr.write(f"[claw-worker] HTTP JSON-RPC + REST API on http://127.0.0.1:{HTTP_PORT}\n")
+    sys.stderr.write(f"[claw-worker]   REST endpoints: {len(_REST_ROUTES)} routes (GET /health, POST /recall, ...)\n")
+    sys.stderr.write(f"[claw-worker]   API index: curl http://127.0.0.1:{HTTP_PORT}/\n")
+
+    while not _shutdown_flag:
+        try:
+            conn, _addr = server.accept()
+        except _sock.timeout:
+            continue
+        except Exception:
+            break
+        try:
+            conn.settimeout(REQUEST_TIMEOUT)
+            raw = b""
+            while b"\r\n\r\n" not in raw:
+                chunk = conn.recv(65536)
+                if not chunk:
+                    break
+                raw += chunk
+            if raw:
+                _handle_one_http_request(conn, raw, methods_map)
+        except Exception as _e:
+            sys.stderr.write(f"[claw-worker] HTTP handler error: {_e}\n")
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+    server.close()
+
     """HTTP JSON-RPC over localhost — 单线程串行，与 UDS 同模型"""
     import socket as _sock
     import selectors as _sel_mod
@@ -2392,7 +2429,7 @@ def _http_serve(methods_map):
             if key.data is None:
                 try:
                     conn, _addr = server.accept()
-                    conn.setblocking(False)
+                    conn.setblocking(True)  # 阻塞发送，避免 sendall 被吞
                     sel.register(conn, _sel_mod.EVENT_READ, data=b"")
                 except Exception:
                     pass
@@ -2402,8 +2439,9 @@ def _http_serve(methods_map):
                     chunk = conn.recv(65536)
                     if chunk:
                         key.data += chunk
-                        if b"\r\n\r\n" in key.data and b"Content-Length:" in key.data:
+                        if b"\r\n\r\n" in key.data:
                             sel.unregister(conn)
+                            conn.setblocking(True)  # 保证 sendall 能正常发送
                             _handle_one_http_request(conn, key.data, methods_map)
                             try:
                                 conn.close()
@@ -2446,6 +2484,14 @@ def main():
         sys.stderr.write(f"[claw-worker] 三论文集成注册: RLM + SKILL0 + MemoryOS\n")
     except Exception as e:
         sys.stderr.write(f"[claw-worker] 三论文集成跳过: {e}\n")
+
+    # v8.1 论文全量集成: 18新模块 × 4管线
+    try:
+        from galaxyos.engine.paper_integration_v81 import integrate_v81
+        _v81_addon = integrate_v81(worker, _METHODS)
+        sys.stderr.write(f"[claw-worker] v8.1 论文全量集成注册: 22 UDS 方法\n")
+    except Exception as e:
+        sys.stderr.write(f"[claw-worker] v8.1 论文全量集成跳过: {e}\n")
     
     # 启动记忆巩固后台
     try:
@@ -2707,6 +2753,25 @@ def main():
             except Exception:
                 pass
 
+        # ── 后处理：v8.1 论文全量后处理（每次 rccam 后）──
+        def _run_v81_post_response(query, answer, confidence=0.5):
+            """运行 v8.1 集成后处理：Engram/ODE-RNN/Sparsity/LFM 等"""
+            if not answer:
+                return
+            try:
+                # _v81_addon 是同作用域闭包变量（在 if __name__ 中定义）
+                if _v81_addon:
+                    _vi = _v81_addon.run_post_response(query[:200], answer[:400], confidence)
+                    if _vi:
+                        _v81_path = os.path.join(WORKSPACE, '.learnings', 'v81_insights.jsonl')
+                        os.makedirs(os.path.dirname(_v81_path), exist_ok=True)
+                        _vi['ts'] = time.time()
+                        _vi['query_prefix'] = str(query)[:40]
+                        with open(_v81_path, 'a') as _f:
+                            _f.write(json.dumps(_vi, ensure_ascii=False, default=str) + '\n')
+            except Exception:
+                pass
+
         # ── 周期任务：重论文功能（每 ~50 轮）──
         def _run_periodic_paper_tasks():
             """时空认知 + 引擎集成 + 增强推理的后台构造"""
@@ -2848,6 +2913,9 @@ def main():
                                 _ev.get('query',''), _ev.get('answer',''), _ev.get('confidence',0.5))
                         if _ev.get('type') == 'post_response':
                             _run_paper_post_response(
+                                _ev.get('query',''), _ev.get('answer',''), _ev.get('confidence',0.5))
+                        if _ev.get('type') == 'post_response':
+                            _run_v81_post_response(
                                 _ev.get('query',''), _ev.get('answer',''), _ev.get('confidence',0.5))
 
                 # 周期任务（每 ~50 轮）
