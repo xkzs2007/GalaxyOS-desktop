@@ -106,3 +106,19 @@
 
 ### Fixed
 - setup.py 版本同步（8.2.9 → 8.2.12）
+
+## [8.3.0] - 2026-06-18
+### Changed
+- **LFM2.5-1.2B: torch bf16 → ONNX Runtime Q4**
+  - 模型大小从 2.2GB safetensors 降为 811MB ONNX（Q4 量化）
+  - ONNX Runtime mmap 加载，多进程共享物理页
+  - 内存占用：双 worker 物理增量从 ~2.2GB 降为 ~0.8GB
+  - 启动速度：秒级 vs torch 全家桶十几秒
+  - embed_text: `present_conv.15` mean pooling 替代 `hidden_states[-1]`
+  - Tokenizer: `tokenizers.Tokenizer.from_file()` 替代 `AutoTokenizer.from_pretrained()`
+- **安装向导**：--download-lfm 从下载 2.2GB safetensors 改为 811MB ONNX Q4
+- **setup.py**: 补 `tokenizers>=0.20.0`、`transformers>=4.44.0`，去重 psutil
+- **claw_worker.py**: 预加载日志同步更新
+
+### Added
+- **兼容迁移**: check_lfm_weights 识别旧版 safetensors 并提示迁移到 ONNX
