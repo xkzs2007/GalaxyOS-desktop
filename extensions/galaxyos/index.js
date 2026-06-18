@@ -16,7 +16,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn, spawnSync, execSync } from "node:child_process";
 import { createInterface } from "node:readline";
-import fs, { existsSync, mkdirSync, chmodSync, unlinkSync, readFileSync, openSync, writeSync, closeSync, readSync, writeFileSync, renameSync, copyFileSync } from "node:fs";
+import fs, { existsSync, mkdirSync, chmodSync, unlinkSync, readFileSync, openSync, writeSync, closeSync, readSync, writeFileSync, renameSync, copyFileSync, readdirSync } from "node:fs";
 import net from "node:net";
 import http from "node:http";
 import { createRequire as _createRequire } from "node:module";
@@ -4351,8 +4351,9 @@ export default function register(api) {
     // ==========================================
 
     class GalaxyOSMemorySearchManager {
-        constructor(workspaceDir) {
+        constructor(workspaceDir, slotsConfig = {}) {
             this._workspaceDir = workspaceDir;
+            this._slotsConfig = slotsConfig;
             this._worker = null;
         }
 
@@ -4374,11 +4375,39 @@ export default function register(api) {
                 const minScore = opts.minScore || 0.0;
                 const sources = opts.sources || undefined;
 
+                // Resolve extraPaths from config + sources
+                const extraPaths = opts.extraPaths || [];
+                if (!sources || sources.includes("sessions")) {
+                    // Auto-discover session transcript dirs
+                    const agentsDir = path.join(path.dirname(ws), "agents");
+                    if (existsSync(agentsDir)) {
+                        try {
+                            const agentDirs = readdirSync(agentsDir, { withFileTypes: true });
+                            for (const ad of agentDirs) {
+                                if (ad.isDirectory()) {
+                                    const sessionsDir = path.join(agentsDir, ad.name, "sessions");
+                                    if (existsSync(sessionsDir)) {
+                                        extraPaths.push(sessionsDir);
+                                    }
+                                }
+                            }
+                        } catch {}
+                    }
+                }
+                // Add any configured extraPaths
+                if (this._slotsConfig.extraPaths && Array.isArray(this._slotsConfig.extraPaths)) {
+                    for (const ep of this._slotsConfig.extraPaths) {
+                        if (!extraPaths.includes(ep)) {
+                            extraPaths.push(ep);
+                        }
+                    }
+                }
                 const result = await worker.call("memory_search", {
                     query,
                     max_results: maxResults,
                     min_score: minScore,
                     sources,
+                    extra_paths: extraPaths.length > 0 ? extraPaths : undefined,
                 }, 15000);
 
                 if (result && result.results && Array.isArray(result.results)) {
@@ -4416,16 +4445,32 @@ export default function register(api) {
             }
         }
 
-        status() {
+        async status() {
             const worker = this._getWorker();
             const workerOk = worker && worker.ready;
+            let workerStatus = null;
+            if (workerOk) {
+                try {
+                    workerStatus = await worker.call("memory_status", {}, 5000);
+                } catch {}
+            }
             return {
                 backend: "galaxyos",
-                provider: workerOk ? "galaxyos-neural" : "unavailable",
-                model: "galaxyos-crag-pipeline",
+                provider: workerOk ? (workerStatus?.provider || "galaxyos-neural") : "unavailable",
+                model: workerStatus?.model || "galaxyos-crag-pipeline",
                 fallback: "disabled",
                 workspaceDir: this._workspaceDir,
                 workerReady: workerOk,
+                workerPid: workerStatus?.pid || null,
+                workerUptime: workerStatus?.uptime_s || null,
+                embedding: workerStatus?.embedding || {},
+                indexStats: workerStatus?.index_stats || {},
+                slotsConfig: {
+                    extraPaths: this._slotsConfig.extraPaths || [],
+                    dagEnabled: this._slotsConfig.dag?.enabled !== false,
+                    verifiedEnabled: this._slotsConfig.verified?.enabled !== false,
+                    neuralEnabled: this._slotsConfig.neural?.enabled !== false,
+                },
             };
         }
 
@@ -4438,10 +4483,12 @@ export default function register(api) {
         }
     }
 
+    const memSlotsConfig = pluginConfig.memorySlots || {};
+
     api.registerMemoryCapability({
         runtime: {
             getMemorySearchManager: async () => {
-                const manager = new GalaxyOSMemorySearchManager(ws);
+                const manager = new GalaxyOSMemorySearchManager(ws, memSlotsConfig);
                 return { manager };
             },
             resolveMemoryBackendConfig: () => ({
@@ -4487,7 +4534,51 @@ export default function register(api) {
                 relativePath: `memory/${dateStamp}.md`,
             };
         },
+        publicArtifacts: {
+            async listArtifacts(params) {
+                const artifacts = [];
+                // MEMORY.md
+                const memPath = path.join(ws, "MEMORY.md");
+                if (existsSync(memPath)) {
+                    artifacts.push({
+                        kind: "memory-root",
+                        workspaceDir: ws,
+                        relativePath: "MEMORY.md",
+                        absolutePath: memPath,
+                        agentIds: ["main"],
+                        contentType: "markdown",
+                    });
+                }
+                // memory/*.md files
+                const memoryDir = path.join(ws, "memory");
+                if (existsSync(memoryDir)) {
+                    try {
+                        const walkDir = (dir) => {
+                            const entries = readdirSync(dir, { withFileTypes: true });
+                            for (const entry of entries) {
+                                if (entry.isDirectory()) {
+                                    walkDir(path.join(dir, entry.name));
+                                } else if (entry.name.endsWith(".md")) {
+                                    const absPath = path.join(dir, entry.name);
+                                    const relPath = path.relative(ws, absPath).replace(/\\/g, "/");
+                                    artifacts.push({
+                                        kind: relPath.startsWith("memory/dreaming/") ? "dream-report" : "daily-note",
+                                        workspaceDir: ws,
+                                        relativePath: relPath,
+                                        absolutePath: absPath,
+                                        agentIds: ["main"],
+                                        contentType: "markdown",
+                                    });
+                                }
+                            }
+                        };
+                        walkDir(memoryDir);
+                    } catch {}
+                }
+                return artifacts;
+            }
+        },
     });
 
-    api.logger.info?.(`${TAG} v4 plugin registration complete: 6 tools + 4 hooks + context-engine + memory-slot + rccam-pipeline + 通信自发现 (worker=${workerEnabled ? "enabled" : "disabled"})`);
+    api.logger.info?.(`${TAG} v4 plugin registration complete: 6 tools + 4 hooks + context-engine + memory-slot + public-artifacts + rccam-pipeline + 通信自发现 (worker=${workerEnabled ? "enabled" : "disabled"})`);
 }

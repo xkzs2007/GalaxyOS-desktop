@@ -788,16 +788,20 @@ class ClawWorker:
           {corpus, path, score, snippet, ...}
 
         The Plugin (index.js) MemorySearchManager.search() calls this via UDS.
+        Supports sources filtering and extraPaths for session transcripts.
         """
         query = p.get("query", "")
         max_results = p.get("max_results", 10) or 10
         min_score = p.get("min_score", 0.0) or 0.0
         sources = p.get("sources", None)  # ["memory"] | ["sessions"] | None
+        extra_paths = p.get("extra_paths", None)  # extra dirs to index
         if not query:
             return {"results": [], "error": "empty query"}
         try:
             # Use smart_retrieval as the actual retrieval backend
-            result = self.smart_retrieval({"query": query, "top_k": max_results})
+            result = self.smart_retrieval({"query": query, "top_k": max_results,
+                                           "sources": sources,
+                                           "extra_paths": extra_paths})
             if not result.get("success"):
                 return {"results": [], "error": result.get("error", "retrieval failed")}
             raw_results = result.get("results", [])
@@ -818,7 +822,7 @@ class ClawWorker:
                 file_id = item.get("id", item.get("path", "")) or ""
                 path_val = f"memory/{file_id}" if file_id else "memory/recall_result"
                 openclaw_results.append({
-                    "corpus": "memory",
+                    "corpus": source_tag if source_tag != "memory" else "memory",
                     "path": path_val,
                     "title": item.get("title", "") or "",
                     "kind": content_type,
@@ -832,6 +836,52 @@ class ClawWorker:
             return {"results": openclaw_results[:max_results]}
         except Exception as e:
             return {"results": [], "error": str(e)}
+
+    def memory_status(self, _p: dict) -> dict:
+        """OpenClaw memory status interface.
+
+        Returns backend status info for `openclaw memory status` CLI integration.
+        """
+        try:
+            entry_ready = self._entry is not None
+            worker_ok = entry_ready
+            # Get embedding info
+            embedding_info = {}
+            if entry_ready:
+                try:
+                    vinfo = self.vector_info({})
+                    if vinfo and vinfo.get("available"):
+                        embedding_info = vinfo
+                except Exception:
+                    pass
+            # Count indexed files in memory/
+            memory_dir = os.path.join(WORKSPACE, "memory")
+            memory_file_count = 0
+            if os.path.isdir(memory_dir):
+                for root, dirs, files in os.walk(memory_dir):
+                    memory_file_count += len([f for f in files if f.endswith('.md')])
+            # Count session files
+            sessions_dir = os.path.join(WORKSPACE, ".openclaw", "agents", "main", "sessions")
+            session_file_count = 0
+            if os.path.isdir(sessions_dir):
+                session_file_count = len([f for f in os.listdir(sessions_dir) if f.endswith('.jsonl')])
+            return {
+                "healthy": worker_ok,
+                "backend": "galaxyos",
+                "model": "galaxyos-crag-pipeline",
+                "provider": "galaxyos-neural" if worker_ok else "unavailable",
+                "worker_ready": worker_ok,
+                "pid": os.getpid(),
+                "uptime_s": round(time.time() - self._init_time, 1),
+                "embedding": embedding_info,
+                "index_stats": {
+                    "memory_files": memory_file_count,
+                    "session_files": session_file_count,
+                },
+                "workspace": WORKSPACE,
+            }
+        except Exception as e:
+            return {"healthy": False, "error": str(e)}
 
     def store(self, p: dict) -> dict:
         self._ensure()
@@ -1929,6 +1979,7 @@ def _init_methods(worker):
         "smart_process": worker.smart_process,
         "dag_search": _dag_search,
         "memory_search": worker.memory_search,
+        "memory_status": worker.memory_status,
         "smart_retrieval": worker.smart_retrieval,
         "save_memory": worker.save_memory,
         "vector_info": worker.vector_info,
