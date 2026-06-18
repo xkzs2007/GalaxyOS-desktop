@@ -1,7 +1,7 @@
 # 🌌 GalaxyOS — 认知增强引擎
 
 > OpenClaw 的开源认知增强引擎，为 AI Assistant 提供记忆、检索、推理、验证、自进化等全套认知能力
-> 版本: v8.2.0 · 四篇论文方向落地（自适应突触修剪/Titans神经记忆/跨模态绑定/梦境驱动学习）
+> 版本: v8.3.0 · LFM2.5-1.2B ONNX Q4 量化 + 多进程 mmap 共享
 
 ## 总览
 
@@ -237,7 +237,7 @@ GALAXYOS_REPO=. python3 -m galaxyos.engine.unified_entry recall --query "查询"
 
 | 版本 | 文件 | 说明 |
 |------|------|------|
-| **v8.2.0 (最新)** | 2026-06-15 | **自适应突触修剪 + Titans神经记忆 + 跨模态绑定 + 梦境驱动学习** |
+| **v8.3.0 (最新)** | 2026-06-18 | **LFM2.5-1.2B ONNX Q4 量化 + 多进程 mmap 共享内存** |
 | **v8.1.0** | 2026-06-14 | **22方向论文全量实现 + 18新论文模块(~11K行) + 融合架构增强** |
 | **v7.3.2** | — | **GAT 双路径稀疏化 + HNSW 端到端 + 5.8GB 容器适配 + OpenClaw 路径解析** |
 | **v7.3** | — | **全论文模块接入ContextEngine决策链 + session_id全面隔离 + Gateway防塞爆** |
@@ -261,7 +261,20 @@ GALAXYOS_REPO=. python3 -m galaxyos.engine.unified_entry recall --query "查询"
 
 **完整架构文档（含 17 层全景图、470+ 功能列表、更新日志）：** 👉 [📖 查看 Skills 文档栏](https://cnb.cool/llm-memory-integrat/GalaxyOS?tabValue=SKILLS-ov-file)
 
-### v8.2.0 新特性 (自适应突触修剪 + Titans神经记忆 + 跨模态绑定 + 梦境驱动学习)
+### v8.3.0 新特性 (LFM2.5-1.2B ONNX Q4 量化 + 多进程 mmap 共享)
+
+- **LFM 模型：torch bf16 → ONNX Runtime Q4**
+  - 2.2GB safetensors → 811MB ONNX，mmap 多进程共享物理页
+  - embed_text / generate 接口保持不变
+  - tokenizers 直读分词器，启动从十几秒秒级完成
+- **内存优化**
+  - 双 worker 物理增量从 ~2.2GB → ~0.8GB
+  - available 从 ~1.5GB → ~3.1GB，OOM 风险基本消除
+- **安装向导同步更新**
+  - `--download-lfm` 改为下载 ONNX Q4 版（~811MB vs 2.2GB）
+  - 兼容检测旧版 safetensors 并提示迁移
+
+#### v8.2.0 新特性 (自适应突触修剪 + Titans神经记忆 + 跨模态绑定 + 梦境驱动学习)
 
 **核心更新**: 四个论文方向全部落地，巩固引擎从被动等待升级为在线主动学习。
 
