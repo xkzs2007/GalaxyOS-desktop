@@ -4344,5 +4344,150 @@ export default function register(api) {
     // 不再需要独立 ZMQ SUB — 统一由事件循环处理 rccam_phase + gap 检测 + 自动重连
     // ==========================================
 
-    api.logger.info?.(`${TAG} v4 plugin registration complete: 6 tools + 1 hook + context-engine + rccam-pipeline + 通信自发现 (worker=${workerEnabled ? "enabled" : "disabled"})`);
+    // ==========================================
+    // MemorySlot — GalaxyOS 作为 OpenClaw 标准记忆后端
+    // 实现 MemorySearchManager 接口并通过 registerMemoryCapability 注册
+    // 使 memory_search / memory_get 工具指向 GalaxyOS 管线
+    // ==========================================
+
+    class GalaxyOSMemorySearchManager {
+        constructor(workspaceDir) {
+            this._workspaceDir = workspaceDir;
+            this._worker = null;
+        }
+
+        _getWorker() {
+            // Lazy resolve worker reference
+            if (!this._worker) {
+                try { this._worker = getWorker(ws); } catch { return null; }
+            }
+            return this._worker;
+        }
+
+        async search(query, opts = {}) {
+            const worker = this._getWorker();
+            if (!worker || !worker.ready) {
+                return [];
+            }
+            try {
+                const maxResults = opts.maxResults || 10;
+                const minScore = opts.minScore || 0.0;
+                const sources = opts.sources || undefined;
+
+                const result = await worker.call("memory_search", {
+                    query,
+                    max_results: maxResults,
+                    min_score: minScore,
+                    sources,
+                }, 15000);
+
+                if (result && result.results && Array.isArray(result.results)) {
+                    return result.results;
+                }
+                if (result && result.error) {
+                    api.logger.warn?.(`${TAG} [memory-slot] search error: ${result.error}`);
+                }
+                return [];
+            } catch (err) {
+                api.logger.warn?.(`${TAG} [memory-slot] search failed: ${err.message}`);
+                return [];
+            }
+        }
+
+        async readFile({ relPath, from, lines }) {
+            try {
+                const fullPath = path.join(ws, relPath);
+                if (!existsSync(fullPath)) {
+                    return { content: "", fromLine: from || 1, lineCount: 0 };
+                }
+                const content = readFileSync(fullPath, "utf-8");
+                const allLines = content.split("\n");
+                const startLine = Math.max(0, (from || 1) - 1);
+                const lineCount = lines ? Math.min(lines, allLines.length - startLine) : allLines.length - startLine;
+                const excerpt = allLines.slice(startLine, startLine + lineCount).join("\n");
+                return {
+                    content: excerpt,
+                    fromLine: startLine + 1,
+                    lineCount,
+                };
+            } catch (err) {
+                api.logger.warn?.(`${TAG} [memory-slot] readFile failed: ${err.message}`);
+                return { content: "", fromLine: from || 1, lineCount: 0, error: err.message };
+            }
+        }
+
+        status() {
+            const worker = this._getWorker();
+            const workerOk = worker && worker.ready;
+            return {
+                backend: "galaxyos",
+                provider: workerOk ? "galaxyos-neural" : "unavailable",
+                model: "galaxyos-crag-pipeline",
+                fallback: "disabled",
+                workspaceDir: this._workspaceDir,
+                workerReady: workerOk,
+            };
+        }
+
+        async close() {
+            this._worker = null;
+        }
+
+        async sync(params) {
+            // GalaxyOS has its own ingest pipeline — no-op here
+        }
+    }
+
+    api.registerMemoryCapability({
+        runtime: {
+            getMemorySearchManager: async () => {
+                const manager = new GalaxyOSMemorySearchManager(ws);
+                return { manager };
+            },
+            resolveMemoryBackendConfig: () => ({
+                backend: "builtin",
+            }),
+            closeAllMemorySearchManagers: async () => {
+                // GalaxyOS workers manage their own lifecycle
+            },
+        },
+        promptBuilder: ({ availableTools }) => {
+            const lines = ["## Memory Recall"];
+            if (availableTools.has("memory_search")) {
+                lines.push("Before answering about prior work, decisions, dates, people, preferences, or todos: run memory_search on MEMORY.md + memory/*.md + indexed session transcripts; then use memory_get to pull only the needed lines. If low confidence after search, say you checked.");
+            } else if (availableTools.has("claw_recall")) {
+                lines.push("Before answering about prior work, decisions, dates, people, preferences, or todos: run claw_recall to search the GalaxyOS neural memory pipeline.");
+            } else {
+                lines.push("Memory search is unavailable — answer based on available context.");
+            }
+            lines.push("");
+            return lines;
+        },
+        flushPlanResolver: ({ cfg, nowMs }) => {
+            const date = new Date(nowMs || Date.now());
+            const y = date.getFullYear();
+            const m = String(date.getMonth() + 1).padStart(2, "0");
+            const d = String(date.getDate()).padStart(2, "0");
+            const dateStamp = `${y}-${m}-${d}`;
+            return {
+                softThresholdTokens: 4000,
+                forceFlushTranscriptBytes: 2097152,
+                reserveTokensFloor: 20000,
+                prompt: [
+                    "Pre-compaction memory flush.",
+                    `Store durable memories only in memory/${dateStamp}.md (create memory/ if needed).`,
+                    "If memory/YYYY-MM-DD.md already exists, APPEND new content only and do not overwrite existing entries.",
+                    "Treat workspace bootstrap/reference files such as MEMORY.md, DREAMS.md, SOUL.md, TOOLS.md, and AGENTS.md as read-only during this flush; never overwrite, replace, or edit them.",
+                    "Do NOT create timestamped variant files (e.g., YYYY-MM-DD-HHMM.md); always use the canonical YYYY-MM-DD.md filename.",
+                    "",
+                ].join(" "),
+                systemPrompt: "Pre-compaction memory flush turn. The session is near auto-compaction; capture durable memories to disk. " +
+                    `Store durable memories only in memory/${dateStamp}.md. ` +
+                    "If memory/YYYY-MM-DD.md already exists, APPEND new content only.",
+                relativePath: `memory/${dateStamp}.md`,
+            };
+        },
+    });
+
+    api.logger.info?.(`${TAG} v4 plugin registration complete: 6 tools + 4 hooks + context-engine + memory-slot + rccam-pipeline + 通信自发现 (worker=${workerEnabled ? "enabled" : "disabled"})`);
 }

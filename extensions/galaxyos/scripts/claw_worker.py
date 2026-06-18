@@ -658,71 +658,53 @@ class ClawWorker:
         return {"ok": True, "uptime_s": round(time.time() - self._init_time, 1)}
 
     def health(self, _p: dict) -> dict:
-        self._ensure()
-        try:
-            result = self._entry.health_check()
-            # 叠加实时系统状态
-            _healthy = True
-            _issues = []
+        # ⚡ 轻量健康检查：不做 _ensure()（避免 ONNX 加载超时）
+        # 如果已经初始化，可以获取深层信息；否则只做系统级检查
+        _healthy = True
+        _issues = []
+        _components = {}
+        _entry_ready = self._entry is not None
 
-            # 检查 DAG 可用性
+        if _entry_ready:
             try:
-                _dag = self._get_dag()
-                _dag_ping = _dag.get_all_session_keys() if _dag else []
-                _dag_ok = len(_dag_ping) > 0
-            except:
-                _dag_ok = False
-                _issues.append('dag_unavailable')
+                result = self._entry.health_check()
+                _components = result.get('components', {})
+            except Exception:
+                _components = {'unified_entry': {'healthy': False}}
+                _issues.append('unified_entry_error')
                 _healthy = False
+        else:
+            _components['xiaoyi_claw'] = {'healthy': False, 'note': '延迟初始化（轻量模式）'}
+            _components['coordinator'] = {'healthy': False, 'note': '延迟初始化（轻量模式）'}
+            _components['workflow_engine'] = {'healthy': False, 'note': '延迟初始化（轻量模式）'}
 
-            # 检查最近 R-CCAM 活动（5 分钟内）
-            _rccam_recent = (time.time() - getattr(self, '_last_rccam_ts', 0)) < 300 if hasattr(self, '_last_rccam_ts') else False
+        # 检查 Worker 连通性（轻量：看 socket 文件存在）
+        _var_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'var')
+        _sock_files = [f for f in os.listdir(_var_dir) if f.endswith('.sock')] if os.path.isdir(_var_dir) else []
+        _dag_ok = len(_sock_files) > 0
 
-            # 检查突触网络
-            _synapse_ok = False
-            _synapse_stats = {'total_neurons': 0, 'total_synapses': 0}
-            try:
-                from memory_synapse_network import SynapseNetwork
-                _sn = SynapseNetwork(workspace_path=WORKSPACE)
-                _nrn = len(_sn._neurons_cache)
-                _syn = len(_sn._synapses_cache)
-                _synapse_stats = {'total_neurons': _nrn, 'total_synapses': _syn}
-                _synapse_ok = _nrn > 0
-            except:
-                pass
+        # 检查最近 R-CCAM 活动（5 分钟内）
+        _rccam_recent = (time.time() - getattr(self, '_last_rccam_ts', 0)) < 300 if hasattr(self, '_last_rccam_ts') else False
 
-            result.update({
-                'healthy': _healthy and not _issues,
-                'issues': _issues,
-                'dag_available': _dag_ok,
-                'rccam_recent_5m': _rccam_recent,
-                'synapse_network': _synapse_stats,
-                'vector_api': self._get_vector_api_status(),
-                'worker_uptime_s': self._uptime_s() if hasattr(self, '_uptime_s') else 0,
-                'pid': os.getpid(),
-            })
-            return result
-        except AttributeError:
-            # 兜底：返回真实组件状态
-            _real_healthy = False
-            _real_issues = ['unified_entry_unavailable']
-            try:
-                _real_healthy = os.path.exists(os.path.join(WORKSPACE, '.learnings'))
-            except:
-                pass
-            return {
-                'healthy': _real_healthy and not _real_issues,
-                'issues': _real_issues,
-                'components': {
-                    'unified_entry': {'healthy': False},
-                    'worker': {
-                        'healthy': True,
-                        'uptime_s': self._uptime_s() if hasattr(self, '_uptime_s') else 0,
-                    },
-                },
-                'synapse_network': {'total_neurons': 0},
-                'pid': os.getpid(),
-            }
+        # Worker 自身状态
+        _uptime = round(time.time() - self._init_time, 1) if hasattr(self, '_init_time') else 0
+        _components['worker'] = {
+            'healthy': True,
+            'uptime_s': _uptime,
+            'pid': os.getpid(),
+            'entry_initialized': _entry_ready,
+        }
+
+        return {
+            'healthy': _healthy and not _issues,
+            'issues': _issues,
+            'components': _components,
+            'dag_available': _dag_ok,
+            'rccam_recent_5m': _rccam_recent,
+            'vector_api': self._get_vector_api_status() if hasattr(self, '_get_vector_api_status') else {'status': '轻量模式'},
+            'worker_uptime_s': _uptime,
+            'pid': os.getpid(),
+        }
 
     def recall(self, p: dict) -> dict:
         self._ensure()
@@ -798,6 +780,58 @@ class ClawWorker:
                     "original_len": len(content)}
         except Exception as e:
             return {"compressed": "", "error": str(e)}
+
+    def memory_search(self, p: dict) -> dict:
+        """OpenClaw standard memory_search interface.
+
+        Converts GalaxyOS retrieval results to OpenClaw MemorySearchResult format:
+          {corpus, path, score, snippet, ...}
+
+        The Plugin (index.js) MemorySearchManager.search() calls this via UDS.
+        """
+        query = p.get("query", "")
+        max_results = p.get("max_results", 10) or 10
+        min_score = p.get("min_score", 0.0) or 0.0
+        sources = p.get("sources", None)  # ["memory"] | ["sessions"] | None
+        if not query:
+            return {"results": [], "error": "empty query"}
+        try:
+            # Use smart_retrieval as the actual retrieval backend
+            result = self.smart_retrieval({"query": query, "top_k": max_results})
+            if not result.get("success"):
+                return {"results": [], "error": result.get("error", "retrieval failed")}
+            raw_results = result.get("results", [])
+            # Filter by min_score and convert to OpenClaw format
+            openclaw_results = []
+            for item in raw_results:
+                score = item.get("score", 0.0) or 0.0
+                if score < min_score:
+                    continue
+                content_type = item.get("_content_type", "unknown")
+                source_tag = item.get("source", "memory")
+                snippet = item.get("content", item.get("text", "")) or ""
+                if isinstance(snippet, str):
+                    snippet = snippet[:500]
+                else:
+                    snippet = str(snippet)[:500]
+                # Build a stable path: memory/{session_id}_{idx}.md for conversation, or file path
+                file_id = item.get("id", item.get("path", "")) or ""
+                path_val = f"memory/{file_id}" if file_id else "memory/recall_result"
+                openclaw_results.append({
+                    "corpus": "memory",
+                    "path": path_val,
+                    "title": item.get("title", "") or "",
+                    "kind": content_type,
+                    "score": score,
+                    "snippet": snippet,
+                    "id": file_id or path_val,
+                    "source": source_tag,
+                })
+            # Sort by score descending
+            openclaw_results.sort(key=lambda x: x["score"], reverse=True)
+            return {"results": openclaw_results[:max_results]}
+        except Exception as e:
+            return {"results": [], "error": str(e)}
 
     def store(self, p: dict) -> dict:
         self._ensure()
@@ -1894,6 +1928,7 @@ def _init_methods(worker):
         "get_status": worker.get_status,
         "smart_process": worker.smart_process,
         "dag_search": _dag_search,
+        "memory_search": worker.memory_search,
         "smart_retrieval": worker.smart_retrieval,
         "save_memory": worker.save_memory,
         "vector_info": worker.vector_info,
@@ -2140,7 +2175,7 @@ _REST_ROUTES = {
     "/call_module":            ("call_module",      ["POST"]),
     "/rccam_compact_cycle":    ("rccam_compact_cycle",["POST"]),
     "/expand_rccam_cycle":     ("expand_rccam_cycle",["POST"]),
-    "/cognitive_compress_dag": ("cognitive_compress_dag",["POST"]),
+    "/cognitive_compress_dag": ("cognitive_compress_dag",["POST"]), 
     "/verify_reply_style":     ("verify_reply_style",["POST"]),
 }
 

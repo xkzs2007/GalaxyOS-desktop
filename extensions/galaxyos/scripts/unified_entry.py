@@ -25,8 +25,8 @@ logger = logging.getLogger(__name__)
 from _rails import rail, RailScope, setup_permission_context, PermissionContext, cleanup_permission_context
 
 # 路径配置
-SKILL_ROOT = Path(__file__).parent.parent  # skills/xiaoyi-claw-omega-final/
-WORKSPACE_ROOT = SKILL_ROOT.parent  # skills/
+SKILL_ROOT = Path(__file__).parent.parent  # 运行时可能是 extensions/galaxyos/ 或 skills/xiaoyi-claw-omega-final/
+WORKSPACE_ROOT = SKILL_ROOT.parent
 CORE_DIR = SKILL_ROOT / "skills/llm-memory-integration/core"
 ORCHESTRATION_DIR = SKILL_ROOT / "orchestration"
 CONFIG_DIR = SKILL_ROOT / "config"
@@ -38,6 +38,14 @@ sys.path.insert(0, str(CORE_DIR))
 sys.path.insert(0, str(ORCHESTRATION_DIR))
 sys.path.insert(0, str(SCRIPTS_DIR))
 sys.path.insert(0, str(LLM_INTEGRATION_SRC))
+
+# ═══ 路径兜底：从 extensions/galaxyos/ 运行时，ORCHESTRATION_DIR 指向 skills 下的实际位置 ═══
+if not os.path.isdir(str(ORCHESTRATION_DIR)):
+    _alt_orchestration = Path(os.path.expanduser(
+        os.environ.get("OPENCLAW_HOME", "~/.openclaw"))) / "workspace" / "skills" / "xiaoyi-claw-omega-final" / "orchestration"
+    if _alt_orchestration.is_dir():
+        sys.path.insert(0, str(_alt_orchestration))
+        logger.info(f"路径兜底: ORCHESTRATION_DIR → {_alt_orchestration}")
 
 # 导入核心模块 — 统一入口：XiaoYiClawLLM
 try:

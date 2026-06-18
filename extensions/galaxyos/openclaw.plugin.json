@@ -14,7 +14,9 @@
       "claw_rccam",
       "claw_events",
       "claw_save_memory",
-      
+      "claw_compile_skill",
+      "claw_asset_search",
+      "claw_asset_register",
       "claw_vector_info"
     ]
   },
@@ -77,46 +79,105 @@
             "type": "object",
             "description": "DAG 情景记忆（SQLite 持久化，摘要节点回溯）",
             "properties": {
-              "enabled": { "type": "boolean", "default": true },
-              "maxNodes": { "type": "number", "default": 10000, "description": "DAG 最大节点数" },
-              "retentionDays": { "type": "number", "default": 90, "description": "DAG 节点保留天数" }
+              "enabled": {
+                "type": "boolean",
+                "default": true
+              },
+              "maxNodes": {
+                "type": "number",
+                "default": 10000,
+                "description": "DAG 最大节点数"
+              },
+              "retentionDays": {
+                "type": "number",
+                "default": 90,
+                "description": "DAG 节点保留天数"
+              }
             }
           },
           "verified": {
             "type": "object",
             "description": "已验证记忆（verified_memories.jsonl，高置信度持久存储）",
             "properties": {
-              "enabled": { "type": "boolean", "default": true },
-              "minConfidence": { "type": "number", "default": 0.8, "description": "最低验证置信度阈值" },
-              "maxEntries": { "type": "number", "default": 5000, "description": "最大条目数" }
+              "enabled": {
+                "type": "boolean",
+                "default": true
+              },
+              "minConfidence": {
+                "type": "number",
+                "default": 0.8,
+                "description": "最低验证置信度阈值"
+              },
+              "maxEntries": {
+                "type": "number",
+                "default": 5000,
+                "description": "最大条目数"
+              }
             }
           },
           "neural": {
             "type": "object",
             "description": "神经记忆（MN-RU HNSW 增量索引 + GAT/CfC 检索）",
             "properties": {
-              "enabled": { "type": "boolean", "default": true },
-              "hnswM": { "type": "number", "default": 16, "description": "HNSW M 参数（连接数）" },
-              "hnswEfConstruction": { "type": "number", "default": 200, "description": "HNSW 构建搜索宽度" },
-              "hnswEfSearch": { "type": "number", "default": 100, "description": "HNSW 检索搜索宽度" }
+              "enabled": {
+                "type": "boolean",
+                "default": true
+              },
+              "hnswM": {
+                "type": "number",
+                "default": 16,
+                "description": "HNSW M 参数（连接数）"
+              },
+              "hnswEfConstruction": {
+                "type": "number",
+                "default": 200,
+                "description": "HNSW 构建搜索宽度"
+              },
+              "hnswEfSearch": {
+                "type": "number",
+                "default": 100,
+                "description": "HNSW 检索搜索宽度"
+              }
             }
           },
           "synapse": {
             "type": "object",
             "description": "突触网络（GAT/SparseGAT 注意力权重 — LTP/LTD 可塑）",
             "properties": {
-              "enabled": { "type": "boolean", "default": true },
-              "baseWeight": { "type": "number", "default": 0.5, "description": "新突触初始权重" },
-              "ltpRate": { "type": "number", "default": 0.05, "description": "长时程增强速率" },
-              "ltdRate": { "type": "number", "default": 0.03, "description": "长时程抑制速率" }
+              "enabled": {
+                "type": "boolean",
+                "default": true
+              },
+              "baseWeight": {
+                "type": "number",
+                "default": 0.5,
+                "description": "新突触初始权重"
+              },
+              "ltpRate": {
+                "type": "number",
+                "default": 0.05,
+                "description": "长时程增强速率"
+              },
+              "ltdRate": {
+                "type": "number",
+                "default": 0.03,
+                "description": "长时程抑制速率"
+              }
             }
           },
           "temporal": {
             "type": "object",
             "description": "时序知识图谱（TKG — temporal_kg.db）",
             "properties": {
-              "enabled": { "type": "boolean", "default": true },
-              "decayHalfLife": { "type": "number", "default": 30, "description": "时间衰减半衰期（天）" }
+              "enabled": {
+                "type": "boolean",
+                "default": true
+              },
+              "decayHalfLife": {
+                "type": "number",
+                "default": 30,
+                "description": "时间衰减半衰期（天）"
+              }
             }
           }
         }
@@ -162,7 +223,10 @@
     }
   },
   "main": "plugin-bootstrap.cjs",
-  "mainFallback": ["dist/index.js", "index.js"],
+  "mainFallback": [
+    "dist/index.js",
+    "index.js"
+  ],
   "kind": [
     "context-engine",
     "memory"
