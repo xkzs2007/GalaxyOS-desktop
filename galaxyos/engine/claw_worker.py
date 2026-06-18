@@ -610,21 +610,19 @@ class ClawWorker:
                 # 触发一次健康检查，让模块懒加载
                 self._entry.health_check()
                 
-                # 预加载 LFM2.5-1.2B 模型到内存（神经网络常驻）
+                # 预加载 LFM2.5-1.2B-ONNX Q4（神经网络常驻, mmap 共享）
                 try:
-                    sys.stderr.write("[claw-worker] 预加载 LFM2.5-1.2B-Thinking...\n")
+                    sys.stderr.write("[claw-worker] 预加载 LFM2.5-1.2B-ONNX Q4...\n")
                     _t0 = time.time()
                     from lfm_adaptive_operator import RealLFMNetwork
                     _lfm = RealLFMNetwork()
                     _lfm._ensure()
-                    # 触发一次 embedding 让模型完全预热（+ KV cache init）
                     _lfm.embed_text("预热")
                     _t1 = time.time()
-                    # 赋值到 self 防止 GC
                     self._lfm_preloaded = _lfm
-                    sys.stderr.write(f"[claw-worker] LFM2.5-1.2B 预加载完成 ({_t1-_t0:.1f}s)\n")
+                    sys.stderr.write(f"[claw-worker] LFM2.5-1.2B-ONNX Q4 加载完成 ({_t1-_t0:.1f}s)\n")
                 except Exception as _e:
-                    sys.stderr.write(f"[claw-worker] LFM 预加载跳过: {_e}\n")
+                    sys.stderr.write(f"[claw-worker] LFM ONNX 预加载跳过: {_e}\n")
                     self._lfm_preloaded = None
                 
                 self._load_hardware()

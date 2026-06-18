@@ -12,7 +12,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="galaxyos",
-    version="8.2.12",
+    version="8.3.0",
 
     description="GalaxyOS — 小艺 Claw 核心认知增强引擎 (unified package)",
     long_description=open("README.md", encoding="utf-8").read(),
@@ -49,14 +49,18 @@ setup(
         "jieba>=0.42.0",
         "snownlp>=0.12.0",
         "tiktoken>=0.5.0",
+        # Tokenizer（ONNX 文字编码）
+        "tokenizers>=0.20.0",
         # 异步
         "uvloop>=0.19.0",
+        # 系统监控
+        "psutil>=5.9.0",
         # ML/DL
         "scikit-learn>=1.3.0",
         "onnxruntime>=1.15.0",
         "torch>=2.0.0",
-        # 系统
-        "psutil>=5.9.0",
+        "transformers>=4.44.0",
+
         # LLM API 调用
         "openai>=1.0.0",
         # 神经电路策略 (NCPs)

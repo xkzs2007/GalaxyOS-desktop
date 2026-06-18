@@ -643,189 +643,249 @@ class LFMWithVision(AdaptiveLinearOperator):
 
 class RealLFMNetwork:
     """
-    LFM2.5-1.2B-Thinking 真实权重包装器 — 替代随机权重的 LFMNetwork
+    LFM2.5-1.2B-Thinking ONNX Runtime 版 — 替代 torch bf16 加载
     
-    加载 HuggingFace 上的 LiquidAI/LFM2.5-1.2B-Thinking，
-    提供兼容 LFMNetwork 的接口（forward + get_info），
-    但实际使用 bf16 Transformer 推理而非 NumPy 算子。
+    使用 LiquidAI 官方导出的 Q4 ONNX 模型（~1.2GB @ 811MB），
+    ONNX Runtime 通过 mmap 加载，同一文件被多进程打开时
+    OS 内核级共享物理页，实现真正的共享内存。
+    
+    兼容原 RealLFMNetwork 的接口（forward / embed_text / generate / get_info），
+    但底层用 onnxruntime 推理，不拖 torch 全家桶。
     """
-    
-    _MODEL_PATH = '/home/sandbox/.openclaw/workspace/models/LFM2.5-1.2B'
-    
+
+    _MODEL_DIR = '/home/sandbox/.openclaw/workspace/models/LFM2.5-1.2B-ONNX'
+    _ONNX_PATH = '/home/sandbox/.openclaw/workspace/models/LFM2.5-1.2B-ONNX/onnx/model_q4.onnx'
+    _HIDDEN_DIM = 2048          # hidden_size from config.json
+    _NUM_LAYERS = 16            # num_hidden_layers
+    _NUM_KV_HEADS = 8           # num_key_value_heads
+    _HEAD_DIM = 64              # hidden_size / num_attention_heads
+    _VOCAB_SIZE = 65536
+    _EOS_ID = 7                 # eos_token_id from config.json
+    _BOS_ID = 1                 # bos_token_id
+    _PAD_ID = 0                 # pad_token_id
+
     def __init__(self, config: 'LFMConfig' = None):
-        self._model = None
+        self._sess = None
         self._tokenizer = None
         self.config = config or LFMConfig(hidden_dim=256, num_layers=16)
         self._loaded = False
-    
-    def _ensure(self):
+        self._fail_reason = ""
+
+    def _ensure(self) -> bool:
+        """延迟加载 ONNX Session + Tokenizer"""
         if self._loaded:
             return True
         try:
-            import torch
-            from transformers import AutoModelForCausalLM, AutoTokenizer
-            logger.info(f"RealLFMNetwork 加载真实权重: {self._MODEL_PATH}")
-            self._tokenizer = AutoTokenizer.from_pretrained(self._MODEL_PATH)
-            self._model = AutoModelForCausalLM.from_pretrained(
-                self._MODEL_PATH,
-                dtype=torch.bfloat16,
+            from tokenizers import Tokenizer
+            import onnxruntime as ort
+            import os
+
+            # Tokenizer —— 用 tokenizers 直读，绕开 transformers 的慢加载
+            tok_path = os.path.join(self._MODEL_DIR, 'tokenizer.json')
+            if not os.path.exists(tok_path):
+                raise FileNotFoundError(f"tokenizer.json 不存在: {tok_path}")
+            self._tokenizer = Tokenizer.from_file(tok_path)
+
+            # ONNX Runtime session —— mmap 加载，多进程共享物理页
+            if not os.path.exists(self._ONNX_PATH):
+                raise FileNotFoundError(f"ONNX 模型不存在: {self._ONNX_PATH}")
+            opts = ort.SessionOptions()
+            opts.enable_mem_pattern = False       # 减少内存碎片
+            opts.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+            opts.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
+            self._sess = ort.InferenceSession(
+                self._ONNX_PATH, opts,
+                providers=["CPUExecutionProvider"]
             )
-            self._model.eval()
+
+            # 索引 KV cache 输入/输出名（减少推理时查找开销）
+            self._inp_names = {inp.name: inp for inp in self._sess.get_inputs()}
+            self._out_names = [out.name for out in self._sess.get_outputs()]
+            self._cache_in_names = [
+                n for n in self._inp_names
+                if n not in {"input_ids", "attention_mask", "position_ids"}
+            ]
+            self._conv_out_names = [n for n in self._out_names if "_conv." in n]
+            self._attn_out_names = [n for n in self._out_names
+                                    if ("present." in n and "." in n.split(".")[1])]
+            # 最后是 conv layer 15 或 attention layer 14（取决于架构）
+            # LFM2 的 layer_types: conv(0,1), attn(2), conv(3,4), attn(5)...
+            # 最后层是 conv (layer 15)，输出 present_conv.15
+
             self._loaded = True
-            n_params = sum(p.numel() for p in self._model.parameters())
-            logger.info(f"RealLFMNetwork 加载完成 ({n_params/1e6:.0f}M params)")
+            logger.info(f"RealLFMNetwork ONNX Q4 加载完成 "
+                        f"(mmap共享, {self._MODEL_DIR})")
             return True
+
         except Exception as e:
-            logger.warning(f"RealLFMNetwork 加载失败: {e}")
-            self._loaded = True  # 标记尝试过，不再重试
+            self._fail_reason = str(e)
+            logger.warning(f"RealLFMNetwork(ONNX) 加载失败: {e}")
+            self._loaded = True  # 标记已尝试，不再重试
             return False
-    
+
+    # ── 缓存管理 ──
+
+    @staticmethod
+    def _make_cache(sess) -> dict:
+        """构建空的 KV cache（初始推理用）"""
+        cache = {}
+        for inp in sess.get_inputs():
+            if inp.name in {"input_ids", "attention_mask", "position_ids"}:
+                continue
+            shape = [d if isinstance(d, int) else 1 for d in inp.shape]
+            for i, d in enumerate(inp.shape):
+                if isinstance(d, str) and "sequence" in d.lower():
+                    shape[i] = 0
+            dtype = np.float32 if "float" in inp.type else np.int64
+            cache[inp.name] = np.zeros(shape, dtype=dtype)
+        return cache
+
+    @staticmethod
+    def _update_cache(outputs, out_names, cache: dict):
+        """更新 KV cache：outputs 中的 present_* → past_*"""
+        for name, arr in zip(out_names, outputs):
+            if name.startswith("present"):
+                past_name = name.replace("present", "past", 1)
+                # present_conv.0 → past_conv.0, present.2.value → past_key_values.2.value
+                if "_conv." in name:
+                    past_name = name.replace("present_conv", "past_conv")
+                else:
+                    # present.2.key → past_key_values.2.key
+                    past_name = name.replace("present.", "past_key_values.", 1)
+                if past_name in cache:
+                    cache[past_name] = arr
+
     def forward(self, x, causal_mask=False, return_hidden=False):
-        """兼容 LFMNetwork 的 forward 接口
-        
-        如果 x 是 numpy array → 走兼容路径（返回零张量）
-        如果 x 是字符串 → 走真实推理（返回隐状态 norm）
-        """
         if isinstance(x, str):
             return self._forward_text(x)
-        # NumPy 兼容路径：返回与输入同 shape 的零数组
         if not self._ensure():
             return np.zeros_like(x) if isinstance(x, np.ndarray) else x
+        # NumPy 兼容路径
+        return np.zeros_like(x) if isinstance(x, np.ndarray) else x
+
+    # ── 编码（embed_text 核心） ──
+
+    def _encode(self, text: str) -> Optional[np.ndarray]:
+        """对文本做单次前向，返回最后层 conv state mean pool"""
+        if not self._ensure():
+            return None
         try:
-            import torch
-            import numpy as np
-            # 用真实模型处理：将输入展平送入 tokenizer？不行，维度不匹配
-            # 这里是随机权重兼容路径，返回近似零输出
-            return np.zeros_like(x) if isinstance(x, np.ndarray) else x
-        except Exception:
-            return x
-    
+            enc = self._tokenizer.encode(text)
+            ids = [t for t in enc.ids if t != self._BOS_ID]  # 不手动加 BOS
+            if not ids:
+                return None
+            input_ids = np.array([ids], dtype=np.int64)
+            seq_len = input_ids.shape[1]
+            attn_mask = np.ones((1, seq_len), dtype=np.int64)
+            cache = self._make_cache(self._sess)
+            feed = {"input_ids": input_ids, "attention_mask": attn_mask, **cache}
+            outputs = self._sess.run(None, feed)
+
+            # 最后层 conv state (present_conv.15 或 present.14.value)
+            # LFM2 第 16 层(layer 15)是 conv → present_conv.15
+            conv15_idx = self._out_names.index("present_conv.15")
+            conv15 = outputs[conv15_idx]  # [1, 2048, 3]
+            emb = conv15[0].mean(axis=-1)  # (2048,) float32
+            return emb
+
+        except Exception as e:
+            logger.debug(f"RealLFMNetwork._encode 失败: {e}")
+            return None
+
+    # ── embed_text ──
+
+    def embed_text(self, text: str) -> Optional[np.ndarray]:
+        """返回文本 embedding (2048,) float32
+        
+        用 ONNX 最后层 conv state (present_conv.15) 做 mean pooling，
+        替代原 torch 的 hidden_states[-1] mean pooling。
+        """
+        return self._encode(text)
+
+    # ── forward_text（推理统计） ──
+
     def _forward_text(self, text: str) -> Dict:
-        """文本输入的真实推理"""
-        if not self._ensure():
-            return {"reasoning_available": False}
+        """文本输入推理，返回统计信息"""
         try:
-            import torch
-            inputs = self._tokenizer(text, return_tensors='pt')
-            with torch.no_grad():
-                outputs = self._model(**inputs, output_hidden_states=True)
-                hidden = outputs.hidden_states[-1]
-                norm = float(hidden.norm().item())
+            enc = self._tokenizer.encode(text)
+            token_count = len([t for t in enc.ids if t != self._BOS_ID])
+            emb = self._encode(text)
+            if emb is None:
+                return {"reasoning_available": False}
             return {
                 "reasoning_available": True,
-                "embedding_norm": round(norm, 2),
-                "complexity": min(1.0, len(self._tokenizer.encode(text)) / 128.0),
-                "token_count": len(self._tokenizer.encode(text)),
+                "embedding_norm": round(float(np.linalg.norm(emb)), 2),
+                "complexity": min(1.0, token_count / 128.0),
+                "token_count": token_count,
             }
         except Exception as e:
             logger.debug(f"RealLFMNetwork forward_text 失败: {e}")
             return {"reasoning_available": False}
-    
 
-    def embed_text(self, text: str) -> Optional[np.ndarray]:
-        """返回文本的 LFM 隐状态向量（mean pooling，float32）
-        
-        输出: (2048,) numpy 向量（bf16→float32 转换）
-        """
-        if not self._ensure():
-            return None
-        try:
-            import torch
-            import numpy as np
-            inputs = self._tokenizer(text, return_tensors="pt")
-            with torch.no_grad():
-                outputs = self._model(**inputs, output_hidden_states=True)
-                hidden = outputs.hidden_states[-1]  # (1, seq_len, 2048) bf16
-                vec = hidden.float().mean(dim=1).squeeze(0)  # (2048,) float32
-            return vec.cpu().numpy()
-        except Exception as e:
-            logger.debug(f"RealLFMNetwork embed_text 失败: {e}")
-            return None
+    # ── 文本生成 ──
+
     def generate(self, prompt: str, max_new_tokens: int = 128,
                  temperature: float = 0.7) -> str:
-        """真实文本生成"""
+        """ONNX Runtime 自回归生成"""
         if not self._ensure():
             return ""
-
-    # ── LFM → Engram 桥接 ──
-
-    def embed_and_store_engram(self, text: str, engram_memory=None) -> Optional[np.ndarray]:
-        """embed_text + 自动存入 EngramMemory
-
-        Args:
-            text: 输入文本
-            engram_memory: 可选的 EngramMemory 实例
-
-        Returns:
-            (2048,) 向量或 None
-        """
-        emb = self.embed_text(text)
-        if emb is not None and engram_memory is not None:
-            try:
-                engram_memory.remember(text[:256], emb)
-            except Exception:
-                pass
-        return emb
-
-    def embed_with_engram_gate(self, text: str, engram_memory=None) -> Dict:
-        """embed + Engram 门控 — 返回 embedding + gating 信号
-
-        Args:
-            text: 输入文本
-            engram_memory: EngramMemory 实例
-
-        Returns:
-            {"embedding": (2048,), "hit_rate": float, "gate_alpha": float}
-        """
-        emb = self.embed_text(text)
-        hit_rate = 0.0
-        gate_alpha = 0.5
-
-        if emb is not None and engram_memory is not None:
-            try:
-                _, e_stat = engram_memory.lookup(text[:128])
-                hit_rate = e_stat.get("hit_rate", 0.0)
-                gate_alpha = min(1.0, 0.3 + hit_rate * 0.7)
-            except Exception:
-                pass
-
-        return {
-            "embedding": emb,
-            "hit_rate": hit_rate,
-            "gate_alpha": gate_alpha,
-        }
-
         try:
-            import torch
-            inputs = self._tokenizer(prompt, return_tensors='pt')
-            input_len = inputs['input_ids'].shape[1]
-            with torch.no_grad():
-                outputs = self._model.generate(
-                    **inputs,
-                    max_new_tokens=max_new_tokens,
-                    do_sample=True,
-                    temperature=temperature,
-                    pad_token_id=self._tokenizer.eos_token_id,
-                )
-            new_tokens = outputs[0][input_len:]
-            return self._tokenizer.decode(new_tokens, skip_special_tokens=True)
+            enc = self._tokenizer.encode(prompt)
+            ids = [t for t in enc.ids if t != self._BOS_ID]
+            if not ids:
+                return ""
+
+            # Prefill
+            input_ids = np.array([ids], dtype=np.int64)
+            seq_len = input_ids.shape[1]
+            attn_mask = np.ones((1, seq_len), dtype=np.int64)
+            cache = self._make_cache(self._sess)
+            feed = {"input_ids": input_ids, "attention_mask": attn_mask, **cache}
+            outputs = self._sess.run(None, feed)
+            logits = outputs[0]
+            next_token = int(np.argmax(logits[0, -1]))
+            self._update_cache(outputs, self._out_names, cache)
+
+            generated = [next_token]
+            for _ in range(max_new_tokens - 1):
+                if next_token == self._EOS_ID:
+                    break
+                input_ids = np.array([[next_token]], dtype=np.int64)
+                seq_len += 1
+                attn_mask = np.ones((1, seq_len), dtype=np.int64)
+                feed = {"input_ids": input_ids, "attention_mask": attn_mask, **cache}
+                # position_ids 若需要
+                use_pos = self._inp_names.get("position_ids")
+                if use_pos:
+                    pos = seq_len - 1
+                    feed["position_ids"] = np.array([[pos]], dtype=np.int64)
+                outputs = self._sess.run(None, feed)
+                logits = outputs[0]
+                if temperature > 0 and temperature != 1.0:
+                    logits = logits / temperature
+                next_token = int(np.argmax(logits[0, -1]))
+                generated.append(next_token)
+                self._update_cache(outputs, self._out_names, cache)
+
+            raw = self._tokenizer.decode(generated, skip_special_tokens=True)
+            return raw
+
         except Exception as e:
             logger.debug(f"RealLFMNetwork generate 失败: {e}")
             return ""
-    
+
     def get_info(self) -> Dict:
         """模型信息"""
-        info = {
+        return {
             "model": "LFM2.5-1.2B-Thinking",
-            "source": "HuggingFace LiquidAI/LFM2.5-1.2B-Thinking",
-            "loaded": self._loaded and self._model is not None,
-            "params_m": 0,
-            "dim": self.config.hidden_dim,
-            "num_layers": self.config.num_layers,
+            "backend": "onnxruntime(Q4)",
+            "loaded": self._loaded and self._sess is not None,
+            "dim": self._HIDDEN_DIM,
+            "num_layers": self._NUM_LAYERS,
+            "quantization": "Q4",
+            "shared_memory": True,
+            "fail_reason": self._fail_reason if self._fail_reason else None,
         }
-        if self._model is not None:
-            info["params_m"] = round(sum(p.numel() for p in self._model.parameters()) / 1e6, 1)
-        return info
 
 
 def test_adaptive_linear_operator():

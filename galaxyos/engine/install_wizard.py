@@ -14,7 +14,7 @@ GalaxyOS — 安装向导 + 配置向导
   python3 install_wizard.py --kg-test       # 知识图谱功能专项测试
   python3 install_wizard.py --all            # 全量模式（体检 + 睡眠测试 + 修复）
   python3 install_wizard.py --update         # 增量更新：版本检测 + 仅同步变更，保护已有配置
-  python3 install_wizard.py --download-lfm  # 下载 LFM2.5-1.2B-Thinking 真实权重（~2.2GB）
+  python3 install_wizard.py --download-lfm  # 下载 LFM2.5-1.2B-Thinking-ONNX Q4（~811MB）
   python3 install_wizard.py --setup-rust     # 安装 Rust 工具链（国内镜像，ARM64/x86_64自动识别）
   python3 install_wizard.py --check --hardware  # 仅硬件/设备环境检测
 """
@@ -2008,31 +2008,45 @@ def _write_version_marker(version: str):
 # ════════════════════════════════════════════════════════════════
 
 def check_lfm_weights() -> Dict[str, Any]:
-    """检查 LFM2.5-1.2B-Thinking 真实权重是否存在"""
-    heading("🧠 模块检查：LFM2.5 真实权重")
+    """检查 LFM2.5-1.2B-Thinking-ONNX Q4 权重是否存在"""
+    heading("🧠 模块检查：LFM2.5 ONNX Q4 权重")
     results = {"present": False, "size_mb": 0, "model_path": ""}
     
     candidates = [
-        WORKSPACE / "models" / "LFM2.5-1.2B",
-        WORKSPACE / "skills" / "xiaoyi-claw-omega-final" / "models" / "LFM2.5-1.2B",
+        WORKSPACE / "models" / "LFM2.5-1.2B-ONNX",
     ]
     for mp in candidates:
-        weights = mp / "model.safetensors"
-        if weights.exists():
+        onnx_file = mp / "onnx" / "model_q4.onnx"
+        data_file = mp / "onnx" / "model_q4.onnx_data"
+        if onnx_file.exists() and data_file.exists():
             results["present"] = True
             results["model_path"] = str(mp)
-            size = weights.stat().st_size
+            size = data_file.stat().st_size + onnx_file.stat().st_size
             results["size_mb"] = round(size / 1024 / 1024, 1)
-            results["size_gb"] = round(size / 1024 / 1024 / 1024, 2)
-            ok(f"LFM2.5-1.2B 实际权重: {results['size_mb']} MB")
-            # 检查额外文件
-            for extra in ["config.json", "tokenizer.json", "generation_config.json"]:
+            ok(f"LFM2.5-1.2B ONNX Q4 权重: {results['size_mb']} MB")
+            for extra in ["config.json", "tokenizer.json", "tokenizer_config.json"]:
                 if (mp / extra).exists():
                     results[f"has_{extra.replace('.', '_')}"] = True
             return results
     
-    warn("LFM2.5-1.2B 权重未下载（管线 2 将降级到随机 NumPy）", indent=1)
-    info("使用 --download-lfm 一键下载", indent=2)
+    # 还检查旧版 safetensors（兼容迁移）
+    old_candidates = [
+        WORKSPACE / "models" / "LFM2.5-1.2B",
+    ]
+    for mp in old_candidates:
+        weights = mp / "model.safetensors"
+        if weights.exists():
+            results["present"] = True
+            results["model_path"] = str(mp)
+            results["needs_migration"] = True
+            size = weights.stat().st_size
+            results["size_mb"] = round(size / 1024 / 1024, 1)
+            warn(f"旧版 safetensors 权重 ({results['size_mb']} MB)，建议迁移到 ONNX Q4", indent=1)
+            info("运行 --download-lfm 自动迁移（保留旧目录）", indent=2)
+            return results
+    
+    warn("LFM2.5-1.2B-ONNX Q4 权重未下载（管线 2 将降级到随机 NumPy）", indent=1)
+    info("使用 --download-lfm 一键下载（~811MB, ONNX Runtime, mmap 共享）", indent=2)
     return results
 
 
@@ -2062,43 +2076,61 @@ def _download_hf_file(url: str, dst: Path, desc: str = "") -> bool:
         return False
 
 
-LFM_MODEL_FILES = [
-    ("https://hf-mirror.com/LiquidAI/LFM2.5-1.2B-Thinking/resolve/main/model.safetensors", "model.safetensors", "权重文件(2.2GB)"),
-    ("https://hf-mirror.com/LiquidAI/LFM2.5-1.2B-Thinking/resolve/main/config.json", "config.json", "模型配置"),
-    ("https://hf-mirror.com/LiquidAI/LFM2.5-1.2B-Thinking/resolve/main/tokenizer.json", "tokenizer.json", "分词器"),
-    ("https://hf-mirror.com/LiquidAI/LFM2.5-1.2B-Thinking/resolve/main/tokenizer_config.json", "tokenizer_config.json", "分词器配置"),
-    ("https://hf-mirror.com/LiquidAI/LFM2.5-1.2B-Thinking/resolve/main/generation_config.json", "generation_config.json", "生成配置"),
-    ("https://hf-mirror.com/LiquidAI/LFM2.5-1.2B-Thinking/resolve/main/special_tokens_map.json", "special_tokens_map.json", "特殊token"),
-    ("https://hf-mirror.com/LiquidAI/LFM2.5-1.2B-Thinking/resolve/main/chat_template.jinja", "chat_template.jinja", "对话模板"),
+LFM_ONNX_FILES = [
+    ("https://hf-mirror.com/LiquidAI/LFM2.5-1.2B-Thinking-ONNX/resolve/main/onnx/model_q4.onnx",
+     "onnx/model_q4.onnx", "ONNX 图结构(179KB)"),
+    ("https://hf-mirror.com/LiquidAI/LFM2.5-1.2B-Thinking-ONNX/resolve/main/onnx/model_q4.onnx_data",
+     "onnx/model_q4.onnx_data", "ONNX Q4 权重(811MB)"),
+    ("https://hf-mirror.com/LiquidAI/LFM2.5-1.2B-Thinking-ONNX/resolve/main/config.json",
+     "config.json", "模型配置"),
+    ("https://hf-mirror.com/LiquidAI/LFM2.5-1.2B-Thinking-ONNX/resolve/main/tokenizer.json",
+     "tokenizer.json", "分词器(4.6MB，取自原版)"),
+    ("https://hf-mirror.com/LiquidAI/LFM2.5-1.2B-Thinking/resolve/main/tokenizer_config.json",
+     "tokenizer_config.json", "分词器配置(原版)"),
+    ("https://hf-mirror.com/LiquidAI/LFM2.5-1.2B-Thinking-ONNX/resolve/main/generation_config.json",
+     "generation_config.json", "生成配置"),
+    ("https://hf-mirror.com/LiquidAI/LFM2.5-1.2B-Thinking/resolve/main/special_tokens_map.json",
+     "special_tokens_map.json", "特殊token(原版)"),
+    ("https://hf-mirror.com/LiquidAI/LFM2.5-1.2B-Thinking-ONNX/resolve/main/chat_template.jinja",
+     "chat_template.jinja", "对话模板"),
 ]
 
 
 def download_lfm_weights(target_dir: Optional[Path] = None) -> bool:
-    """从 hf-mirror 下载 LFM2.5-1.2B-Thinking 全部文件"""
-    heading("📥 下载 LFM2.5-1.2B-Thinking")
+    """从 hf-mirror 下载 LFM2.5-1.2B-Thinking-ONNX Q4
+    
+    下载内容：ONNX 图结构 + Q4 量化权重 + 配套配置文件。
+    ONNX Runtime 通过 mmap 加载权重，多进程共享物理页。
+    """
+    heading("📥 下载 LFM2.5-1.2B-Thinking-ONNX Q4")
     if target_dir is None:
-        target_dir = WORKSPACE / "models" / "LFM2.5-1.2B"
+        target_dir = WORKSPACE / "models" / "LFM2.5-1.2B-ONNX"
     info(f"目标目录: {target_dir}")
-    if (target_dir / "model.safetensors").exists():
-        sz = (target_dir / "model.safetensors").stat().st_size / 1024**3
-        ok(f"权重已存在: {sz:.1f} GB")
+    
+    # 检查 ONNX 权重是否已存在
+    onnx_data = target_dir / "onnx" / "model_q4.onnx_data"
+    if onnx_data.exists():
+        sz = onnx_data.stat().st_size / 1024 / 1024
+        ok(f"ONNX Q4 权重已存在: {sz:.0f} MB")
         return True
+    
     ok("开始下载（来源: hf-mirror.com）...")
     start = time.time()
     ok_cnt = 0
-    for url, fn, desc in LFM_MODEL_FILES:
+    for url, fn, desc in LFM_ONNX_FILES:
         dst = target_dir / fn
         if dst.exists():
             ok_cnt += 1
             continue
+        dst.parent.mkdir(parents=True, exist_ok=True)
         ok_cnt += 1 if _download_hf_file(url, dst, desc) else 0
     elapsed = time.time() - start
     _print()
-    if ok_cnt == len(LFM_MODEL_FILES):
-        ok(f"全部完成 ({ok_cnt}/{len(LFM_MODEL_FILES)})，耗时 {elapsed:.0f}s")
-        info(f"路径: {target_dir}")
+    if ok_cnt == len(LFM_ONNX_FILES):
+        ok(f"全部完成 ({ok_cnt}/{len(LFM_ONNX_FILES)})，耗时 {elapsed:.0f}s")
+        info(f"路径: {target_dir}/onnx/model_q4.onnx（mmap 共享，~811MB）")
         return True
-    warn(f"部分完成 ({ok_cnt}/{len(LFM_MODEL_FILES)})，重试运行 --download-lfm 续传", indent=1)
+    warn(f"部分完成 ({ok_cnt}/{len(LFM_ONNX_FILES)})，重试运行 --download-lfm 续传", indent=1)
     return False
 def _setup_rust(use_make: bool = True):
     """跨平台安装 Rust：Windows / Linux / macOS
@@ -2259,8 +2291,8 @@ def _check_v82_pipelines_impl() -> Dict[str, Any]:
         # LFM 权重类型
         lfm = addon.lfm_network
         if lfm is not None and hasattr(lfm, '_forward_text'):
-            ok("  LFM: 真实权重 (LFM2.5-1.2B-Thinking) ✅")
-            results["lfm_type"] = "real_weight"
+            ok("  LFM: ONNX Q4 (LFM2.5-1.2B-Thinking-ONNX) ✅")
+            results["lfm_type"] = "onnx_q4"
         elif lfm is not None:
             info("  LFM: 随机 NumPy 版（降级）")
             results["lfm_type"] = "numpy_random"
@@ -2580,123 +2612,6 @@ def _install_plugin_guide():
 # ════════════════════════════════════════════════════════════════
 # Phase 7: 数据迁移向导
 # ════════════════════════════════════════════════════════════════
-
-def _register_plugin():
-    """注册 GalaxyOS 插件到 OpenClaw（官方 CLI 三件套：enable -> disable memory-core -> restart -> verify）"""
-    heading("🔌 GalaxyOS 插件注册（官方 CLI 三件套）")
-
-    ext_dir = EXT_DIR
-    plugin_json = ext_dir / "openclaw.plugin.json"
-
-    if not (ext_dir.exists() and plugin_json.exists()):
-        err("GalaxyOS 插件文件不完整")
-        info(f"期望路径: {ext_dir}")
-        info("需要文件: openclaw.plugin.json + plugin-bootstrap.cjs + index.js + scripts/")
-        return
-
-    ok(f"GalaxyOS 插件目录: {ext_dir}")
-
-    # Step 1: enable galaxyos
-    heading("Step 1/4 \u2014 启用 GalaxyOS 插件")
-    info("openclaw plugins enable galaxyos ...", indent=1)
-    r1 = subprocess.run(["openclaw", "plugins", "enable", "galaxyos"],
-                        capture_output=True, text=True, timeout=10)
-    if r1.returncode == 0:
-        ok("GalaxyOS 已启用", indent=1)
-    else:
-        stderr = r1.stderr.strip()
-        if "already" in stderr:
-            ok("GalaxyOS 已经是启用状态", indent=1)
-        else:
-            warn(f"启用结果: {stderr or 'ok'}", indent=1)
-
-    # Step 2: disable memory-core
-    heading("Step 2/4 \u2014 禁用冲突插件 memory-core")
-    info("openclaw plugins disable memory-core ...", indent=1)
-    r2 = subprocess.run(["openclaw", "plugins", "disable", "memory-core"],
-                        capture_output=True, text=True, timeout=10)
-    if r2.returncode == 0:
-        ok("memory-core 已禁用", indent=1)
-    else:
-        stderr = r2.stderr.strip()
-        if "disabled" in stderr or "already" in stderr or "not found" in stderr:
-            ok("memory-core 已禁用或无此插件", indent=1)
-        else:
-            warn(f"禁用结果: {stderr or 'ok'}", indent=1)
-
-    # Step 3: restart gateway
-    heading("Step 3/4 \u2014 重启 OpenClaw Gateway")
-    info("supervisorctl restart openclaw-gateway ...", indent=1)
-    subprocess.run(
-        ["python3", "-m", "supervisor.supervisorctl", "restart", "openclaw-gateway"],
-        capture_output=True, text=True, timeout=15
-    )
-    ok("Gateway 已重启", indent=1)
-
-    # Step 4: verify
-    heading("Step 4/4 \u2014 验证注册结果")
-    import time
-    time.sleep(3)
-    r4 = subprocess.run(["openclaw", "plugins", "list"],
-                        capture_output=True, text=True, timeout=5)
-    out = r4.stdout
-
-    galaxy_ok = "galaxyos" in out and "enabled" in out.lower()
-    if "memory-core" in out:
-        memory_off = "disabled" in out.split("memory-core")[1][:30]
-    else:
-        memory_off = True
-
-    if galaxy_ok:
-        ok("GalaxyOS 插件已注册并启用")
-    else:
-        warn("GalaxyOS 状态异常，试试: openclaw plugins enable galaxyos")
-
-    if memory_off:
-        ok("memory-core 已禁用，无冲突")
-    else:
-        warn("memory-core 仍启用，试试: openclaw plugins disable memory-core")
-
-    print()
-    ok("插件注册完成")
-    info("可用 GalaxyOS 工具: claw_recall, claw_health, claw_store, claw_verify, claw_rccam, ...")
-
-
-def _apply_cspl_patch():
-    """打 CSPL 安全补丁：修复 steer-inject 攻击链，防记忆泄露"""
-    heading("🔐 CSPL 安全补丁（防 steer-inject 攻击）")
-
-    # patches/ 在 repo 根（galaxyos/ 同级），从 _THIS_FILE 逐级往上找
-    _candidate = _THIS_FILE
-    for _ in range(5):
-        _candidate = _candidate.parent
-        if (_candidate / "patches" / "cspl_patch.py").exists():
-            script = _candidate / "patches" / "cspl_patch.py"
-            break
-    else:
-        err(f"CSPL 补丁脚本不存在，请确认 patches/cspl_patch.py 存在")
-        return
-    if not script.exists():
-        err(f"CSPL 补丁脚本不存在: {script}")
-        info("请确保 GalaxyOS 完整安装")
-        return
-
-    info("运行 CSPL 补丁 ...", indent=1)
-    r = subprocess.run([sys.executable, str(script)],
-                       capture_output=True, text=True, timeout=15)
-    for line in r.stdout.splitlines():
-        if line.strip():
-            print(f"  {line}")
-    if r.stderr.strip():
-        for line in r.stderr.strip().splitlines():
-            info(line, indent=2)
-
-    if r.returncode == 0:
-        ok("CSPL 补丁完成")
-        info("建议: 重启 Gateway 后补丁落地")
-    else:
-        err(f"CSPL 补丁失败，退出码 {r.returncode}")
-
 
 def check_existing_data() -> Dict[str, Any]:
     """扫描已有数据，标记可迁移项"""
@@ -3142,15 +3057,10 @@ def main():
     parser.add_argument("--sleep-test", action="store_true", help="仿生睡眠巩固引擎专项测试")
     parser.add_argument("--kg-test", action="store_true", help="知识图谱功能专项测试")
     parser.add_argument("--all", action="store_true", help="全量模式（体检 + 睡眠测试 + 修复）")
-    parser.add_argument("--apply-cspl-patch", action="store_true",
-        help="打 CSPL 安全补丁：修复 xiaoyi-channel steer-inject 攻击链，防记忆泄露和流程劫持")
-    parser.add_argument("--register-plugin", action="store_true",
-        help="(推荐) 注册 GalaxyOS 插件到 OpenClaw: enable galaxyos + disable memory-core + 重启 Gateway + 验证")
-    parser.add_argument("--install-plugin", action="store_true",
-        help="(旧版) 仅检测 GalaxyOS 插件状态，不做操作")
+    parser.add_argument("--install-plugin", action="store_true", help="安装/检测 GalaxyOS OpenClaw 插件")
     parser.add_argument("--fix-torch", action="store_true", help="自动补齐 torch/torch_geometric/hnswlib 等 ML 栈（清华源 + PyG wheel + CPU 索引）")
     parser.add_argument("--python", default=None, help="显式指定 Python 解释器路径（覆盖自动检测，常用于生产环境/容器固定运行时）")
-    parser.add_argument("--download-lfm", action="store_true", help="从 hf-mirror 下载 LFM2.5-1.2B-Thinking 真实权重（~2.2GB）")
+    parser.add_argument("--download-lfm", action="store_true", help="从 hf-mirror 下载 LFM2.5-1.2B-Thinking-ONNX Q4 权重（~811MB, ONNX Runtime mmap 共享）")
     parser.add_argument("--setup-rust", action="store_true", help="安装 Rust 工具链（国内镜像，自动识别 ARM64/x86_64）")
     parser.add_argument("--update", action="store_true", help="增量更新模式：版本检测 + 仅同步变更文件，保护已有配置")
     parser.add_argument("--migrate", action="store_true", help="数据迁移向导：检测并迁移历史数据到当前版本")
@@ -3168,14 +3078,6 @@ def main():
         VAR_DIR = EXT_DIR / "var"
         WORKSPACE = Path(os.environ.get("OPENCLAW_WORKSPACE", str(_OPENCLAW_HOME / "workspace")))
         ok(f"OpenClaw home: {_OPENCLAW_HOME}")
-
-    if args.apply_cspl_patch:
-        _apply_cspl_patch()
-        return
-
-    if args.register_plugin:
-        _register_plugin()
-        return
 
     if args.install_plugin:
         _install_plugin_guide()

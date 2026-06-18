@@ -66,3 +66,5 @@ Thumbs.db
 
 # Rust/Cargo build cache
 extensions/galaxyos/native/target/
+extensions/galaxyos/var/
+workspace/
