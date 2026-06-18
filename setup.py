@@ -12,7 +12,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="galaxyos",
-    version="8.2.9",
+    version="8.2.12",
 
     description="GalaxyOS — 小艺 Claw 核心认知增强引擎 (unified package)",
     long_description=open("README.md", encoding="utf-8").read(),

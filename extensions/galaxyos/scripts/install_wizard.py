@@ -2581,6 +2581,123 @@ def _install_plugin_guide():
 # Phase 7: 数据迁移向导
 # ════════════════════════════════════════════════════════════════
 
+def _register_plugin():
+    """注册 GalaxyOS 插件到 OpenClaw（官方 CLI 三件套：enable -> disable memory-core -> restart -> verify）"""
+    heading("🔌 GalaxyOS 插件注册（官方 CLI 三件套）")
+
+    ext_dir = EXT_DIR
+    plugin_json = ext_dir / "openclaw.plugin.json"
+
+    if not (ext_dir.exists() and plugin_json.exists()):
+        err("GalaxyOS 插件文件不完整")
+        info(f"期望路径: {ext_dir}")
+        info("需要文件: openclaw.plugin.json + plugin-bootstrap.cjs + index.js + scripts/")
+        return
+
+    ok(f"GalaxyOS 插件目录: {ext_dir}")
+
+    # Step 1: enable galaxyos
+    heading("Step 1/4 \u2014 启用 GalaxyOS 插件")
+    info("openclaw plugins enable galaxyos ...", indent=1)
+    r1 = subprocess.run(["openclaw", "plugins", "enable", "galaxyos"],
+                        capture_output=True, text=True, timeout=10)
+    if r1.returncode == 0:
+        ok("GalaxyOS 已启用", indent=1)
+    else:
+        stderr = r1.stderr.strip()
+        if "already" in stderr:
+            ok("GalaxyOS 已经是启用状态", indent=1)
+        else:
+            warn(f"启用结果: {stderr or 'ok'}", indent=1)
+
+    # Step 2: disable memory-core
+    heading("Step 2/4 \u2014 禁用冲突插件 memory-core")
+    info("openclaw plugins disable memory-core ...", indent=1)
+    r2 = subprocess.run(["openclaw", "plugins", "disable", "memory-core"],
+                        capture_output=True, text=True, timeout=10)
+    if r2.returncode == 0:
+        ok("memory-core 已禁用", indent=1)
+    else:
+        stderr = r2.stderr.strip()
+        if "disabled" in stderr or "already" in stderr or "not found" in stderr:
+            ok("memory-core 已禁用或无此插件", indent=1)
+        else:
+            warn(f"禁用结果: {stderr or 'ok'}", indent=1)
+
+    # Step 3: restart gateway
+    heading("Step 3/4 \u2014 重启 OpenClaw Gateway")
+    info("supervisorctl restart openclaw-gateway ...", indent=1)
+    subprocess.run(
+        ["python3", "-m", "supervisor.supervisorctl", "restart", "openclaw-gateway"],
+        capture_output=True, text=True, timeout=15
+    )
+    ok("Gateway 已重启", indent=1)
+
+    # Step 4: verify
+    heading("Step 4/4 \u2014 验证注册结果")
+    import time
+    time.sleep(3)
+    r4 = subprocess.run(["openclaw", "plugins", "list"],
+                        capture_output=True, text=True, timeout=5)
+    out = r4.stdout
+
+    galaxy_ok = "galaxyos" in out and "enabled" in out.lower()
+    if "memory-core" in out:
+        memory_off = "disabled" in out.split("memory-core")[1][:30]
+    else:
+        memory_off = True
+
+    if galaxy_ok:
+        ok("GalaxyOS 插件已注册并启用")
+    else:
+        warn("GalaxyOS 状态异常，试试: openclaw plugins enable galaxyos")
+
+    if memory_off:
+        ok("memory-core 已禁用，无冲突")
+    else:
+        warn("memory-core 仍启用，试试: openclaw plugins disable memory-core")
+
+    print()
+    ok("插件注册完成")
+    info("可用 GalaxyOS 工具: claw_recall, claw_health, claw_store, claw_verify, claw_rccam, ...")
+
+
+def _apply_cspl_patch():
+    """打 CSPL 安全补丁：修复 steer-inject 攻击链，防记忆泄露"""
+    heading("🔐 CSPL 安全补丁（防 steer-inject 攻击）")
+
+    # patches/ 在 repo 根（galaxyos/ 同级），从 _THIS_FILE 逐级往上找
+    _candidate = _THIS_FILE
+    for _ in range(5):
+        _candidate = _candidate.parent
+        if (_candidate / "patches" / "cspl_patch.py").exists():
+            script = _candidate / "patches" / "cspl_patch.py"
+            break
+    else:
+        err(f"CSPL 补丁脚本不存在，请确认 patches/cspl_patch.py 存在")
+        return
+    if not script.exists():
+        err(f"CSPL 补丁脚本不存在: {script}")
+        info("请确保 GalaxyOS 完整安装")
+        return
+
+    info("运行 CSPL 补丁 ...", indent=1)
+    r = subprocess.run([sys.executable, str(script)],
+                       capture_output=True, text=True, timeout=15)
+    for line in r.stdout.splitlines():
+        if line.strip():
+            print(f"  {line}")
+    if r.stderr.strip():
+        for line in r.stderr.strip().splitlines():
+            info(line, indent=2)
+
+    if r.returncode == 0:
+        ok("CSPL 补丁完成")
+        info("建议: 重启 Gateway 后补丁落地")
+    else:
+        err(f"CSPL 补丁失败，退出码 {r.returncode}")
+
+
 def check_existing_data() -> Dict[str, Any]:
     """扫描已有数据，标记可迁移项"""
     heading("📦 阶段 7：历史数据扫描")
@@ -3025,7 +3142,12 @@ def main():
     parser.add_argument("--sleep-test", action="store_true", help="仿生睡眠巩固引擎专项测试")
     parser.add_argument("--kg-test", action="store_true", help="知识图谱功能专项测试")
     parser.add_argument("--all", action="store_true", help="全量模式（体检 + 睡眠测试 + 修复）")
-    parser.add_argument("--install-plugin", action="store_true", help="安装/检测 GalaxyOS OpenClaw 插件")
+    parser.add_argument("--apply-cspl-patch", action="store_true",
+        help="打 CSPL 安全补丁：修复 xiaoyi-channel steer-inject 攻击链，防记忆泄露和流程劫持")
+    parser.add_argument("--register-plugin", action="store_true",
+        help="(推荐) 注册 GalaxyOS 插件到 OpenClaw: enable galaxyos + disable memory-core + 重启 Gateway + 验证")
+    parser.add_argument("--install-plugin", action="store_true",
+        help="(旧版) 仅检测 GalaxyOS 插件状态，不做操作")
     parser.add_argument("--fix-torch", action="store_true", help="自动补齐 torch/torch_geometric/hnswlib 等 ML 栈（清华源 + PyG wheel + CPU 索引）")
     parser.add_argument("--python", default=None, help="显式指定 Python 解释器路径（覆盖自动检测，常用于生产环境/容器固定运行时）")
     parser.add_argument("--download-lfm", action="store_true", help="从 hf-mirror 下载 LFM2.5-1.2B-Thinking 真实权重（~2.2GB）")
@@ -3046,6 +3168,14 @@ def main():
         VAR_DIR = EXT_DIR / "var"
         WORKSPACE = Path(os.environ.get("OPENCLAW_WORKSPACE", str(_OPENCLAW_HOME / "workspace")))
         ok(f"OpenClaw home: {_OPENCLAW_HOME}")
+
+    if args.apply_cspl_patch:
+        _apply_cspl_patch()
+        return
+
+    if args.register_plugin:
+        _register_plugin()
+        return
 
     if args.install_plugin:
         _install_plugin_guide()

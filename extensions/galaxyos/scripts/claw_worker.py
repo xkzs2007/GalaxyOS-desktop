@@ -57,6 +57,11 @@ sys.path.insert(0, _GALAXYOS_ENGINE)
 sys.path.insert(0, _GALAXYOS_PRIVILEGED)
 sys.path.insert(0, _GALAXYOS_SCRIPTS)
 
+# v8.2.2: LFM 预加载依赖，加入 .venv 的 site-packages（软链在 galaxyos/ 同级）
+_GALAXYOS_VENV_SITE = os.path.join(os.path.dirname(_THIS_DIR), ".venv", "lib", "python3.12", "site-packages")
+if os.path.isdir(_GALAXYOS_VENV_SITE):
+    sys.path.insert(0, _GALAXYOS_VENV_SITE)
+
 # Legacy fallback: workspace skills path (backward compat)
 _LEGACY_CORE = os.path.join(WORKSPACE, "skills", "xiaoyi-claw-omega-final", "skills", "llm-memory-integration", "core")
 _LEGACY_SCRIPTS = os.path.join(WORKSPACE, "skills", "xiaoyi-claw-omega-final", "scripts")
