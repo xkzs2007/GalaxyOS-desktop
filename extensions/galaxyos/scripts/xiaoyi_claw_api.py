@@ -21,7 +21,8 @@ import sqlite3  # 修复 F-1: _retrieval_phase 行 2346 等处用 sqlite3 但顶
 # ── 统一 var 路径解析（v7.0: galaxyos 优先，claw-core fallback）────
 _OPENCLAW_HOME_API = os.path.expanduser(
     os.environ.get("OPENCLAW_HOME", "~/.openclaw"))
-_GALAXYOS_VAR_API = os.path.join(_OPENCLAW_HOME_API, "extensions", "galaxyos", "var")
+GALAXY_DIR = os.path.join(_OPENCLAW_HOME_API, "extensions", "galaxyos")
+_GALAXYOS_VAR_API = os.path.join(GALAXY_DIR, "var")
 _CLAW_CORE_VAR_API = os.path.join(_OPENCLAW_HOME_API, "extensions", "claw-core", "var")
 
 def _resolve_rci_mmap():
@@ -3301,6 +3302,39 @@ class XiaoYiClawLLM:
         except Exception:
             pass
 
+        # ═══ EvoMAS 启发的执行链注入：检索记忆命中执行链时，策略优先走链 ═══
+        try:
+            _chain_keywords = {
+                "health":    ["健康检查", "检查系统", "health", "system check"],
+                "store":     ["记住", "记忆存储", "记住这个", "store", "remember"],
+                "recall":    ["回忆", "检索", "recall", "retrieve"],
+                "workflow":  ["执行工作流", "workflow", "工作流"],
+                "status":    ["系统状态", "模块状态", "status"],
+            }
+            _best_chain = None
+            _best_score = 0.0
+            _hit_memories = state.retrieved_memories or []
+            for _m in _hit_memories:
+                _c = (_m.get("content") or "").lower()
+                _t = " ".join(_m.get("tags", []) or []).lower()
+                _text = _c + " " + _t
+                for _chain, _kwlist in _chain_keywords.items():
+                    for _kw in _kwlist:
+                        if _kw.lower() in _text:
+                            _score = _m.get("confidence", 0.5) * 1.0
+                            if _score > _best_score:
+                                _best_chain = _chain
+                                _best_score = _score
+            if _best_chain and _best_score >= 0.5 and state.strategy not in ("boundary_violation",):
+                old = state.strategy
+                state.strategy = f"exec_chain:{_best_chain}"
+                state.analysis['exec_chain'] = _best_chain
+                state.analysis['exec_chain_confidence'] = _best_score
+                state.analysis['chain_orig_strategy'] = old
+                logger.info(f"执行链注入: {_best_chain} (score={_best_score:.2f}, 原策略={old})")
+        except Exception:
+            pass
+
         # ═══ Tree-of-Thought: 复杂问题多路径探索决策 ═══
         try:
             if _HAS_TOT and getattr(self, '_paper_int', None) and state.strategy == "info_insufficient" and state.cycle_count <= 1:
@@ -3346,7 +3380,22 @@ class XiaoYiClawLLM:
         }
 
         # ═══ Plan-Solve: 结构化任务分解 ═══
-        if state.strategy != "boundary_violation" and len(query) > 15:
+        # 如果是执行链策略，用链步骤填充计划，跳过 Plan-Solve
+        _is_chain_strategy = state.strategy and state.strategy.startswith("exec_chain:")
+        if _is_chain_strategy:
+            _chain_name = state.strategy.replace("exec_chain:", "")
+            _chain_plans = {
+                "health":   ["运行健康检查命令 unified_entry.py health", "检查各模块状态", "报告结果"],
+                "store":    ["提取关键信息", "执行记忆存储命令 unified_entry.py store", "验证存储结果"],
+                "recall":   ["构建检索查询", "执行记忆检索命令 unified_entry.py recall", "整合检索结果"],
+                "workflow": ["确认工作流名称", "执行工作流命令 unified_entry.py workflow", "验证执行结果"],
+                "status":   ["运行状态查询命令 unified_entry.py status", "解析各模块状态", "报告结果"],
+            }
+            _steps = _chain_plans.get(_chain_name, ["执行 " + _chain_name + " 执行链", "验证执行结果"])
+            state.analysis['execution_plan'] = _steps
+            state.analysis['plan_step_count'] = len(_steps)
+            logger.info(f"执行链计划填充: {_chain_name} -> {len(_steps)} 步")
+        elif state.strategy != "boundary_violation" and len(query) > 15:
             try:
                 if getattr(self, '_paper_int', None) and _HAS_PLAN:
                     _plan = self._paper_int.pre_plan(query[:300])
@@ -3556,6 +3605,41 @@ class XiaoYiClawLLM:
             )
             state.answer_confidence = 0.2
             state.action_success = True
+            return state
+
+        # ═══ 执行链策略：按预填的执行链计划执行命令 ═══
+        if state.strategy and state.strategy.startswith("exec_chain:"):
+            _chain_name = state.strategy.replace("exec_chain:", "")
+            _plan = state.analysis.get('execution_plan', [])
+            _cmd_map = {
+                "health":   ["python3 " + os.path.join(GALAXY_DIR, "scripts", "unified_entry.py") + " health 2>&1"],
+                "status":   ["python3 " + os.path.join(GALAXY_DIR, "scripts", "unified_entry.py") + " status 2>&1"],
+                "store":    ["python3 " + os.path.join(GALAXY_DIR, "scripts", "unified_entry.py") + " store --content \"" + query.replace('"', "'") + "\" 2>&1"],
+                "recall":   ["python3 " + os.path.join(GALAXY_DIR, "scripts", "unified_entry.py") + " recall --query \"" + query.replace('"', "'") + "\" 2>&1"],
+                "workflow": [],
+            }
+            _cmds = _cmd_map.get(_chain_name)
+            _output_lines = []
+            _success = True
+            if _cmds:
+                for _cmd in _cmds:
+                    try:
+                        import subprocess
+                        _r = subprocess.run(_cmd, shell=True, capture_output=True, text=True, timeout=30)
+                        _out = (_r.stdout or "") + (_r.stderr or "")
+                        _output_lines.append(_out.strip())
+                        if _r.returncode != 0:
+                            _success = False
+                    except Exception as _ce:
+                        _output_lines.append(f"命令执行失败: {_ce}")
+                        _success = False
+            _combined = "\n".join(_output_lines).strip() or "执行完成，无输出"
+            if len(_plan) > 1:
+                _combined = f"执行链 [{_chain_name}] 完成:\n" + _combined
+            state.generated_answer = _combined[:2000]
+            state.answer_confidence = 0.7 if _success else 0.4
+            state.action_success = _success
+            logger.info(f"执行链 [{_chain_name}] 完成, success={_success}")
             return state
 
         # 默认: Pro 增强检索 + 回答
