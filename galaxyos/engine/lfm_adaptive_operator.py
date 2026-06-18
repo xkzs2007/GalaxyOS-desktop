@@ -653,8 +653,16 @@ class RealLFMNetwork:
     但底层用 onnxruntime 推理，不拖 torch 全家桶。
     """
 
-    _MODEL_DIR = '/home/sandbox/.openclaw/workspace/models/LFM2.5-1.2B-ONNX'
-    _ONNX_PATH = '/home/sandbox/.openclaw/workspace/models/LFM2.5-1.2B-ONNX/onnx/model_q4.onnx'
+    _MODEL_DIR = os.environ.get(
+        'LFM_MODEL_DIR',
+        os.path.join(
+            os.environ.get('OPENCLAW_WORKSPACE',
+                os.path.expanduser('~/.openclaw/workspace')),
+            'models', 'LFM2.5-1.2B-ONNX'))
+
+    @property
+    def _ONNX_PATH(self):
+        return os.path.join(self._MODEL_DIR, 'onnx', 'model_q4.onnx')
     _HIDDEN_DIM = 2048          # hidden_size from config.json
     _NUM_LAYERS = 16            # num_hidden_layers
     _NUM_KV_HEADS = 8           # num_key_value_heads
