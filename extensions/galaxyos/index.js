@@ -731,6 +731,16 @@ class GalaxyPool {
     async stop() {
         this.status = 'stopping';
         if (this._healthTimer) { clearInterval(this._healthTimer); this._healthTimer = null; }
+
+        // 关闭前先 flush cron state
+        try {
+            if (process.env.OPENCLAW_NO_RESPAWN || process.argv.includes('gateway')) {
+                await this._flushCronState();
+            }
+        } catch (e) {
+            this.api.logger?.warn?.(`${TAG} cron state flush error (non-fatal): ${e.message}`);
+        }
+
         const ordered = [...this._comps.entries()]
             .sort(([, a], [, b]) => b.order - a.order)
             .map(([name]) => name);
@@ -771,6 +781,12 @@ class GalaxyPool {
             if (this._workerPool) {
                 this._workerPool._healthCheck();
             }
+            // 非关键检查：cron state 文件存在性
+            const cronStatePath = path.join(OPENCLAW_HOME, "cron", "jobs-state.json");
+            const cronJobsPath = path.join(OPENCLAW_HOME, "cron", "jobs.json");
+            if (!existsSync(cronStatePath) && !existsSync(cronJobsPath)) {
+                this.api.logger?.warn?.(`${TAG} cron state files missing (non-critical), cron flush may be unavailable`);
+            }
         }, 10000).unref();
     }
 
@@ -793,6 +809,49 @@ class GalaxyPool {
         } catch (_) {
             comp.status = 'failed';
         }
+    }
+
+    // ═══ Cron 状态持久化 ═══
+    async _flushCronState() {
+        const cronFlusher = path.join(__dirname, "scripts", "cron_state_flusher.py");
+        if (!existsSync(cronFlusher)) {
+            this.api.logger?.warn?.(`${TAG} cron_state_flusher.py not found, skipping flush`);
+            return;
+        }
+        const CRON_DIR = path.join(OPENCLAW_HOME, "cron");
+        if (!existsSync(CRON_DIR)) {
+            this.api.logger?.info?.(`${TAG} cron dir not found, skipping flush`);
+            return;
+        }
+        return new Promise((resolve) => {
+            const timeout = setTimeout(() => {
+                this.api.logger?.warn?.(`${TAG} cron state flush timed out after 8s`);
+                try { proc.kill('SIGTERM'); } catch {}
+                resolve();
+            }, 8000);
+            const proc = spawn(_pythonBin, [cronFlusher, 'flush'], {
+                stdio: ['ignore', 'pipe', 'pipe'],
+                env: { ...process.env },
+            });
+            let stdout = '';
+            let stderr = '';
+            proc.stdout.on('data', (d) => { stdout += d.toString(); });
+            proc.stderr.on('data', (d) => { stderr += d.toString(); });
+            proc.on('close', (code) => {
+                clearTimeout(timeout);
+                if (code !== 0) {
+                    this.api.logger?.warn?.(`${TAG} cron state flush exited code=${code}: ${(stderr || stdout).slice(0, 200)}`);
+                } else {
+                    this.api.logger?.info?.(`${TAG} cron state flushed successfully`);
+                }
+                resolve();
+            });
+            proc.on('error', (err) => {
+                clearTimeout(timeout);
+                this.api.logger?.warn?.(`${TAG} cron state flush spawn error: ${err.message}`);
+                resolve();
+            });
+        });
     }
 
     // ═══ 状态快照 ═══
@@ -1855,6 +1914,25 @@ export default function register(api) {
             if (w.proc) { w.stop(); } else { w._cleanup(); }
         }
     });
+    // ═══ 进程信号处理：SIGTERM/SIGINT 先 flush cron 再退出 ═══
+    const _isGatewayProcess = () => process.env.OPENCLAW_NO_RESPAWN || process.argv.includes('gateway') || process.argv.some(a => a.includes('gateway'));
+    if (_isGatewayProcess()) {
+        const _onExitSignal = async (signal) => {
+            api.logger?.info?.(`${TAG} received ${signal}, flushing cron state before exit...`);
+            if (_galaxyPool) {
+                try {
+                    await _galaxyPool._flushCronState();
+                } catch (e) {
+                    api.logger?.warn?.(`${TAG} cron state flush on signal error: ${e.message}`);
+                }
+            }
+            process.exit(0);
+        };
+        process.on('SIGTERM', () => _onExitSignal('SIGTERM'));
+        process.on('SIGINT', () => _onExitSignal('SIGINT'));
+        api.logger?.info?.(`${TAG} SIGTERM/SIGINT handlers registered for Gateway process`);
+    }
+
     // ═══ 暴露 GalaxyPool 运行时状态给 AI Agent ═══
     api.registerTool({
         name: "galaxy_pool",
