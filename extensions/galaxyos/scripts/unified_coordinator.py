@@ -2470,6 +2470,15 @@ EXTENDED_MODULES_P1 = {
         script_path="dag_liquid_fusion.py",
         layer=9
     ),
+    "cosplay_context_adapter": ModuleInfo(
+        name="cosplay_context_adapter",
+        module_type=ModuleType.DAG_CONTEXT_MANAGER,
+        description="COSPLAY 上下文增强: Boundary Detection + Contract-Aware 压缩 + Skill Replacement + 反馈驱动",
+        triggers=["COSPLAY", "边界检测", "契约压缩", "上下文增强", "技能替换"],
+        script_path="cosplay_context_adapter.py",
+        layer=9,
+        dependencies=["dag_context_manager", "lfm_boundary_detector", "lfm_skill_bank"]
+    ),
     # SkillGraph 技能图
     "skill_graph": ModuleInfo(
         name="skill_graph",

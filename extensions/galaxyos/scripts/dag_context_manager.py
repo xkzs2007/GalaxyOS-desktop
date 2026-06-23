@@ -685,6 +685,28 @@ class DAGContextManager:
         except Exception:
             pass
 
+        # ── COSPLAY 增强: Contract 上下文注入 ──
+        try:
+            from cosplay_context_adapter import get_cosplay_adapter
+            _ca = get_cosplay_adapter()
+            if _ca.config.contract_enabled:
+                # 从当前节点的摘要中提取关键词，查 contract
+                _summary_keywords = []
+                for _, node in result_parts:
+                    if hasattr(node, 'keywords') and node.keywords:
+                        _summary_keywords.extend(node.keywords[:3])
+                if _summary_keywords:
+                    _ci = _ca.get_contract_instructions(_summary_keywords[:5])
+                    if _ci:
+                        _contract_text = "【COSPLAY 契约上下文】" + "，".join(_ci["predicates_keep"][:5])
+                        _ct_tokens = len(_contract_text) // 2
+                        if used_tokens + _ct_tokens <= max_tokens:
+                            assembled_text += "\n\n" + _contract_text
+                            used_tokens += _ct_tokens
+                            stats["cosplay_contract_injected"] = True
+        except Exception:
+            pass
+
         return assembled_text, stats
 
     def _adjust_meta_params(self, stats: Dict):
@@ -925,6 +947,14 @@ class DAGContextManager:
 
     def expand_summary(self, summary_node_id: str) -> List[DAGNode]:
         """展开摘要，找回原始消息"""
+        # ── COSPLAY 反馈: 展开事件 → 记录为正向信号 ──
+        try:
+            from cosplay_context_adapter import get_cosplay_adapter
+            _ca_exp = get_cosplay_adapter()
+            _ca_exp.record_expand_event(summary_node_id)
+        except Exception:
+            pass
+
         with self._lock:
             conn = sqlite3.connect(self.db_path)
             conn.row_factory = sqlite3.Row
@@ -1843,9 +1873,12 @@ class DAGContextManager:
             "depth": 2,
         }
 
-    def cognitive_compress_dag_messages(self, session_key,
-                                          max_to_compress=20,
-                                          reserve_recent=4):
+    def cognitive_compress_dag_messages(
+        self, session_key,
+        max_to_compress=20,
+        reserve_recent=4,
+        cosplay_enhanced: bool = True,
+    ):
         """
         对 dag_nodes 的旧消息应用 LCM 三级压缩协议（认知级压缩）。
 
@@ -1892,8 +1925,24 @@ class DAGContextManager:
         if not groups:
             return {"summarized": 0, "nodes_affected": 0}
 
+        # ── COSPLAY 增强: Boundary Detection → 重新分组 ──
+        if cosplay_enhanced:
+            try:
+                from cosplay_context_adapter import get_cosplay_adapter
+                _ca = get_cosplay_adapter()
+                if _ca.config.boundary_enabled:
+                    flat_nodes = [n for g in groups for n in g]
+                    _segments = _ca.segment_nodes_by_boundary(flat_nodes)
+                    if len(_segments) > 1 and len(_segments) <= len(groups) * 2:
+                        # 用 boundary 分组替换简单轮次分组
+                        groups = [s["nodes"] for s in _segments]
+                        logger.info(f"COSPLAY boundary: {len(_segments)} segments from original {len(groups)} pairs")
+            except Exception:
+                pass
+
         summarized_count = 0
         all_affected_ids = []
+        _cosplay_stats = {"contract_guided": 0, "skill_replaced": 0, "saved_tokens": 0}
 
         for group in groups:
             if not group:
@@ -1904,6 +1953,31 @@ class DAGContextManager:
             for n in group:
                 full_texts.append(self.restore_full_content(n))
             full_combined = "\n\n".join(full_texts)
+
+            # ── COSPLAY 增强: Contract-Aware + Skill Replacement ──
+            _cosplay_replace = None
+            _cosplay_contract = None
+            if cosplay_enhanced:
+                try:
+                    from cosplay_context_adapter import get_cosplay_adapter
+                    _ca2 = get_cosplay_adapter()
+                    _keywords = self._extract_keywords(full_combined[:2000])[:5]
+                    # 检查 skill replace（整段替代）
+                    if _ca2.config.skill_replace_enabled:
+                        _seg_for_replace = {
+                            "nodes": group,
+                            "combined_text": full_combined,
+                            "keywords": _keywords,
+                        }
+                        _cosplay_replace = _ca2.try_skill_replace(_seg_for_replace)
+                    # 获取 contract 指导
+                    if _ca2.config.contract_enabled and _cosplay_replace is None:
+                        _ci = _ca2.get_contract_instructions(_keywords)
+                        if _ci:
+                            _cosplay_contract = _ci
+                            _cosplay_stats["contract_guided"] += 1
+                except Exception:
+                    pass
 
             # BlobArena 无损存储完整原文，SQLite 只存 memo
             _blob_id = ""
@@ -1916,6 +1990,17 @@ class DAGContextManager:
                     _memo_text = full_combined[:500] + "..." if len(full_combined) > 500 else full_combined
             except Exception:
                 _memo_text = full_combined[:500] + "..." if len(full_combined) > 500 else full_combined
+
+            # ── Skill Replacement: 用技能 token 替代全文 ──
+            if _cosplay_replace is not None:
+                _memo_text = _cosplay_replace[:500]
+                _cosplay_stats["skill_replaced"] += 1
+                _cosplay_stats["saved_tokens"] += max(0, len(full_combined)//4 - len(_cosplay_replace)//4)
+            # ── Contract 注入: 追加关键 predicates ──
+            elif _cosplay_contract:
+                from cosplay_context_adapter import get_cosplay_adapter
+                _ca2 = get_cosplay_adapter()
+                _memo_text = _ca2.augment_summary_with_contract(_memo_text, _cosplay_contract)[:500]
 
             # 提取关键词
             keywords = self._extract_keywords(full_combined[:2000])[:5]
@@ -1954,9 +2039,28 @@ class DAGContextManager:
             all_affected_ids.extend(group_ids)
             summarized_count += 1
 
+        # ── COSPLAY 反馈: 记录压缩结果 ──
+        if cosplay_enhanced and summarized_count > 0:
+            try:
+                from cosplay_context_adapter import get_cosplay_adapter
+                _ca3 = get_cosplay_adapter()
+                for group in groups:
+                    _ca3.record_compact_result({
+                        "session_key": session_key,
+                        "n_nodes": len(group),
+                        "contract_guided": _cosplay_stats["contract_guided"] > 0,
+                        "skill_replaced": _cosplay_stats["skill_replaced"] > 0,
+                    })
+            except Exception:
+                pass
+
         return {
             "summarized": summarized_count,
             "nodes_affected": len(all_affected_ids),
+            "cosplay_enhanced": cosplay_enhanced,
+            "cosplay_contract_guided": _cosplay_stats["contract_guided"],
+            "cosplay_skill_replaced": _cosplay_stats["skill_replaced"],
+            "cosplay_tokens_saved": _cosplay_stats["saved_tokens"],
         }
 
     def get_rccam_stats(self, session_key):

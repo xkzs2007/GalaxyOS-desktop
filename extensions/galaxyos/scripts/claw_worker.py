@@ -1757,8 +1757,17 @@ class ClawWorker:
                     "session": session_id,
                     "summarized": result["summarized"],
                     "nodes": result["nodes_affected"],
+                    "cosplay_contract": result.get("cosplay_contract_guided", 0),
+                    "cosplay_replace": result.get("cosplay_skill_replaced", 0),
                 })
-            return result
+            # ── COSPLAY 反馈: 压缩后更新 → Skill Bank refine ──
+            if result.get("summarized", 0) > 0:
+                try:
+                    from cosplay_context_adapter import get_cosplay_adapter
+                    _ca_fb = get_cosplay_adapter()
+                    _ca_fb.apply_feedback_to_skill_bank()
+                except Exception:
+                    pass
             return result
 
     def save_memory(self, p: dict) -> dict:
