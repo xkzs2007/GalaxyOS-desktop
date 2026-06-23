@@ -1,5 +1,35 @@
 # Changelog
 
+## [v8.5.0] — 2026-06-23
+
+### Added
+- **COSPLAY (arxiv 2604.20987) 全架构移植 — 任务轨迹→技能契约闭环**
+  - `lfm_skill_bank.py`（1521 行）：LFM Skill Bank 完整引擎
+    - 契约学习（Contract Learning）：执行日志→效果 contract（eff_add/eff_del/eff_event）
+    - 银行维护（Bank Maintenance）：Merge/Split/Refine/Retire/Promote 五操作
+    - ProtoSkill→Skill 毕业：support+consistency+pass_rate 三阈值门控
+    - 五维加权评分（quality+consistency+reuse_success+exploration+recency）
+  - `lfm_boundary_detector.py`（965 行）：Boundary Detection + NLP Predicate
+    - Changepoint Detection（CUSUM/sliding_window）+ intent 标签
+    - NLP 增强 Predicate 提取（关键词/实体/情感 → 结构化 predicates）
+  - `cosplay_context_adapter.py`（580 行）：四合一上下文桥接器
+    - Boundary-Aware Compression：按意图 segment 分组压缩
+    - Contract-Aware Summarization：Skill Bank contract 指导保留 predicates
+    - Skill Replacement：整段匹配 → `[Skill: name]` 替代
+    - Feedback-Driven Compression：展开率 → Skill Bank refine 阈值调优
+- **全链路集成**
+  - `memory_consolidation.py`：Step 0 技能循环 + Step 0.5 边界检测
+  - `xiaoyi_claw_api.py`：R-CCAM 反馈桥 → Skill Bank 喂入
+  - `dag_context_manager.py`：COSPLAY 增强压缩 + contract 上下文注入 + expand 反馈
+  - `claw_worker.py`：压缩后反馈 → Skill Bank refine
+  - `unified_coordinator.py`：`lfm_skill_bank`、`lfm_boundary_detector`、`cosplay_context_adapter` 注册
+
+### Changed
+- VERSION 8.4.2 → 8.5.0
+- consolidation cycle 从 11 步扩展到 13 步（+COSPLAY step 0 + step 0.5）
+- DAG 压缩策略：从轮次分组升级为意图 segment 分组
+- 上下文装配：追加 COSPLAY 契约上下文层
+
 ## [v8.4.2] — 2026-06-23
 
 ### Added

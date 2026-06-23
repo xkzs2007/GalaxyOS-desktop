@@ -30,6 +30,7 @@ import shutil
 import sqlite3
 import subprocess
 import importlib
+import importlib.util
 import inspect
 import re
 from pathlib import Path
@@ -2515,6 +2516,110 @@ def check_v84_modules() -> Dict[str, Any]:
     return results
 
 
+# ════════════════════════════════════════════════════════════════
+# v8.5 — COSPLAY 全架构移植检查
+# ════════════════════════════════════════════════════════════════
+
+def check_v85_modules() -> Dict[str, Any]:
+    """验证 v8.5 COSPLAY 全架构移植模块（Skill Bank + Boundary Detection + Context Adapter）"""
+    heading("🎭 v8.5 COSPLAY 全架构移植")
+    results: Dict[str, Any] = {"modules": {}, "ok": 0, "fail": 0, "warn": 0}
+    script_dir = os.path.dirname(__file__)
+
+    # 1. lfm_skill_bank
+    try:
+        spec = importlib.util.spec_from_file_location(
+            "lfm_skill_bank", os.path.join(script_dir, "lfm_skill_bank.py")
+        )
+        if spec and spec.loader:
+            mod_sb = importlib.util.module_from_spec(spec)
+            sys.modules["lfm_skill_bank"] = mod_sb  # dataclass 需要 module 注册
+            spec.loader.exec_module(mod_sb)
+            has_bank = hasattr(mod_sb, "LfmSkillBank")
+            has_proto = hasattr(mod_sb, "ProtoSkill")
+            has_contract = hasattr(mod_sb, "LfmSkillEffectsContract")
+            has_segment = hasattr(mod_sb, "LfmSegmentRecord")
+            has_cycle = hasattr(mod_sb, "run_skill_bank_cycle")
+            has_feed = hasattr(mod_sb, "feed_memory_to_skill_bank")
+            ok(f"Skill Bank: {'✅' if has_bank else '❌'}Bank {'✅' if has_proto else '❌'}Proto {'✅' if has_contract else '❌'}Contract {'✅' if has_segment else '❌'}Segment {'✅' if has_cycle else '❌'}Cycle")
+            results["modules"]["lfm_skill_bank"] = {
+                "ok": True,
+                "classes": {"bank": has_bank, "proto": has_proto, "contract": has_contract, "segment": has_segment},
+                "functions": {"cycle": has_cycle, "feed": has_feed},
+            }
+            results["ok"] += 1
+        else:
+            warn("lfm_skill_bank.py not found")
+            results["modules"]["lfm_skill_bank"] = {"ok": False}
+            results["fail"] += 1
+    except Exception as e:
+        results["modules"]["lfm_skill_bank"] = {"ok": False, "error": str(e)[:200]}
+        results["fail"] += 1
+        warn(f"Skill Bank: {e}")
+
+    # 2. lfm_boundary_detector
+    try:
+        spec = importlib.util.spec_from_file_location(
+            "lfm_boundary_detector", os.path.join(script_dir, "lfm_boundary_detector.py")
+        )
+        if spec and spec.loader:
+            mod_bd = importlib.util.module_from_spec(spec)
+            sys.modules["lfm_boundary_detector"] = mod_bd
+            spec.loader.exec_module(mod_bd)
+            has_detector = hasattr(mod_bd, "LfmBoundaryDetector")
+            has_nlp = hasattr(mod_bd, "NLPPredicateExtractor")
+            has_bridge = hasattr(mod_bd, "RCCAMFeedbackBridge")
+            has_full = hasattr(mod_bd, "run_full_cosplay_cycle")
+            ok(f"Boundary Detector: {'✅' if has_detector else '❌'}Detect {'✅' if has_nlp else '❌'}NLP {'✅' if has_bridge else '❌'}Bridge")
+            results["modules"]["lfm_boundary_detector"] = {
+                "ok": True,
+                "classes": {"detector": has_detector, "nlp": has_nlp, "bridge": has_bridge, "full_cycle": has_full},
+            }
+            results["ok"] += 1
+        else:
+            warn("lfm_boundary_detector.py not found")
+            results["modules"]["lfm_boundary_detector"] = {"ok": False}
+            results["fail"] += 1
+    except Exception as e:
+        results["modules"]["lfm_boundary_detector"] = {"ok": False, "error": str(e)[:200]}
+        results["fail"] += 1
+        warn(f"Boundary Detector: {e}")
+
+    # 3. cosplay_context_adapter
+    try:
+        spec = importlib.util.spec_from_file_location(
+            "cosplay_context_adapter", os.path.join(script_dir, "cosplay_context_adapter.py")
+        )
+        if spec and spec.loader:
+            mod_ctx = importlib.util.module_from_spec(spec)
+            sys.modules["cosplay_context_adapter"] = mod_ctx
+            spec.loader.exec_module(mod_ctx)
+            has_adapter = hasattr(mod_ctx, "CosplayContextAdapter")
+            has_config = hasattr(mod_ctx, "CosplayContextConfig")
+            has_enhance = hasattr(mod_ctx, "run_cosplay_enhanced_compact")
+            ok(f"Context Adapter: {'✅' if has_adapter else '❌'}Adapter {'✅' if has_config else '❌'}Config {'✅' if has_enhance else '❌'}Compact")
+            results["modules"]["cosplay_context_adapter"] = {
+                "ok": True,
+                "classes": {"adapter": has_adapter, "config": has_config, "run_compact": has_enhance},
+            }
+            results["ok"] += 1
+        else:
+            warn("cosplay_context_adapter.py not found")
+            results["modules"]["cosplay_context_adapter"] = {"ok": False}
+            results["fail"] += 1
+    except Exception as e:
+        results["modules"]["cosplay_context_adapter"] = {"ok": False, "error": str(e)[:200]}
+        results["fail"] += 1
+        warn(f"Context Adapter: {e}")
+
+    total = results["ok"] + results["fail"]
+    if results["fail"] == 0:
+        ok(f"v8.5 COSPLAY 模块检查: {results['ok']}/{total} 通过")
+    else:
+        warn(f"v8.5 COSPLAY 模块检查: {results['ok']}/{total} 通过, {results['fail']} 失败")
+    return results
+
+
 def generate_report(all_results: Dict[str, Any]) -> Dict[str, Any]:
     """生成汇总报告"""
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -2523,6 +2628,7 @@ def generate_report(all_results: Dict[str, Any]) -> Dict[str, Any]:
     mod = all_results.get("modules", {})
     v82_mod = all_results.get("v82_modules", {})
     v84_mod = all_results.get("v84_modules", {})
+    v85_mod = all_results.get("v85_modules", {})
     sync = all_results.get("sync", {})
     svc = all_results.get("services", {})
     brk = all_results.get("breakers", {})
@@ -2549,6 +2655,9 @@ def generate_report(all_results: Dict[str, Any]) -> Dict[str, Any]:
             "v84_modules_fail": v84_mod.get("fail", 0),
             "v84_modules_warn": v84_mod.get("warn", 0),
             "v84_modules_total": v84_mod.get("ok", 0) + v84_mod.get("fail", 0),
+            "v85_modules_ok": v85_mod.get("ok", 0),
+            "v85_modules_fail": v85_mod.get("fail", 0),
+            "v85_modules_total": v85_mod.get("ok", 0) + v85_mod.get("fail", 0),
             "files_out_of_sync": sync.get("out_of_sync", 0),
             "breakers": brk.get("total_breaks", 0),
             "worker_alive": svc.get("worker", {}).get("ping", False),
@@ -2574,6 +2683,8 @@ def generate_report(all_results: Dict[str, Any]) -> Dict[str, Any]:
         score -= v84_mod["fail"] * 5
     if v84_mod.get("warn", 0) > 0:
         score -= v84_mod["warn"]  # 每个警告扣 1 分
+    if v85_mod.get("fail", 0) > 0:
+        score -= v85_mod["fail"] * 5
     if adj_out_of_sync > 0:
         score -= adj_out_of_sync * 2
     if adj_breakers > 0:
@@ -2617,6 +2728,10 @@ def print_report(report: Dict[str, Any]):
     if v84_total > 0:
         warn_str = f" ({v84_warn} 警告)" if v84_warn > 0 else ""
         print(f"  {G}🌐{N} v8.4 SkillGraph & 神经检索: {v84_ok}/{v84_total}{warn_str}")
+    v85_ok = s.get('v85_modules_ok', 0)
+    v85_total = s.get('v85_modules_total', 0)
+    if v85_total > 0:
+        print(f"  {G}🎭{N} v8.5 COSPLAY 全架构移植: {v85_ok}/{v85_total}")
     slp_ok = s.get('sleep_stages_ok', 0)
     slp_total = s.get('sleep_stages_total', 0)
     if slp_total > 0:
@@ -3492,6 +3607,7 @@ def main():
     all_results["v82_pipes"] = check_v82_pipelines()
     all_results["v82_modules"] = check_v82_modules()
     all_results["v84_modules"] = check_v84_modules()
+    all_results["v85_modules"] = check_v85_modules()
     all_results["sync"] = check_file_sync()
     all_results["services"] = check_services()
     all_results["breakers"] = scan_breakers()

@@ -1,7 +1,7 @@
 # 🌌 GalaxyOS — 认知增强引擎
 
 > OpenClaw 的开源认知增强引擎，为 AI Assistant 提供记忆、检索、推理、验证、自进化等全套认知能力
-> 版本: v8.4.2 · enhanced_recall 全量神经集成 + SkillGraph 图感知检索
+> 版本: v8.5.0 · COSPLAY 全架构移植 + 契约学习 + 上下文智能增强
 
 ## 总览
 
@@ -237,7 +237,7 @@ GALAXYOS_REPO=. python3 -m galaxyos.engine.unified_entry recall --query "查询"
 
 | 版本 | 文件 | 说明 |
 |------|------|------|
-| **v8.4.2 (最新)** | 2026-06-23 | **enhanced_recall 全量8阶段神经集成(Engram→突触→情感→图→RRF→反思→重排) + SkillGraph 图感知检索** |
+| **v8.5.0 (最新)** | 2026-06-23 | **COSPLAY 全架构移植: LFM Skill Bank(契约学习/银行维护/五维评分) + Boundary Detection + 上下文四项增强** |
 | **v8.4.0** | 2026-06-23 | **OKF generate 子命令 + SkillGraph 全链路部署 + 144模块概念自动生成** |
 | **v8.3.0** | 2026-06-18 | **LFM2.5-1.2B ONNX Q4 量化 + 多进程 mmap 共享内存** |
 | **v8.1.0** | 2026-06-14 | **22方向论文全量实现 + 18新论文模块(~11K行) + 融合架构增强** |
@@ -263,7 +263,25 @@ GALAXYOS_REPO=. python3 -m galaxyos.engine.unified_entry recall --query "查询"
 
 **完整架构文档（含 17 层全景图、470+ 功能列表、更新日志）：** 👉 [📖 查看 Skills 文档栏](https://cnb.cool/llm-memory-integrat/GalaxyOS?tabValue=SKILLS-ov-file)
 
-### v8.4.x 新特性 (SkillGraph + enhanced_recall 全量神经集成)
+### v8.5.0 新特性 (COSPLAY 全架构移植 + 上下文智能增强)
+
+#### v8.5.0 — COSPLAY (arxiv 2604.20987) 全架构移植
+
+- **LFM Skill Bank** (`lfm_skill_bank.py`, 1521 行)：记忆轨迹→技能契约全链路
+  - 契约学习（Contract Learning）：工具调用日志→效果 contract
+  - 银行维护（Bank Maintenance）：Merge/Split/Refine/Retire/Promote
+  - ProtoSkill→Skill 毕业：三阈值门控确认制
+  - 五维加权评分（quality+consistency+reuse+exploration+recency）
+- **Boundary Detection** (`lfm_boundary_detector.py`, 965 行)
+  - Changepoint Detection + 意图标签 + NLP predicates
+  - 集成到 consolidation cycle step 0.5
+- **上下文四项增强** (`cosplay_context_adapter.py`, 580 行)
+  - Boundary-Aware：按意图 segment 压缩，不跨 segment
+  - Contract-Aware：Skill Bank contract 保留关键 predicates
+  - Skill Replacement：命中技能 `[Skill: name]` 替代整段
+  - Feedback-Driven：展开率→调整压缩策略
+- 全链路集成到 `memory_consolidation`、`xiaoyi_claw_api`、`dag_context_manager`、`claw_worker`
+- MODULE_REGISTRY 新增 3 个模块，total → 147 模块
 
 #### v8.4.2 — enhanced_recall 全量神经集成管线
 
