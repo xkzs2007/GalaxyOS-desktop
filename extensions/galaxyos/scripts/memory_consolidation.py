@@ -541,6 +541,41 @@ class ConsolidationEngine:
         except Exception as e:
             results["lfm_skill_bank"] = {"error": str(e)[:200]}
         
+        # 0.5. LFM Boundary Detection + NLP Predicate Extraction
+        try:
+            from lfm_boundary_detector import (
+                LfmBoundaryDetector, NLPPredicateExtractor,
+                BoundaryDetectorConfig,
+            )
+            from dag_context_manager import DAGContextManager
+            _boundary_cfg = BoundaryDetectorConfig(workspace=str(self.workspace))
+            _detector = LfmBoundaryDetector(_boundary_cfg)
+            _nlp_pred = NLPPredicateExtractor(_boundary_cfg)
+            
+            # 尝试从 DAG 检测边界（找活跃 session）
+            _boundary_segments = []
+            _dag_path = os.path.join(str(self.workspace), "..", "dag_context.db") if self.workspace else ""
+            if os.path.exists(str(Path(self.workspace).parent / "dag_context.db")):
+                try:
+                    _dag = DAGContextManager()
+                    _dag_keys = getattr(_dag, 'get_all_session_keys', lambda: [])()
+                    for _sk in _dag_keys[:5]:
+                        _segs = _detector.detect_from_dag(_dag, _sk)
+                        if _segs:
+                            _boundary_segments.extend(_segs)
+                except Exception as _be:
+                    logger.debug(f"Boundary detection from DAG: {_be}")
+            
+            results["lfm_boundary"] = {
+                "n_segments": len(_boundary_segments),
+                "intents": list(dict.fromkeys(
+                    s.intent_label for s in _boundary_segments if s.intent_label
+                ))[:10],
+            }
+            logger.info(f"LFM Boundary: {len(_boundary_segments)} segments")
+        except Exception as e:
+            results["lfm_boundary"] = {"error": str(e)[:200]}
+        
         # 1. CLS 固化
         try:
             cls_stats = self.consolidate_from_dag()

@@ -318,6 +318,15 @@ MODULE_REGISTRY: Dict[str, ModuleInfo] = {
         layer=1,
         dependencies=["memory_bank", "memory_consolidation"],
     ),
+    "lfm_boundary_detector": ModuleInfo(
+        name="lfm_boundary_detector",
+        module_type=ModuleType.ENGRAM_MEMORY,
+        description="LFM Boundary Detector — DAG 节点意图边界检测 + NLP Predicate 提取 (移植自 COSPLAY Boundary Proposal)",
+        triggers=["边界检测", "意图切分", "NLP 特征提取"],
+        script_path=str(CORE_DIR / "lfm_boundary_detector.py"),
+        layer=1,
+        dependencies=["memory_consolidation", "nlp_processor"],
+    ),
     "xiaoyi_claw_api": ModuleInfo(
         name="xiaoyi_claw_api",
         module_type=ModuleType.FULL_INTEGRATION,

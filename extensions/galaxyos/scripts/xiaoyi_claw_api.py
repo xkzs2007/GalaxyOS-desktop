@@ -4559,6 +4559,20 @@ class XiaoYiClawLLM:
         except Exception:
             pass
 
+        # 6. R-CCAM → Skill Bank 反馈桥
+        if state.cycle_count > 0:
+            try:
+                from lfm_boundary_detector import RCCAMFeedbackBridge
+                _rccam_bridge = RCCAMFeedbackBridge()
+                _rccam_bridge.feed_cycle_result({
+                    "strategy": state.strategy,
+                    "answer": state.generated_answer,
+                    "confidence": state.answer_confidence,
+                    "action": {"tool_name": state.strategy},
+                })
+            except Exception as _fb_e:
+                logger.debug(f"R-CCAM feedback bridge: {_fb_e}")
+
         # 返回结果
         return {
             "answer": state.generated_answer,
