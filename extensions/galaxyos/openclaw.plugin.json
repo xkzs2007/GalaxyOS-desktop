@@ -7,17 +7,20 @@
             "id": "claw-core-engine"
         },
         "tools": [
+            "galaxy_pool",
+            "claw_rccam_progress",
             "claw_recall",
+            "claw_lobster",
             "claw_health",
+            "claw_vector_info",
+            "claw_events",
             "claw_store",
             "claw_verify",
             "claw_rccam",
-            "claw_events",
             "claw_save_memory",
             "claw_compile_skill",
             "claw_asset_search",
-            "claw_asset_register",
-            "claw_vector_info"
+            "claw_asset_register"
         ]
     },
     "configSchema": {
