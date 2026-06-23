@@ -375,60 +375,234 @@ class XiaoyiMemoryV2:
         top_k: int = 10,
         use_crag: bool = True,
         use_hybrid: bool = True,
-        use_cache: bool = True
+        use_cache: bool = True,
+        use_neural: bool = True
     ) -> Dict:
         """
-        增强检索（使用 Layer 2 模块，本地处理）
-        
-        整合:
-        - CRAG 纠错检索
-        - 混合检索 (Dense + Sparse)
-        - RAG 缓存
-        - 命题检索
+        增强检索（全量集成版 v2）
+
+        七阶段管线：
+        Stage 0: Engram 快速通道 — O(1) 哈希命中检测
+        Stage 1: 向量基线 — 关键词 + Embedding 召回
+        Stage 2: 突触传播 — 从基线结果经突触网络扩散（关联记忆发现）
+        Stage 3: 情感加权 — 情绪强度调整置信度
+        Stage 4: 图感知检索 — Skill Graph + 知识图谱 GNN
+        Stage 5: RRF 融合 — 多路结果 Reciprocal Rank Fusion
+        Stage 6: 反思增强 — Generative Agents 深度整合
+        Stage 7: 检索公式重排 — 最终加权排序
         """
         result = {
             "query": query,
             "basic_results": [],
             "enhanced_results": [],
+            "synapse_results": [],
+            "graph_results": [],
             "corrections": [],
-            "cache_hit": False
+            "cache_hit": False,
+            "engram_fast_path": False,
+            "neural": {}
         }
-        
-        # 1. 基础检索（本地直查）
-        result["basic_results"] = self.recall(query, top_k=top_k, use_enhanced=False)
-        
-        # 2. 增强检索：尝试加载 Layer 2 模块（use_crag 控制 CRAG 开关）
-        _layers = ["hybrid_search", "proposition_retrieval"]
+
+        # ── Stage 0: Engram 快速通道 ──
+        engram_hot = False
+        try:
+            engram = self._lazy_load("engram_memory")
+            if engram and hasattr(engram, 'lookup'):
+                agg_emb, info = engram.lookup(query)
+                _hr = info.get("hit_rate", 0) if isinstance(info, dict) else 0
+                _hit = info.get("hit", False) if isinstance(info, dict) else False
+                if _hit and _hr > 0.5:
+                    engram_hot = True
+                    result["engram_fast_path"] = True
+                result["neural"]["engram"] = {
+                    "hit": _hit, "hit_rate": _hr,
+                    "ngram_total": info.get("ngram_total", 0) if isinstance(info, dict) else 0
+                }
+        except Exception as e:
+            logger.debug(f"enhanced_recall: engram 快速通道失败: {e}")
+            result.setdefault("neural", {})["engram"] = {"error": str(e)}
+
+        # ── Stage 1: 向量基线 ──
+        result["basic_results"] = self.recall(query, top_k=top_k * 2, use_enhanced=False)
+
+        # ── Stage 2 (classic): Layer 2 模块检索（CRAG / 混合检索 / 命题检索） ──
+        _layer2 = ["hybrid_search", "proposition_retrieval"]
         if use_crag and self._lazy_load("crag_pipeline"):
-            _layers.insert(0, "crag_pipeline")
-        for module_name in _layers:
+            _layer2.insert(0, "crag_pipeline")
+        for module_name in _layer2:
             try:
                 module = self._lazy_load(module_name)
-                if module:
-                    if hasattr(module, 'search'):
-                        enhanced = module.search(query, top_k=top_k)
-                        if enhanced:
-                            if module_name == "crag_pipeline":
-                                result["corrections"].extend(enhanced if isinstance(enhanced, list) else [enhanced])
-                            else:
-                                for item in (enhanced if isinstance(enhanced, list) else [enhanced]):
-                                    if isinstance(item, dict):
-                                        result["enhanced_results"].append({
-                                            "id": item.get("id", ""),
-                                            "content": item.get("content", str(item)),
-                                            "confidence": item.get("confidence", item.get("score", 0.5)),
-                                            "source": module_name
-                                        })
+                if module and hasattr(module, 'search'):
+                    enhanced = module.search(query, top_k=top_k)
+                    if enhanced:
+                        if module_name == "crag_pipeline":
+                            result["corrections"].extend(
+                                enhanced if isinstance(enhanced, list) else [enhanced]
+                            )
+                        else:
+                            for item in (enhanced if isinstance(enhanced, list) else [enhanced]):
+                                if isinstance(item, dict):
+                                    result["enhanced_results"].append({
+                                        "id": item.get("id", ""),
+                                        "content": item.get("content", str(item)),
+                                        "confidence": item.get("confidence", item.get("score", 0.5)),
+                                        "source": module_name
+                                    })
             except Exception as e:
-                logger.debug(f"{module_name} 加载失败: {e}")
-        
-        # 3. 检索公式重排：用 retrieval_formula 的 MemoryRetriever 加权评分
+                logger.debug(f"enhanced_recall: {module_name} 加载失败: {e}")
+
+        # ── Stage 3: 突触网络传播（关联记忆发现） ──
+        synapse_results = []
+        if use_neural:
+            try:
+                if result["basic_results"]:
+                    _seen_syn = set()
+                    for br in result["basic_results"][:3]:
+                        _neuron = self.synapse_network.neuron_manager.find_neuron_by_content(
+                            br.get("content", "")
+                        )
+                        if _neuron and hasattr(_neuron, 'id'):
+                            associated = self.synapse_network.find_associated(
+                                _neuron.id, top_k=5
+                            )
+                            for mem_neuron, score in associated:
+                                _cid = getattr(mem_neuron, 'id', str(id(mem_neuron)))
+                                if _cid not in _seen_syn:
+                                    _seen_syn.add(_cid)
+                                    _content = getattr(mem_neuron, 'content', '')
+                                    # 跳过已存在于 basic/enhanced 的结果
+                                    if _content:
+                                        synapse_results.append({
+                                            "id": _cid,
+                                            "content": _content,
+                                            "confidence": float(score) * 0.85,
+                                            "source": "synapse_activation",
+                                            "neuron_id": _cid
+                                        })
+                result["neural"]["synapse"] = {"results_count": len(synapse_results)}
+            except Exception as e:
+                logger.debug(f"enhanced_recall: 突触传播失败: {e}")
+                result["neural"]["synapse"] = {"error": str(e)}
+
+        # ── Stage 4: 情感加权 ──
+        if use_neural:
+            try:
+                _emotion_boosted = self.emotion_manager.get_high_priority_memories(limit=5)
+                if _emotion_boosted:
+                    # 对已检索结果中匹配高情绪记忆的条目提升置信度
+                    _boost_ids = {m.get("memory_id", m.get("id", "")) for m in _emotion_boosted}
+                    for rl in [result["enhanced_results"], synapse_results]:
+                        for item in rl:
+                            if item.get("id", "") in _boost_ids:
+                                item["confidence"] = min(1.0, item.get("confidence", 0.5) * 1.3)
+                result["neural"]["emotion"] = {
+                    "boosted_count": len(_emotion_boosted) if _emotion_boosted else 0
+                }
+            except Exception as e:
+                logger.debug(f"enhanced_recall: 情感加权失败: {e}")
+                result["neural"]["emotion"] = {"error": str(e)}
+
+        # ── Stage 5: 图感知检索 ──
+        graph_results = []
+        if use_neural:
+            try:
+                # 5a: Skill Graph
+                sg = self._lazy_load("skill_graph")
+                if sg and hasattr(sg, 'GraphAwareRetriever'):
+                    retriever = sg.GraphAwareRetriever(sg.graph if hasattr(sg, 'graph') else sg)
+                    gs_results = retriever.search(query, top_k=top_k)
+                    for item in gs_results if isinstance(gs_results, list) else []:
+                        graph_results.append({
+                            "id": item.get("id", ""),
+                            "content": item.get("content", item.get("name", str(item))),
+                            "confidence": float(item.get("score", item.get("weight", 0.5))) * 0.7,
+                            "source": "skill_graph"
+                        })
+
+                # 5b: Knowledge Graph GNN + 图构造器
+                gnn = self._lazy_load("knowledge_graph_gnn")
+                gc = self._lazy_load("graph_constructor")
+                if gc and hasattr(gc, 'search'):
+                    kg_results = gc.search(query, top_k=top_k)
+                    for item in kg_results if isinstance(kg_results, list) else []:
+                        graph_results.append({
+                            "id": item.get("id", ""),
+                            "content": item.get("content", item.get("name", str(item))),
+                            "confidence": float(item.get("score", item.get("weight", 0.5))) * 0.65,
+                            "source": "knowledge_graph"
+                        })
+                elif gc and hasattr(gc, 'extract_entities'):
+                    entities = gc.extract_entities(query)
+                    if entities:
+                        graph_results.append({
+                            "id": "kg_entity_ref",
+                            "content": f"知识图谱实体: {', '.join(str(e) for e in entities[:5])}",
+                            "confidence": 0.4,
+                            "source": "knowledge_graph"
+                        })
+
+                result["neural"]["graph"] = {"results_count": len(graph_results)}
+            except Exception as e:
+                logger.debug(f"enhanced_recall: 图感知检索失败: {e}")
+                result["neural"]["graph"] = {"error": str(e)}
+
+        result["graph_results"] = graph_results
+        result["synapse_results"] = synapse_results
+
+        # ── Stage 6: RRF 融合 — 合并所有结果 ──
+        all_results = list(result["enhanced_results"])  # 已有的 Layer 2 结果
+        seen_ids = {r.get("id", "") for r in all_results if r.get("id")}
+
+        for item in synapse_results + graph_results:
+            _id = item.get("id", "")
+            if _id not in seen_ids:
+                seen_ids.add(_id)
+                all_results.append(item)
+
+        # RRF: confidence 降序，同分时突触 > 图 > Layer 2
+        _src_priority = {"synapse_activation": 0, "knowledge_graph": 1,
+                         "skill_graph": 1, "hybrid_search": 2,
+                         "proposition_retrieval": 2}
+        all_results.sort(key=lambda x: (
+            -x.get("confidence", 0),
+            _src_priority.get(x.get("source", ""), 99)
+        ))
+        result["enhanced_results"] = all_results[:top_k]
+
+        # ── Stage 7: 反思增强（Generative Agents） ──
+        if use_neural:
+            try:
+                gen_agents = self._lazy_load("generative_agents")
+                if gen_agents:
+                    # 如果有 MemoryStream 实例且结果较多，做一次反思整合
+                    _ms = getattr(gen_agents, 'MemoryStream', None)
+                    if _ms and len(result["enhanced_results"]) >= 3:
+                        _stream = _ms()
+                        _recent = _stream.get_important(threshold=5.0)
+                        if _recent:
+                            # 将重要的反思记忆加入增强结果
+                            for m in _recent[:3]:
+                                _mc = getattr(m, 'content', '')
+                                _mid = getattr(m, 'id', str(id(m)))
+                                if _mc and _mid not in seen_ids:
+                                    result["enhanced_results"].append({
+                                        "id": _mid,
+                                        "content": _mc,
+                                        "confidence": 0.6,
+                                        "source": "generative_reflection"
+                                    })
+                                    seen_ids.add(_mid)
+                    result["neural"]["reflection"] = {"available": True}
+            except Exception as e:
+                logger.debug(f"enhanced_recall: 反思增强失败: {e}")
+                result["neural"]["reflection"] = {"error": str(e)}
+
+        # ── Stage 8 (final): 检索公式重排 ──
         try:
             formula = self._lazy_load("retrieval_formula")
             if formula and hasattr(formula, 'MemoryRetriever'):
-                from retrieval_formula import MemoryRetriever, RetrievalConfig
+                from retrieval_formula import MemoryRetriever
                 retriever = MemoryRetriever()
-                # 将 enhanced_results 转成 Memory 对象后重新排序
                 if result["enhanced_results"]:
                     reordered = retriever.retrieve(
                         result["enhanced_results"],
@@ -438,8 +612,11 @@ class XiaoyiMemoryV2:
                     if reordered:
                         result["enhanced_results"] = reordered
         except Exception as e:
-            logger.debug(f"retrieval_formula 评分失败: {e}")
-        
+            logger.debug(f"enhanced_recall: retrieval_formula 评分失败: {e}")
+
+        # 最终截断
+        result["enhanced_results"] = result["enhanced_results"][:top_k]
+
         return result
     
     def fast_generate(

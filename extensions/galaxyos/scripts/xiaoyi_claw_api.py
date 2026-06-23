@@ -1943,13 +1943,24 @@ class XiaoYiClawLLM:
 
     # ==================== 增强检索集成(从 XiaoyiMemoryV2 enhanced_* 融合,走统一API)====================
 
-    def enhanced_recall(self, query: str, top_k: int = 10, use_crag: bool = True) -> Dict:
-        """增强检索(通过 XiaoYiClawLLM recall + 本地增强)"""
+    def enhanced_recall(self, query: str, top_k: int = 10, use_crag: bool = True, use_neural: bool = True) -> Dict:
+        """增强检索（走 XiaoyiMemoryV2.enhanced_recall 全量集成版 v2）"""
+        if self.memory_v2:
+            return self.memory_v2.enhanced_recall(
+                query, top_k=top_k, use_crag=use_crag, use_neural=use_neural
+            )
+        # 降级：走基础 recall
         memories = self.recall(query, top_k=top_k)
         return {
+            "query": query,
             "basic_results": memories,
-            "total_results": len(memories),
-            "cache_hit": False
+            "enhanced_results": [],
+            "synapse_results": [],
+            "graph_results": [],
+            "corrections": [],
+            "cache_hit": False,
+            "engram_fast_path": False,
+            "neural": {"fallback": True}
         }
 
     def fast_generate(self, query: str, top_k: int = 3) -> Dict:
