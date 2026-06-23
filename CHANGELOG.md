@@ -3,24 +3,38 @@
 ## [v8.4.0] — 2026-06-23
 
 ### Added
-- OKF `generate` 子命令 — 自动从 MODULE_REGISTRY 生成模块 concept（144 模块，13 层）
-- `resource` 字段 — concept 前件携带源文件路径（`file://workspace/` / `galaxyos://module/` / `galaxyos://skill/`）
-- bundle 目录拆分 — `concepts/modules/`、`concepts/skills/`、`concepts/system/`
-- 模块概念间 cross-link — 自动引用同层兄弟模块
-- `sync` 集成 generate — Step 3.5 自动生成模块概念后推送到 CNB
+- **OKF `generate` 子命令** — 自动从 `MODULE_REGISTRY` 生成模块 concept（144 模块，13 层），按层分组含 cross-link + index.md
+- **`resource` 字段** — concept 前件带源路径（`file://workspace/` / `galaxyos://module/` / `galaxyos://skill/`）
+- **bundle 目录拆分** — `concepts/modules/`、`concepts/skills/`、`concepts/system/`
+- **OKF → SkillGraph 协同** — ingest 时 type=Skill 的概念自动编译到 SkillGraph（`SkillCompiler.compile()` → `AssetRegistry.register()` → `SkillGraph.add_node()` → 持久化），实现图感知检索
+- **sync 集成 generate** — Step 3.5 自动生成模块概念后推 CNB
 - 安装向导 `--setup-git` 子命令
-- `openclaw.plugin.json` 描述更新
+- `openclaw.plugin.json` 描述 v4→v8，119→144 模块
 
 ### Changed
 - `package.json` 版本统一为 `8.4.0`
 - `VERSION` 统一为 `v8.4.0`
-- 规范版本号格式（遵守 VERSIONING.md 规范）
+- 规范版本号格式（遵守 VERSIONING.md）
 
 ### Fixed
-- SkillGraph 中文长句匹配（cn→cn 路径缺失）
+- SkillGraph 中文长句匹配（补 cn→cn 路径）
 - 拓扑排序保留种子得分
-- OKF ingest → SkillGraph 打通（SkVM 编译链路）
 - 全局单例持久化
+
+### 已实现论文模块（v8.4 前已完成）
+- **SkillGraph** (`arXiv:2605.12039`) — 技能依赖图 + RL 信号共进化，SkillGraph 已集成到 R-CCAM 检索链路，SkillCompiler/AssetRegistry/SkillGraph 全链路已部署
+- **SDPG** (`arXiv:2606.04036`) — Self-Distilled Policy Gradient，RLVR + self-distillation 策略优化
+- **GraphWalker** (`arXiv:2603.28533`) — Agentic KGQA 合成轨迹学习，两阶段 SFT + 轻量 RL
+- LASAR Latent Cognitive Map (`arXiv:2605.16899`) — 认知地图嵌入 R-CCAM
+- AriGraph (`arXiv:2407.04363`) — 空间拓扑记忆检索
+- Engram (`arXiv:2601.07372`) — DeepSeek 式记忆印记 + U 型缩放律
+- LFM (`arXiv:2409.20308`) — Liquid AI 基础模型自适应算子
+- MemoryOS (`arXiv:2506.06326`) — 热度跟踪 + 分段页式存储
+- SKILL0 (`arXiv:2604.02268`) — 技能课程学习
+- KAN (`arXiv:2404.19756`) — Kolmogorov-Arnold 网络嵌入
+- Self-RAG / CRAG (`arXiv:2310.11511` / `arXiv:2401.15884`) — 检索增强生成
+- Neural ODE (`arXiv:1806.07366`) — 连续时间神经微分方程
+- 及其他 20+ 论文实现（Titans、Mamba3、LiquidSSM、SSM-KAN、MoE-Engram 等 v8.1 液态神经网络模块）
 
 ## [8.3.0] - 2026-06-18
 ### Added
