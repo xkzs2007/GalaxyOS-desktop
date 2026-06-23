@@ -175,7 +175,7 @@ class ModuleType(Enum):
     MOE_ENGRAM_HYBRID = "moe_engram_hybrid"
     UNIFIED_SPARSITY = "unified_sparsity"
     LIQUID_WEIGHT = "liquid_weight"
-    DAG_LIQUID = "dag_liquid"
+    SKILL_GRAPH = "skill_graph"
 
 
 @dataclass
@@ -2450,6 +2450,16 @@ EXTENDED_MODULES_P1 = {
         triggers=["DAG液态", "液态压缩", "上下文压缩"],
         script_path="dag_liquid_fusion.py",
         layer=9
+    ),
+    # SkillGraph 技能图
+    "skill_graph": ModuleInfo(
+        name="skill_graph",
+        module_type=ModuleType.SKILL_GRAPH,
+        description="SkillGraph 技能图 — 有向图感知检索、图演化(GraphEvolutionEngine)、GRPO 策略优化",
+        triggers=["技能图", "图感知", "SkillGraph", "图检索"],
+        script_path="skill_graph.py",
+        layer=1,
+        dependencies=[]
     ),
 }
 

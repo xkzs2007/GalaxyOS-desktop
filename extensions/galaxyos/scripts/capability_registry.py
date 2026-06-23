@@ -957,6 +957,83 @@ def get_registry_manager() -> RegistryManager:
     return _REGISTRY_MANAGER
 
 
+# ═══════════════════════════════════════════════════════════
+# SkillGraph 集成入口
+# ═══════════════════════════════════════════════════════════
+
+
+def init_skill_graph(rebuild=False) -> Any:
+    """
+    初始化 SkillGraph
+
+    从 CapabilityRegistry 已注册的 profiles 构建 SkillGraph 节点和边。
+    rebuild=True 时重建持久化文件。
+
+    Returns:
+        SkillGraph 实例
+    """
+    try:
+        from skill_graph import SkillGraph
+    except ImportError:
+        logger.warning("skill_graph 模块不可用")
+        return None
+
+    rm = get_registry_manager()
+    graph = SkillGraph(auto_load=not rebuild)
+
+    if rebuild or len(graph.nodes) == 0:
+        for name, profile in rm._profiles.items():
+            graph.add_node(
+                name=name,
+                description=profile.summary(),
+                layer=0,
+                module_type="skill"
+            )
+        graph.save()
+        logger.info(f"init_skill_graph: 已注册 {len(graph.nodes)} 节点")
+
+    return graph
+
+
+def graph_aware_search(query: str, top_k: int = 8, rebuild: bool = False) -> List[dict]:
+    """
+    图感知检索
+
+    使用 SkillGraph 的 GraphAwareRetriever 进行图感知检索。
+
+    Args:
+        query: 查询文本
+        top_k: 返回结果数
+        rebuild: 是否重建 SkillGraph
+
+    Returns:
+        [{name, score, description}, ...]
+    """
+    try:
+        from skill_graph import SkillGraph, GraphAwareRetriever
+    except ImportError:
+        logger.warning("skill_graph 模块不可用")
+        return []
+
+    graph = init_skill_graph(rebuild=rebuild)
+    if graph is None or len(graph.nodes) == 0:
+        return []
+
+    retriever = GraphAwareRetriever(graph)
+    results = retriever.retrieve(query, top_k=top_k)
+
+    output = []
+    for name, score in results:
+        node = graph.get_node(name)
+        desc = node.description if node else ""
+        output.append({
+            "name": name,
+            "score": round(score, 4),
+            "description": desc,
+        })
+    return output
+
+
 # ── 测试入口 ──
 
 if __name__ == "__main__":

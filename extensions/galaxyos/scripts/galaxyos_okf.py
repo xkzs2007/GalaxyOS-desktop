@@ -567,53 +567,22 @@ def _register_to_coordinator(concepts, bundle_name, index_file, compile_skills=T
 def _register_to_skill_graph(concepts):
     """将 type=Skill 的 OKF 概念编译到 SkillGraph"""
     try:
-        import importlib
-        skill_graph = importlib.import_module("skill_graph")
-        compiler = getattr(skill_graph, "SkillCompiler", None)
-        registry = getattr(skill_graph, "AssetRegistry", None)
-        graph = getattr(skill_graph, "SkillGraph", None)
-    except (ImportError, AttributeError) as e:
-        print(f"   ⚠️  无法导入 skill_graph: {e}")
+        from skill_graph import SkillGraph
+    except ImportError:
+        print("   ⚠️  skill_graph.py 未加载，跳过 SkillGraph 注册")
         return
 
+    sg = SkillGraph(auto_load=True)
     for c in concepts:
         if c["type"] != "Skill":
             continue
-
-        # 构建类似 skill_name:description 的 skill_desc 语法
+        asset_id = f"okf_{c['id'].replace('/', '_')}"
         name = c["title"]
         desc = c["description"]
-        skill_text = f"{name}: {desc or ''}"
+        sg.add_node(asset_id, name, desc)
 
-        # 用 SkillCompiler 编译
-        if compiler:
-            try:
-                parsed = compiler.compile(skill_text)
-            except Exception as e:
-                print(f"   ⚠️  SkillCompiler 编译失败 {name}: {e}")
-                continue
-
-        # 注册到 AssetRegistry 和 SkillGraph
-        asset_id = f"okf_{c['id'].replace('/', '_')}"
-        if registry:
-            try:
-                registry.register(asset_id, name, desc, "skill", tags=c.get("tags", []))
-            except Exception as e:
-                print(f"   ⚠️  AssetRegistry 注册失败 {name}: {e}")
-
-        if graph and registry:
-            try:
-                graph.add_node(asset_id, name, desc)
-            except Exception as e:
-                print(f"   ⚠️  SkillGraph 添加节点失败 {name}: {e}")
-
-    # 持久化
-    if graph and hasattr(graph, "save"):
-        try:
-            graph.save()
-            print(f"   ✅ 已持久化 SkillGraph")
-        except Exception as e:
-            print(f"   ⚠️  SkillGraph 持久化失败: {e}")
+    sg.save()
+    print(f"   ✅ SkillGraph 已更新 ({len(sg.nodes)} 节点)")
 
 
 
