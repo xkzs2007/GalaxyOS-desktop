@@ -236,15 +236,27 @@ def export_bundle(bundle_name="galaxyos-system", output_dir=None,
         existing_fm = _extract_frontmatter(content)
 
         # 构建 OKF frontmatter
+        # Determine resource URI
+        is_skill = "SKILL.md" in fpath and "skills/" in fpath.replace("\\", "/")
+        if "resource" in existing_fm:
+            resource_uri = existing_fm["resource"]
+        elif is_skill:
+            skill_name = os.path.basename(os.path.dirname(fpath))
+            resource_uri = f"galaxyos://skill/{skill_name}"
+        elif basename in FILE_TYPE_MAP:
+            relpath = os.path.relpath(fpath, WORKSPACE)
+            resource_uri = f"file://workspace/{relpath}"
+        else:
+            resource_uri = ""
+
         fm = {
             "type": existing_fm.get("type", concept_type),
             "title": _extract_title(content, fpath),
             "description": _extract_description(content),
+            "resource": resource_uri,
             "timestamp": datetime.now(TZ).isoformat(),
             "tags": tag_list,
         }
-        if "resource" in existing_fm:
-            fm["resource"] = existing_fm["resource"]
 
         # 写入 concept 文件（去掉源文件的 frontmatter + 用 OKF frontmatter）
         clean_content = content
@@ -417,7 +429,7 @@ def _find_bundle_root(path):
     return None
 
 
-def ingest_bundle(bundle_path, index_dir=None, register_module=True):
+def ingest_bundle(bundle_path, index_dir=None, register_module=True, compile_skills=True):
     """
     消费一个 OKF Knowledge Bundle
 
@@ -512,18 +524,23 @@ def ingest_bundle(bundle_path, index_dir=None, register_module=True):
 
     # 注册到 unified_coordinator（可选）
     if register_module:
-        _register_to_coordinator(concepts, bundle_name, index_file)
+        _register_to_coordinator(concepts, bundle_name, index_file, compile_skills=compile_skills)
 
     print(f"\n✅ 消费完成: {len(concepts)} concepts 已索引")
     return True
 
 
-def _register_to_coordinator(concepts, bundle_name, index_file):
+def _register_to_coordinator(concepts, bundle_name, index_file, compile_skills=True):
     """
     将 OKF 概念注册到 GalaxyOS unified_coordinator 的静态知识层
 
-    通过写入 knowledge_assets 目录，让 claw_recall 等检索路径能访问
+    通过写入 knowledge_assets 目录，让 claw_recall 等检索路径能访问。
+    如果 compile_skills=True 且 concept type=Skill，同时编译到 SkillGraph 进行图感知检索。
     """
+    # 可选：编译 type=Skill 的概念到 SkillGraph
+    if compile_skills:
+        _register_to_skill_graph(concepts)
+
     assets_dir = os.path.join(os.path.dirname(__file__), "..", "var", "knowledge_assets")
     os.makedirs(assets_dir, exist_ok=True)
 
@@ -545,6 +562,248 @@ def _register_to_coordinator(concepts, bundle_name, index_file):
     with open(asset_file, "w", encoding="utf-8") as f:
         json.dump(asset_data, f, ensure_ascii=False, indent=2)
     print(f"   ✅ 已注册到知识资产: {asset_file} ({len(asset_data)} 条)")
+
+
+def _register_to_skill_graph(concepts):
+    """将 type=Skill 的 OKF 概念编译到 SkillGraph"""
+    try:
+        import importlib
+        skill_graph = importlib.import_module("skill_graph")
+        compiler = getattr(skill_graph, "SkillCompiler", None)
+        registry = getattr(skill_graph, "AssetRegistry", None)
+        graph = getattr(skill_graph, "SkillGraph", None)
+    except (ImportError, AttributeError) as e:
+        print(f"   ⚠️  无法导入 skill_graph: {e}")
+        return
+
+    for c in concepts:
+        if c["type"] != "Skill":
+            continue
+
+        # 构建类似 skill_name:description 的 skill_desc 语法
+        name = c["title"]
+        desc = c["description"]
+        skill_text = f"{name}: {desc or ''}"
+
+        # 用 SkillCompiler 编译
+        if compiler:
+            try:
+                parsed = compiler.compile(skill_text)
+            except Exception as e:
+                print(f"   ⚠️  SkillCompiler 编译失败 {name}: {e}")
+                continue
+
+        # 注册到 AssetRegistry 和 SkillGraph
+        asset_id = f"okf_{c['id'].replace('/', '_')}"
+        if registry:
+            try:
+                registry.register(asset_id, name, desc, "skill", tags=c.get("tags", []))
+            except Exception as e:
+                print(f"   ⚠️  AssetRegistry 注册失败 {name}: {e}")
+
+        if graph and registry:
+            try:
+                graph.add_node(asset_id, name, desc)
+            except Exception as e:
+                print(f"   ⚠️  SkillGraph 添加节点失败 {name}: {e}")
+
+    # 持久化
+    if graph and hasattr(graph, "save"):
+        try:
+            graph.save()
+            print(f"   ✅ 已持久化 SkillGraph")
+        except Exception as e:
+            print(f"   ⚠️  SkillGraph 持久化失败: {e}")
+
+
+
+# ═══════════════════════════════════════════════════════════
+# 自动生成：模块 + skill concept（类似 reference_agent）
+# ═══════════════════════════════════════════════════════════
+
+def generate_module_concepts(output_dir, force=False):
+    """从 GalaxyOS MODULE_REGISTRY 自动生成模块 OKF concept
+
+    扫描 unified_coordinator.MODULE_REGISTRY，按 layer 分组，
+    生成 concept 文件 + per-layer index.md + modules/index.md
+    """
+    output_path = Path(output_dir) / "modules"
+    if output_path.exists():
+        if not force:
+            print(f"⚠️  {output_path} 已存在，使用 --force 覆盖")
+            return 0
+        shutil.rmtree(output_path)
+
+    # 动态导入 unified_coordinator
+    try:
+        import importlib
+        uc = importlib.import_module("unified_coordinator")
+        registry = getattr(uc, "MODULE_REGISTRY", {})
+    except (ImportError, AttributeError) as e:
+        print(f"❌ 无法加载 MODULE_REGISTRY: {e}")
+        return 0
+
+    if not registry:
+        print("⚠️  MODULE_REGISTRY 为空，跳过")
+        return 0
+
+    # 按 layer 分组
+    layers = {}
+    for name, mod in registry.items():
+        layer = getattr(mod, "layer", 0)
+        desc = getattr(mod, "description", "") or ""
+        mt = getattr(mod, "module_type", None)
+        deps = getattr(mod, "dependencies", []) or []
+        layers.setdefault(layer, []).append((name, desc, mt, deps))
+
+    output_path.mkdir(parents=True, exist_ok=True)
+
+    # 每个 layer 一个子目录
+    layer_indexes = []
+    for layer in sorted(layers.keys()):
+        modules = layers[layer]
+        layer_dir = output_path / f"layer_{layer}"
+        layer_dir.mkdir(exist_ok=True)
+
+        layer_concepts = []
+        for name, desc, mt, deps in sorted(modules):
+            safe_name = name.replace("/", "_")
+            mt_str = str(mt) if mt else ""
+            tags = ["module", f"layer_{layer}"] + ([mt_str] if mt_str else [])
+
+            # 生成 cross-links：同层其他模块
+            sibling_links = []
+            for n2, d2, _, _ in sorted(modules):
+                if n2 == name:
+                    continue
+                safe_n2 = n2.replace("/", "_")
+                sibling_links.append(f"- Related: [{n2}](./{safe_n2}.md)")
+
+            # Dependencies as cross-links
+            dep_links = []
+            for dep in deps:
+                dep_safe = dep.replace("/", "_")
+                dep_links.append(f"- [{dep}](../layer_{layer}/{dep_safe}.md)")
+
+            # Body
+            body_parts = [f"# {name}", ""]
+            if desc:
+                body_parts.extend(["## Description", "", desc, ""])
+            if dep_links:
+                body_parts.extend(["## Dependencies", ""] + dep_links + [""])
+            if sibling_links:
+                body_parts.extend(["## Cross-links", ""] + sibling_links + [""])
+
+            frontmatter = {
+                "type": "GalaxyOS Module",
+                "title": name,
+                "description": desc or f"{name} 模块",
+                "resource": f"galaxyos://module/{name}",
+                "tags": tags,
+                "timestamp": datetime.now(TZ).isoformat(),
+            }
+            fm_str = "---\n" + yaml.dump(frontmatter, allow_unicode=True, default_flow_style=False).strip() + "\n---\n"
+            content = fm_str + "\n".join(body_parts)
+
+            concept_path = layer_dir / f"{safe_name}.md"
+            concept_path.write_text(content, encoding="utf-8")
+            layer_concepts.append((name, safe_name, desc))
+
+        # layer index.md
+        index_lines = [
+            "---",
+            f"type: ModuleLayerIndex",
+            f"title: Layer {layer}",
+            f"description: 共 {len(layer_concepts)} 个模块",
+            "---",
+            "",
+            f"# Layer {layer} - 模块索引",
+            "",
+            f"共 {len(layer_concepts)} 个模块\n",
+        ]
+        for n, sn, d in sorted(layer_concepts):
+            d_short = d[:60].replace(":", "") if d else ""
+            index_lines.append(f"- [{n}](./{sn}.md) — {d_short}")
+        index_lines.append("")
+        (layer_dir / "index.md").write_text("\n".join(index_lines), encoding="utf-8")
+
+        layer_indexes.append((layer, len(layer_concepts)))
+
+    # 顶层 modules/index.md
+    root_index = [
+        "---",
+        "type: ModuleIndex",
+        "title: GalaxyOS 模块索引",
+        f"description: 共 {sum(c for _, c in layer_indexes)} 个模块，{len(layer_indexes)} 层",
+        "---",
+        "",
+        "# GalaxyOS 模块",
+        "",
+        f"共 {sum(c for _, c in layer_indexes)} 个模块，{len(layer_indexes)} 层架构\n",
+    ]
+    for layer, count in sorted(layer_indexes):
+        root_index.append(f"- [Layer {layer}](./layer_{layer}/) — {count} 个模块")
+    root_index.append("")
+    (output_path / "index.md").write_text("\n".join(root_index), encoding="utf-8")
+
+    total = sum(c for _, c in layer_indexes)
+    print(f"✅ 模块 concept 生成完成: {total} 个")
+    return total
+
+
+def generate_skill_concepts(output_dir, force=False):
+    """从 GalaxyOS skill 元数据增强 OKF concept（补 resource、tags）"""
+    output_path = Path(output_dir)
+    if not output_path.exists():
+        print("⚠️  目录不存在，跳过 skill 增强")
+        return 0
+
+    existing = []
+    skills_dir = output_path / "skills"
+    if not skills_dir.is_dir():
+        print("⚠️  skills 目录不存在，跳过")
+        return 0
+    for f in skills_dir.rglob("*.md"):
+        if f.name in ("index.md", "log.md", ".gitignore"):
+            continue
+        existing.append(f)
+
+    updated = 0
+    for path in existing:
+        with open(path, "r", encoding="utf-8") as f:
+            content = f.read()
+        m = re.match(r'^---\s*\n(.*?)\n---\s*\n', content, re.DOTALL)
+        if not m:
+            continue
+        fm = _safe_parse_yaml(m.group(1)) or {}
+        need = False
+
+        # 补 resource
+        if not fm.get("resource"):
+            skill_name = path.parent.name
+            fm["resource"] = f"galaxyos://skill/{skill_name}"
+            need = True
+
+        # 补 skill tag
+        tags = fm.get("tags", [])
+        if isinstance(tags, list) and "skill" not in tags:
+            tags.insert(0, "skill")
+            fm["tags"] = tags
+            need = True
+
+        if not need:
+            continue
+
+        new_fm_str = "---\n" + yaml.dump(fm, allow_unicode=True, default_flow_style=False).strip() + "\n---\n"
+        body = content[m.end():]
+        path.write_text(new_fm_str + body, encoding="utf-8")
+        updated += 1
+
+    if updated:
+        print(f"✅ skill concept 增强完成: {updated} 个已更新")
+    else:
+        print("ℹ️  skill concept 无需更新")
+    return updated
 
 
 # ═══════════════════════════════════════════════════════════
@@ -635,6 +894,12 @@ def main():
 
   # 验证 Bundle
   python3 galaxyos_okf.py verify /path/to/bundle
+
+  # 自动生成模块 concept（类似 reference_agent）
+  python3 galaxyos_okf.py generate
+
+  # 指定输出目录生成
+  python3 galaxyos_okf.py generate /path/to/bundle/concepts --force
         """,
     )
 
@@ -664,6 +929,14 @@ def main():
     # verify
     verify_parser = subparsers.add_parser("verify", help="验证 OKF Bundle")
     verify_parser.add_argument("bundle_path", help="Bundle 目录路径")
+    # generate
+    gen_parser = subparsers.add_parser("generate", help="自动生成模块/skill concept")
+    gen_parser.add_argument("output_dir", nargs="?", default=None,
+                            help="输出目录（默认取 bundle concepts/ 或 bundle 根）")
+    gen_parser.add_argument("--modules", action="store_true", help="仅生成模块 concept")
+    gen_parser.add_argument("--skills", action="store_true", help="仅增强 skill concept")
+    gen_parser.add_argument("--force", "-f", action="store_true", help="覆盖已存在的文件")
+
     verify_parser.add_argument("--strict", action="store_true",
                                help="严格模式（检查字段完整性）")
 
@@ -688,6 +961,7 @@ def main():
             bundle_path=args.bundle_path,
             index_dir=args.index_dir,
             register_module=not args.no_register,
+            compile_skills=not args.no_register,
         )
         sys.exit(0 if success else 1)
 
@@ -697,6 +971,30 @@ def main():
             strict=args.strict,
         )
         sys.exit(0 if success else 1)
+
+    elif args.command == "generate":
+        output_dir = args.output_dir
+        if not output_dir:
+            # 自动检测：取最近一次 export 的 bundle 的 concepts/ 目录
+            bundle_dir = os.path.join(os.path.dirname(__file__), "..", "var", "okf-bundles")
+            if os.path.isdir(bundle_dir):
+                bundles = sorted(os.listdir(bundle_dir), reverse=True)
+                if bundles:
+                    output_dir = os.path.join(bundle_dir, bundles[0], "concepts")
+            if not output_dir or not os.path.isdir(output_dir):
+                print("❌ 无法确定输出目录，请显式指定")
+                sys.exit(1)
+
+        do_modules = args.modules or not args.skills
+        do_skills = args.skills or not args.modules
+
+        total = 0
+        if do_modules:
+            total += generate_module_concepts(output_dir, force=args.force)
+        if do_skills:
+            total += generate_skill_concepts(output_dir, force=args.force)
+        print(f"\n✅ 生成完成，共处理 {total} 个 concept")
+        sys.exit(0)
 
 
 if __name__ == "__main__":
