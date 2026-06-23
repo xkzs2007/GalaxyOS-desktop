@@ -662,6 +662,15 @@ claw.rccam_cycle("用户输入", max_cycles=1)
 | DAG 上下文排序 | **时间衰减权重重排序** | 2026-06-02 |
 | install_wizard.py | **6 阶段全自动自检 + `--kg-test` 专项测试** | 2026-06-02 |
 
+### v8.4.2 (2026-06-23) — enhanced_recall 全量8阶段神经集成 + SkillGraph 图感知检索
+
+- **enhanced_recall v2** — 8 阶段全量集成管线（Engram O(1)快速通道 → 突触网络传播 → 情感加权 → 图感知检索 → RRF融合 → 反思增强 → 公式重排）
+- **use_neural 参数** — 可降级回古典 CRAG 模式
+- **SkillGraph 全链路** — 144节点+277边图感知检索
+- OKF generate 144 模块概念自动生成
+- 删除 speculative_decoder 废弃模块
+- ModuleType 补充 DAG_LIQUID 枚举
+
 ### v8.0 (2026-06-12) — MemGAS-SkVM 融合架构 + APO 自优化 + PipelineEngine 重构 + 七情六欲集成
 
 - **MemGAS-SkVM 融合架构 (Layer 13)** — KnowledgeAsset + AssetRegistry + CapabilityRegistry + SkillCompiler + MultiGranularity + EntropyRouter

@@ -1,7 +1,7 @@
 # 🌌 GalaxyOS — 认知增强引擎
 
 > OpenClaw 的开源认知增强引擎，为 AI Assistant 提供记忆、检索、推理、验证、自进化等全套认知能力
-> 版本: v8.3.0 · LFM2.5-1.2B ONNX Q4 量化 + 多进程 mmap 共享
+> 版本: v8.4.2 · enhanced_recall 全量神经集成 + SkillGraph 图感知检索
 
 ## 总览
 
@@ -237,7 +237,9 @@ GALAXYOS_REPO=. python3 -m galaxyos.engine.unified_entry recall --query "查询"
 
 | 版本 | 文件 | 说明 |
 |------|------|------|
-| **v8.3.0 (最新)** | 2026-06-18 | **LFM2.5-1.2B ONNX Q4 量化 + 多进程 mmap 共享内存** |
+| **v8.4.2 (最新)** | 2026-06-23 | **enhanced_recall 全量8阶段神经集成(Engram→突触→情感→图→RRF→反思→重排) + SkillGraph 图感知检索** |
+| **v8.4.0** | 2026-06-23 | **OKF generate 子命令 + SkillGraph 全链路部署 + 144模块概念自动生成** |
+| **v8.3.0** | 2026-06-18 | **LFM2.5-1.2B ONNX Q4 量化 + 多进程 mmap 共享内存** |
 | **v8.1.0** | 2026-06-14 | **22方向论文全量实现 + 18新论文模块(~11K行) + 融合架构增强** |
 | **v7.3.2** | — | **GAT 双路径稀疏化 + HNSW 端到端 + 5.8GB 容器适配 + OpenClaw 路径解析** |
 | **v7.3** | — | **全论文模块接入ContextEngine决策链 + session_id全面隔离 + Gateway防塞爆** |
@@ -260,6 +262,43 @@ GALAXYOS_REPO=. python3 -m galaxyos.engine.unified_entry recall --query "查询"
 | v3.0.0 | `docs/xiaoyi-claw-core-architecture-v3.0.0.md` | 16 层架构、R-CCAM 认知循环 |
 
 **完整架构文档（含 17 层全景图、470+ 功能列表、更新日志）：** 👉 [📖 查看 Skills 文档栏](https://cnb.cool/llm-memory-integrat/GalaxyOS?tabValue=SKILLS-ov-file)
+
+### v8.4.x 新特性 (SkillGraph + enhanced_recall 全量神经集成)
+
+#### v8.4.2 — enhanced_recall 全量神经集成管线
+
+- **enhanced_recall v2**：8 阶段全量集成管线
+  - Stage 0: Engram O(1) 快速通道（高频记忆秒跳）
+  - Stage 1: 向量基线保留（关键词 + Embedding）
+  - Stage 2: CRAG + 混合检索 + 命题检索（古典 Layer 2 保留）
+  - Stage 3: 突触网络传播（ActivationSpreader 关联记忆发现）
+  - Stage 4: 情感加权（EmotionMemoryManager 高情绪记忆提权）
+  - Stage 5: 图感知检索（SkillGraph BFS+Beam + GNN 实体匹配）
+  - Stage 6: RRF 多路融合归并
+  - Stage 7: 反思增强（Generative Agents MemoryStream 兜底）
+  - Stage 8: retrieval_formula 最终加权排序
+- **use_neural 开关**：可降级回古典 CRAG 模式
+- 修复 `ModuleType.DAG_LIQUID` 枚举缺失（v8.1 遗留）
+- 删除运行时产物 `.galaxyos_version`
+
+#### v8.4.1 — SkillGraph 注册 + capability_registry 集成
+
+- **SkillGraph (780 行)**：144 节点 + 277+ 边技能依赖图
+- **GraphAwareRetriever**：BFS + Beam Search 图感知检索
+- **GraphEvolutionEngine**：Merge/Split/Reinforce/Decay/Prune 五操作演化
+- **GRPORunner**：G=8 Group Relative Policy Optimization（arXiv:2606.04036 SDPG）
+- `_register_to_skill_graph()` 从 importlib 兜底改为直接 `from skill_graph import SkillGraph`
+- `capability_registry.py` 新增 `init_skill_graph()` / `graph_aware_search()`
+- 删除 `speculative_decoder`（已废弃，用户确认）
+
+#### v8.4.0 — OKF generate + SkillGraph 全链路
+
+- **OKF `generate` 子命令**：自动从 MODULE_REGISTRY 生成 144 模块概念
+- **OKF → SkillGraph 协同**：ingest 自动编译到 SkillGraph 并持久化
+- bundle 目录拆分：concepts/modules/、concepts/skills/、concepts/system/
+- 安装向导 `--setup-git` 子命令
+- 规范版本号格式（VERSIONING.md）
+- 包版本统一为 8.4.0
 
 ### v8.3.0 新特性 (LFM2.5-1.2B ONNX Q4 量化 + 多进程 mmap 共享)
 

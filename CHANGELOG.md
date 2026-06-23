@@ -1,5 +1,40 @@
 # Changelog
 
+## [v8.4.2] — 2026-06-23
+
+### Added
+- **enhanced_recall v2 — 全量 8 阶段神经集成管线**
+  - Stage 0: Engram 快速通道（NgramHashTable O(1) 命中检测）
+  - Stage 1: 向量基线保留（关键词 + Embedding）
+  - Stage 2: CRAG + 混合检索 + 命题检索（古典 Layer 2 保留）
+  - Stage 3: 突触网络传播（ActivationSpreader → find_associated 关联记忆）
+  - Stage 4: 情感加权（EmotionMemoryManager 高情绪记忆置信度提权）
+  - Stage 5: 图感知检索（SkillGraph.GraphAwareRetriever + GNN.query_graph）
+  - Stage 6: RRF 多路融合归并（突触/图结果优先排序）
+  - Stage 7: 反思增强（Generative Agents MemoryStream 兜底）
+  - Stage 8: retrieval_formula.MemoryRetriever 最终加权排序
+- **use_neural 参数**：`enhanced_recall(query, use_neural=True/False)` 降级回古典模式
+- `xiaoyi_claw_api.py` enhanced_recall 透传 use_neural 到 XiaoyiMemoryV2
+
+### Fixed
+- `ModuleType` 枚举补充 `DAG_LIQUID`（v8.1 液态神经网络模块注册时遗漏）
+- 删除运行时产物 `.galaxyos_version`
+
+## [v8.4.1] — 2026-06-23
+
+### Added
+- **SkillGraph v8.4.1 全链路集成**
+  - `skill_graph.py`（780 行，144 节点 + 277+ 边）CNB 仓库注册到 MODULE_REGISTRY
+  - `GraphAwareRetriever`（BFS + Beam Search 图感知检索）
+  - `GraphEvolutionEngine`（Merge/Split/Reinforce/Decay/Prune）
+  - `GRPORunner`（G=8 GRPO, arXiv:2606.04036 SDPG）
+- `ModuleType.SKILL_GRAPH` 枚举 + `EXTENDED_MODULES_P1` 注册
+- `galaxyos_okf.py`：importlib 兜底 → 直接 `from skill_graph import SkillGraph`
+- `capability_registry.py`：`init_skill_graph()` / `graph_aware_search()` 入口
+
+### Removed
+- `speculative_decoder` 从 `ModuleType`、MODULE_REGISTRY（Layer 4 + EXTENDED_MODULES_P1）、4 处 workflow 引用全部删除
+
 ## [v8.4.0] — 2026-06-23
 
 ### Added
