@@ -125,6 +125,7 @@ class ModuleType(Enum):
     
     # Layer 9: 会话管理层
     DAG_CONTEXT_MANAGER = "dag_context_manager"
+    DAG_LIQUID = "dag_liquid"
     CONVERSATION = "conversation"
     CONTEXT_COMPRESSOR = "context_compressor"
     ACP_SERVER = "acp_server"
