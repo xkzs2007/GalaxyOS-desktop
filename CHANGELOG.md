@@ -1,6 +1,13 @@
 # Changelog
 
 ## [8.3.0] - 2026-06-18
+### Added
+- **Open Knowledge Format (OKF) 集成**: 新增 `galaxyos_okf.py` 三层整合工具
+  - `export`: 扫描 workspace 系统文件 + skills 导出为 OKF Knowledge Bundle（244 concepts）
+  - `ingest`: 消费 OKF bundle，索引到 knowledge_assets 供检索
+  - `verify`: 验证 bundle 结构和 concept 合法性
+  - 输出目录: `var/okf-bundles/`, `var/okf-index/`, `var/knowledge_assets/`
+
 ### Changed
 - **LFM2.5-1.2B: torch bf16 → ONNX Runtime Q4**
   - 模型大小从 2.2GB safetensors 降为 811MB ONNX（Q4 量化）
