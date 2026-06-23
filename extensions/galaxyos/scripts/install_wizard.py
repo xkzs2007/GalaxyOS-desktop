@@ -2379,6 +2379,142 @@ def check_v82_modules() -> Dict[str, Any]:
     return results
 
 
+def check_v84_modules() -> Dict[str, Any]:
+    """验证 v8.4 SkillGraph & enhanced_recall 神经集成模块"""
+    heading("🌐 v8.4 SkillGraph & 神经检索集成")
+    results: Dict[str, Any] = {"modules": {}, "ok": 0, "fail": 0, "warn": 0}
+
+    script_dir = os.path.dirname(__file__)
+
+    # 1. SkillGraph
+    try:
+        spec = importlib.util.spec_from_file_location(
+            "skill_graph", os.path.join(script_dir, "skill_graph.py")
+        )
+        if spec and spec.loader:
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            has_graph = hasattr(mod, "SkillGraph")
+            has_retriever = hasattr(mod, "GraphAwareRetriever")
+            has_evo = hasattr(mod, "GraphEvolutionEngine")
+            has_grpo = hasattr(mod, "GRPORunner")
+            ok(f"SkillGraph: 导入OK ({'SkillGraph' if has_graph else '?'} + "
+               f"{'Retriever' if has_retriever else '?'} + "
+               f"{'Evolution' if has_evo else '?'} + "
+               f"{'GRPO' if has_grpo else '?'})")
+            results["modules"]["skill_graph"] = {
+                "ok": True, "class": has_graph,
+                "retriever": has_retriever, "evolution": has_evo, "grpo": has_grpo
+            }
+            results["ok"] += 1
+            # 尝试实例化 GraphAwareRetriever（无数据，仅验证构造路径通）
+            if has_graph and has_retriever:
+                try:
+                    sg = mod.SkillGraph()
+                    retriever = mod.GraphAwareRetriever(sg)
+                    _method_ok = hasattr(retriever, "retrieve") and hasattr(retriever, "_seed_selection")
+                    if _method_ok:
+                        ok("  GraphAwareRetriever.retrieve/_seed_selection 存在")
+                        results["modules"]["skill_graph"]["retriever_methods"] = True
+                    else:
+                        warn("  GraphAwareRetriever 缺 retrieve 方法")
+                        results["warn"] += 1
+                except Exception as e:
+                    warn(f"  SkillGraph 实例化: {str(e)[:120]}")
+                    results["warn"] += 1
+        else:
+            warn("skill_graph.py 文件未找到")
+            results["modules"]["skill_graph"] = {"ok": False, "error": "file_not_found"}
+            results["fail"] += 1
+    except Exception as e:
+        results["modules"]["skill_graph"] = {"ok": False, "error": str(e)[:200]}
+        results["fail"] += 1
+        warn(f"SkillGraph: {e}", indent=1)
+
+    # 2. ModuleType 枚举检查
+    try:
+        spec = importlib.util.spec_from_file_location(
+            "unified_coordinator", os.path.join(script_dir, "unified_coordinator.py")
+        )
+        if spec and spec.loader:
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            mt = getattr(mod, "ModuleType", None)
+            if mt:
+                _checks = [
+                    ("SKILL_GRAPH", hasattr(mt, "SKILL_GRAPH")),
+                    ("DAG_LIQUID", hasattr(mt, "DAG_LIQUID")),
+                    ("DAG_CONTEXT_MANAGER", hasattr(mt, "DAG_CONTEXT_MANAGER")),
+                ]
+                _all_ok = all(v for _, v in _checks)
+                for name, ok_flag in _checks:
+                    if ok_flag:
+                        ok(f"  ModuleType.{name} ✅")
+                    else:
+                        warn(f"  ModuleType.{name} ❌ 缺失")
+                        results["warn"] += 1
+                if _all_ok:
+                    results["modules"]["module_type_enums"] = {"ok": True}
+
+            # 检查 MODULE_REGISTRY 中 skill_graph 条目
+            mr = getattr(mod, "MODULE_REGISTRY", {})
+            _sg_entry = mr.get("skill_graph", {})
+            if _sg_entry:
+                _layer = getattr(_sg_entry, 'layer', '?')
+                ok(f"  MODULE_REGISTRY[skill_graph] ✅ (layer={_layer})")
+            else:
+                warn("  MODULE_REGISTRY 缺少 skill_graph 条目")
+                results["warn"] += 1
+            if "dag_liquid_fusion" in mr:
+                ok(f"  MODULE_REGISTRY[dag_liquid_fusion] ✅")
+        else:
+            warn("unified_coordinator.py 未找到")
+            results["warn"] += 1
+    except Exception as e:
+        warn(f"ModuleType/REGISTRY 检查: {str(e)[:120]}", indent=1)
+        results["warn"] += 1
+
+    # 3. enhanced_recall 接口检查（语法解析方式，避免 import 时 torch 等依赖）
+    try:
+        _xm_path = os.path.join(script_dir, "xiaoyi_memory.py")
+        if os.path.exists(_xm_path):
+            import ast
+            with open(_xm_path) as f:
+                _tree = ast.parse(f.read())
+            for node in ast.walk(_tree):
+                if isinstance(node, ast.FunctionDef) and node.name == "enhanced_recall":
+                    _params = [a.arg for a in node.args.args]
+                    _has_neural = "use_neural" in _params
+                    _has_crag = "use_crag" in _params
+                    if _has_neural:
+                        ok(f"enhanced_recall: use_neural={_has_neural}, use_crag={_has_crag}")
+                        results["modules"]["enhanced_recall"] = {"ok": True, "params": _params}
+                        results["ok"] += 1
+                    else:
+                        warn("enhanced_recall 参数缺少 use_neural（v8.4.2 未集成）")
+                        results["warn"] += 1
+                    break
+            else:
+                warn("xiaoyi_memory.py 中未找到 enhanced_recall 方法")
+                results["warn"] += 1
+        else:
+            warn("xiaoyi_memory.py 未找到")
+            results["warn"] += 1
+    except Exception as e:
+        warn(f"enhanced_recall 检查: {str(e)[:120]}", indent=1)
+        results["warn"] += 1
+
+    total = results["ok"] + results["fail"]
+    if results["fail"] == 0:
+        ok(f"v8.4 模块检查: {results['ok']}/{total} 通过")
+    else:
+        warn(f"v8.4 模块检查: {results['ok']}/{total} 通过, {results['fail']} 失败")
+    if results["warn"] > 0:
+        info(f"{results['warn']} 个警告（非致命）", indent=1)
+
+    return results
+
+
 def generate_report(all_results: Dict[str, Any]) -> Dict[str, Any]:
     """生成汇总报告"""
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -2386,6 +2522,7 @@ def generate_report(all_results: Dict[str, Any]) -> Dict[str, Any]:
     env = all_results.get("env", {})
     mod = all_results.get("modules", {})
     v82_mod = all_results.get("v82_modules", {})
+    v84_mod = all_results.get("v84_modules", {})
     sync = all_results.get("sync", {})
     svc = all_results.get("services", {})
     brk = all_results.get("breakers", {})
@@ -2408,6 +2545,10 @@ def generate_report(all_results: Dict[str, Any]) -> Dict[str, Any]:
             "v82_modules_ok": v82_mod.get("ok", 0),
             "v82_modules_fail": v82_mod.get("fail", 0),
             "v82_modules_total": v82_mod.get("ok", 0) + v82_mod.get("fail", 0),
+            "v84_modules_ok": v84_mod.get("ok", 0),
+            "v84_modules_fail": v84_mod.get("fail", 0),
+            "v84_modules_warn": v84_mod.get("warn", 0),
+            "v84_modules_total": v84_mod.get("ok", 0) + v84_mod.get("fail", 0),
             "files_out_of_sync": sync.get("out_of_sync", 0),
             "breakers": brk.get("total_breaks", 0),
             "worker_alive": svc.get("worker", {}).get("ping", False),
@@ -2429,6 +2570,10 @@ def generate_report(all_results: Dict[str, Any]) -> Dict[str, Any]:
         score -= mod["fail"] * 8
     if v82_mod.get("fail", 0) > 0:
         score -= v82_mod["fail"] * 5
+    if v84_mod.get("fail", 0) > 0:
+        score -= v84_mod["fail"] * 5
+    if v84_mod.get("warn", 0) > 0:
+        score -= v84_mod["warn"]  # 每个警告扣 1 分
     if adj_out_of_sync > 0:
         score -= adj_out_of_sync * 2
     if adj_breakers > 0:
@@ -2466,6 +2611,12 @@ def print_report(report: Dict[str, Any]):
     v82_total = s.get('v82_modules_total', 0)
     if v82_total > 0:
         print(f"  {G}🧬{N} v8.2 神经记忆模块: {v82_ok}/{v82_total}")
+    v84_ok = s.get('v84_modules_ok', 0)
+    v84_total = s.get('v84_modules_total', 0)
+    v84_warn = s.get('v84_modules_warn', 0)
+    if v84_total > 0:
+        warn_str = f" ({v84_warn} 警告)" if v84_warn > 0 else ""
+        print(f"  {G}🌐{N} v8.4 SkillGraph & 神经检索: {v84_ok}/{v84_total}{warn_str}")
     slp_ok = s.get('sleep_stages_ok', 0)
     slp_total = s.get('sleep_stages_total', 0)
     if slp_total > 0:
@@ -3340,6 +3491,7 @@ def main():
     all_results["v82_models"] = check_lfm_weights()
     all_results["v82_pipes"] = check_v82_pipelines()
     all_results["v82_modules"] = check_v82_modules()
+    all_results["v84_modules"] = check_v84_modules()
     all_results["sync"] = check_file_sync()
     all_results["services"] = check_services()
     all_results["breakers"] = scan_breakers()
