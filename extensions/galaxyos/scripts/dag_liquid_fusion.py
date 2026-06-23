@@ -472,6 +472,104 @@ class LTCDAGCompactStrategy:
         
         return median_tau * depth_decay
 
+    # ── COSPLAY 桥接方法 ────────────────────────────────────
+
+    def compute_segment_ltc_scores(self, segments: List[Dict], now: Optional[float] = None
+                                   ) -> List[Dict]:
+        """
+        COSPLAY 桥接：计算每个 segment 的 LTC 指标。
+
+        供 CosplayContextAdapter 调用，将 LTC 时间常数感知注入
+        Boundary-Aware 压缩决策。
+
+        Args:
+            segments: COSPLAY adapter 输出的 segment 列表
+                      [{ "segment_id", "intent", "nodes": [DAGNode], ... }]
+            now: 当前时间戳
+
+        Returns:
+            每个 segment 附加 LTC 指标:
+            [{ "segment_id", "intent",
+               "avg_tau": float,              # 平均时间常数
+               "min_tau": float,              # 最易被压缩的节点 τ
+               "readiness": float,            # 压缩就绪度 [0, ~2]
+               "compact_strength": float,     # 推荐压缩强度 [0, 1]
+               "tau_consistency": float,      # τ 一致性（越小差异越大）
+               "heat_score": float,           # 综合热度
+               "node_count": int,
+            }]
+        """
+        if now is None:
+            now = time.time()
+
+        results = []
+        for seg in segments:
+            nodes = seg.get("nodes", [])
+            if not nodes:
+                results.append({
+                    "segment_id": seg.get("segment_id", 0),
+                    "intent": seg.get("intent", "unknown"),
+                    "avg_tau": self._avg_tau,
+                    "min_tau": self._avg_tau,
+                    "readiness": 0.5,
+                    "compact_strength": 0.5,
+                    "tau_consistency": 1.0,
+                    "heat_score": 0.5,
+                    "node_count": 0,
+                })
+                continue
+
+            taus = []
+            heats = []
+            for n in nodes:
+                ts = getattr(n, 'timestamp', now) if not isinstance(n, dict) else n.get('timestamp', now)
+                age_hours = (now - ts) / 3600.0 if ts > 0 else 0
+                recency = max(0.01, math.exp(-age_hours / self.config.heat_decay_hours))
+
+                heat = getattr(n, 'heat', 0.5) if not isinstance(n, dict) else n.get('heat', 0.5)
+                imp = getattr(n, 'importance_score', 0.5) if not isinstance(n, dict) else n.get('importance_score', 0.5)
+                depth = getattr(n, 'depth', 0) if not isinstance(n, dict) else n.get('depth', 0)
+
+                tau = self._tau_computer.compute_tau(
+                    importance=imp, heat=heat, recency=recency, depth=float(depth)
+                )
+                taus.append(tau)
+                heats.append(heat)
+
+            avg_tau = float(np.mean(taus))
+            min_tau = float(np.min(taus))
+            tau_std = float(np.std(taus)) if len(taus) > 1 else 0.0
+            tau_consistency = 1.0 / (1.0 + tau_std)  # 标准差小→一致性好→接近1
+            heat_score = float(np.mean(heats))
+
+            # 压缩就绪度：τ 小 + 热度低 + 一致性低 → 该压缩
+            readiness = (
+                (1.0 - min(1.0, avg_tau / self.config.tau_max)) * 0.4 +
+                (1.0 - heat_score) * 0.3 +
+                (1.0 - tau_consistency) * 0.3
+            )
+
+            # 压缩强度 [0, 1]：越高说明该 segment 越该被强力压缩
+            compact_strength = min(1.0, max(0.0,
+                (1.0 - min_tau / self.config.tau_max) * 0.5 +
+                (1.0 - heat_score) * 0.3 +
+                (1.0 - tau_consistency) * 0.2
+            ))
+
+            results.append({
+                "segment_id": seg.get("segment_id", 0),
+                "intent": seg.get("intent", "unknown"),
+                "avg_tau": round(avg_tau, 2),
+                "min_tau": round(min_tau, 2),
+                "readiness": round(readiness, 3),
+                "compact_strength": round(compact_strength, 3),
+                "tau_consistency": round(tau_consistency, 3),
+                "heat_score": round(heat_score, 3),
+                "node_count": len(nodes),
+            })
+
+        return results
+
     def record_compact(self, stats: Dict):
         """记录一次压缩（用于自适应）"""
         self._compact_history.append({

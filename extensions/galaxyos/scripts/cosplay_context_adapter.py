@@ -28,6 +28,13 @@ from __future__ import annotations
 
 import json
 import math
+
+# 尝试导入 DAG + Liquid Fusion（可选依赖）
+try:
+    from dag_liquid_fusion import LTCDAGCompactStrategy
+    _HAS_LTC = True
+except ImportError:
+    _HAS_LTC = False
 import os
 import re
 import time
@@ -96,8 +103,17 @@ class CosplayContextAdapter:
         # 反馈跟踪
         self._feedback_buffer: List[Dict] = []
         
+        # LTC 液态整合（可选）
+        self._ltc_strategy: Optional[Any] = None
+        if _HAS_LTC:
+            try:
+                self._ltc_strategy = LTCDAGCompactStrategy()
+            except Exception:
+                self._ltc_strategy = None
+        
         # 统计
         self.stats = {
+            "total_compacts": 0,
             "total_boundary_segments": 0,
             "total_contract_summaries": 0,
             "total_skill_replacements": 0,
@@ -553,63 +569,117 @@ class CosplayContextAdapter:
     # 一站式入口
     # ════════════════════════════════════════════════════════════
     
-    def enhance_compress(self, nodes: List[Any], session_key: str = "") -> Dict:
+    # ── LTC 辅助方法 ──────────────────────────────────────
+
+    def _get_ltc_intensities(self, segments: List[Dict]) -> List[float]:
         """
-        全流程增强压缩入口。
-        
+        用 LTC 时间常数计算每条 segment 的压缩强度系数。
+
+        Returns: [intensity, ...] 0=不压缩, 1=强力压缩
+        """
+        if self._ltc_strategy is None:
+            return [1.0] * len(segments)
+
+        try:
+            ltc_scores = self._ltc_strategy.compute_segment_ltc_scores(segments)
+        except Exception:
+            return [1.0] * len(segments)
+
+        # 把 compact_strength [0,1] 映射到实际压缩参数
+        intensities = []
+        for sc in ltc_scores:
+            strength = sc.get("compact_strength", 0.5)
+            # 热度高/τ 大的 segment 降低压缩力度
+            # 热度低/τ 小的 segment 加大压缩力度
+            intensity = 0.3 + strength * 0.7  # [0.3, 1.0]
+            intensities.append(intensity)
+
+        return intensities
+
+    # ════════════════════════════════════════════════════════════
+
+    def enhance_compress(self, nodes: List[Any], session_key: str = "",
+                         ltc_aware: bool = True) -> Dict:
+        """
+        全流程增强压缩入口（v8.5 LTC 增强版）。
+
         1. Boundary Detection → 分组
+           + LTC 液态评分调节压缩强度
         2. Contract → 注入重要 predicates
         3. Skill Replacement → 替代已知技能
         4. Feedback → 记录结果
-        
+
         Args:
             nodes: DAGNode 列表（待压缩的原始节点）
             session_key: 当前 session key
-        
+            ltc_aware: 是否启用 LTC 时间常数感知（默认 True）
+
         Returns:
-            { "segments": [seg_info], "summaries": [summary_text],
-              "replacements": [replace_info], "stats": {...} }
+            { "segments": [...], "summaries": [...], "replacements": [...],
+              "ltc_scores": [...], "stats": {...} }
         """
         t0 = time.time()
         result = {
             "segments": [],
             "summaries": [],
             "replacements": [],
+            "ltc_scores": [],
             "stats": {
                 "n_nodes": len(nodes),
                 "n_segments": 0,
                 "n_contract_guided": 0,
                 "n_skill_replaced": 0,
                 "estimated_saved_tokens": 0,
+                "ltc_enabled": bool(self._ltc_strategy and ltc_aware),
             },
         }
-        
+
         if not nodes:
             return result
-        
+
         # Step 1: Boundary Detection → 分组
         segments = self.segment_nodes_by_boundary(nodes)
         result["segments"] = segments
         result["stats"]["n_segments"] = len(segments)
-        
-        for seg in segments:
+
+        # Step 1.5: LTC 液态评分
+        ltc_intensities = []
+        if ltc_aware and self._ltc_strategy is not None:
+            ltc_ratings = self._ltc_strategy.compute_segment_ltc_scores(segments)
+            result["ltc_scores"] = ltc_ratings
+            ltc_intensities = [
+                max(0.25, min(1.0, r.get("compact_strength", 0.5) * 0.8 + 0.3))
+                for r in ltc_ratings
+            ]
+            # 记录 LTC 状态到 stats
+            if ltc_ratings:
+                _tau_vals = [r.get("avg_tau", 5.0) for r in ltc_ratings]
+                result["stats"]["ltc_avg_tau"] = round(sum(_tau_vals) / len(_tau_vals), 2)
+            else:
+                result["stats"]["ltc_avg_tau"] = 0.0
+        else:
+            ltc_intensities = [1.0] * len(segments)
+
+        for idx, seg in enumerate(segments):
             combined = seg.get("combined_text", "")
             keywords = seg.get("keywords", [])
             orig_tokens = len(combined) // 4
-            
-            # Step 2: Contract-Aware 
+            intensity = ltc_intensities[idx] if idx < len(ltc_intensities) else 1.0
+
+            # Step 2: Contract-Aware
             contract_info = None
             if self.config.contract_enabled:
                 contract_info = self.get_contract_instructions(keywords)
-            
-            # 基础摘要（截断）
-            base_summary = combined[:500] + "..." if len(combined) > 500 else combined
-            
+
+            # LTC 感知截断：intensity 越高，截断越激进
+            truncate_len = max(200, int(500 * (1.0 - intensity * 0.3)))
+            base_summary = combined[:truncate_len] + "..." if len(combined) > truncate_len else combined
+
             # 注入 contract
             if contract_info:
                 base_summary = self.augment_summary_with_contract(base_summary, contract_info)
                 result["stats"]["n_contract_guided"] += 1
-            
+
             summary_token = len(base_summary) // 4
             result["summaries"].append({
                 "segment_id": seg["segment_id"],
@@ -618,11 +688,23 @@ class CosplayContextAdapter:
                 "contract_guided": contract_info is not None,
                 "original_token": orig_tokens,
                 "summary_token": summary_token,
+                "ltc_intensity": round(intensity, 3),
             })
-            
-            # Step 3: Skill Replacement
+
+            # Step 3: Skill Replacement（LTC 感知调节阈值）
             if self.config.skill_replace_enabled:
+                # 压缩强度高 → 降低替换阈值（更激进地替换）
+                saved_replace_conf = self.config.replace_min_confidence
+                if intensity > 0.7:
+                    self.config.replace_min_confidence = max(0.5, saved_replace_conf - 0.1)
+                elif intensity < 0.4:
+                    self.config.replace_min_confidence = min(0.9, saved_replace_conf + 0.05)
+
                 replace_text = self.try_skill_replace(seg)
+
+                # 还原配置
+                self.config.replace_min_confidence = saved_replace_conf
+
                 if replace_text:
                     result["replacements"].append({
                         "segment_id": seg["segment_id"],
@@ -633,8 +715,8 @@ class CosplayContextAdapter:
                     })
                     result["stats"]["n_skill_replaced"] += 1
                     result["stats"]["estimated_saved_tokens"] += orig_tokens - (len(replace_text) // 4)
-            
-            # Step 4: Feedback 记录
+
+            # Step 4: Feedback 记录（附带 LTC 状态）
             if self.config.feedback_enabled:
                 self.record_compact_result({
                     "session_key": session_key,
@@ -645,9 +727,11 @@ class CosplayContextAdapter:
                     "summary_token": summary_token,
                     "contract_guided": contract_info is not None,
                     "skill_replaced": replace_text is not None,
+                    "ltc_intensity": round(intensity, 3),
                 })
-        
+
         self.stats["last_cycle_time"] = time.time() - t0
+        self.stats["total_compacts"] += 1
         return result
     
     def summary(self) -> Dict:

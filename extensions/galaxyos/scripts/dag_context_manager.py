@@ -1926,6 +1926,7 @@ class DAGContextManager:
             return {"summarized": 0, "nodes_affected": 0}
 
         # ── COSPLAY 增强: Boundary Detection → 重新分组 ──
+        _ltc_intensities = []
         if cosplay_enhanced:
             try:
                 from cosplay_context_adapter import get_cosplay_adapter
@@ -1937,6 +1938,19 @@ class DAGContextManager:
                         # 用 boundary 分组替换简单轮次分组
                         groups = [s["nodes"] for s in _segments]
                         logger.info(f"COSPLAY boundary: {len(_segments)} segments from original {len(groups)} pairs")
+                        # LTC 液态评分：计算每个 segment 的压缩强度
+                        try:
+                            from dag_liquid_fusion import LTCDAGCompactStrategy
+                            _ltc = LTCDAGCompactStrategy()
+                            _ltc_ratings = _ltc.compute_segment_ltc_scores(_segments)
+                            _ltc_intensities = [
+                                max(0.25, min(1.0, r.get("compact_strength", 0.5) * 0.8 + 0.3))
+                                for r in _ltc_ratings
+                            ]
+                            _ltc_avg_tau = float(sum(r.get("avg_tau", 5.0) for r in _ltc_ratings) / len(_ltc_ratings)) if _ltc_ratings else 0.0
+                            logger.info(f"LTC: {len(_ltc_intensities)} intensities, avg_tau={_ltc_avg_tau:.2f}")
+                        except Exception:
+                            _ltc_intensities = [1.0] * len(_segments)
             except Exception:
                 pass
 
@@ -1944,9 +1958,12 @@ class DAGContextManager:
         all_affected_ids = []
         _cosplay_stats = {"contract_guided": 0, "skill_replaced": 0, "saved_tokens": 0}
 
-        for group in groups:
+        for g_idx, group in enumerate(groups):
             if not group:
                 continue
+
+            # LTC 感知强度（默认 1.0）
+            _ltc_intensity = _ltc_intensities[g_idx] if g_idx < len(_ltc_intensities) else 1.0
 
             # v2: 从 BlobArena 还原完整原文（不截断）
             full_texts = []
@@ -1963,13 +1980,21 @@ class DAGContextManager:
                     _ca2 = get_cosplay_adapter()
                     _keywords = self._extract_keywords(full_combined[:2000])[:5]
                     # 检查 skill replace（整段替代）
+                    # LTC 调节: 强度高 → 降低替换门槛
                     if _ca2.config.skill_replace_enabled:
                         _seg_for_replace = {
                             "nodes": group,
                             "combined_text": full_combined,
                             "keywords": _keywords,
                         }
+                        # LTC 感知: 高强度 segment 降低替换置信度阈值
+                        _saved_conf = _ca2.config.replace_min_confidence
+                        if _ltc_intensity > 0.7:
+                            _ca2.config.replace_min_confidence = max(0.5, _saved_conf - 0.1)
+                        elif _ltc_intensity < 0.4:
+                            _ca2.config.replace_min_confidence = min(0.9, _saved_conf + 0.05)
                         _cosplay_replace = _ca2.try_skill_replace(_seg_for_replace)
+                        _ca2.config.replace_min_confidence = _saved_conf
                     # 获取 contract 指导
                     if _ca2.config.contract_enabled and _cosplay_replace is None:
                         _ci = _ca2.get_contract_instructions(_keywords)
@@ -1980,16 +2005,18 @@ class DAGContextManager:
                     pass
 
             # BlobArena 无损存储完整原文，SQLite 只存 memo
+            # LTC 感知: 高强度 segment 的 memo 留更多空间
             _blob_id = ""
             _memo_text = ""
+            _memo_len = max(200, int(500 * (1.0 - _ltc_intensity * 0.3)))
             try:
                 if self._blob_arena:
                     _blob_id = self._blob_arena.append_text(full_combined)
-                    _memo_text = generate_memo(full_combined) if generate_memo else full_combined[:200]
+                    _memo_text = generate_memo(full_combined) if generate_memo else full_combined[:_memo_len]
                 else:
-                    _memo_text = full_combined[:500] + "..." if len(full_combined) > 500 else full_combined
+                    _memo_text = full_combined[:_memo_len] + "..." if len(full_combined) > _memo_len else full_combined
             except Exception:
-                _memo_text = full_combined[:500] + "..." if len(full_combined) > 500 else full_combined
+                _memo_text = full_combined[:_memo_len] + "..." if len(full_combined) > _memo_len else full_combined
 
             # ── Skill Replacement: 用技能 token 替代全文 ──
             if _cosplay_replace is not None:
@@ -2061,6 +2088,8 @@ class DAGContextManager:
             "cosplay_contract_guided": _cosplay_stats["contract_guided"],
             "cosplay_skill_replaced": _cosplay_stats["skill_replaced"],
             "cosplay_tokens_saved": _cosplay_stats["saved_tokens"],
+            "ltc_intensities": _ltc_intensities,  # 每 segment 的 LTC 强度
+            "ltc_avg_intensity": round(sum(_ltc_intensities) / len(_ltc_intensities), 3) if _ltc_intensities else 0.0,
         }
 
     def get_rccam_stats(self, session_key):
