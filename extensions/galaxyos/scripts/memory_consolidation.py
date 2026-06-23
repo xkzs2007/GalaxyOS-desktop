@@ -522,6 +522,25 @@ class ConsolidationEngine:
         """执行一轮完整的巩固周期"""
         results = {}
         
+        # 0. LFM Skill Bank 周期 — 从记忆轨迹发现技能 + Bank Maintenance
+        try:
+            from lfm_skill_bank import run_skill_bank_cycle, LfmSkillBankConfig
+            _bank_cfg = LfmSkillBankConfig(workspace=str(self.workspace))
+            _bank_cycle = run_skill_bank_cycle(workspace=str(self.workspace))
+            results["lfm_skill_bank"] = {
+                "discovered": _bank_cycle.get("discovered", 0),
+                "promoted": _bank_cycle.get("promoted", 0),
+                "merges": _bank_cycle.get("maintenance", {}).get("merges", 0),
+                "splits": _bank_cycle.get("maintenance", {}).get("splits", 0),
+                "refinements": _bank_cycle.get("maintenance", {}).get("refinements", 0),
+                "retires": _bank_cycle.get("maintenance", {}).get("retires", 0),
+                "n_active": _bank_cycle.get("n_active", 0),
+                "n_proto": _bank_cycle.get("n_proto", 0),
+            }
+            logger.info(f"LFM Skill Bank cycle: {_bank_cycle}")
+        except Exception as e:
+            results["lfm_skill_bank"] = {"error": str(e)[:200]}
+        
         # 1. CLS 固化
         try:
             cls_stats = self.consolidate_from_dag()

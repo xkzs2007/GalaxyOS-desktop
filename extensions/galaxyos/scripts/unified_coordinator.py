@@ -309,6 +309,15 @@ MODULE_REGISTRY: Dict[str, ModuleInfo] = {
         script_path=str(CORE_DIR / "lfm_full_integration.py"),
         layer=1,
     ),
+    "lfm_skill_bank": ModuleInfo(
+        name="lfm_skill_bank",
+        module_type=ModuleType.ENGRAM_MEMORY,
+        description="LFM Skill Bank — 记忆轨迹自动发现技能 + Contract Learning + Merge/Split/Refine/Retire + ProtoSkill 升级",
+        triggers=["技能库", "技能发现", "契约学习", "模式挖掘"],
+        script_path=str(CORE_DIR / "lfm_skill_bank.py"),
+        layer=1,
+        dependencies=["memory_bank", "memory_consolidation"],
+    ),
     "xiaoyi_claw_api": ModuleInfo(
         name="xiaoyi_claw_api",
         module_type=ModuleType.FULL_INTEGRATION,
