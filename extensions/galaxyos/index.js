@@ -3105,6 +3105,10 @@ export default function register(api) {
             }
             // 写后落盘(sync,不阻塞后续)
             setImmediate(() => { try { _saveSummaryCache(); } catch {} });
+
+            // v8.5 COSPLAY 新压缩路径已执行完毕，直接返回
+            // 不继续走旧 DAG 路径，避免新旧两套逻辑打架
+            return { ok: true, compacted: true };
         }
 
         // ============================================================

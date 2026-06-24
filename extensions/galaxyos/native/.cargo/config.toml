@@ -1,5 +1,0 @@
-[source.crates-io]
-replace-with = "vendored-sources"
-
-[source.vendored-sources]
-directory = "/home/sandbox/.openclaw/workspace/skills/xiaoyi-claw-omega-final/extensions/galaxyos/native/vendor"
