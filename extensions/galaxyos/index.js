@@ -391,6 +391,72 @@ let _workerPool = null;
 let _poolConfig = { minSize: 2, maxSize: 8, size: 2, maxQueue: 20 };
 let _galaxyPool = null;  // 统一系统管理器（GalaxyPool）
 
+// ═══ 三级 Worker Tiers ═══
+const TIER_HOT   = 'hot';
+const TIER_WARM  = 'warm';
+const TIER_COLD  = 'cold';
+
+// Method → Tier 路由表
+const METHOD_TIER = {
+  // Hot：快进快出，<= 5s
+  ping: TIER_HOT, health: TIER_HOT, memory_search: TIER_HOT, recall: TIER_HOT,
+  vector_info: TIER_HOT, mmap_cleanup: TIER_HOT, events: TIER_HOT,
+  memory_status: TIER_HOT,
+  // Warm：中等负载，5~15s
+  store: TIER_WARM, save_memory: TIER_WARM, verify: TIER_WARM,
+  dag_ingest: TIER_WARM, dag_assemble: TIER_WARM, dag_compact: TIER_WARM,
+  dag_search: TIER_WARM, dag_status: TIER_WARM, dag_summary: TIER_WARM,
+  dag_clear_session: TIER_WARM,
+  learn: TIER_WARM, learn_preference: TIER_WARM, learn_correction: TIER_WARM,
+  remember: TIER_WARM, forget: TIER_WARM, get_entity: TIER_WARM, link_task_memory: TIER_WARM,
+  import_knowledge: TIER_WARM,
+  understand_image: TIER_WARM, ocr_image: TIER_WARM, recall_images: TIER_WARM,
+  persona_snapshot: TIER_WARM, get_persona_core: TIER_WARM,
+  implicit_feedback: TIER_WARM, hardinfo: TIER_WARM,
+  list_workflows: TIER_WARM, list_modules: TIER_WARM, get_workflow_info: TIER_WARM,
+  // Cold：重型负载，15~60s
+  rccam: TIER_COLD, context_assemble: TIER_COLD, rlm_compress: TIER_COLD,
+  compile_skill: TIER_COLD, asset_search: TIER_COLD, asset_register: TIER_COLD,
+  cognitive_compress_dag: TIER_COLD, rccam_compact_needed: TIER_COLD,
+  rccam_compact_cycle: TIER_COLD, expand_rccam_cycle: TIER_COLD,
+  rccam_dag_stats: TIER_COLD, get_module_info: TIER_COLD,
+  smart_process: TIER_COLD, execute_workflow: TIER_COLD,
+  build_system_prompt: TIER_COLD, verify_reply_style: TIER_COLD,
+  restore_context: TIER_COLD, answer: TIER_COLD,
+  call_module: TIER_COLD,
+};
+
+// 每层独立配置 （Worker 数量、队列上限、默认超时）
+const TIER_CONFIG = {
+  [TIER_HOT]:  { minSize: 2, maxSize: 4, size: 2, maxQueue: 20, defaultTimeout: 8000,  workerIdPrefix: 'hot' },
+  [TIER_WARM]: { minSize: 2, maxSize: 4, size: 2, maxQueue: 10, defaultTimeout: 20000, workerIdPrefix: 'warm' },
+  [TIER_COLD]: { minSize: 1, maxSize: 2, size: 1, maxQueue: 5,  defaultTimeout: 60000, workerIdPrefix: 'cold' },
+};
+
+// Session 亲和路由缓存
+const _sessionAffinity = new Map();  // sessionId → { tier, workerId, ts }
+const AFFINITY_TTL = 5 * 60 * 1000; // 5 分钟过期
+
+function _resolveAffinity(sessionId, tier) {
+  if (!sessionId) return null;
+  const entry = _sessionAffinity.get(sessionId);
+  if (!entry || entry.tier !== tier) return null;
+  if (Date.now() - entry.ts > AFFINITY_TTL) { _sessionAffinity.delete(sessionId); return null; }
+  return entry.workerId;
+}
+
+function _setAffinity(sessionId, tier, workerId) {
+  if (!sessionId) return;
+  _sessionAffinity.set(sessionId, { tier, workerId, ts: Date.now() });
+  // 懒惰剪枝：每 100 条清理一次
+  if (_sessionAffinity.size > 200) {
+    const now = Date.now();
+    for (const [k, v] of _sessionAffinity) {
+      if (now - v.ts > AFFINITY_TTL) _sessionAffinity.delete(k);
+    }
+  }
+}
+
 class WorkerPool {
     constructor(ws, cfg = {}) {
         this.ws = ws;
@@ -398,6 +464,7 @@ class WorkerPool {
         this.maxSize = cfg.maxSize || 8;
         this.size = Math.max(this.minSize, cfg.size || 2);
         this.maxQueue = cfg.maxQueue || 20;
+        this.workerIdPrefix = cfg.workerIdPrefix || 'worker';  // 'hot', 'warm', 'cold' 等
         this.workers = new Map();
         this.busy = new Set();
         this.queue = [];
@@ -412,7 +479,7 @@ class WorkerPool {
 
     _init() {
         for (let i = 0; i < this.size; i++) {
-            this._spawnOne(`worker:${i + 1}`);
+            this._spawnOne(`${this.workerIdPrefix}:${i + 1}`);
         }
         this._healthTimer = setInterval(() => this._healthCheck(), 10000).unref();
         // 弹性扩缩：15s 检查一次
@@ -474,7 +541,7 @@ class WorkerPool {
         if ((queueLen >= 3 || busy >= total) && total < this.maxSize && !this._scaleCooldown) {
             const add = Math.min(2, this.maxSize - total);
             for (let i = 0; i < add; i++) {
-                const newId = `worker:${total + i + 1}`;
+                const newId = `${this.workerIdPrefix}:${total + i + 1}`;
                 if (!this.workers.has(newId)) {
                     process.stderr.write(`[galaxyos] pool ▲ SCALE UP: +${newId} (q=${queueLen}, busy=${busy}/${total})\n`);
                     this._spawnOne(newId);
@@ -597,6 +664,30 @@ class WorkerPool {
         throw lastError;
     }
 
+    // ═══ 直接派发到指定 Worker（session 亲和性用） ═══
+    async _executeOne(workerId, method, params, timeoutMs, tier) {
+        const w = this.workers.get(workerId);
+        if (!w || !w.ready) throw new Error(`worker ${workerId} not ready`);
+        this.busy.add(workerId);
+        try {
+            const result = await this._callWithRetry(w, method, params, timeoutMs, workerId);
+            // 记录 session affinity
+            let sessionId = (params && (params.sessionId || params.session_id || params.session_key || params.dag_key)) || null;
+            if (sessionId && typeof sessionId !== 'string') { try { sessionId = String(sessionId); } catch (e) { sessionId = null; } }
+            if (sessionId) _setAffinity(sessionId, tier, workerId);
+            return result;
+        } finally {
+            this.busy.delete(workerId);
+            this._drainQueue();
+        }
+    }
+
+    // ═══ 获取指定 tier 的 fallback Worker（降级用） ═══
+    getFallback() {
+        const firstWorker = this.workers.values().next().value;
+        return firstWorker || null;
+    }
+
     _drainQueue() {
         while (this.queue.length > 0) {
             const idle = this._getIdleWorker();
@@ -641,11 +732,6 @@ class WorkerPool {
         this.queue = [];
         this._ready = false;
     }
-
-    getFallback() {
-        const firstWorker = this.workers.values().next().value;
-        return firstWorker || null;
-    }
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -670,9 +756,10 @@ class GalaxyPool {
         this.cfg = cfg;
         // 内部组件注册表：name → { status, start, stop, health, order, critical, restartCount, restartMax }
         this._comps = new Map();
-        // 内嵌 WorkerPool
+        // 三级 WorkerPool（Hot / Warm / Cold）
+        this._tierPools = new Map();  // tier → { pool: WorkerPool, cfg: {…} }
         this._poolCfg = cfg.workers || { minSize: 2, maxSize: 8, size: 2, maxQueue: 20 };
-        this._workerPool = null;
+        this._workerPool = null;  // 保留兼容引用，getStatus 用
         this._healthTimer = null;
         this._ready = false;
         // 所有模块级 global 统一从这取
@@ -745,7 +832,11 @@ class GalaxyPool {
             .sort(([, a], [, b]) => b.order - a.order)
             .map(([name]) => name);
 
-        // Worker pool first (internal)
+        // Tier pools first (internal)
+        for (const [tier, tp] of this._tierPools) {
+            try { await tp.pool.shutdown(); } catch (e) {}
+        }
+        this._tierPools.clear();
         if (this._workerPool) {
             try { await this._workerPool.shutdown(); } catch (e) {}
             this._workerPool = null;
@@ -777,7 +868,10 @@ class GalaxyPool {
                     this._handleUnhealthy(name, comp, e.message);
                 }
             }
-            // 也检查 WorkerPool 内部
+            // 也检查所有 tier pools 内部
+            for (const [tier, tp] of this._tierPools) {
+                try { tp.pool._healthCheck(); } catch (e) {}
+            }
             if (this._workerPool) {
                 this._workerPool._healthCheck();
             }
@@ -860,8 +954,21 @@ class GalaxyPool {
         for (const [name, c] of this._comps) {
             comps[name] = { status: c.status, restartCount: c.restartCount, critical: c.critical };
         }
+        // 三级 Tier 状态
+        const tierStatus = {};
+        for (const [tier, tp] of this._tierPools) {
+            if (tp.pool) {
+                tierStatus[tier] = {
+                    total: tp.pool.workers.size,
+                    busy: tp.pool.busy.size,
+                    queue: tp.pool.queue.length,
+                    config: tp.cfg,
+                };
+            }
+        }
+        comps.tier_pools = tierStatus;
         if (this._workerPool) {
-            comps.worker_pool = {
+            comps.worker_pool_legacy = {
                 total: this._workerPool.workers.size,
                 busy: this._workerPool.busy.size,
                 queue: this._workerPool.queue.length,
@@ -877,16 +984,49 @@ class GalaxyPool {
         return { status: this.status, components: comps, pid: process.pid, rccam_active: activeProgress.length, rccam_progress: activeProgress };
     }
 
-    // ═══ Worker 请求调度（透传到内嵌 WorkerPool） ═══
+    // ═══ Worker 请求调度（三级 Tier 路由） ═══
     execute(method, params, priority = 'normal', timeoutMs = 28000) {
-        if (!this._workerPool && this._ready && this._comps.get('workers')?.status === 'running') {
-            // 懒创建 WorkerPool
-            this._workerPool = new WorkerPool(this.ws, this._poolCfg);
+        // 按 method 路由到对应 tier
+        const tier = METHOD_TIER[method] || TIER_HOT;
+        const tierPool = this._tierPools.get(tier);
+        if (tierPool && tierPool.pool) {
+            // session 亲和性
+            let sessionId = (params && (params.sessionId || params.session_id || params.session_key || params.dag_key)) || null;
+            if (sessionId && typeof sessionId !== 'string') {
+                try { sessionId = String(sessionId); } catch (e) { sessionId = null; }
+            }
+            const affinityId = sessionId ? _resolveAffinity(sessionId, tier) : null;
+            if (affinityId) {
+                // 如果绑定的 Worker 还活着，优先用它
+                const affWorker = tierPool.pool.workers.get(affinityId);
+                if (affWorker && affWorker.ready && !tierPool.pool.busy.has(affinityId)) {
+                    return tierPool.pool._executeOne(affinityId, method, params, timeoutMs, tier);
+                }
+                // Worker 挂了，删掉绑定，重新调度
+                if (sessionId) _sessionAffinity.delete(sessionId);
+            }
+            // 普通调度，完成后尝试记录 session 亲和性
+            const p = tierPool.pool.execute(method, params, priority, timeoutMs);
+            if (sessionId) {
+                return p.then(result => {
+                    // 找刚刚活跃的 Worker（基于 _lastActiveTs）
+                    const now = Date.now();
+                    for (const [wid, w] of tierPool.pool.workers) {
+                        if (w.ready && !tierPool.pool.busy.has(wid) && (w._lastActiveTs || 0) > now - 3000) {
+                            _setAffinity(sessionId, tier, wid);
+                            break;
+                        }
+                    }
+                    return result;
+                });
+            }
+            return p;
         }
-        if (!this._workerPool) {
-            return Promise.reject(new Error('GalaxyPool: worker pool not available'));
+        // 降级到旧 WorkerPool
+        if (this._workerPool) {
+            return this._workerPool.execute(method, params, priority, timeoutMs);
         }
-        return this._workerPool.execute(method, params, priority, timeoutMs);
+        return Promise.reject(new Error('GalaxyPool: no worker pool available for method=' + method));
     }
 
     // ═══ 组件引用访问 ═══
@@ -1481,7 +1621,7 @@ class ClawWorkerClient {
             const galaxosVarDir = path.dirname(getUdsPath());
             this.proc = spawn(_pythonBin, [WORKER_SCRIPT], {
                 cwd: this.workspace,
-                env: { ...process.env, PYTHONIOENCODING: 'utf-8', OPENCLAW_WORKSPACE: this.workspace, WORKER_UDS: '1', WORKER_ID: this.id, GALAXYOS_VAR_DIR: galaxosVarDir },
+                env: { ...process.env, PYTHONIOENCODING: 'utf-8', OPENCLAW_WORKSPACE: this.workspace, WORKER_UDS: '1', WORKER_ID: this.id, WORKER_TIER: (this.id || '').split(':')[0], GALAXYOS_VAR_DIR: galaxosVarDir },
                 stdio: ['pipe', 'pipe', 'pipe'],
             });
             let settled = false;
@@ -1868,25 +2008,44 @@ export default function register(api) {
             health: () => { try { return existsSync(GATEWAY_HB_PATH) ? { ok: true } : { ok: false, error: 'heartbeat file missing' }; } catch (e) { return { ok: false, error: e.message }; } },
         });
 
-        // 5. Workers（Python worker 池，依赖 gateway_uds）
+        // 5. Workers（三级 Tiered Worker 池，依赖 gateway_uds）
         if (workerEnabled) {
             _galaxyPool._reg('workers', {
                 start: () => {
-                    if (!_galaxyPool._workerPool) {
-                        _galaxyPool._workerPool = new WorkerPool(ws, _galaxyPool._poolCfg);
+                    if (_galaxyPool._tierPools.size === 0) {
+                        // 创建三级 WorkerPool（workerIdPrefix 使 ID 为 hot:1, warm:1 等）
+                        for (const tier of [TIER_HOT, TIER_WARM, TIER_COLD]) {
+                            const tierCfg = { ...TIER_CONFIG[tier] };
+                            const pool = new WorkerPool(ws, tierCfg);
+                            _galaxyPool._tierPools.set(tier, { pool, cfg: tierCfg });
+                        }
+                        // 保留兼容引用
+                        _galaxyPool._workerPool = _galaxyPool._tierPools.get(TIER_WARM).pool;
+                        process.stderr.write(`[galaxyos] tiered workers started: ` +
+                            [..._galaxyPool._tierPools.entries()].map(([t, tp]) => `${t}=${tp.pool.workers.size}`).join(', ') + '\n');
                     }
                 },
                 stop: async () => {
-                    if (_galaxyPool._workerPool) {
-                        await _galaxyPool._workerPool.shutdown();
-                        _galaxyPool._workerPool = null;
+                    for (const [tier, tp] of _galaxyPool._tierPools) {
+                        await tp.pool.shutdown();
                     }
+                    _galaxyPool._tierPools.clear();
+                    _galaxyPool._workerPool = null;
                 },
                 health: () => {
-                    const wp = _galaxyPool._workerPool;
-                    if (!wp || !wp._ready) return { ok: false, error: 'worker pool not ready' };
-                    const alive = [...wp.workers.values()].filter(w => w.ready).length;
-                    return alive > 0 ? { ok: true, alive, total: wp.workers.size } : { ok: false, error: 'no alive workers', alive: 0 };
+                    let totalAlive = 0, totalWorkers = 0;
+                    const tierHealth = {};
+                    for (const [tier, tp] of _galaxyPool._tierPools) {
+                        const wp = tp.pool;
+                        if (!wp || !wp._ready) { tierHealth[tier] = { ok: false, alive: 0, total: 0 }; continue; }
+                        const alive = [...wp.workers.values()].filter(w => w.ready).length;
+                        tierHealth[tier] = { ok: alive > 0, alive, total: wp.workers.size };
+                        totalAlive += alive;
+                        totalWorkers += wp.workers.size;
+                    }
+                    return totalAlive > 0
+                        ? { ok: true, alive: totalAlive, total: totalWorkers, tiers: tierHealth }
+                        : { ok: false, error: 'no alive workers', alive: 0, tiers: tierHealth };
                 },
                 dependsOn: ['gateway_uds'],
             });
@@ -3105,10 +3264,6 @@ export default function register(api) {
             }
             // 写后落盘(sync,不阻塞后续)
             setImmediate(() => { try { _saveSummaryCache(); } catch {} });
-
-            // v8.5 COSPLAY 新压缩路径已执行完毕，直接返回
-            // 不继续走旧 DAG 路径，避免新旧两套逻辑打架
-            return { ok: true, compacted: true };
         }
 
         // ============================================================

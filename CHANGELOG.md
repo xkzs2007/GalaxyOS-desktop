@@ -1,5 +1,26 @@
 # Changelog
 
+## [v8.5.1] — 2026-06-24
+
+### Added
+- **三级 Worker Tier 架构（Hot/Warm/Cold）**
+  - GalaxyPool 单 WorkerPool → 3 个独立 TieredPool，每层独立进程+独立 GIL
+  - `METHOD_TIER` 路由表：41+ UDS 方法自动分配到对应 tier
+  - Hot（2 Worker）：ping/health/memory_search/recall — 8s 超时
+  - Warm（2 Worker）：store/dag_*/learn/verify — 20s 超时
+  - Cold（1-2 Worker）：context_assemble/rccam/rlm_compress — 60s 超时
+- **Session 亲和性**：同 session 的 DAG 请求绑定同一 Worker（5min TTL+懒惰剪枝）
+- **自适应扩缩**：每层独立 `_scaleCheck`，队列 >= 3 自动扩容，连续空闲缩容
+- **Workier tier 感知**：`WORKER_TIER` 环境变量传递，Hot Worker 跳过重型论文模块加载
+
+### Fixed
+- `galaxyos-native` 缺少执行权限（EACCES）
+
+### Changed
+- VERSION 8.5.0 → 8.5.1
+- `ClawWorkerClient` spawn 传递 `WORKER_TIER` 环境变量
+- `WorkerPool` 构造新增 `workerIdPrefix`，Worker ID 从 `worker:1` 改为 `hot:1`/`warm:1`/`cold:1`
+
 ## [v8.5.0] — 2026-06-23
 
 ### Added

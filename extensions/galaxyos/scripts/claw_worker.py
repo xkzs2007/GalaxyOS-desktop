@@ -144,7 +144,8 @@ def _resolve_var_path(subpath, mkdirs=True):
     return primary
 
 _WORKER_ID = os.environ.get('WORKER_ID', 'worker')
-_WORKER_SUFFIX = _WORKER_ID.replace(':', '-')  # worker:1 → worker-1
+_WORKER_SUFFIX = _WORKER_ID.replace(':', '-')  # hot:1 → hot-1
+_WORKER_TIER = os.environ.get('WORKER_TIER', 'hot').strip().lower()
 UDS_PATH = _resolve_var_path(f"claw-worker-{_WORKER_SUFFIX}.sock")
 ZMQ_PUB_PORT = 5559
 MMAP_PATH = _resolve_var_path("claw_worker_mmap")
@@ -1757,17 +1758,8 @@ class ClawWorker:
                     "session": session_id,
                     "summarized": result["summarized"],
                     "nodes": result["nodes_affected"],
-                    "cosplay_contract": result.get("cosplay_contract_guided", 0),
-                    "cosplay_replace": result.get("cosplay_skill_replaced", 0),
                 })
-            # ── COSPLAY 反馈: 压缩后更新 → Skill Bank refine ──
-            if result.get("summarized", 0) > 0:
-                try:
-                    from cosplay_context_adapter import get_cosplay_adapter
-                    _ca_fb = get_cosplay_adapter()
-                    _ca_fb.apply_feedback_to_skill_bank()
-                except Exception:
-                    pass
+            return result
             return result
 
     def save_memory(self, p: dict) -> dict:
@@ -2577,21 +2569,24 @@ def main():
     _worker_inst = worker
     _init_methods(worker)
 
-    # 三论文集成: RLM + SKILL0 + MemoryOS
-    try:
-        from galaxyos.engine.paper_integration_addon import integrate_into_worker
-        _paper_addon = integrate_into_worker(worker, _METHODS)
-        sys.stderr.write(f"[claw-worker] 三论文集成注册: RLM + SKILL0 + MemoryOS\n")
-    except Exception as e:
-        sys.stderr.write(f"[claw-worker] 三论文集成跳过: {e}\n")
-
-    # v8.1 论文全量集成: 18新模块 × 4管线
-    try:
-        from galaxyos.engine.paper_integration_v81 import integrate_v81
-        _v81_addon = integrate_v81(worker, _METHODS)
-        sys.stderr.write(f"[claw-worker] v8.1 论文全量集成注册: 22 UDS 方法\n")
-    except Exception as e:
-        sys.stderr.write(f"[claw-worker] v8.1 论文全量集成跳过: {e}\n")
+    # 根据 tier 加载不同模块（Hot 跳过重型模块节省内存）
+    if _WORKER_TIER in ('warm', 'cold'):
+        # 三论文集成: RLM + SKILL0 + MemoryOS
+        try:
+            from galaxyos.engine.paper_integration_addon import integrate_into_worker
+            _paper_addon = integrate_into_worker(worker, _METHODS)
+            sys.stderr.write(f"[claw-worker] 三论文集成注册: RLM + SKILL0 + MemoryOS\n")
+        except Exception as e:
+            sys.stderr.write(f"[claw-worker] 三论文集成跳过: {e}\n")
+    
+    if _WORKER_TIER not in ('hot', ''):  # Cold & Warm 加载重型模块；Hot 跳过
+        # v8.1 论文全量集成: 18新模块 × 4管线
+        try:
+            from galaxyos.engine.paper_integration_v81 import integrate_v81
+            _v81_addon = integrate_v81(worker, _METHODS)
+            sys.stderr.write(f"[claw-worker] v8.1 论文全量集成注册: 22 UDS 方法\n")
+        except Exception as e:
+            sys.stderr.write(f"[claw-worker] v8.1 论文全量集成跳过: {e}\n")
     
     # 启动记忆巩固后台
     try:
