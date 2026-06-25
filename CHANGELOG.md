@@ -1,5 +1,46 @@
 # Changelog
 
+## [v8.5.3] — 2026-06-25
+
+### Added
+- **MultiAgent P1+P2 全量落地 — 公告板/Judge蒸馏/选角优化/工具注入/交叉验证/进度推送**
+  - `multi_agent_orchestrator.py`（1055 行）：完整多智能体编排引擎
+  - 公告板（BulletinBoard）：智能体间消息共享与状态同步
+  - Judge 蒸馏（JudgeDistillation）：大模型评判→小模型参数迁移
+  - 选角优化（RoleCastingOptimizer）：任务→智能体角色匹配
+  - 工具注入（ToolInjector）：运行时动态注入合约工具
+  - 交叉验证（CrossValidator）：多智能体结果交叉验证
+  - 进度推送（ProgressPusher）：实时推送多智能体执行进度
+- `xiaoyi_claw_api.py` 重构：MultiAgent 全链路集成 + 接口兼容性优化
+
+### Changed
+- VERSION 8.5.2 → 8.5.3
+- 三份 `multi_agent_orchestrator.py` 同步（services/galaxyos/engine/extensions）
+- `xiaoyi_claw_api.py` 接口重构（390 行修改），保持向后兼容
+
+## [v8.5.2] — 2026-06-25
+
+### Added
+- **LFM UDS v2 全量集成 — Rust lfm_server + Python UDS Client**
+  - `lfm_server.rs`（389 行）：Rust ONNX 推理引擎，通过 UDS socket 提供服务
+    - 方法：ping/get_info/embed_text/update_state/reset_state/get_state/get_hidden/shutdown
+  - `galaxyos_native.py` v0.2.0：新增 LFM UDS Client（json IPC via Unix socket）
+  - `lfm_adaptive_operator.py`：RealLFMNetwork 从随机权重切换为 HuggingFace LFM2.5-1.2B-Thinking bf16
+    - 替代原有 ONNX Q4 降级路径，使用真实 Transformer 权重推理
+  - `lfm_engram_fusion.py`：EngramMemory → LFM 嵌入向量融合增强
+  - `liquid_ssm.py`：SSM 状态预测器接入 LFM hidden state
+  - `dag_liquid_fusion.py`：LTCConstantComputer 优先连接 UDS lfm_server
+
+### Fixed
+- 路径推断：环境变量 `GALAXYOS_REPO` 自动适配两种仓库结构
+- `onnx_embedding.py` Stage 3 降级兜底（ONNX 不可用 → Python 纯算 fallback）
+- `claw_worker.py` UDS 路径兼容：galaxyos/var vs claw-core/var
+
+### Changed
+- VERSION 8.5.1 → 8.5.2
+- `Cargo.toml` 新增 lfm_server 构建目标
+- `index.js` 更新版本号
+
 ## [v8.5.1] — 2026-06-24
 
 ### Added
@@ -123,6 +164,7 @@
 - 及其他 20+ 论文实现（Titans、Mamba3、LiquidSSM、SSM-KAN、MoE-Engram 等 v8.1 液态神经网络模块）
 
 ## [8.3.0] - 2026-06-18
+
 ### Added
 - **Open Knowledge Format (OKF) 集成**: 新增 `galaxyos_okf.py` 三层整合工具
   - `export`: 扫描 workspace 系统文件 + skills 导出为 OKF Knowledge Bundle（244 concepts）
@@ -146,34 +188,9 @@
 - **兼容迁移**: check_lfm_weights 识别旧版 safetensors 并提示迁移到 ONNX
 
 ## [8.2.12] - 2026-06-18
+
 ### Added
 - 198 个文件提交同步（包含 V81 神经网络 embedding + 论文实现 33 模块 + 全链路修复）
 
 ### Fixed
 - 测试套件修复：9 个失败的测试用例修正
-
-## [v8.5.3] — 2026-06-25
-
-### Added
-- **P1: 公告板集成（DAGMessageBus）** — `_ensure_bus()` / `_register_agents()` / `_publish_result()` / `_poll_peer_results()` / `_build_dag_context()`
-  - 子 Agent 之间通过公告板广播/拉取同伴结果，Critique 阶段注入同伴上下文
-  - 纯内存模式启动，无需 Redis／DAG 持久化，可降级
-- **P1: Judge 知识蒸馏（DebateEngine）** — `_judge_distill()` 替代朴素取最高分
-  - 3-Agent 并行辩论（正面/反面/中立）→ Judge 裁决 → `refined_answer` 覆盖蒸馏输出
-  - `confidence_delta` 和 `verdict` 写入 `merge_stats`
-- **P1: 选角优化（收敛缓存 + HyperRouter）** — `_role_cache` 缓存同一 `input_class` 的选角结果
-  - HyperRouter 辅助路由接口（通过 `use_hyper_router=True` 启用）
-  - `_invalidate_role_cache()` 支持热更新
-- **P1: 浏览器工具注入（所有角色可搜）** — `tool_bag['allow_all_roles']` 让全部角色（含 critic/summarizer）都能调 `web_search`/`web_fetch`
-- **P1: 交叉验证串联（MultiAgentVerifier）** — `_cross_verify()` 对合并输出逐句验证
-  - 结果写入 `merge_stats['verified']` / `verification_confidence` / `verification_issues`
-- **P2: 子 Agent 进度推送（AgentProgress）** — QUEUED→STARTED→COGNITION→SEARCHING→CRITIQUE→REFINING→COMPLETED/FAILED 全状态机
-  - `set_progress_callback()` 外部注入回调
-  - `MergeResult.progress_events` 携带完整进度事件回传 R-CCAM
-
-### Changed
-- VERSION 8.5.1 → 8.5.3
-- `xiaoyi_claw_api.py._run_swarm_cycle()` 从 SwarmManager 切到 MultiAgentOrchestrator P1，默认启用公告板+蒸馏+交叉验证
-- `multi_agent_orchestrator.py` 新增 `use_dag_bus` / `use_debate` / `use_hyper_router` / `use_verifier` 构造参数
-- 所有依赖模块降级兼容（`_HAS_DAG_BUS` / `_HAS_DEBATE` / `_HAS_HYPER_ROUTER` / `_HAS_VERIFIER` 标志位）
-- 同步 4 副本：`galaxyos/engine/` + `extensions/galaxyos/dist/scripts/` + `extensions/galaxyos/scripts/` + `services/`
