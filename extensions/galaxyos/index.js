@@ -1621,7 +1621,7 @@ class ClawWorkerClient {
             const galaxosVarDir = path.dirname(getUdsPath());
             this.proc = spawn(_pythonBin, [WORKER_SCRIPT], {
                 cwd: this.workspace,
-                env: { ...process.env, PYTHONIOENCODING: 'utf-8', OPENCLAW_WORKSPACE: this.workspace, WORKER_UDS: '1', WORKER_ID: this.id, WORKER_TIER: (this.id || '').split(':')[0], GALAXYOS_VAR_DIR: galaxosVarDir },
+                env: { ...process.env, PYTHONIOENCODING: 'utf-8', OPENCLAW_WORKSPACE: this.workspace, WORKER_UDS: '1', WORKER_ID: this.id, WORKER_TIER: (this.id || '').split(':')[0], GALAXYOS_VAR_DIR: galaxosVarDir, GALAXYOS_REPO: path.join(os.homedir(), '.openclaw', 'galaxyos') },
                 stdio: ['pipe', 'pipe', 'pipe'],
             });
             let settled = false;

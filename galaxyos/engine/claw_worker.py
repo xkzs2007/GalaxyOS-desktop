@@ -46,11 +46,36 @@ if not _GALAXYOS_REPO:
         _GALAXYOS_REPO = os.path.dirname(os.path.dirname(_THIS_DIR))
     elif os.path.basename(_THIS_DIR) == "scripts":
         _GALAXYOS_REPO = os.path.dirname(os.path.dirname(os.path.dirname(_THIS_DIR)))
+        # 兜底：如果推断出的路径下没有有效 engine 目录，尝试真实 repo 路径
+        if not os.path.isdir(os.path.join(_GALAXYOS_REPO, "galaxyos", "engine")) and \
+           not os.path.isdir(os.path.join(_GALAXYOS_REPO, "engine")):
+            _fallback = os.path.expanduser("~/.openclaw/galaxyos")
+            if os.path.isdir(os.path.join(_fallback, "engine")):
+                _GALAXYOS_REPO = _fallback
 
 # v7.0: 统一使用 galaxyos/engine/ 和 galaxyos/privileged/
-_GALAXYOS_ENGINE = os.path.join(_GALAXYOS_REPO, "galaxyos", "engine") if _GALAXYOS_REPO else _THIS_DIR
-_GALAXYOS_PRIVILEGED = os.path.join(_GALAXYOS_REPO, "galaxyos", "privileged") if _GALAXYOS_REPO else _THIS_DIR
-_GALAXYOS_SCRIPTS = os.path.join(_GALAXYOS_REPO, "galaxyos", "scripts") if _GALAXYOS_REPO else _THIS_DIR
+# 注意：CNB 仓库（extensions/galaxyos）和真实 repo（~/.openclaw/galaxyos）结构不同
+# CNB:  repo/galaxyos/engine/    真实: repo/engine/
+# 自动适配两种结构
+if _GALAXYOS_REPO:
+    # 优先 CNB 嵌套结构
+    if os.path.isdir(os.path.join(_GALAXYOS_REPO, "galaxyos", "engine")):
+        _GALAXYOS_ENGINE = os.path.join(_GALAXYOS_REPO, "galaxyos", "engine")
+        _GALAXYOS_PRIVILEGED = os.path.join(_GALAXYOS_REPO, "galaxyos", "privileged")
+        _GALAXYOS_SCRIPTS = os.path.join(_GALAXYOS_REPO, "galaxyos", "scripts")
+    # 兜底真实 repo 平铺结构
+    elif os.path.isdir(os.path.join(_GALAXYOS_REPO, "engine")):
+        _GALAXYOS_ENGINE = os.path.join(_GALAXYOS_REPO, "engine")
+        _GALAXYOS_PRIVILEGED = os.path.join(_GALAXYOS_REPO, "privileged")
+        _GALAXYOS_SCRIPTS = os.path.join(_GALAXYOS_REPO, "scripts")
+    else:
+        _GALAXYOS_ENGINE = _THIS_DIR
+        _GALAXYOS_PRIVILEGED = _THIS_DIR
+        _GALAXYOS_SCRIPTS = _THIS_DIR
+else:
+    _GALAXYOS_ENGINE = _THIS_DIR
+    _GALAXYOS_PRIVILEGED = _THIS_DIR
+    _GALAXYOS_SCRIPTS = _THIS_DIR
 
 # 优先级: galaxyos repo → workspace skills (legacy fallback)
 sys.path.insert(0, _GALAXYOS_ENGINE)

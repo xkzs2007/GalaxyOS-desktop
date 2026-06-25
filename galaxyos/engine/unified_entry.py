@@ -25,12 +25,17 @@ logger = logging.getLogger(__name__)
 from _rails import rail, RailScope, setup_permission_context, PermissionContext, cleanup_permission_context
 
 # 路径配置
-SKILL_ROOT = Path(__file__).parent.parent  # skills/xiaoyi-claw-omega-final/
-WORKSPACE_ROOT = SKILL_ROOT.parent  # skills/
+SKILL_ROOT = Path(__file__).parent.parent  # 运行时可能是 extensions/galaxyos/ 或 skills/xiaoyi-claw-omega-final/
+WORKSPACE_ROOT = SKILL_ROOT.parent
 CORE_DIR = SKILL_ROOT / "skills/llm-memory-integration/core"
 ORCHESTRATION_DIR = SKILL_ROOT / "orchestration"
-CONFIG_DIR = SKILL_ROOT / "config"
 SCRIPTS_DIR = SKILL_ROOT / "scripts"
+# CONFIG_DIR: 优先用 GALAXYOS_REPO 环境变量指定的路径，兜底用 parent.parent/config
+_GALAXYOS_REPO_ENV = os.environ.get("GALAXYOS_REPO", "")
+if _GALAXYOS_REPO_ENV and os.path.isdir(os.path.join(_GALAXYOS_REPO_ENV, "config")):
+    CONFIG_DIR = Path(_GALAXYOS_REPO_ENV) / "config"
+else:
+    CONFIG_DIR = SKILL_ROOT / "config"
 # 备用路径（src/privileged/ 下的模块）
 LLM_INTEGRATION_SRC = WORKSPACE_ROOT / "llm-memory-integration/src/privileged"
 
