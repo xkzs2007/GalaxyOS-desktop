@@ -73,8 +73,69 @@ class LiquidSSM:
         self.tau_min = tau_min
         self.tau_max = tau_max
         self.use_selective = use_selective
-
-        # ===== SSM 参数 (多通道) =====
+        
+        # 尝试连接 UDS lfm_server
+        self._uds_ok = False
+        self._uds_tried = False
+        self._try_uds()
+        
+        if not self._uds_ok:
+            # ===== SSM 参数 (多通道) =====
+            self.A = -np.random.uniform(0.1, 2.0, (n_channels, state_dim)).astype(np.float32)
+            limit_B = math.sqrt(6 / (state_dim + input_dim))
+            self.B_fixed = np.random.uniform(-limit_B, limit_B,
+                                              (n_channels, state_dim, input_dim)).astype(np.float32)
+            limit_C = math.sqrt(6 / (output_dim + state_dim))
+            self.C_fixed = np.random.uniform(-limit_C, limit_C,
+                                              (n_channels, output_dim, state_dim)).astype(np.float32)
+            self.D = np.random.randn(output_dim, input_dim).astype(np.float32) * 0.01
+            self.w_tau_h = np.random.randn(n_channels, 1, state_dim).astype(np.float32) * 0.01
+            self.w_tau_x = np.random.randn(n_channels, 1, input_dim).astype(np.float32) * 0.01
+            self.b_tau = np.zeros((n_channels, 1), dtype=np.float32)
+            limit_ltc = math.sqrt(6 / (state_dim + state_dim + input_dim))
+            self.w_ltc_h = np.random.uniform(-limit_ltc, limit_ltc,
+                                              (n_channels, state_dim, state_dim)).astype(np.float32)
+            self.w_ltc_x = np.random.uniform(-limit_ltc, limit_ltc,
+                                              (n_channels, state_dim, input_dim)).astype(np.float32)
+            self.b_ltc = np.zeros((n_channels, state_dim), dtype=np.float32)
+            self.E = np.ones((n_channels, state_dim), dtype=np.float32)
+            if use_selective:
+                limit_sB = math.sqrt(6 / (state_dim + input_dim))
+                self.w_B_sel = np.random.uniform(-limit_sB, limit_sB,
+                                                  (n_channels, state_dim, input_dim)).astype(np.float32)
+                self.b_B_sel = np.zeros((n_channels, state_dim), dtype=np.float32)
+                limit_sC = math.sqrt(6 / (output_dim + state_dim))
+                self.w_C_sel = np.random.uniform(-limit_sC, limit_sC,
+                                                  (n_channels, output_dim, state_dim)).astype(np.float32)
+                self.b_C_sel = np.zeros((n_channels, output_dim), dtype=np.float32)
+            limit_out = math.sqrt(6 / (output_dim + state_dim * n_channels))
+            self.w_out = np.random.uniform(-limit_out, limit_out,
+                                            (output_dim, state_dim * n_channels)).astype(np.float32)
+            self.b_out = np.zeros(output_dim, dtype=np.float32)
+        else:
+            # UDS 模式: 只保留 LTC 参数骨架，SSM 核心委托给 lfm_server
+            self.A = None
+            self.B_fixed = None
+            self.C_fixed = None
+            self.D = np.random.randn(output_dim, input_dim).astype(np.float32) * 0.01
+            self.w_tau_h = np.random.randn(n_channels, 1, state_dim).astype(np.float32) * 0.01
+            self.w_tau_x = np.random.randn(n_channels, 1, input_dim).astype(np.float32) * 0.01
+            self.b_tau = np.zeros((n_channels, 1), dtype=np.float32)
+            self.w_ltc_h = np.random.randn(n_channels, state_dim, state_dim).astype(np.float32) * 0.01
+            self.w_ltc_x = np.random.randn(n_channels, state_dim, input_dim).astype(np.float32) * 0.01
+            self.b_ltc = np.zeros((n_channels, state_dim), dtype=np.float32)
+            self.E = np.ones((n_channels, state_dim), dtype=np.float32)
+            if use_selective:
+                self.w_B_sel = np.random.randn(n_channels, state_dim, input_dim).astype(np.float32) * 0.01
+                self.b_B_sel = np.zeros((n_channels, state_dim), dtype=np.float32)
+                self.w_C_sel = np.random.randn(n_channels, output_dim, state_dim).astype(np.float32) * 0.01
+                self.b_C_sel = np.zeros((n_channels, output_dim), dtype=np.float32)
+            limit_out = math.sqrt(6 / (output_dim + state_dim * n_channels))
+            self.w_out = np.random.uniform(-limit_out, limit_out,
+                                            (output_dim, state_dim * n_channels)).astype(np.float32)
+            self.b_out = np.zeros(output_dim, dtype=np.float32)
+            logger.info(f"LiquidSSM 使用 UDS 后端 (lfm_server state)")
+    
 
         # A 矩阵 (对角线): [n_channels, state_dim]
         self.A = -np.random.uniform(0.1, 2.0, (n_channels, state_dim)).astype(np.float32)
@@ -129,6 +190,17 @@ class LiquidSSM:
         self.w_out = np.random.uniform(-limit_out, limit_out,
                                         (output_dim, state_dim * n_channels)).astype(np.float32)
         self.b_out = np.zeros(output_dim, dtype=np.float32)
+
+    def _try_uds(self):
+        """尝试连接 lfm_server UDS"""
+        self._uds_tried = True
+        try:
+            from galaxyos_native import lfm_ping
+            lfm_ping()
+            self._uds_ok = True
+        except Exception as e:
+            self._uds_ok = False
+            logger.debug(f"LiquidSSM UDS 不可用: {e}, 使用 numpy fallback")
 
     # ---------- 工具函数 ----------
 
@@ -238,12 +310,11 @@ class LiquidSSM:
     def forward(self, u_seq: np.ndarray) -> np.ndarray:
         """序列前向
         
-        Args:
-            u_seq: [T, input_dim]
-        
-        Returns:
-            y_seq: [T, output_dim]
+        UDS 可用时委托 lfm_server update_state 演进真实状态。
         """
+        if self._uds_ok:
+            return self._forward_uds(u_seq)
+        
         T = u_seq.shape[0]
         h = np.zeros((self.n_channels, self.state_dim), dtype=np.float64)
         y_seq = np.zeros((T, self.output_dim), dtype=np.float32)
@@ -259,6 +330,51 @@ class LiquidSSM:
 
         return y_seq
 
+    def _forward_uds(self, u_seq: np.ndarray) -> np.ndarray:
+        """UDS 后端：调 lfm_server update_state 演进状态"""
+        T = u_seq.shape[0]
+        y_seq = np.zeros((T, self.output_dim), dtype=np.float32)
+        
+        try:
+            from galaxyos_native import lfm_update_state, lfm_get_state, lfm_reset_state
+            
+            # 重置 LFM conv state
+            lfm_reset_state()
+            
+            # 将 u_seq 投影为伪 token IDs，喂给 LFM
+            for t in range(T):
+                u = u_seq[t]
+                # 映射到 token ID
+                proj = (u * 50).astype(np.int32) % 8192
+                token_ids = proj.tolist()
+                if isinstance(token_ids, int):
+                    token_ids = [token_ids]
+                
+                # 喂给 LFM update_state，让真实状态演进
+                lfm_update_state(token_ids[:16])
+                
+                # 取当前 embedding 作为输出
+                state = lfm_get_state()
+                emb = np.array(state.get("embedding", np.zeros(2048)), dtype=np.float32)
+                
+                # 投影到 output_dim
+                if len(emb) != self.output_dim:
+                    if not hasattr(self, '_uds_out_proj'):
+                        self._uds_out_proj = np.random.randn(self.output_dim, len(emb)).astype(np.float32) * 0.01
+                    y_seq[t] = self._uds_out_proj @ emb[:len(emb)]
+                else:
+                    y_seq[t] = emb[:self.output_dim]
+            
+            return y_seq
+        except Exception as e:
+            logger.warning(f"LiquidSSM UDS forward 失败: {e}, 降级到 numpy")
+            return self._forward_numpy(self, self._mock_to_numpy(u_seq))
+        
+        return y_seq
+
+    def _mock_to_numpy(self, u_seq):
+        return u_seq
+    
     def forward_with_state(self, u_seq: np.ndarray
                            ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         """序列前向 + 状态 + 时间常数轨迹

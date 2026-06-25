@@ -77,10 +77,28 @@ class LTCConstantComputer:
     def __init__(self, config: Optional[DAGLiquidFusionConfig] = None):
         self.config = config or DAGLiquidFusionConfig()
         
+        # 尝试连接 UDS lfm_server
+        self._uds_ok = False
+        self._uds_tried = False
+        self._uds_last_embedding = None
+        self._try_uds()
+        
         # 动态参数
         self._w_tau: Optional[np.ndarray] = None
         self._b_tau: Optional[np.ndarray] = None
         self._initialized = False
+
+    def _try_uds(self):
+        self._uds_tried = True
+        try:
+            from galaxyos_native import lfm_ping, lfm_get_state
+            lfm_ping()
+            state = lfm_get_state()
+            if state.get("initialized"):
+                self._uds_last_embedding = np.array(state["embedding"], dtype=np.float32)
+            self._uds_ok = True
+        except Exception:
+            self._uds_ok = False
 
     def _ensure_initialized(self):
         if not self._initialized:
@@ -104,35 +122,38 @@ class LTCConstantComputer:
         """
         计算时间常数 τ
         
-        Args:
-            importance: 节点重要性 [0, 1]
-            heat: 节点热度 [0, 1]
-            recency: 时效性 [0, 1]（越大越新）
-            depth: 摘要深度（0=原始, 1=一次摘要, 2=二次摘要...）
-        
-        Returns:
-            tau: 时间常数 [tau_min, tau_max]
+        UDS 可用时用 LFM embedding 变化量动态算 τ：
+        变化大 → τ 小（快速压缩），变化小 → τ 大（保留更久）。
         """
+        if self._uds_ok:
+            try:
+                from galaxyos_native import lfm_get_state
+                state = lfm_get_state()
+                curr_emb = np.array(state.get("embedding", []), dtype=np.float32)
+                if len(curr_emb) > 0:
+                    if self._uds_last_embedding is not None and len(self._uds_last_embedding) == len(curr_emb):
+                        # embedding 变化量 → 信息密度
+                        delta = float(np.linalg.norm(curr_emb - self._uds_last_embedding))
+                        # 变化越大 τ 越小（越该压缩），变化越小 τ 越大（稳定保持）
+                        delta_norm = min(1.0, delta / 10.0)
+                        gate = max(0.1, 1.0 - delta_norm * 0.8)
+                    else:
+                        gate = 0.5
+                    self._uds_last_embedding = curr_emb
+                    
+                    tau = gate * (self.config.tau_max - self.config.tau_min) + self.config.tau_min
+                    tau *= (1.0 + importance * self.config.importance_boost)
+                    return float(max(self.config.tau_min, min(self.config.tau_max * 2.0, tau)))
+            except Exception:
+                pass
+        
+        # fallback: 原有随机权重
         self._ensure_initialized()
-        
-        # 深度惩罚（越抽象的摘要，时间常数越小，越容易被再次压缩）
         depth_penalty = 1.0 / (1.0 + depth * 0.5)
-        
-        # 特征融合
-        features = np.array([
-            importance,
-            heat,
-            recency,
-            depth_penalty,
-        ], dtype=np.float32)
-        
+        features = np.array([importance, heat, recency, depth_penalty], dtype=np.float32)
         gate = self._sigmoid(float(np.dot(self._w_tau, features) + self._b_tau[0]))
-        
         tau = gate * (self.config.tau_max - self.config.tau_min) + self.config.tau_min
-        
-        # 重要性高的节点时间常数上浮（记住更久）
         tau *= (1.0 + importance * self.config.importance_boost)
-        
         return float(max(self.config.tau_min, min(self.config.tau_max * 2.0, tau)))
 
     def estimate_compact_readiness(self,

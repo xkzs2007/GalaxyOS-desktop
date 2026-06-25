@@ -10,14 +10,217 @@ This ensures import succeeds and all ops work via PIL/numpy without requiring
 a Rust toolchain at deploy time.
 """
 
-__version__ = "0.1.0"
-__doc__ = "GalaxyOS native extension — PIL replacement + SIMD vector compute (pure-Python fallback)"
+__version__ = "0.2.0"
+__doc__ = "GalaxyOS native extension — PIL replacement + SIMD vector compute + LFM UDS client"
 _BACKEND = "python"  # "rust" when compiled PyO3 .so; "python" when shim
 
+import json
 import math
 import base64
 import io
-from typing import List
+import os
+import socket
+import subprocess
+import sys
+import time
+from pathlib import Path
+from typing import List, Optional
+
+# ── LFM UDS Client ─────────────────────────────────────────────────────
+
+_LFM_SOCKET_PATH = None
+_LFM_PROCESS = None
+
+
+def _lfm_socket_path() -> str:
+    """Get the default LFM UDS socket path (兼容 claw_worker 旧路径)."""
+    home = os.environ.get("HOME", "/root")
+    return os.path.join(home, ".openclaw", "extensions", "galaxyos", "var", "lfm.sock")
+
+
+def _lfm_binary_path() -> Optional[str]:
+    """Find the lfm_server binary."""
+    candidates = [
+        # 编译产物（开发环境）
+        os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            "native", "target", "debug", "lfm_server"
+        ),
+        # 安装产物（发布环境）
+        os.path.join(
+            os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+            "native", "target", "release", "lfm_server"
+        ),
+        # 绝对路径
+        os.path.join(
+            os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+            "native", "target", "debug", "lfm_server"
+        ),
+    ]
+    for path in candidates:
+        if os.path.isfile(path) and os.access(path, os.X_OK):
+            return path
+    return None
+
+
+def lfm_start(model_dir: str = None, uds_path: str = None) -> str:
+    """Start the LFM UDS server as a subprocess.
+    
+    Args:
+        model_dir: Path to LFM2.5-1.2B-ONNX directory
+        uds_path: UDS socket path
+    
+    Returns:
+        The UDS socket path the server is listening on.
+    """
+    global _LFM_PROCESS, _LFM_SOCKET_PATH
+
+    if _LFM_PROCESS is not None and _LFM_PROCESS.poll() is None:
+        # Already running
+        return _LFM_SOCKET_PATH or _lfm_socket_path()
+
+    binary = _lfm_binary_path()
+    if binary is None:
+        raise RuntimeError("lfm_server binary not found. Run 'cargo build --bin lfm_server' first.")
+
+    if model_dir is None:
+        workspace = os.environ.get("OPENCLAW_WORKSPACE",
+                                   os.path.join(os.environ.get("HOME", "/root"), ".openclaw", "workspace"))
+        model_dir = os.path.join(workspace, "models", "LFM2.5-1.2B-ONNX")
+
+    if uds_path is None:
+        uds_path = _lfm_socket_path()
+
+    # Ensure UDS parent dir exists
+    os.makedirs(os.path.dirname(uds_path), exist_ok=True)
+
+    # Spawn server
+    args = [binary, "--model-dir", model_dir, "--uds", uds_path]
+    _LFM_PROCESS = subprocess.Popen(
+        args,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True
+    )
+
+    # Wait for ready signal
+    start_ts = time.time()
+    ready_line = None
+    while time.time() - start_ts < 30:
+        line = _LFM_PROCESS.stdout.readline()
+        if not line:
+            # process died
+            stderr = _LFM_PROCESS.stderr.read()
+            raise RuntimeError(f"lfm_server exited early: {stderr}")
+        try:
+            msg = json.loads(line.strip())
+            if msg.get("event") == "ready":
+                ready_line = msg
+                break
+        except json.JSONDecodeError:
+            continue
+
+    if ready_line is None:
+        raise RuntimeError("lfm_server did not signal ready within 30s")
+
+    _LFM_SOCKET_PATH = uds_path
+    print(f"[galaxyos_native] lfm_server ready: pid={ready_line.get('pid')}, uds={uds_path}", flush=True)
+    return uds_path
+
+
+def lfm_stop():
+    """Stop the LFM UDS server."""
+    global _LFM_PROCESS, _LFM_SOCKET_PATH
+    if _LFM_PROCESS is not None and _LFM_PROCESS.poll() is None:
+        # Send shutdown via UDS
+        try:
+            lfm_request("shutdown", timeout=2)
+        except Exception:
+            pass
+        # Force kill if still alive
+        try:
+            _LFM_PROCESS.kill()
+            _LFM_PROCESS.wait(timeout=5)
+        except Exception:
+            pass
+    _LFM_PROCESS = None
+    _LFM_SOCKET_PATH = None
+
+
+def _lfm_uds_connect(uds_path: str, timeout: float = 10) -> socket.socket:
+    """Connect to the LFM UDS server."""
+    sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    sock.settimeout(timeout)
+    sock.connect(uds_path)
+    return sock
+
+
+def _lfm_request_blocking(method: str, params: dict = None, timeout: float = 30) -> dict:
+    """Send a JSON-RPC request using makefile line I/O."""
+    uds_path = _LFM_SOCKET_PATH or _lfm_socket_path()
+    if not os.path.exists(uds_path):
+        raise RuntimeError(f"LFM server not running: {uds_path} not found")
+
+    sock = _lfm_uds_connect(uds_path, timeout)
+    try:
+        rf = sock.makefile("r")
+        wf = sock.makefile("w")
+        req = json.dumps({"id": 1, "method": method, "params": params or {}})
+        wf.write(req + "\n")
+        wf.flush()
+        line = rf.readline()
+        if not line:
+            raise RuntimeError(f"LFM RPC empty response for {method}")
+        response = json.loads(line.strip())
+        if "error" in response and response["error"]:
+            raise RuntimeError(f"LFM RPC error ({method}): {response['error']}")
+        return response.get("result")
+    finally:
+        sock.close()
+
+
+# ── LFM high-level wrappers ──
+
+def lfm_ping() -> str:
+    """Ping the LFM server."""
+    return _lfm_request_blocking("ping")
+
+def lfm_get_info() -> dict:
+    """Get LFM server info."""
+    return _lfm_request_blocking("get_info")
+
+def lfm_embed_text(input_ids: List[int]) -> List[float]:
+    """Embed text (state-free). Returns 2048-dim embedding."""
+    result = _lfm_request_blocking("embed_text", {"input_ids": input_ids})
+    return result["embedding"]
+
+def lfm_update_state(input_ids: List[int]) -> dict:
+    """Feed tokens into stateful inference. Returns dict with total_seq_len."""
+    return _lfm_request_blocking("update_state", {"input_ids": input_ids})
+
+def lfm_get_state() -> dict:
+    """Get current state info (initialized, total_seq_len, embedding)."""
+    return _lfm_request_blocking("get_state")
+
+def lfm_get_hidden(input_ids: List[int], layers: List[int] = None) -> dict:
+    """Feed tokens and return hidden states for specified layers.
+    
+    Returns dict like:
+        {"present_conv.0": [f32; 2048*3], "present_conv.15": [f32; 2048*3], "embedding": [f32; 2048]}
+    """
+    if layers is None:
+        layers = [0, 15]
+    return _lfm_request_blocking("get_hidden", {
+        "input_ids": input_ids, "layers": layers
+    })
+
+def lfm_reset_state() -> dict:
+    """Reset stateful inference (clear conv_states, kv_caches, total_seq)."""
+    return _lfm_request_blocking("reset_state")
+
+def lfm_request(method: str, params: dict = None, timeout: float = 30) -> dict:
+    """Legacy alias. Use the specific wrappers instead."""
+    return _lfm_request_blocking(method, params, timeout)
 
 try:
     from PIL import Image, ImageEnhance, ImageFilter

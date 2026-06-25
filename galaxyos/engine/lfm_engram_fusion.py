@@ -49,22 +49,7 @@ class EngramLFMGate:
     """
     Engram → LFM 门控融合器
     
-    将 Engram 的条件记忆嵌入注入 LFM 的权重生成过程。
-    
-    融合公式:
-        W_fused(x, e) = α(e) ⊙ W_LFM(x) + (1 - α(e)) ⊙ W_engram(e)
-    
-    其中:
-    - W_LFM(x) = LFM 的输入依赖权重生成器
-    - W_engram(e) = 从 Engram 检索到的静态知识权重
-    - α(e) = 门控系数，由 Engram 嵌入决定
-    
-    Args:
-        hidden_dim: 隐藏维度
-        engram_dim: Engram 嵌入维度
-        num_heads: LFM 头数
-        head_dim: 头维度
-        gate_hidden: 门控网络隐藏维度
+    UDS 可用时，用 lfm_server 的真实 embedding 替代随机门控。
     """
     
     def __init__(self, hidden_dim: int = 512,
@@ -79,44 +64,108 @@ class EngramLFMGate:
         self.gate_hidden = gate_hidden
         dim = self.head_dim
         
-        # Engram 嵌入 → 门控系数 α
-        # 小 MLP: engram_emb [engram_dim] → hidden [gate_hidden] → α [H, dim]
-        limit_e = math.sqrt(6.0 / engram_dim)
-        self.W_gate_alpha1 = np.random.uniform(-limit_e, limit_e, 
-                                                (gate_hidden, engram_dim)).astype(np.float32)
-        self.b_gate_alpha1 = np.zeros(gate_hidden, dtype=np.float32)
-        limit_h = math.sqrt(6.0 / gate_hidden)
-        self.W_gate_alpha2 = np.random.uniform(-limit_h, limit_h, 
-                                                (num_heads * dim, gate_hidden)).astype(np.float32)
-        self.b_gate_alpha2 = np.ones(num_heads * dim, dtype=np.float32) * 0.5  # 初始 0.5
+        # 尝试连接 UDS
+        self._uds_ok = False
+        self._uds_tried = False
+        self._try_uds()
         
-        # Engram 嵌入 → LFM 低秩增量偏置
-        # 将 engram_emb 映射为 W_up 的偏置 和 W_down 的偏置
-        limit = math.sqrt(6.0 / engram_dim)
-        self.W_emb_to_left = np.random.uniform(-limit, limit, 
-                                                (dim, engram_dim)).astype(np.float32)
-        self.W_emb_to_right = np.random.uniform(-limit, limit, 
-                                                 (dim, engram_dim)).astype(np.float32)
+        # 当 UDS 可用时，从 LFM 初始 embedding 初始化门控参数
+        if self._uds_ok:
+            self._init_from_lfm()
+        else:
+            # numpy 随机 fallback
+            limit_e = math.sqrt(6.0 / engram_dim)
+            self.W_gate_alpha1 = np.random.uniform(-limit_e, limit_e, 
+                                                    (gate_hidden, engram_dim)).astype(np.float32)
+            self.b_gate_alpha1 = np.zeros(gate_hidden, dtype=np.float32)
+            limit_h = math.sqrt(6.0 / gate_hidden)
+            self.W_gate_alpha2 = np.random.uniform(-limit_h, limit_h, 
+                                                    (num_heads * dim, gate_hidden)).astype(np.float32)
+            self.b_gate_alpha2 = np.ones(num_heads * dim, dtype=np.float32) * 0.5
+            
+            limit = math.sqrt(6.0 / engram_dim)
+            self.W_emb_to_left = np.random.uniform(-limit, limit, 
+                                                    (dim, engram_dim)).astype(np.float32)
+            self.W_emb_to_right = np.random.uniform(-limit, limit, 
+                                                     (dim, engram_dim)).astype(np.float32)
         
         self._forward_count = 0
-        
-        logger.info(f"Engram-LFM 门控融合器: "
-                    f"engram_dim={engram_dim}, "
-                    f"gate_hidden={gate_hidden}")
+        logger.info(f"Engram-LFM 门控融合器: engram_dim={engram_dim}, uds={self._uds_ok}")
     
-    def compute_alpha(self, engram_emb: np.ndarray,
+    def _try_uds(self):
+        """尝试连接 lfm_server UDS"""
+        self._uds_tried = True
+        try:
+            from galaxyos_native import lfm_ping, lfm_get_state
+            lfm_ping()
+            state = lfm_get_state()
+            self._uds_ok = state.get("initialized", False)
+            if self._uds_ok:
+                self._uds_embedding = np.array(state["embedding"], dtype=np.float32)
+            else:
+                self._uds_ok = True  # server 活着就行
+                self._uds_embedding = None
+        except Exception as e:
+            self._uds_ok = False
+            logger.debug(f"EngramLFMGate UDS 不可用: {e}, 使用 numpy fallback")
+    
+    def _init_from_lfm(self):
+        """用 LFM embedding 初始化门控参数"""
+        dim = self.head_dim
+        
+        # 从 embedding 生成有结构的初始权重
+        try:
+            emb = self._uds_embedding
+            if emb is None:
+                from galaxyos_native import lfm_get_state, lfm_embed_text
+                state = lfm_get_state()
+                emb = np.array(state.get("embedding", np.random.randn(2048)), dtype=np.float32)
+            
+            # 投影 2048 → engram_dim
+            proj = emb[:self.engram_dim] if len(emb) >= self.engram_dim else np.pad(emb, (0, self.engram_dim - len(emb)))
+            
+            # 用 embedding 初始化门控网络（保留随机性但有 embedding 结构）
+            self.W_gate_alpha1 = np.outer(np.random.randn(self.gate_hidden), proj).astype(np.float32) * 0.1
+            self.b_gate_alpha1 = np.zeros(self.gate_hidden, dtype=np.float32)
+            self.W_gate_alpha2 = np.random.randn(self.num_heads * dim, self.gate_hidden).astype(np.float32) * 0.1
+            self.b_gate_alpha2 = np.ones(self.num_heads * dim, dtype=np.float32) * 0.5
+            
+            self.W_emb_to_left = np.random.randn(dim, self.engram_dim).astype(np.float32) * 0.1
+            self.W_emb_to_right = np.random.randn(dim, self.engram_dim).astype(np.float32) * 0.1
+            
+            logger.info(f"EngramLFMGate 参数从 LFM embedding 初始化")
+        except Exception as e:
+            logger.warning(f"EngramLFMGate LFM 初始化失败: {e}, 使用随机")
+            limit = math.sqrt(6.0 / self.engram_dim)
+            self.W_gate_alpha1 = np.random.uniform(-limit, limit, 
+                                                    (self.gate_hidden, self.engram_dim)).astype(np.float32)
+            self.b_gate_alpha1 = np.zeros(self.gate_hidden, dtype=np.float32)
+            limit_h = math.sqrt(6.0 / self.gate_hidden)
+            self.W_gate_alpha2 = np.random.uniform(-limit_h, limit_h, 
+                                                    (self.num_heads * dim, self.gate_hidden)).astype(np.float32)
+            self.b_gate_alpha2 = np.ones(self.num_heads * dim, dtype=np.float32) * 0.5
+            self.W_emb_to_left = np.random.uniform(-limit, limit, (dim, self.engram_dim)).astype(np.float32)
+            self.W_emb_to_right = np.random.uniform(-limit, limit, (dim, self.engram_dim)).astype(np.float32)
+    
+    def compute_alpha(self, engram_emb: np.ndarray = None,
                       per_head: bool = True) -> np.ndarray:
         """计算门控系数 α
         
-        α ∈ [0, 1] 控制 Engram 知识的影响程度。
-        
-        Args:
-            engram_emb: [engram_dim] 或 [B, engram_dim] Engram 检索嵌入
-            per_head: 是否每个 head 独立门控
-        
-        Returns:
-            alpha: [H, dim] 或 [H*dim] 门控系数 (sigmoid 输出)
+        UDS 可用时优先使用 LFM 真实 embedding。
         """
+        if engram_emb is None or (isinstance(engram_emb, np.ndarray) and engram_emb.size <= 1):
+            if self._uds_ok:
+                try:
+                    from galaxyos_native import lfm_get_state
+                    state = lfm_get_state()
+                    emb = np.array(state["embedding"], dtype=np.float32)
+                    engram_emb = emb[:self.engram_dim] if len(emb) >= self.engram_dim else np.pad(emb, (0, self.engram_dim - len(emb)))
+                except Exception:
+                    pass
+        
+        if engram_emb is None:
+            engram_emb = np.zeros(self.engram_dim, dtype=np.float32)
+        
         if engram_emb.ndim == 1:
             engram_emb = engram_emb[np.newaxis, :]
         
@@ -125,12 +174,12 @@ class EngramLFMGate:
         h = self._gelu(h)
         
         alpha_logit = h @ self.W_gate_alpha2.T + self.b_gate_alpha2
-        alpha = 1.0 / (1.0 + np.exp(-alpha_logit))  # sigmoid, [B, H*dim]
+        alpha = 1.0 / (1.0 + np.exp(-alpha_logit))
         
         if per_head:
             alpha = alpha.reshape(B, self.num_heads, self.head_dim)
         
-        return alpha[0] if B == 1 else alpha  # 简化: 取 batch 第一
+        return alpha[0] if B == 1 else alpha
     
     def modulate_left_factor(self, left_factor: np.ndarray,
                              engram_emb: np.ndarray) -> np.ndarray:
