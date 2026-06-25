@@ -213,6 +213,8 @@ class XiaoYiClawLLM:
         self._consolidation = None
         self._galaxy_engine = None
 
+        # 从 llm_config.json 读取 embedding 维度，避免硬编码
+        self.embedding_dim = self._get_embedding_dim()
         self._init_vector_store()
         self._init_ontology_bridge()
         self._init_brain_sync()
@@ -222,6 +224,7 @@ class XiaoYiClawLLM:
         self._init_learner()
         self._init_dag()
         self._init_task_bridge()
+        self._init_ocr2()
         self._init_memory_v2()
         self._init_llm_client()
         self._init_kora()
@@ -243,18 +246,45 @@ class XiaoYiClawLLM:
 
         logger.info("小艺 Claw 大模型初始化完成")
 
+    def _get_embedding_dim(self) -> int:
+        """从 llm_config.json 读取 embedding dimensions，读不到 fallback 128"""
+        try:
+            import json
+            config_path = Path(__file__).parent.parent / "config" / "llm_config.json"
+            if config_path.exists():
+                with open(config_path, "r", encoding="utf-8") as f:
+                    llm_cfg = json.load(f)
+                embedding_cfg = llm_cfg.get("embedding", {})
+                dim = embedding_cfg.get("dimensions", 1024)
+                logger.info(f"embedding dim from config: {dim}")
+                return dim
+        except Exception as e:
+            logger.warning(f"读取 embedding dimensions 失败，fallback 128: {e}")
+        return 128
+
     def _init_vector_store(self):
-        """初始化向量存储(sqllite, 128维, 与 text-embedding-v1.0 一致)"""
+        """初始化向量存储(维度从 config 动态读取，匹配实际 embedding 模型)"""
         try:
             from unified_vector_store import UnifiedVectorStore
-            # 数据已迁移为 128 维 text-embedding-v1.0，使用 SQLite 后端
+            import os
+            from pathlib import Path
+            openclaw_home = os.environ.get('OPENCLAW_HOME', Path.home() / '.openclaw')
             self.vector_store = UnifiedVectorStore(
-                backend='sqlite',
-                dim=128
+                backend='hnswlib',
+                index_path=str(Path(openclaw_home) / 'memory-tdai' / 'unified_vectors.hnsw'),
+                dim=self.embedding_dim
             )
         except Exception as e:
-            logger.warning(f"向量存储初始化失败: {e}")
-            self.vector_store = None
+            logger.warning(f"向量存储HNSW初始化失败，降级到SQLite: {e}")
+            try:
+                from unified_vector_store import UnifiedVectorStore
+                self.vector_store = UnifiedVectorStore(
+                    backend='sqlite',
+                    dim=self.embedding_dim
+                )
+            except Exception as e2:
+                logger.warning(f"向量存储SQLite降级也失败: {e2}")
+                self.vector_store = None
 
     def _init_ontology_bridge(self):
         """初始化知识图谱桥接"""
@@ -319,7 +349,15 @@ class XiaoYiClawLLM:
             logger.warning(f"任务桥接初始化失败: {e}")
             self.task_bridge = None
 
-
+    def _init_ocr2(self):
+        """初始化 DeepSeek-OCR-2 适配器"""
+        try:
+            from deepseek_ocr2_adapter import get_adapter
+            self.ocr2 = get_adapter()
+            logger.info("DeepSeek-OCR-2 初始化成功")
+        except Exception as e:
+            logger.warning(f"DeepSeek-OCR-2 初始化失败: {e}")
+            self.ocr2 = None
 
     def _init_memory_v2(self):
         """初始化 XiaoyiMemoryV2 底层引擎(作为子模块挂入)"""
@@ -455,40 +493,45 @@ class XiaoYiClawLLM:
             logger.info(f"LLM 客户端初始化: flash={self.llm_flash is not None}, pro={self.llm_pro is not None}")
 
             # ===== 嵌入客户端(用于 recall 自动生成查询向量) =====
-            # 使用 OpenClaw 内置 text-embedding-v1.0（128d），与 memory_core_import 数据维度一致
+            # llm_config.json.embedding (硅基流动 BAAI/bge-m3, 1024d)
             self.embedding = None
             self.embedding_model = ""
-            self.embedding_dim = 128
+            # self.embedding_dim 已在 __init__ 开头从 config 读取
+
+            # 加载 llm_config.json embedding 配置（多个候选路径）
             try:
                 import json as _j2
-                oc_cfg_path = os.path.expanduser("~/.openclaw/openclaw.json")
-                if os.path.exists(oc_cfg_path):
-                    with open(oc_cfg_path, "r", encoding="utf-8") as f:
-                        _oc = _j2.load(f)
-                    _ms = _oc.get("agents",{}).get("defaults",{}).get("memorySearch",{})
-                    _remote = _ms.get("remote",{})
-                    _base = _remote.get("baseUrl","").rstrip("/")
-                    _headers = dict(_remote.get("headers",{}))
-                    if _base and _headers.get("x-api-key"):
-                        # 使用兼容 OpenAI 的 client，把 headers 作为 default headers
-                        from openai import OpenAI as _O
-                        import httpx as _httpx
-                        _client_kw = dict(
-                            api_key=_headers.get("x-api-key",""),
-                            base_url=_base,
-                        )
-                        # 额外 headers 通过 httpx client 传入
-                        _custom_headers = {k:v for k,v in _headers.items() 
-                                          if k.lower() not in ("content-type",)}
-                        if _custom_headers:
-                            _http_client = _httpx.Client(headers=_custom_headers)
-                            _client_kw["http_client"] = _http_client
-                        self.embedding = _O(**_client_kw)
-                        self.embedding_model = _ms.get("model", "xiaoyiprovider/text-embedding-v1.0")
-                        self.embedding_dim = 128
-                        logger.info(f"嵌入客户端初始化: model={self.embedding_model}, dim=128, base={_base[:40]}...")
+                from openai import OpenAI as _O
+
+                _candidate_paths = [
+                    Path(__file__).parent.parent / "config" / "llm_config.json",
+                    Path.home() / ".openclaw" / "galaxyos" / "config" / "llm_config.json",
+                    Path.home() / ".openclaw" / "workspace" / "skills" / "xiaoyi-claw-omega-final" / "config" / "llm_config.json",
+                ]
+                _loaded_emb = None
+                for _p in _candidate_paths:
+                    if _p.exists():
+                        with open(_p, "r", encoding="utf-8") as f:
+                            _llm_cfg = _j2.load(f)
+                        _emb = _llm_cfg.get("embedding", {})
+                        if _emb.get("api_key") and _emb.get("base_url"):
+                            _loaded_emb = _emb
+                            logger.info(f"嵌入配置取自: {_p}")
+                            break
+                if _loaded_emb:
+                    _api_key = _loaded_emb["api_key"]
+                    _base_url = _loaded_emb["base_url"].rstrip("/")
+                    _model = _loaded_emb.get("model", "BAAI/bge-m3")
+                    self.embedding = _O(api_key=_api_key, base_url=_base_url, timeout=20.0)
+                    self.embedding_model = _model
+                    logger.info(f"嵌入客户端(llm_config): model={_model}, dim={self.embedding_dim}, base={_base_url[:50]}...")
             except Exception as e:
-                logger.warning(f"嵌入客户端初始化失败: {e}")
+                logger.warning(f"嵌入客户端(llm_config)初始化失败: {e}")
+
+            if self.embedding:
+                logger.info(f"嵌入客户端就绪: model={self.embedding_model}, dim={self.embedding_dim}")
+            else:
+                logger.warning("嵌入客户端不可用，store/recall 将跳过向量检索")
 
             # 增强思考引擎(Reflexion + Self-Refine + MultiPath + Flash NLP)
             self.thinking_enhanced = None
@@ -1884,22 +1927,31 @@ class XiaoYiClawLLM:
         """获取知识库条目"""
         return self._get_autonomous_integrator().get_brain_entries(category)
 
-    # ==================== 全量集成(从 full_integration 融合)====================
-
-    def _get_full_integration(self):
-        """懒加载 FullIntegration"""
-        if not hasattr(self, '_full_integration') or self._full_integration is None:
-            from full_integration import FullIntegration
-            self._full_integration = FullIntegration()
-        return self._full_integration
+    # ==================== 全量集成(已移除 full_integration.py) ====================
 
     def smart_recall(self, query: str, top_k: int = 10) -> Dict[str, Any]:
-        """智能检索(CRAG + 混合检索)"""
-        return self._get_full_integration().smart_recall(query, top_k)
+        """智能检索(降级到 enhanced_recall)"""
+        return self.enhanced_recall(query, top_k=top_k)
 
     def smart_answer(self, query: str) -> Dict[str, Any]:
-        """智能回答"""
-        return self._get_full_integration().smart_answer(query)
+        """智能回答(SmartProcessor 路由优先)"""
+        try:
+            from smart_processor import SmartProcessor
+            sp = SmartProcessor(
+                llm_flash=getattr(self, 'llm_flash', None),
+                llm_pro=getattr(self, 'llm_pro', None),
+            )
+            result = sp.process(query, top_k=5)
+            if result.get("results"):
+                # 有检索结果 → 走 answer_synthesis
+                context = "\n".join([f"- {r.get('content','')[:200]}" for r in result["results"][:3]])
+                answer = sp.answer_synthesis(query, context)
+                if answer:
+                    return {"answer": answer, "source": "smart_processor", "results": result["results"]}
+            # 降级: 无结果或合成失败时回到基础 answer
+            return self.answer(query)
+        except Exception:
+            return self.answer(query)
 
     # ==================== 弹性系统集成(从 resilience_system 融合)====================
 
@@ -1925,9 +1977,8 @@ class XiaoYiClawLLM:
     # ==================== 完整恢复集成(从 full_recovery 融合)====================
 
     def check_recovery_status(self) -> Dict:
-        """检查恢复状态"""
-        from full_recovery import check_status
-        return check_status()
+        """检查恢复状态（full_recovery.py 已移除，返回空）"""
+        return {"status": "unavailable", "reason": "full_recovery.py removed"}
 
     # ==================== 增强检索集成(从 XiaoyiMemoryV2 enhanced_* 融合,走统一API)====================
 
@@ -1941,99 +1992,9 @@ class XiaoYiClawLLM:
         }
 
     def fast_generate(self, query: str, top_k: int = 3) -> Dict:
-        """快速生成(投机解码混合策略三层加速)
-
-        使用 SmartHybridGenerator 的 L1+L2 并行 + L3 兜底:
-        - L1: 检索型投机解码(向量检索草稿 → DeepSeek Flash 验证)
-        - L2: NVIDIA NIM 并发(多小模型)
-        - L3: DeepSeek V4 Flash + XiaoYi 通道并行兜底
-        """
-        import asyncio
-        import requests
-
-        # 确保 SmartHybridGenerator 可导入
-        try:
-            from speculative_hybrid import SmartHybridGenerator
-        except ImportError as e:
-            logger.warning(f"投机解码不可用,回退到基础 recall: {e}")
-            memories = self.recall(query, top_k=top_k)
-            answer_data = self.answer(query, top_k=top_k)
-            return {
-                "answer": answer_data.get("answer", ""),
-                "latency_ms": 0,
-                "confidence": answer_data.get("confidence", 0)
-            }
-
-        # 构建 embedding 函数(无问芯穹 bge-m3)
-        embed_config = self.config.get('embedding', {})
-        embed_api_key = embed_config.get('api_key', os.environ.get('EMBEDDING_API_KEY', ''))
-        embed_base_url = embed_config.get('base_url', 'https://cloud.infini-ai.com/maas/v1')
-        embed_model = embed_config.get('model', 'bge-m3')
-
-        def query_to_vector(text: str):
-            try:
-                resp = requests.post(
-                    f"{embed_base_url}/embeddings",
-                    headers={
-                        'Authorization': f'Bearer {embed_api_key}',
-                        'Content-Type': 'application/json'
-                    },
-                    json={'input': text, 'model': embed_model},
-                    timeout=10
-                )
-                if resp.status_code == 200:
-                    data = resp.json()
-                    return data['data'][0]['embedding']
-                else:
-                    logger.warning(f"Embedding API error {resp.status_code}")
-                    return None
-            except Exception as e:
-                logger.debug(f"Embedding call failed: {e}")
-                return None
-
-        async def _run():
-            generator = SmartHybridGenerator(
-                vector_store=self.vector_store,
-                embedding_fn=query_to_vector,
-                deepseek_api_key=self.config.get('deepseek_api_key', os.environ.get('DEEPSEEK_API_KEY', '')),
-            )
-
-            # 设置 KV Cache 会话 ID(复用 X-Conversation-Id)
-            session_id = getattr(self, '_kv_session_id', None)
-            if session_id:
-                generator.set_session(session_id)
-
-            # 全量三层并发(L1 检索 + L2 NIM + L3 兜底)
-            response, info = await generator.generate(
-                prompt=query,
-                use_retrieval=True,
-                use_nim=True,
-            )
-
-            level = info.get("level", 0)
-            latency = info.get("latency_ms", info.get("total_latency_ms", 0))
-
-            return {
-                "answer": response,
-                "latency_ms": latency,
-                "confidence": 0.9 if level >= 1 else 0.0,
-                "level": level,
-                "method": info.get("method", "unknown")
-            }
-
-        try:
-            result = asyncio.run(_run())
-            return result
-        except Exception as e:
-            logger.warning(f"投机解码生成失败: {e}")
-            # 回退到基础 recall
-            memories = self.recall(query, top_k=top_k)
-            answer_data = self.answer(query, top_k=top_k)
-            return {
-                "answer": answer_data.get("answer", ""),
-                "latency_ms": 0,
-                "confidence": answer_data.get("confidence", 0)
-            }
+        """快速生成(speculative_hybrid.py 已移除，降级到基础 generation)"""
+        logger.warning("fast_generate: speculative_hybrid.py 已移除，走基础 answer")
+        return self.answer(query, top_k=top_k)
 
     def smart_cache(self, content: str, metadata: Dict = None) -> Dict:
         """智能缓存"""
@@ -3284,10 +3245,12 @@ class XiaoYiClawLLM:
                         state.analysis['ssm_engagement'] = _ssm.get('engagement', 0.5)
                         state.analysis['ssm_should_refresh'] = _ssm.get('should_refresh', False)
 
-                    # LFM 推理分析
+                    # LFM 推理分析（真实 LFM2.5-1.2B 权重）
                     _lfm = self._galaxy_engine.analyze_with_lfm(query)
                     if _lfm and _lfm.get('reasoning_available'):
                         state.analysis['lfm_complexity'] = _lfm.get('complexity', 0.5)
+                        state.analysis['lfm_intent'] = _lfm.get('intent_analysis', '')
+                        state.analysis['lfm_token_count'] = _lfm.get('token_count', 0)
             except Exception:
                 pass
 
@@ -4167,6 +4130,77 @@ class XiaoYiClawLLM:
         high_importance = ["决定", "配置", "关键", "重要", "记住"]
         return 0.8 if any(kw in content for kw in high_importance) else 0.4
 
+    def _should_swarm(self, state: 'PhaseState') -> bool:
+        """判断是否启用 Swarm 调度"""
+        _q = state.user_input
+        _analysis = state.analysis or {}
+        _ic = _analysis.get('input_class', 'simple')
+        if _ic not in ('complex', 'code'):
+            return False
+        if len(_q) < 80:
+            return False
+        _kw = ["搞", "开发", "实现", "写一个", "搭建", "部署", "研究", "分析",
+               "对比", "比较", "设计", "构建", "迁移", "集成", "架构", "重构"]
+        if any(k in _q for k in _kw):
+            return True
+        return False
+
+    def _run_swarm_cycle(self, state: 'PhaseState') -> Dict:
+        """
+        执行 Swarm 调度（MultiAgentOrchestrator P1 版）
+
+        使用 P1 增强编排器：
+          - 公告板子Agent共享结果
+          - Judge 知识蒸馏
+          - 选角收敛缓存
+          - 工具注入
+          - 交叉验证
+        """
+        from galaxyos.engine.multi_agent_orchestrator import MultiAgentOrchestrator
+
+        _orch = MultiAgentOrchestrator(
+            llm_flash=getattr(self, 'flash_client', None),
+            max_workers=4,
+            use_dag_bus=True,       # P1: 公告板
+            use_debate=True,        # P1: Judge 蒸馏
+            use_hyper_router=False,  # 暂不启用（需持久化存储路径）
+            use_verifier=True,      # P1: 交叉验证
+        )
+
+        _result = _orch.run(
+            query=state.user_input,
+            analysis=state.analysis or {},
+            tool_bag={
+                "web_search": None,  # 子Agent调用时由宿主注入
+                "web_fetch": None,
+                "allow_all_roles": True,  # P1: 所有角色均可搜
+            },
+        )
+
+        sub_count = _result.merge_stats.get("total", 0)
+        success_count = _result.merge_stats.get("success", 0)
+        verdict = _result.merge_stats.get("verdict", "confirmed")
+
+        logger.info(
+            f"Swarm P1: {sub_count} 子任务, {success_count} 成功, "
+            f"verdict={verdict}"
+        )
+
+        # P2: 进度日志（调试用）
+        progress = _result.progress_events
+        completed = sum(1 for p in progress if p.get('status') == 'completed')
+        logger.info(f"Swarm 进度: {completed}/{sub_count} 子任务完成")
+
+        if _result.merged_output:
+            return {
+                "activated": True,
+                "merged_output": _result.merged_output,
+                "sub_results": [asdict(r) for r in _result.sub_results],
+                "progress_events": progress,
+                "verdict": verdict,
+            }
+        return {"activated": False}
+
     def process(self, 
                 user_input: str, 
                 max_cycles: int = 1,
@@ -4320,6 +4354,24 @@ class XiaoYiClawLLM:
             state = self._cognition_phase(state)
             _write_rccam_phase("cognition", state, state.user_input[:500])
             if state.should_stop: break
+
+            # ── Swarm 调度：Cognition 后 Control 前 ──
+            # 复杂任务拆成多个子任务，各自走完整 R-CCAM
+            if (state.cycle_count == 1 and not state.should_stop
+                and state.action_success is None  # 还没跑 Action
+                and _should_swarm(state)):
+                try:
+                    _swarm_result = self._run_swarm_cycle(state)
+                    if _swarm_result.get('activated', False):
+                        state.generated_answer = _swarm_result.get('merged_output', state.generated_answer)
+                        state.action_success = True
+                        state.should_stop = True
+                        state.stop_reason = 'swarm_completed'
+                        logger.info(f"Swarm 完成: {len(_swarm_result.get('sub_results', []))} 个子任务")
+                        _write_rccam_phase("swarm", state, state.generated_answer[:200] if state.generated_answer else '')
+                        break
+                except Exception as _se:
+                    logger.warning(f"Swarm cycle 失败, 回退正常流程: {_se}")
 
             # 阶段 3: Control
             state = self._control_phase(state)
@@ -4668,6 +4720,8 @@ class XiaoYiClawLLM:
                 'links': len(self.task_bridge.links)
             }
 
+        if self.ocr2:
+            status['ocr2'] = self.ocr2.get_stats()
 
         return status
 

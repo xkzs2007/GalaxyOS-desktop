@@ -151,3 +151,29 @@
 
 ### Fixed
 - 测试套件修复：9 个失败的测试用例修正
+
+## [v8.5.3] — 2026-06-25
+
+### Added
+- **P1: 公告板集成（DAGMessageBus）** — `_ensure_bus()` / `_register_agents()` / `_publish_result()` / `_poll_peer_results()` / `_build_dag_context()`
+  - 子 Agent 之间通过公告板广播/拉取同伴结果，Critique 阶段注入同伴上下文
+  - 纯内存模式启动，无需 Redis／DAG 持久化，可降级
+- **P1: Judge 知识蒸馏（DebateEngine）** — `_judge_distill()` 替代朴素取最高分
+  - 3-Agent 并行辩论（正面/反面/中立）→ Judge 裁决 → `refined_answer` 覆盖蒸馏输出
+  - `confidence_delta` 和 `verdict` 写入 `merge_stats`
+- **P1: 选角优化（收敛缓存 + HyperRouter）** — `_role_cache` 缓存同一 `input_class` 的选角结果
+  - HyperRouter 辅助路由接口（通过 `use_hyper_router=True` 启用）
+  - `_invalidate_role_cache()` 支持热更新
+- **P1: 浏览器工具注入（所有角色可搜）** — `tool_bag['allow_all_roles']` 让全部角色（含 critic/summarizer）都能调 `web_search`/`web_fetch`
+- **P1: 交叉验证串联（MultiAgentVerifier）** — `_cross_verify()` 对合并输出逐句验证
+  - 结果写入 `merge_stats['verified']` / `verification_confidence` / `verification_issues`
+- **P2: 子 Agent 进度推送（AgentProgress）** — QUEUED→STARTED→COGNITION→SEARCHING→CRITIQUE→REFINING→COMPLETED/FAILED 全状态机
+  - `set_progress_callback()` 外部注入回调
+  - `MergeResult.progress_events` 携带完整进度事件回传 R-CCAM
+
+### Changed
+- VERSION 8.5.1 → 8.5.3
+- `xiaoyi_claw_api.py._run_swarm_cycle()` 从 SwarmManager 切到 MultiAgentOrchestrator P1，默认启用公告板+蒸馏+交叉验证
+- `multi_agent_orchestrator.py` 新增 `use_dag_bus` / `use_debate` / `use_hyper_router` / `use_verifier` 构造参数
+- 所有依赖模块降级兼容（`_HAS_DAG_BUS` / `_HAS_DEBATE` / `_HAS_HYPER_ROUTER` / `_HAS_VERIFIER` 标志位）
+- 同步 4 副本：`galaxyos/engine/` + `extensions/galaxyos/dist/scripts/` + `extensions/galaxyos/scripts/` + `services/`
