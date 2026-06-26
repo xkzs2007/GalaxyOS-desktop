@@ -157,7 +157,38 @@ GALAXYOS_REPO=. python3 -m galaxyos.scripts.install_wizard --check
 
 ### 安装向导 CLI
 
-`install_wizard` 提供完整的一键初始化和运维工具链，支持全量和分步执行：
+GalaxyOS 提供两套安装向导 CLI，覆盖不同粒度需求：
+
+#### 1️⃣ 编排器 — 一键自举
+
+`galaxyos.init.bootstrap` 是模块化的安装编排器，按依赖拓扑自动执行环境探测→依赖检查→版本校验→按需更新，支持预设 Profile：
+
+```bash
+# 一键全流程（开发模式）
+PYTHONPATH=. python3 -c "from galaxyos.init.bootstrap import cli_main; cli_main()"
+
+# 检查模式（只体检，不修改）
+PYTHONPATH=. python3 -c "from galaxyos.init.bootstrap import cli_main; import sys; sys.argv += ['--dry-run']; cli_main()"
+
+# 指定 Profile
+PYTHONPATH=. python3 -c "from galaxyos.init.bootstrap import cli_main; import sys; sys.argv += ['--profile', 'prod']; cli_main()"
+
+# 只跑特定能力
+PYTHONPATH=. python3 -c "from galaxyos.init.bootstrap import cli_main; import sys; sys.argv += ['--only', 'env', 'dep']; cli_main()"
+```
+
+CLI 参数：
+
+| 参数 | 功能 |
+|:---|---|
+| `--dry-run` | 仅检查，不修改环境 |
+| `--profile {dev,staging,prod}` | 环境预设配置 |
+| `--only {env,dep,version,update}` | 只运行指定能力 |
+| `--quiet` | 最小化输出 |
+
+#### 2️⃣ 交互式向导 — 精细操作
+
+`install_wizard` 是传统的交互式安装向导，支持全量和分步执行：
 
 ```bash
 # 全量模式：系统体检 + 功能测试 + 自动修复
@@ -172,16 +203,13 @@ python3 -m galaxyos.scripts.install_wizard --fix
 # 输出 JSON 报告
 python3 -m galaxyos.scripts.install_wizard --check --report
 
-# 安装/检测 GalaxyOS OpenClaw 插件
-python3 -m galaxyos.scripts.install_wizard --install-plugin
-
 # 下载 LFM2.5 ONNX 模型权重（~811MB）
 python3 -m galaxyos.scripts.install_wizard --download-lfm
 
 # 安装 Rust 工具链（国内镜像）
 python3 -m galaxyos.scripts.install_wizard --setup-rust
 
-# 安装 ML 栈（torch / torch_geometric / hnswlib / faiss 等）
+# 安装 ML 栈
 python3 -m galaxyos.scripts.install_wizard --fix-torch
 
 # 增量更新
@@ -190,26 +218,6 @@ python3 -m galaxyos.scripts.install_wizard --update
 # 数据迁移向导
 python3 -m galaxyos.scripts.install_wizard --migrate
 ```
-
-支持的参数（`python3 -m galaxyos.scripts.install_wizard --help`）：
-
-| 参数 | 功能 |
-|:---|---|
-| `--check` | 系统体检：检测环境、依赖、配置完整性 |
-| `--fix` | 体检后自动修复可解决的问题 |
-| `--report` | 输出 JSON 报告到 stdout |
-| `--all` | 全量模式：体检 + 睡眠测试 + 修复 |
-| `--config` | 仅运行配置向导 |
-| `--fix-torch` | 自动补齐 PyTorch/Geometric/HNSWLib 等 ML 栈 |
-| `--install-plugin` | 安装/检测 GalaxyOS OpenClaw 插件 |
-| `--download-lfm` | 下载 LFM2.5 ONNX Q4 权重 |
-| `--setup-rust` | 安装 Rust 工具链 |
-| `--sleep-test` | 仿生睡眠巩固引擎专项测试 |
-| `--kg-test` | 知识图谱功能专项测试 |
-| `--update` | 增量更新 |
-| `--migrate` / `--migrate-auto` | 数据迁移向导 |
-| `--python` | 显式指定 Python 解释器路径 |
-| `--openclaw-home` | 显式指定 OpenClaw 配置目录 |
 
 ### 仅安装依赖
 
