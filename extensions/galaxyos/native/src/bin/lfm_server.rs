@@ -25,18 +25,8 @@ const DEFAULT_UDS: &str = "extensions/galaxyos/var/lfm.sock";
 struct Config { model_dir: String, uds_path: String }
 
 fn parse_args() -> Config {
-    let mut model_dir = String::new();
-    let mut uds_path = String::new();
-    let args: Vec<String> = std::env::args().collect();
-    let mut i = 1;
-    while i < args.len() {
-        match args[i].as_str() {
-            "--model-dir" => { i += 1; if i < args.len() { model_dir = args[i].clone(); } }
-            "--uds" => { i += 1; if i < args.len() { uds_path = args[i].clone(); } }
-            _ => {}
-        }
-        i += 1;
-    }
+    let mut model_dir = std::env::var("GALAXYOS_LFM_MODEL_DIR").unwrap_or_default();
+    let mut uds_path = std::env::var("GALAXYOS_LFM_UDS_PATH").unwrap_or_default();
     if model_dir.is_empty() {
         let home = std::env::var("HOME").unwrap_or_else(|_| "/root".to_string());
         model_dir = format!("{}/.openclaw/workspace/models/LFM2.5-1.2B-ONNX", home);
@@ -347,15 +337,15 @@ fn main() {
 
     eprintln!("[lfm] 加载 {} ...", onnx);
     let eng = Arc::new(Mutex::new(match LFMEngine::new(&onnx) {
-        Ok(e) => { eprintln!("[lfm] ✅ loaded"); e }
-        Err(e) => { eprintln!("[lfm] ❌ {}", e); std::process::exit(1); }
+        Ok(e) => { eprintln!("[lfm] ✅ model loaded"); e }
+        Err(e) => { eprintln!("[lfm] ❌ model init: {}", e); std::process::exit(1); }
     }));
 
     if let Some(p) = Path::new(&cfg.uds_path).parent() { let _ = std::fs::create_dir_all(p); }
     let _ = std::fs::remove_file(&cfg.uds_path);
-    let lis = UnixListener::bind(&cfg.uds_path).unwrap_or_else(|e| { eprintln!("[lfm] bind: {}", e); std::process::exit(1); });
+    let lis = UnixListener::bind(&cfg.uds_path).unwrap_or_else(|e| { eprintln!("[lfm] bind failed"); std::process::exit(1); });
     std::fs::set_permissions(&cfg.uds_path, std::os::unix::fs::PermissionsExt::from_mode(0o777)).ok();
-    eprintln!("[lfm] 🚀 {}", cfg.uds_path);
+    // stdout ready line is the IPC protocol for Python lfm_start()
     println!("{}", serde_json::json!({"event":"ready","pid":std::process::id(),"uds":cfg.uds_path,"model":"LFM2.5-1.2B-Q4","version":"2.0.0"}));
     std::io::stdout().flush().ok();
 
@@ -371,6 +361,9 @@ fn main() {
     }
 }
 
+const LOCK_SPIN_COUNT: u32 = 64;
+const LOCK_SPIN_INTERVAL_MS: u64 = 10;
+
 fn handle_client(s: UnixStream, eng: Arc<Mutex<LFMEngine>>) {
     let mut r = BufReader::new(&s);
     let mut w = &s;
@@ -380,10 +373,36 @@ fn handle_client(s: UnixStream, eng: Arc<Mutex<LFMEngine>>) {
         match r.read_line(&mut line) { Ok(0) | Err(_) => break, Ok(_) => {} }
         let line = line.trim();
         if line.is_empty() { continue; }
-        let mut guard = eng.lock().unwrap();
+
+        // Non-blocking lock acquisition with spin + yield.
+        // Prevents permanent hang when ONNX inference in another thread
+        // is slow (OOM, GPU timeout). Python client has socket timeout
+        // and retry to handle transient "engine_busy" responses.
+        let guard = match eng.try_lock() {
+            Ok(g) => g,
+            Err(_) => {
+                let mut acquired: Option<std::sync::MutexGuard<'_, LFMEngine>> = None;
+                for _ in 0..LOCK_SPIN_COUNT {
+                    std::thread::sleep(std::time::Duration::from_millis(LOCK_SPIN_INTERVAL_MS));
+                    if let Ok(g) = eng.try_lock() {
+                        acquired = Some(g);
+                        break;
+                    }
+                }
+                match acquired {
+                    Some(g) => g,
+                    None => {
+                        // Engine busy: client will retry
+                        let _ = writeln!(w, "{\"id\":0,\"error\":\"engine_busy\"}");
+                        w.flush().ok();
+                        continue;
+                    }
+                }
+            }
+        };
         let resp = handle_request(line, &mut *guard);
         drop(guard);
-        if let Err(e) = writeln!(w, "{}", resp) { eprintln!("[lfm] write: {}", e); break; }
+        if let Err(e) = writeln!(w, "{}", resp) { eprintln!("[lfm] write err"); break; }
         w.flush().ok();
     }
 }
