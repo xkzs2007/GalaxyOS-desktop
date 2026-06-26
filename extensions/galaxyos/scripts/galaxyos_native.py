@@ -94,13 +94,17 @@ def lfm_start(model_dir: str = None, uds_path: str = None) -> str:
     # Ensure UDS parent dir exists
     os.makedirs(os.path.dirname(uds_path), exist_ok=True)
 
-    # Spawn server
-    args = [binary, "--model-dir", model_dir, "--uds", uds_path]
+    # Spawn server via environment variables (not CLI args) to avoid
+    # leaking model path and UDS path in `ps aux` output.
+    _env = os.environ.copy()
+    _env["GALAXYOS_LFM_MODEL_DIR"] = model_dir
+    _env["GALAXYOS_LFM_UDS_PATH"] = uds_path
     _LFM_PROCESS = subprocess.Popen(
-        args,
+        [binary],
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
-        text=True
+        text=True,
+        env=_env
     )
 
     # Wait for ready signal
@@ -111,7 +115,7 @@ def lfm_start(model_dir: str = None, uds_path: str = None) -> str:
         if not line:
             # process died
             stderr = _LFM_PROCESS.stderr.read()
-            raise RuntimeError(f"lfm_server exited early: {stderr}")
+            raise RuntimeError("lfm_server exited early")  # stderr redacted (may contain paths)
         try:
             msg = json.loads(line.strip())
             if msg.get("event") == "ready":
@@ -124,7 +128,6 @@ def lfm_start(model_dir: str = None, uds_path: str = None) -> str:
         raise RuntimeError("lfm_server did not signal ready within 30s")
 
     _LFM_SOCKET_PATH = uds_path
-    print(f"[galaxyos_native] lfm_server ready: pid={ready_line.get('pid')}, uds={uds_path}", flush=True)
     return uds_path
 
 
@@ -156,27 +159,70 @@ def _lfm_uds_connect(uds_path: str, timeout: float = 10) -> socket.socket:
 
 
 def _lfm_request_blocking(method: str, params: dict = None, timeout: float = 30) -> dict:
-    """Send a JSON-RPC request using makefile line I/O."""
+    """
+    Send a JSON-RPC request via UDS.
+
+    Uses raw send/recv instead of makefile+readline because socket.makefile()
+    creates an independent BufferedReader that ignores sock.settimeout(),
+    causing permanent hangs when the Rust server is slow or locked.
+
+    Error messages are redacted to avoid leaking paths and method names
+    in production logs.
+    """
     uds_path = _LFM_SOCKET_PATH or _lfm_socket_path()
     if not os.path.exists(uds_path):
-        raise RuntimeError(f"LFM server not running: {uds_path} not found")
+        raise RuntimeError("LFM server not running (UDS socket not found)")
 
-    sock = _lfm_uds_connect(uds_path, timeout)
-    try:
-        rf = sock.makefile("r")
-        wf = sock.makefile("w")
-        req = json.dumps({"id": 1, "method": method, "params": params or {}})
-        wf.write(req + "\n")
-        wf.flush()
-        line = rf.readline()
-        if not line:
-            raise RuntimeError(f"LFM RPC empty response for {method}")
-        response = json.loads(line.strip())
-        if "error" in response and response["error"]:
-            raise RuntimeError(f"LFM RPC error ({method}): {response['error']}")
-        return response.get("result")
-    finally:
-        sock.close()
+    deadline = time.time() + timeout
+    last_error = None
+
+    for attempt in range(3):
+        remaining = deadline - time.time()
+        if remaining < 1:
+            remaining = timeout
+
+        sock = _lfm_uds_connect(uds_path, min(remaining, timeout))
+        try:
+            sock.settimeout(min(remaining, timeout))
+            req = json.dumps({"id": 1, "method": method, "params": params or {}})
+            sock.sendall((req + "\n").encode("utf-8"))
+
+            # Use recv() with timeout instead of makefile().readline()
+            # makefile BufferedReader does NOT respect socket timeout
+            resp = b""
+            while True:
+                chunk = sock.recv(4096)
+                if not chunk:
+                    break
+                resp += chunk
+                if resp.endswith(b"\n"):
+                    break
+
+            if not resp:
+                raise RuntimeError("LFM RPC empty response")
+
+            response = json.loads(resp.decode("utf-8").strip())
+            if "error" in response and response["error"]:
+                raise RuntimeError(f"LFM RPC error: {response['error']}")
+
+            return response.get("result")
+
+        except socket.timeout:
+            last_error = RuntimeError(f"LFM RPC timeout after {timeout}s")
+            if attempt < 2:
+                time.sleep(0.5 * (attempt + 1))
+                continue
+            raise last_error
+        except (BrokenPipeError, ConnectionRefusedError, OSError) as _e:
+            last_error = RuntimeError(f"LFM connection lost: {type(_e).__name__}")
+            if attempt < 2:
+                time.sleep(0.2)
+                continue
+            raise last_error
+        finally:
+            sock.close()
+
+    raise last_error or RuntimeError("LFM RPC failed after 3 retries")
 
 
 # ── LFM high-level wrappers ──
