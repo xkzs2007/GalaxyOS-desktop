@@ -155,6 +155,70 @@ make native
 GALAXYOS_REPO=. python3 -m galaxyos.scripts.install_wizard --check
 ```
 
+### 安装向导 CLI
+
+GalaxyOS 提供两套安装向导 CLI，覆盖不同粒度需求：
+
+#### 1️⃣ 编排器 — 一键自举
+
+`galaxyos.init.bootstrap` 是模块化的安装编排器，按依赖拓扑自动执行环境探测→依赖检查→版本校验→按需更新，支持预设 Profile：
+
+```bash
+# 一键全流程（开发模式）
+PYTHONPATH=. python3 -c "from galaxyos.init.bootstrap import cli_main; cli_main()"
+
+# 检查模式（只体检，不修改）
+PYTHONPATH=. python3 -c "from galaxyos.init.bootstrap import cli_main; import sys; sys.argv += ['--dry-run']; cli_main()"
+
+# 指定 Profile
+PYTHONPATH=. python3 -c "from galaxyos.init.bootstrap import cli_main; import sys; sys.argv += ['--profile', 'prod']; cli_main()"
+
+# 只跑特定能力
+PYTHONPATH=. python3 -c "from galaxyos.init.bootstrap import cli_main; import sys; sys.argv += ['--only', 'env', 'dep']; cli_main()"
+```
+
+CLI 参数：
+
+| 参数 | 功能 |
+|:---|---|
+| `--dry-run` | 仅检查，不修改环境 |
+| `--profile {dev,staging,prod}` | 环境预设配置 |
+| `--only {env,dep,version,update}` | 只运行指定能力 |
+| `--quiet` | 最小化输出 |
+
+#### 2️⃣ 交互式向导 — 精细操作
+
+`install_wizard` 是传统的交互式安装向导，支持全量和分步执行：
+
+```bash
+# 全量模式：系统体检 + 功能测试 + 自动修复
+python3 -m galaxyos.scripts.install_wizard --all
+
+# 仅系统体检
+python3 -m galaxyos.scripts.install_wizard --check
+
+# 体检后自动修复
+python3 -m galaxyos.scripts.install_wizard --fix
+
+# 输出 JSON 报告
+python3 -m galaxyos.scripts.install_wizard --check --report
+
+# 下载 LFM2.5 ONNX 模型权重（~811MB）
+python3 -m galaxyos.scripts.install_wizard --download-lfm
+
+# 安装 Rust 工具链（国内镜像）
+python3 -m galaxyos.scripts.install_wizard --setup-rust
+
+# 安装 ML 栈
+python3 -m galaxyos.scripts.install_wizard --fix-torch
+
+# 增量更新
+python3 -m galaxyos.scripts.install_wizard --update
+
+# 数据迁移向导
+python3 -m galaxyos.scripts.install_wizard --migrate
+```
+
 ### 仅安装依赖
 
 ```bash
