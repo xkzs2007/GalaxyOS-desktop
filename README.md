@@ -155,6 +155,62 @@ make native
 GALAXYOS_REPO=. python3 -m galaxyos.scripts.install_wizard --check
 ```
 
+### 安装向导 CLI
+
+`install_wizard` 提供完整的一键初始化和运维工具链，支持全量和分步执行：
+
+```bash
+# 全量模式：系统体检 + 功能测试 + 自动修复
+python3 -m galaxyos.scripts.install_wizard --all
+
+# 仅系统体检
+python3 -m galaxyos.scripts.install_wizard --check
+
+# 体检后自动修复
+python3 -m galaxyos.scripts.install_wizard --fix
+
+# 输出 JSON 报告
+python3 -m galaxyos.scripts.install_wizard --check --report
+
+# 安装/检测 GalaxyOS OpenClaw 插件
+python3 -m galaxyos.scripts.install_wizard --install-plugin
+
+# 下载 LFM2.5 ONNX 模型权重（~811MB）
+python3 -m galaxyos.scripts.install_wizard --download-lfm
+
+# 安装 Rust 工具链（国内镜像）
+python3 -m galaxyos.scripts.install_wizard --setup-rust
+
+# 安装 ML 栈（torch / torch_geometric / hnswlib / faiss 等）
+python3 -m galaxyos.scripts.install_wizard --fix-torch
+
+# 增量更新
+python3 -m galaxyos.scripts.install_wizard --update
+
+# 数据迁移向导
+python3 -m galaxyos.scripts.install_wizard --migrate
+```
+
+支持的参数（`python3 -m galaxyos.scripts.install_wizard --help`）：
+
+| 参数 | 功能 |
+|:---|---|
+| `--check` | 系统体检：检测环境、依赖、配置完整性 |
+| `--fix` | 体检后自动修复可解决的问题 |
+| `--report` | 输出 JSON 报告到 stdout |
+| `--all` | 全量模式：体检 + 睡眠测试 + 修复 |
+| `--config` | 仅运行配置向导 |
+| `--fix-torch` | 自动补齐 PyTorch/Geometric/HNSWLib 等 ML 栈 |
+| `--install-plugin` | 安装/检测 GalaxyOS OpenClaw 插件 |
+| `--download-lfm` | 下载 LFM2.5 ONNX Q4 权重 |
+| `--setup-rust` | 安装 Rust 工具链 |
+| `--sleep-test` | 仿生睡眠巩固引擎专项测试 |
+| `--kg-test` | 知识图谱功能专项测试 |
+| `--update` | 增量更新 |
+| `--migrate` / `--migrate-auto` | 数据迁移向导 |
+| `--python` | 显式指定 Python 解释器路径 |
+| `--openclaw-home` | 显式指定 OpenClaw 配置目录 |
+
 ### 仅安装依赖
 
 ```bash
