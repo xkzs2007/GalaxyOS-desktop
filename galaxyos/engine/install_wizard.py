@@ -2665,6 +2665,63 @@ def _install_plugin_guide():
                     f"\n  {Y}    管理记忆，memory-core 已被禁用以免冲突。{N}"
                     f"\n  {Y}    如需回退，运行: openclaw plugins enable memory-core{N}"
                 )
+
+            # ── 检查 OpenClaw 插槽配置（slots）──
+            # OpenClaw 要求在 ~/.openclaw/openclaw.json 中手动指定
+            # plugins.slots.contextEngine = 插件注册的 engine id
+            # GalaxyOS 注册的 contextEngine id = "claw-core-engine"
+            print(f"\n  {C}🔌 OpenClaw 插槽配置检查:{N}")
+            oc_home = Path(os.environ.get("OPENCLAW_HOME", os.environ.get("HOME", "/root") + "/.openclaw"))
+            oc_json = oc_home / "openclaw.json"
+
+            _slot_ce_ok = False
+            if oc_json.exists():
+                try:
+                    with open(oc_json) as f:
+                        oc_cfg = json.load(f)
+                    slots = oc_cfg.get("plugins", {}).get("slots", {})
+                    ce_slot = slots.get("contextEngine", "legacy")
+                    entries = oc_cfg.get("plugins", {}).get("entries", {})
+
+                    if ce_slot == "claw-core-engine":
+                        ok(f"slots.contextEngine = \"{ce_slot}\" ✅", indent=1)
+                        _slot_ce_ok = True
+                        # 检查 entries 是否启用
+                        ce_entry = entries.get("claw-core-engine", {})
+                        if ce_entry.get("enabled", False):
+                            ok("entries[\"claw-core-engine\"].enabled = true ✅", indent=1)
+                        else:
+                            warn("entries[\"claw-core-engine\"] 未配置 enabled: true", indent=1)
+                            info("建议在 entries 中添加: \"claw-core-engine\": { \"enabled\": true }", indent=1)
+                    elif ce_slot == "legacy":
+                        warn(f"slots.contextEngine = \"legacy\"（未指定 GalaxyOS）", indent=1)
+                        info("GalaxyOS 已安装但未被选为活跃 ContextEngine", indent=1)
+                    else:
+                        warn(f"slots.contextEngine = \"{ce_slot}\"（被其他引擎占用）", indent=1)
+                except Exception as e:
+                    warn(f"读取 {oc_json} 失败: {e}", indent=1)
+            else:
+                warn(f"配置文件不存在: {oc_json}", indent=1)
+
+            if not _slot_ce_ok:
+                print(
+                    f"\n  {Y}⚠️  GalaxyOS 插槽未激活！需手动配置 openclaw.json:{N}"
+                    f"\n  {C}  编辑 ~/.openclaw/openclaw.json，添加以下内容:{N}"
+                )
+                print(f"""  {{
+    "plugins": {{
+      "slots": {{
+        "contextEngine": "claw-core-engine"
+      }},
+      "entries": {{
+        "claw-core-engine": {{
+          "enabled": true
+        }}
+      }}
+    }}
+  }}""")
+                print(f"  {C}  配置完成后重启 Gateway: supervisorctl restart openclaw-gateway{N}")
+                print(f"  {C}  验证: openclaw doctor{N}")
         except Exception as e:
             err(f"读取插件配置失败: {e}")
     else:
