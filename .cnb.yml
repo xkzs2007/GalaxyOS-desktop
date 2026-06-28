@@ -1,19 +1,22 @@
 # ════════════════════════════════════════════════════════════════
 # GalaxyOS — CNB 云原生构建配置
 #
-# main push: 轻量检查（不装重型依赖，快速反馈）
-# tag_push:  Rust 编译 + 产物打包
+# 策略：Dockerfile.ci 预装全部依赖 → Docker layer 缓存 → CI 秒级启动
 # ════════════════════════════════════════════════════════════════
 
-# ── main 分支：轻量检查 ──
+# ── main 分支：完整测试 ──
 main:
   push:
-    # Python 编译检查 + 语法验证（不装 torch/mkl 等重型依赖）
-    - name: python-check
+    # Python 全量测试（用预构建镜像，依赖已缓存）
+    - name: python-test
       docker:
-        image: python:3.11
+        build:
+          dockerfile: Dockerfile.ci
+          by:
+            - requirements-core.txt
+            - requirements-heavy.txt
       stages:
-        - name: compile-check-all
+        - name: compile-check
           script: |
             python -c "
             import py_compile, os, sys
@@ -26,13 +29,16 @@ main:
                         try: py_compile.compile(path, doraise=True)
                         except py_compile.PyCompileError: problems.append(path)
             if problems:
-                print(f'FAILED: {len(problems)} files:')
+                print(f'FAILED: {len(problems)} files')
                 for p in problems: print(f'  {p}')
                 sys.exit(1)
             print(f'OK: all Python files compile on {sys.version}')
             "
+        - name: pytest
+          script: |
+            python -m pytest tests/ -v --tb=short -p no:warnings
 
-    # injection_scanner 单元测试（只需标准库，无需重型依赖）
+    # 安全检查（轻量，并行）
     - name: security-check
       docker:
         image: python:3.12
@@ -59,7 +65,7 @@ main:
             [ "$FOUND" -ne 0 ] && echo "FOUND secrets" && exit 1
             echo "OK: no hardcoded secrets"
 
-    # Node.js 结构检查
+    # Node.js 结构检查（轻量，并行）
     - name: node-check
       docker:
         image: node:22
@@ -86,9 +92,13 @@ main:
             echo "OK: all 9 hooks registered"
 
   pull_request:
-    - name: pr-check
+    - name: pr-test
       docker:
-        image: python:3.12
+        build:
+          dockerfile: Dockerfile.ci
+          by:
+            - requirements-core.txt
+            - requirements-heavy.txt
       stages:
         - name: compile-check
           script: |
@@ -107,6 +117,8 @@ main:
                 sys.exit(1)
             print('OK: compile check passed')
             "
+        - name: pytest
+          script: python -m pytest tests/ -v --tb=short -p no:warnings
 
 
 # ── Tag 推送：Rust 编译 + 产物打包 ──

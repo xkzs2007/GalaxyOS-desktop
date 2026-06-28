@@ -1,64 +1,11 @@
-# 小艺 Claw 系统 — Python 依赖
+# 小艺 Claw 系统 — Python 依赖（全集）
 # 安装：pip install -r requirements.txt
+#
+# 分层策略（CI 友好）：
+#   requirements-core.txt  — 轻量核心 (< 100MB, 30s)
+#   requirements-heavy.txt — 重型 ML 依赖 (~3GB, 5-10min)
+#
+# CI 中只装 core；本地开发装全集；Docker 镜像预装 heavy。
 
-# === 核心数值计算 ===
-numpy==2.4.5
-scipy>=1.10.0
-mkl==2026.0.0
-tbb==2023.0.0
-
-# === 进程间通信 ===
-pyzmq>=25.0.0
-
-# === 网络请求 ===
-aiohttp>=3.9.0
-httpx>=0.27.0
-requests>=2.31.0
-
-# === 向量检索 ===
-faiss-cpu>=1.7.0
-hnswlib==0.8.0
-
-# === 图像处理 ===
-Pillow>=10.0.0
-
-# === 高速序列化 ===
-orjson>=3.9.0
-
-# === 数据处理 ===
-polars>=1.0.0
-duckdb>=1.0.0
-pandas>=2.0.0
-
-# === 中文 NLP ===
-jieba>=0.42.0
-snownlp>=0.12.0
-tiktoken>=0.5.0
-
-# === 异步加速 ===
-uvloop>=0.19.0
-
-# === 机器学习/深度学习 ===
-scikit-learn>=1.3.0
-onnxruntime>=1.15.0
-torch>=2.0.0
-transformers>=4.44.0
-
-# === 系统监控 ===
-psutil>=5.9.0
-
-# === LLM API 调用 ===
-openai>=1.0.0
-
-# === 神经电路策略 (NCPs) ===
-ncps>=1.0.0
-
-# === Tokenizer（ONNX 文字编码）===
-tokenizers>=0.20.0
-
-# === 数据校验 ===
-pydantic>=2.0.0
-
-# === 测试 ===
-pytest>=9.0.0
-pytest-cov>=5.0.0
+-r requirements-core.txt
+-r requirements-heavy.txt

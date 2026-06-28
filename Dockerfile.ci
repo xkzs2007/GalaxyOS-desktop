@@ -1,0 +1,26 @@
+# GalaxyOS — CI 构建镜像
+# 预装全部依赖，利用 Docker layer 缓存避免每次 CI 重装
+#
+# 用法（CNB .cnb.yml）:
+#   docker:
+#     build:
+#       dockerfile: Dockerfile.ci
+
+FROM python:3.12
+
+# 系统依赖（hnswlib 编译需要 Python.h）
+RUN apt-get update -qq && \
+    apt-get install -y -qq --no-install-recommends \
+        python3-dev build-essential gcc g++ && \
+    rm -rf /var/lib/apt/lists/*
+
+# 先装核心依赖（变更少，缓存命中率高）
+COPY requirements-core.txt /tmp/
+RUN pip install --no-cache-dir -i https://mirrors.tencent.com/pypi/simple -r /tmp/requirements-core.txt
+
+# 再装重型依赖（变更少，缓存命中率高）
+COPY requirements-heavy.txt /tmp/
+RUN pip install --no-cache-dir -i https://mirrors.tencent.com/pypi/simple -r /tmp/requirements-heavy.txt
+
+# 验证关键包
+RUN python -c "import numpy, scipy, sklearn, torch, pydantic, faiss, jieba, ncps; print('deps OK')"
