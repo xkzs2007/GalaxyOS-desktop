@@ -20,27 +20,35 @@ cp config/llm_config.example.json config/llm_config.json
 ## 开发工作流
 
 ```bash
-make test       # 跑全部测试 (428+)
+make test       # 跑全部测试 (137 用例)
 make coverage   # 测试 + 覆盖率 HTML 报告
 make lint       # ruff 代码检查
-make typecheck  # mypy 类型检查
+make native     # 编译 Rust 扩展
 make ci         # lint + test 一键检查
 ```
 
 ## 项目结构
 
 ```
-services/         # 核心服务包 (160 模块, 103K 行)
-  xiaoyi_claw_api.py   # 主入口类 XiaoYiClawLLM
-  retrieval_hub.py     # 7 通道统一检索
-  _imports.py          # 选装模块降级导入
-  rccam_state.py       # R-CCAM 五阶段状态对象
-  claw_helpers.py      # 模块级便捷 API
-tests/            # 测试 (32 文件, 428 用例)
-config/           # 配置文件 (模板: llm_config.example.json)
-scripts/          # 辅助脚本 + 安装向导
-extensions/       # OpenClaw 插件
-skills/           # 技能定义 + llm-memory-integration core
+extensions/galaxyos/   # OpenClaw 插件（主开发目录）
+  index.js                 # 主插件 — 9 钩子 / 15 工具 / 2 插槽
+  openclaw.plugin.json     # 插件契约
+  clawhub.json             # ClawHub 发布清单
+  scripts/                 # Python 运行时（~140 模块）
+    injection_scanner.py   #   Skill Bank 内容扫描器
+    lfm_skill_bank.py      #   LFM 技能库
+    multi_agent_orchestrator.py
+    dag_context_manager.py
+    claw_worker.py         #   主 Worker
+  native/                  # Rust 跨平台扩展
+galaxyos/               # 统一 Python 包
+  engine/                   # 引擎模块
+  privileged/               # 特权模块（ACP server 等）
+services/               # shim 层（转发到 galaxyos/privileged/）
+tests/                  # 测试 (37 文件, 137 用例)
+skills/                 # 技能库 (60+ 个)
+config/                 # 配置文件
+scripts/                # 辅助脚本 + 安装��导
 ```
 
 ## 提交规范

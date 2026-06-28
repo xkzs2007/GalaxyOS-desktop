@@ -358,4 +358,122 @@ python scripts/install_wizard.py --all     # 全量体检
 
 ---
 
+## 安全与隔离（v8.6.0 新增）
+
+### `InjectionScanner` (`extensions/galaxyos/scripts/injection_scanner.py`)
+
+Skill Bank 合约内容扫描器，检测 prompt injection 特征。
+
+```python
+from injection_scanner import get_scanner, scan_before_graduate
+
+scanner = get_scanner()
+result = scanner.scan(contract_text)
+# result.risky / result.score / result.risk_level (safe/low/medium/high)
+
+# 毕业前扫描（集成在 LfmSkillBank.promote_proto_skills 中）
+result = scan_before_graduate(proto_skill, contract)
+# 高风险 → 隔离不毕业；中风险 → 审核队列；低风险 → 放行
+```
+
+### `ReviewQueue` / `ProvenanceStore`
+
+```python
+from injection_scanner import get_review_queue, get_provenance_store
+
+rq = get_review_queue()
+rq.list_pending()        # 待审核技能列表
+rq.size()                # 队列大小
+
+ps = get_provenance_store()
+ps.record(name, info)    # 记录技能来源
+ps.find_contaminated(min_score=0.5)  # 查找污染技能（回滚用）
+```
+
+---
+
+## MultiAgent 编排（v8.5.3 + v8.6.0 增强）
+
+### `MultiAgentOrchestrator` (`extensions/galaxyos/scripts/multi_agent_orchestrator.py`)
+
+```python
+from multi_agent_orchestrator import MultiAgentOrchestrator
+
+orch = MultiAgentOrchestrator(llm_flash=llm, max_workers=4)
+
+# 常规编排
+result = orch.run(query="...", analysis={"input_class": "complex"}, tool_bag={...})
+
+# v8.6.0: OpenClaw Sub-Agent 模式（遵循 session key 格式/受限工具集/announce 回传）
+result = orch.spawn_as_sub_agent(
+    query="...",
+    parent_agent_id="agent-1",
+    parent_session_key="ws:dm:user1",
+    analysis={"input_class": "complex"},
+    tool_bag={"web_search": search_fn},
+)
+# result["session_key"] → "agent:agent-1:subagent:xxxx"
+# result["announce_payload"] → 回传主会话的 payload
+```
+
+---
+
+## LFM Skill Bank（v8.5.2 + v8.6.0 增强）
+
+### `LfmSkillBank` (`extensions/galaxyos/scripts/lfm_skill_bank.py`)
+
+```python
+from lfm_skill_bank import get_skill_bank, feed_memory_to_skill_bank
+
+bank = get_skill_bank()
+bank.discover_proto_skills()    # 从 segments 聚类发现 ProtoSkill
+bank.promote_proto_skills()     # 毕业（含 injection_scanner 扫描 + SKILL.md 输出）
+bank.run_maintenance()          # Merge/Split/Refine/Retire
+bank.retrieve_skills(query_embedding=emb, top_k=5)  # 检索
+
+# v8.6.0: 毕业后自动输出 SKILL.md 到 workspace/skills/
+# bank._export_skill_md(skill, proto_skill) → path
+```
+
+---
+
+## ACP 调试端点（v8.6.0 新增）
+
+### `ACPServer` (`galaxyos/privileged/acp_server.py`)
+
+```python
+from acp_server import ACPServer
+
+server = ACPServer()
+# 原有 5 工具: memory_search / memory_add / query_rewrite / rrf_fusion / embedding_encode
+# v8.6.0 新增 3 个调试端点:
+#   debug_dag_visualize  → DAG 节点+边列表（编辑器可视化）
+#   debug_engram_inspect → engram 记忆检查
+#   debug_skill_bank_status → Skill Bank 状态 + 审核队列 + 来源追溯
+```
+
+---
+
+## 跨平台 Rust 扩展（v8.6.0 新增）
+
+### `lfm_server` (`extensions/galaxyos/native/src/bin/lfm_server.rs`)
+
+条件编译跨平台 IPC：
+- **Unix**（Linux/macOS）: UDS (`UnixListener`)
+- **Windows**: TCP localhost (`TcpListener`, 自动分配端口)
+
+```bash
+# 4 目标交叉编译
+make native-build-linux-x64
+make native-build-linux-arm64
+make native-build-win-x64
+make native-build-win-arm64
+
+# 打包 + 安装
+make native-package
+make native-install-prebuilt   # 自动检测平台
+```
+
+---
+
 > 更多细节见 `SKILL.md` 架构文档和 `README.md`。
