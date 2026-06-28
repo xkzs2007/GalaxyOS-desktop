@@ -2092,10 +2092,308 @@ export default function register(api) {
         api.logger?.info?.(`${TAG} SIGTERM/SIGINT handlers registered for Gateway process`);
     }
 
+    // ════════════════════════════════════════════════════════════════
+    // Phase 1 改造：结构化 Session Key + 幂等缓存 + 工具调用/压缩生命周期钩子
+    // ════════════════════════════════════════════════════════════════
+
+    // ── buildStructKey：将 channel + userId 组装为结构化 session key ──
+    // 格式: workspace:channel:userId（OpenClaw 规范）
+    function buildStructKey(channel, userId) {
+        const wsName = path.basename(ws) || "default";
+        const ch = channel || "dm";
+        const uid = userId || "anonymous";
+        return `${wsName}:${ch}:${uid}`;
+    }
+
+    // ── Channel 感知：群聊场景降级为只读 ──
+    // 群聊（group/multi-user）下：记忆检索仅返回公共记忆，写入直接拒绝
+    function isGroupChannel(channel) {
+        if (!channel) return false;
+        const ch = String(channel).toLowerCase();
+        return ch === "group" || ch === "channel" || ch.startsWith("group:") || ch.startsWith("chat:");
+    }
+
+    // ── channel 感知的记忆操作守卫 ──
+    // 返回 true 表示允许操作，false 表示被策略拦截
+    function allowMemoryWrite(channel) {
+        return !isGroupChannel(channel); // 群聊禁止写入
+    }
+    function allowMemoryRead(channel) {
+        return true; // 所有频道都可读
+    }
+
+    // ── idempotencyCache：保证 after_tool_call 幂等，避免工具重试导致重复记忆 ──
+    const _idempotencyCache = new Map(); // callId → ts
+    const IDEMPOTENCY_TTL = 300000; // 5 分钟
+    const IDEMPOTENCY_MAX = 1000;
+    function _idempotencyHas(callId) {
+        if (!callId) return false;
+        const entry = _idempotencyCache.get(callId);
+        if (!entry) return false;
+        if (Date.now() - entry > IDEMPOTENCY_TTL) {
+            _idempotencyCache.delete(callId);
+            return false;
+        }
+        return true;
+    }
+    function _idempotencyMark(callId) {
+        if (!callId) return;
+        _idempotencyCache.set(callId, Date.now());
+        if (_idempotencyCache.size > IDEMPOTENCY_MAX) {
+            const now = Date.now();
+            const entries = Array.from(_idempotencyCache.entries())
+                .filter(([_, ts]) => now - ts <= IDEMPOTENCY_TTL)
+                .sort((a, b) => a[1] - b[1]);
+            _idempotencyCache.clear();
+            for (const [k, v] of entries.slice(-IDEMPOTENCY_MAX)) _idempotencyCache.set(k, v);
+        }
+    }
+
+    // ── before_tool_call：记录调用前状态，喂给 BoundaryDetector ──
+    api.on("before_tool_call", async (event) => {
+        try {
+            if (!event) return;
+            const { toolName, args, channel, userId } = event;
+            const structKey = buildStructKey(channel, userId);
+            const w = getWorker(ws);
+            if (!w) return;
+            // 记录调用前状态给 BoundaryDetector（fire-and-forget，不阻塞工具执行）
+            w.call("dag_ingest", {
+                session_key: structKey,
+                role: "system",
+                content: `[tool_call_start] ${toolName} args=${JSON.stringify(args || {}).slice(0, 200)}`,
+                importance: 0.3,
+                metadata: { type: "tool_call_boundary", phase: "pre", tool: toolName },
+            }, 5000).catch(() => {});
+        } catch (err) {
+            api.logger?.warn?.(`${TAG} before_tool_call handler failed: ${err.message}`);
+        }
+    });
+
+    // ── after_tool_call：捕��结果，更新 Skill Bank + engram + DAG（幂等 + 异步降级）──
+    api.on("after_tool_call", async (event) => {
+        try {
+            if (!event) return;
+            const { toolName, args, result, channel, userId, callId } = event;
+            // 幂等检查：同一 callId 不重复处理
+            if (_idempotencyHas(callId)) return;
+            _idempotencyMark(callId);
+
+            const structKey = buildStructKey(channel, userId);
+            const w = getWorker(ws);
+            if (!w) return;
+
+            // Phase 2.3: 群聊场景禁止写入记忆（只读降级）
+            if (!allowMemoryWrite(channel)) {
+                api.logger?.info?.(`${TAG} after_tool_call: memory write skipped for group channel=${channel}`);
+                return;
+            }
+
+            // 结果摘要（截断防止超长）
+            const resultSummary = typeof result === "string"
+                ? result.slice(0, 500)
+                : JSON.stringify(result || {}).slice(0, 500);
+
+            // 并行更新三个子系统，任一失败不影响其他
+            Promise.allSettled([
+                // 1. 更新 LFM Skill Bank — 记录工具调用效果
+                w.call("learn", {
+                    session_key: structKey,
+                    content: `Tool: ${toolName}\nArgs: ${JSON.stringify(args || {}).slice(0, 300)}\nResult: ${resultSummary}`,
+                    source: "tool_call",
+                    metadata: { type: "tool_call_effect", tool: toolName, call_id: callId },
+                }, 10000).catch(() => {}),
+                // 2. 写入 engram（工具调用轨迹）
+                w.call("store", {
+                    session_key: structKey,
+                    content: `[tool_call] ${toolName}: ${resultSummary}`,
+                    source: "observation",
+                    metadata: { type: "tool_call_trace", tool: toolName, call_id: callId },
+                }, 10000).catch(() => {}),
+                // 3. 更新 DAG — 工具调用边界节点
+                w.call("dag_ingest", {
+                    session_key: structKey,
+                    role: "system",
+                    content: `[tool_call_end] ${toolName} result=${resultSummary}`,
+                    importance: 0.4,
+                    metadata: { type: "tool_call_boundary", phase: "post", tool: toolName, call_id: callId },
+                }, 10000).catch(() => {}),
+            ]).then((results) => {
+                const failed = results.filter(r => r.status === "rejected").length;
+                if (failed > 0) {
+                    api.logger?.warn?.(`${TAG} after_tool_call: ${failed}/3 subsystems failed for tool=${toolName}`);
+                }
+            }).catch(() => {});
+        } catch (err) {
+            api.logger?.warn?.(`${TAG} after_tool_call handler failed: ${err.message}`);
+        }
+    });
+
+    // ── before_compaction：压缩前持久化高价值上下文 ──
+    api.on("before_compaction", async (event) => {
+        try {
+            if (!event) return;
+            const { sessionId, channel, userId, contextWindow } = event;
+            const structKey = buildStructKey(channel, userId);
+            const w = getWorker(ws);
+            if (!w) return;
+
+            // Phase 2.3: 群聊场景跳过持久化（只读降级，不写入个人记忆）
+            if (!allowMemoryWrite(channel)) {
+                api.logger?.info?.(`${TAG} before_compaction: flush skipped for group channel=${channel}`);
+                return;
+            }
+
+            // 从即将被压缩的上下文中筛选高价值内容
+            const messages = Array.isArray(contextWindow) ? contextWindow : (contextWindow?.messages || []);
+            const highValue = [];
+            for (const msg of messages) {
+                const content = typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content || "");
+                // 简单重要性启发：长度 > 50 且包含关键信息
+                if (content.length > 50 && msg.role !== "system") {
+                    highValue.push({
+                        role: msg.role || "user",
+                        content: content.slice(0, 1000),
+                        importance: msg.role === "assistant" ? 0.7 : 0.6,
+                    });
+                    if (highValue.length >= 20) break; // topK = 20
+                }
+            }
+
+            if (highValue.length === 0) return;
+
+            // 并行写入 engram + DAG，确保压缩前信息不丢失
+            await Promise.allSettled([
+                // engram 批量写入
+                ...highValue.map((item) =>
+                    w.call("store", {
+                        session_key: structKey,
+                        content: item.content,
+                        source: item.role === "assistant" ? "ai" : "user",
+                        metadata: { type: "pre_compaction_flush", session_id: sessionId },
+                    }, 10000).catch(() => {})
+                ),
+                // DAG 持久化
+                w.call("dag_ingest", {
+                    session_key: structKey,
+                    role: "system",
+                    content: `[pre_compaction_flush] ${highValue.length} high-value messages persisted`,
+                    importance: 0.8,
+                    metadata: { type: "pre_compaction_flush", count: highValue.length, session_id: sessionId },
+                }, 10000).catch(() => {}),
+            ]);
+            api.logger?.info?.(`${TAG} pre-compaction flush: ${highValue.length} items persisted for session=${structKey}`);
+        } catch (err) {
+            api.logger?.warn?.(`${TAG} before_compaction handler failed: ${err.message}`);
+        }
+    });
+
+    // ── after_compaction：压缩后触发索引同步 ──
+    api.on("after_compaction", async (event) => {
+        try {
+            if (!event) return;
+            const { sessionId, channel, userId } = event;
+            const structKey = buildStructKey(channel, userId);
+            const w = getWorker(ws);
+            if (!w) return;
+            // 触发向量索引同步，反映压缩后的会话状态
+            w.call("dag_compact", {
+                session_key: structKey,
+                force: false,
+                metadata: { type: "post_compaction_sync", session_id: sessionId },
+            }, 15000).catch(() => {});
+            api.logger?.info?.(`${TAG} post-compaction index sync triggered for session=${structKey}`);
+        } catch (err) {
+            api.logger?.warn?.(`${TAG} after_compaction handler failed: ${err.message}`);
+        }
+    });
+
+    // ── gateway_start：注册心跳与定时维护任务（Phase 3.2 对接）──
+    if (typeof api.on === "function") {
+        api.on("gateway_start", async () => {
+            try {
+                api.logger?.info?.(`${TAG} gateway_start: registering heartbeat & lane type`);
+                // 声明 galaxyos-hot lane 类型（Phase 1.3）
+                if (typeof api.registerLaneType === "function") {
+                    api.registerLaneType({
+                        name: "galaxyos-hot",
+                        description: "GalaxyOS Hot Tier — 高频低延迟请求",
+                        serial: true, // 同一会话串行执行
+                    });
+                    api.logger?.info?.(`${TAG} registered lane type: galaxyos-hot`);
+                }
+                // 注册心跳维护（Phase 3.2 — 每 30 分钟轻量维护）
+                if (typeof api.registerHeartbeat === "function") {
+                    api.registerHeartbeat({
+                        interval: 30 * 60 * 1000, // 30 分钟
+                        handler: async () => {
+                            try {
+                                const w = getWorker(ws);
+                                if (!w) return;
+                                // 轻量维护：engram 衰减 + LFM 状态重置
+                                await w.call("mmap_cleanup", {}, 10000).catch(() => {});
+                                api.logger?.info?.(`${TAG} heartbeat maintenance done`);
+                            } catch (e) {
+                                api.logger?.warn?.(`${TAG} heartbeat maintenance error: ${e.message}`);
+                            }
+                        },
+                    });
+                    api.logger?.info?.(`${TAG} registered heartbeat (30min interval)`);
+                }
+                // 注册深度维护 cron（Phase 3.2 — 低峰时段执行）
+                if (typeof api.registerCron === "function") {
+                    api.registerCron({
+                        schedule: "0 3 * * *", // 每天凌晨 3 点
+                        handler: async () => {
+                            try {
+                                const w = getWorker(ws);
+                                if (!w) return;
+                                // 深度维护：DAG 剪枝 + 向量索引重建
+                                await w.call("dag_compact", { force: true, deep: true }, 60000).catch(() => {});
+                                api.logger?.info?.(`${TAG} cron deep maintenance done`);
+                            } catch (e) {
+                                api.logger?.warn?.(`${TAG} cron maintenance error: ${e.message}`);
+                            }
+                        },
+                    });
+                    api.logger?.info?.(`${TAG} registered cron deep maintenance (daily 03:00)`);
+                }
+            } catch (err) {
+                api.logger?.warn?.(`${TAG} gateway_start handler failed: ${err.message}`);
+            }
+        });
+    }
+
+    // ── Worker Pool 负载上报（Phase 1.3 — 每 5 秒向 OpenClaw 上报负载状态）──
+    let _loadReportTimer = null;
+    function _startLoadReporting() {
+        if (_loadReportTimer) return;
+        _loadReportTimer = setInterval(() => {
+            try {
+                if (typeof api.reportLoad !== "function") return;
+                const poolStatus = _galaxyPool ? _galaxyPool.getStatus() : null;
+                if (!poolStatus) return;
+                // 从 GalaxyPool 状态提取负载指标
+                const hotQueue = poolStatus.tiers?.hot?.queueDepth || 0;
+                const warmQueue = poolStatus.tiers?.warm?.queueDepth || 0;
+                const coldQueue = poolStatus.tiers?.cold?.queueDepth || 0;
+                api.reportLoad({
+                    laneType: "galaxyos-hot",
+                    queueDepth: hotQueue + warmQueue + coldQueue,
+                    load: poolStatus.tiers?.hot?.busy || 0,
+                    maxLoad: poolStatus.tiers?.hot?.size || 0,
+                    avgLatencyMs: poolStatus.tiers?.hot?.avgLatencyMs || 0,
+                });
+            } catch {}
+        }, 5000).unref();
+    }
+    _startLoadReporting();
+
     // ═══ 暴露 GalaxyPool 运行时状态给 AI Agent ═══
     api.registerTool({
         name: "galaxy_pool",
         label: "GalaxyPool 系统状态",
+        policy: { channels: ["dm", "group"], roles: ["owner", "member"], rateLimit: { perMinute: 30 } },
         description: "查询 GalaxyOS 全系统运行状态：各组件的 alive/dead/degraded, Worker 池负载, 队列深度",
         parameters: { type: "object", properties: {}, required: [] },
         async execute() {
@@ -2108,6 +2406,7 @@ export default function register(api) {
     api.registerTool({
         name: "claw_rccam_progress",
         label: "R-CCAM 进度",
+        policy: { channels: ["dm", "group"], roles: ["owner", "member"], rateLimit: { perMinute: 60 } },
         description: "查询当前正在执行的 R-CCAM 认知循环的实时进度（Retrieval→Cognition→Control→Action→Memory）",
         parameters: {
             type: "object",
@@ -2146,6 +2445,7 @@ export default function register(api) {
     api.registerTool({
         name: "claw_recall",
         label: "Claw Memory Recall",
+        policy: { channels: ["dm"], roles: ["owner", "member"], rateLimit: { perMinute: 60 } },
         description: "Enhanced memory retrieval using the full xiaoyi-claw-omega-final workflow engine.\n" +
             "Runs the enhanced_recall workflow (CRAG pipeline → hybrid search → hallucination guard).\n" +
             "Use this for deep semantic memory retrieval with automatic correction.",
@@ -2202,6 +2502,7 @@ export default function register(api) {
     api.registerTool({
         name: "claw_lobster",
         label: "Claw Lobster Pipeline",
+        policy: { channels: ["dm"], roles: ["owner"], rateLimit: { perMinute: 20 } },
         description: "Run a Lobster pipeline or workflow file.\n" +
             "Lobster pipelines (e.g., session-recovery, heartbeat-full, memory-store) combine\n" +
             "multiple deterministic steps into a single call, reducing token consumption.",
@@ -2290,6 +2591,7 @@ export default function register(api) {
     api.registerTool({
         name: "claw_health",
         label: "Claw System Health",
+        policy: { channels: ["dm", "group"], roles: ["owner", "member"], rateLimit: { perMinute: 30 } },
         description: "Run system health check using the workflow engine.\n" +
             "Reports memory, coordinator, workflow engine, and hallucination guard status.",
         parameters: {
@@ -2339,6 +2641,7 @@ export default function register(api) {
     api.registerTool({
         name: "claw_vector_info",
         label: "Vector Compute Capability",
+        policy: { channels: ["dm", "group"], roles: ["owner", "member"], rateLimit: { perMinute: 30 } },
         description: "查询当前平台向量计算的硬件加速能力。\n" +
             "返回 SIMD 架构(如 AVX-512/AVX2/NEON/SVE)、lane 并行数、FMA 支持等。\n" +
             "用于判断向量搜索是否启用硬件加速路径。",
@@ -2375,6 +2678,7 @@ export default function register(api) {
     api.registerTool({
         name: "claw_events",
         label: "Claw Events Query",
+        policy: { channels: ["dm"], roles: ["owner", "member"], rateLimit: { perMinute: 60 } },
         description: "查询事件日志（基于 TKG 时序知识图谱）。\n" +
             "返回按时间倒序排列的操作事件，支持关键词和时间范围过滤。\n" +
             "事件类型包括: remember, recall, forget, tag, health, process 等。\n" +
@@ -2432,6 +2736,7 @@ export default function register(api) {
     api.registerTool({
         name: "claw_store",
         label: "Claw Memory Store",
+        policy: { channels: ["dm"], roles: ["owner"], rateLimit: { perMinute: 30 } },
         description: "Store a memory with full pipeline processing:\n" +
             "hallucination guard → synapse network → emotion memory → persistence.",
         parameters: {
@@ -2472,6 +2777,7 @@ export default function register(api) {
     api.registerTool({
         name: "claw_verify",
         label: "Claw Hallucination Verify",
+        policy: { channels: ["dm", "group"], roles: ["owner", "member"], rateLimit: { perMinute: 30 } },
         description: "Verify a claim using the enhanced hallucination guard.\n" +
             "Cross-references memory, knowledge graph, and multi-source evidence.",
         parameters: {
@@ -2510,6 +2816,7 @@ export default function register(api) {
     api.registerTool({
         name: "claw_rccam",
         label: "R-CCAM 认知循环",
+        policy: { channels: ["dm"], roles: ["owner", "member"], rateLimit: { perMinute: 20 } },
         description: "R-CCAM 结构化认知循环:对用户输入执行完整五阶段循环 Retrieval→Cognition→Control→Action→Memory",
         parameters: {
             type: "object",
@@ -2590,6 +2897,7 @@ export default function register(api) {
     api.registerTool({
         name: "claw_save_memory",
         label: "记忆持久化",
+        policy: { channels: ["dm"], roles: ["owner"], rateLimit: { perMinute: 30 } },
         description: "在 AI 回复用户后,将真实回答存储到记忆系统。由 R-CCAM 调用者在使用 claw_rccam 分析后,用真实 answer 调用此工具完成 Memory 阶段",
         parameters: {
             type: "object",
@@ -2632,6 +2940,7 @@ export default function register(api) {
     api.registerTool({
         name: "claw_compile_skill",
         label: "Skill Compiler (SkVM)",
+        policy: { channels: ["dm"], roles: ["owner"], rateLimit: { perMinute: 10 } },
         description: "编译一个 Skill：CapabilityProfile 匹配 → 环境绑定 → 裁剪 → 优化。\n" +
             "调用 Worker compile_skill UDS，返回 CompiledArtifact。",
         parameters: {
@@ -2674,6 +2983,7 @@ export default function register(api) {
     api.registerTool({
         name: "claw_asset_search",
         label: "Asset Registry Search",
+        policy: { channels: ["dm", "group"], roles: ["owner", "member"], rateLimit: { perMinute: 60 } },
         description: "查询 KnowledgeAsset 注册表。支持按 query/capability/tag/category 搜索。\n" +
             "MemGAS-SkVM 融合系统的核心查询接口。",
         parameters: {
@@ -2721,6 +3031,7 @@ export default function register(api) {
     api.registerTool({
         name: "claw_asset_register",
         label: "Asset Registry Register",
+        policy: { channels: ["dm"], roles: ["owner"], rateLimit: { perMinute: 20 } },
         description: "注册一个自定义 KnowledgeAsset 到 AssetRegistry。\n" +
             "支持带 capability_profile、compiled_artifact 和 tags 的高级注册。",
         parameters: {
@@ -2750,6 +3061,60 @@ export default function register(api) {
             }
             catch (err) {
                 return { content: [{ type: "text", text: `注册失败: ${err.message}` }], isError: true };
+            }
+        },
+    });
+
+    // ═══ Phase 4.1: Node 系统集成 — 健康监测 skill 对接外设 ═══
+    api.registerTool({
+        name: "claw_node_invoke",
+        label: "Node 外设调用",
+        description: "通过 OpenClaw Node 系统调用外设能力（拍照、定位、录屏等）。\\n"
+            + "用于健康监测类 skill 获取用户实时数据。",
+        policy: { channels: ["dm"], roles: ["owner"], rateLimit: { perMinute: 10 } },
+        parameters: {
+            type: "object",
+            properties: {
+                capability: {
+                    type: "string",
+                    description: "外设能力名称",
+                    enum: ["camera", "location", "screenshot", "health_data", "screen_capture"],
+                },
+                action: {
+                    type: "string",
+                    description: "具体操作（如 take_photo, get_location 等）",
+                },
+                params: {
+                    type: "object",
+                    description: "操作参数（可选）",
+                },
+            },
+            required: ["capability", "action"],
+        },
+        async execute(_toolCallId, params) {
+            try {
+                // 优先使用 OpenClaw 的 node.invoke API
+                if (typeof api.node?.invoke === "function") {
+                    const result = await api.node.invoke({
+                        capability: params.capability,
+                        action: params.action,
+                        params: params.params || {},
+                    });
+                    return {
+                        content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+                        details: result,
+                    };
+                }
+                // 降级：返回未可用提示
+                return {
+                    content: [{
+                        type: "text",
+                        text: `⚠️ Node 系统未连接。capability=${params.capability} action=${params.action} 无法执行。\\n请确保 OpenClaw Node 服务已启动。`
+                    }],
+                    isError: true,
+                };
+            } catch (err) {
+                return { content: [{ type: "text", text: `Node 调用失败: ${err.message}` }], isError: true };
             }
         },
     });
@@ -4279,7 +4644,8 @@ export default function register(api) {
     // --- 钩子3: agent_end - AI 回复后:L0 日志 + save_memory + 关键词追踪 ---
     api.on("agent_end", async (event, ctx) => {
         try {
-            const sessionKey = ctx?.sessionKey || event?.channel || "default";
+            // Phase 2.3: 使用结构化 session key（workspace:channel:userId）
+            const sessionKey = ctx?.sessionKey || buildStructKey(event?.channel, event?.userId) || "default";
 
             let userContent = "";
             let asstContent = "";
@@ -4817,5 +5183,5 @@ export default function register(api) {
         },
     });
 
-    api.logger.info?.(`${TAG} v4 plugin registration complete: 6 tools + 4 hooks + context-engine + memory-slot + public-artifacts + rccam-pipeline + 通信自发现 (worker=${workerEnabled ? "enabled" : "disabled"})`);
+    api.logger.info?.(`${TAG} v5 plugin registration complete: 14 tools + 9 hooks (gateway_start/stop, before/after_tool_call, before/after_compaction, before_agent_reply, agent_end, before_prompt_build) + context-engine + memory-slot + public-artifacts + rccam-pipeline + lane-type + load-reporting + 通信自发现 (worker=${workerEnabled ? "enabled" : "disabled"})`);
 }

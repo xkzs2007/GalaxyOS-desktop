@@ -217,6 +217,81 @@ class ACPServer:
             handler=self._embedding_encode
         )
 
+        # ════════════════════════════════════════════════════════════════
+        # Phase 3.4: 调试端点 — DAG 可视化、engram 检查、Skill Bank 状态
+        # ════════════════════════════════════════════════════════════════
+
+        # DAG 可视化查询
+        self.register_tool(
+            name="debug_dag_visualize",
+            description="可视化 DAG 知识图谱结构（Phase 3.4 调试端点）",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "session_key": {"type": "string", "description": "会话 key"},
+                    "depth": {"type": "integer", "default": 3, "description": "最大深度"},
+                    "limit": {"type": "integer", "default": 50, "description": "节点数量限制"}
+                },
+                "required": ["session_key"]
+            },
+            output_schema={
+                "type": "object",
+                "properties": {
+                    "nodes": {"type": "array", "description": "DAG 节点列表"},
+                    "edges": {"type": "array", "description": "DAG 边列表"},
+                    "stats": {"type": "object", "description": "统计信息"}
+                }
+            },
+            handler=self._debug_dag_visualize
+        )
+
+        # Engram 检查
+        self.register_tool(
+            name="debug_engram_inspect",
+            description="检查 engram 记忆内容（Phase 3.4 调试端点）",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "session_key": {"type": "string", "description": "会话 key"},
+                    "query": {"type": "string", "description": "搜索查询"},
+                    "limit": {"type": "integer", "default": 20, "description": "返回数量"}
+                },
+                "required": ["session_key"]
+            },
+            output_schema={
+                "type": "object",
+                "properties": {
+                    "engrams": {"type": "array", "description": "engram 记录列表"},
+                    "total": {"type": "integer", "description": "总数"}
+                }
+            },
+            handler=self._debug_engram_inspect
+        )
+
+        # Skill Bank 状态查询
+        self.register_tool(
+            name="debug_skill_bank_status",
+            description="查询 Skill Bank 状态（Phase 3.4 调试端点）",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "include_skills": {"type": "boolean", "default": True, "description": "是否包含技能列表"},
+                    "include_review_queue": {"type": "boolean", "default": True, "description": "是否包含审核队列"}
+                },
+                "required": []
+            },
+            output_schema={
+                "type": "object",
+                "properties": {
+                    "stats": {"type": "object", "description": "统计信息"},
+                    "skills": {"type": "array", "description": "已毕业技能列表"},
+                    "review_queue": {"type": "array", "description": "审核队列"},
+                    "provenance": {"type": "object", "description": "来源追溯"}
+                }
+            },
+            handler=self._debug_skill_bank_status
+        )
+
     def register_tool(
         self,
         name: str,
@@ -431,6 +506,134 @@ class ACPServer:
             }
         except Exception as e:
             return {"error": str(e), "vector": [], "dimension": 0}
+
+    # ════════════════════════════════════════════════════════════════
+    # Phase 3.4: 调试端点 handler 实现
+    # ════════════════════════════════════════════════════════════════
+
+    def _debug_dag_visualize(self, session_key: str, depth: int = 3, limit: int = 50):
+        """DAG 可视化查询 — 返回节点和边列表供编辑器渲染"""
+        try:
+            import sys as _sys
+            import os as _os
+            # 尝试导入 DAGContextManager
+            scripts_dir = _os.path.join(_os.path.dirname(_os.path.dirname(_os.path.dirname(__file__))), "extensions", "galaxyos", "scripts")
+            if scripts_dir not in _sys.path:
+                _sys.path.insert(0, scripts_dir)
+            from dag_context_manager import DAGContextManager
+
+            dag = DAGContextManager()
+            nodes = dag.get_session_nodes(session_key, limit=limit)
+
+            node_list = []
+            edge_list = []
+            for node in nodes[:limit]:
+                node_list.append({
+                    "id": node.node_id,
+                    "type": node.node_type,
+                    "content": node.content[:200] if node.content else "",
+                    "priority": node.priority.name if hasattr(node.priority, 'name') else str(node.priority),
+                    "importance": node.importance_score,
+                    "depth": getattr(node, 'depth', 0),
+                    "timestamp": node.timestamp,
+                })
+                # 构建边
+                parent_ids = node.parent_ids or []
+                for pid in parent_ids:
+                    edge_list.append({"source": pid, "target": node.node_id})
+
+            return {
+                "nodes": node_list,
+                "edges": edge_list,
+                "stats": {
+                    "total_nodes": len(node_list),
+                    "total_edges": len(edge_list),
+                    "session_key": session_key,
+                    "max_depth": depth,
+                }
+            }
+        except Exception as e:
+            return {"error": str(e), "nodes": [], "edges": [], "stats": {}}
+
+    def _debug_engram_inspect(self, session_key: str, query: str = "", limit: int = 20):
+        """engram 记忆检查 — 搜索并返回 engram 记录"""
+        try:
+            import sys as _sys
+            import os as _os
+            scripts_dir = _os.path.join(_os.path.dirname(_os.path.dirname(_os.path.dirname(__file__))), "extensions", "galaxyos", "scripts")
+            if scripts_dir not in _sys.path:
+                _sys.path.insert(0, scripts_dir)
+
+            # 尝试通过 Worker 查询事件日志（engram 轨迹）
+            from dag_context_manager import DAGContextManager
+            dag = DAGContextManager()
+            nodes = dag.get_session_nodes(session_key, limit=limit)
+
+            engrams = []
+            for node in nodes:
+                content = node.content or ""
+                if query and query.lower() not in content.lower():
+                    continue
+                engrams.append({
+                    "node_id": node.node_id,
+                    "content": content[:500],
+                    "source": node.node_type,
+                    "importance": node.importance_score,
+                    "timestamp": node.timestamp,
+                    "keywords": node.keywords if hasattr(node, 'keywords') else [],
+                })
+
+            return {
+                "engrams": engrams[:limit],
+                "total": len(engrams),
+            }
+        except Exception as e:
+            return {"error": str(e), "engrams": [], "total": 0}
+
+    def _debug_skill_bank_status(self, include_skills: bool = True, include_review_queue: bool = True):
+        """Skill Bank 状态查询 — 返回统计、技能列表、审核队列"""
+        try:
+            import sys as _sys
+            import os as _os
+            scripts_dir = _os.path.join(_os.path.dirname(_os.path.dirname(_os.path.dirname(__file__))), "extensions", "galaxyos", "scripts")
+            if scripts_dir not in _sys.path:
+                _sys.path.insert(0, scripts_dir)
+
+            result = {"stats": {}, "skills": [], "review_queue": [], "provenance": {}}
+
+            # Skill Bank 统计
+            try:
+                from lfm_skill_bank import get_skill_bank
+                bank = get_skill_bank()
+                result["stats"] = bank.stats() if hasattr(bank, 'stats') else {}
+                if include_skills:
+                    for sid, skill in bank._skills.items():
+                        result["skills"].append({
+                            "skill_id": sid,
+                            "name": skill.name,
+                            "version": skill.version,
+                            "quality_score": skill.quality_score,
+                            "use_count": skill.use_count,
+                            "retired": skill.retired,
+                        })
+            except Exception as e:
+                result["stats"] = {"error": str(e)}
+
+            # 审核队列
+            if include_review_queue:
+                try:
+                    from injection_scanner import get_review_queue, get_provenance_store
+                    rq = get_review_queue()
+                    result["review_queue"] = rq.list_pending()
+                    result["provenance"] = {
+                        "total_tracked": len(get_provenance_store()._records),
+                    }
+                except Exception as e:
+                    result["review_queue"] = {"error": str(e)}
+
+            return result
+        except Exception as e:
+            return {"error": str(e), "stats": {}, "skills": [], "review_queue": [], "provenance": {}}
 
 
 # ============ 启动函数 ============

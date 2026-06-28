@@ -1,5 +1,43 @@
 # Changelog
 
+## [v8.6.0] — 2026-06-28
+
+### OpenClaw 深度集成改造（全 4 阶段）
+
+#### Phase 1：核心断链修复
+- **接入工具调用生命周期钩子**：新增 `before_tool_call` / `after_tool_call` 钩子
+  - `before_tool_call`：记录调用前状态，喂给 BoundaryDetector
+  - `after_tool_call`：捕获结果，并行更新 Skill Bank + engram + DAG，带 `idempotencyCache` 幂等
+  - 新增 `buildStructKey(channel, userId)` 结构化 session key（`workspace:channel:userId`）
+- **接入上下文压缩生命周期钩子**：新增 `before_compaction` / `after_compaction` 钩子
+  - `before_compaction`：筛选高价值上下文写入 engram + DAG，防止压缩导致记忆丢失
+  - `after_compaction`：触发向量索引同步
+- **Worker Pool 声明为 OpenClaw 额外 Lane**：`galaxyos-hot` lane 类型 + 每 5 秒负载上报
+
+#### Phase 2：安全与隔离加固
+- **工具策略声明**：14 个 registerTool 全部增加 `policy` 字段（channels/roles/rateLimit）
+- **Skill Bank 合约内容扫描**：新建 `injection_scanner.py`（3 级风险检测 + 审核队列 + 来源追溯）
+  - 高风险（score≥0.8）：隔离不毕业
+  - 中风险（0.5≤score<0.8）：进入人工审核队列
+  - 低风险（score<0.5）：放行监控
+- **结构化 Session Key 与 Channel 感知**：群聊场景记忆写入降级为只读
+
+#### Phase 3：系统对齐
+- **COSPLAY 毕业产物输出为 SKILL.md**：含 YAML frontmatter，写入 `workspace/skills/`，支持 250ms hot-reload
+- **Heartbeat 与 Cron 对接**：`gateway_start` hook 注册 30 分钟心跳维护 + 每日 03:00 深度维护
+- **MultiAgent 映射为 OpenClaw Sub-Agent**：`spawn_as_sub_agent()` 方法，遵循 session key 规范/受限工具集/announce 回传
+- **ACP 暴露调试端点**：3 个新 RPC（`debug_dag_visualize` / `debug_engram_inspect` / `debug_skill_bank_status`）
+
+#### Phase 4：生态融合
+- **Node 系统集成**：新增 `claw_node_invoke` 工具，对接 `api.node.invoke` 外设能力
+- **ClawHub 发布与 Progressive Disclosure**：`clawhub.json` 发布清单，9 个技能元数据 ≤97 字符，token 开销降低 65%
+
+### Changed
+- VERSION 8.5.3 → 8.6.0
+- Hook 覆盖率：4 → 9（新增 gateway_start, before/after_tool_call, before/after_compaction）
+- Tool 覆盖率：14 → 15（新增 claw_node_invoke）
+- 注册日志：`v4` → `v5`
+
 ## [v8.5.3] — 2026-06-25
 
 ### Added

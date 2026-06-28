@@ -1048,6 +1048,90 @@ class MultiAgentOrchestrator:
         results.sort(key=lambda r: id_order.get(r.task_id, 999))
         return results
 
+    # ════════════════════════════════════════════════════════════════
+    # Phase 3.3: OpenClaw Sub-Agent 适配层
+    # ════════════════════════════════════════════════════════════════
+
+    def spawn_as_sub_agent(
+        self,
+        query: str,
+        parent_agent_id: str,
+        parent_session_key: str,
+        analysis: Optional[Dict] = None,
+        tool_bag: Optional[Dict] = None,
+    ) -> Dict:
+        """
+        Phase 3.3: 以 OpenClaw sub-agent 模式启动多智能体编排
+
+        遵循 OpenClaw sub-agent 约束：
+        - session key 格式: agent:{parent_agent_id}:subagent:{uuid}
+        - 禁止嵌套 spawn（sub-agent 不能再 spawn sub-agent）
+        - 默认受限工具集（无 sessions_* 权限）
+        - 结果通过 announce 模式回传主会话
+
+        Args:
+            query: 用户原始问题
+            parent_agent_id: 父 Agent ID
+            parent_session_key: 父会话 key
+            analysis: R-CCAM 分析结果
+            tool_bag: 工具注入（受限集）
+
+        Returns:
+            Dict: { session_key, results, merged_output, announce_payload }
+        """
+        import uuid as _uuid
+
+        # 生成 sub-agent session key（OpenClaw 规范）
+        sub_uuid = str(_uuid.uuid4())[:8]
+        sub_session_key = f"agent:{parent_agent_id}:subagent:{sub_uuid}"
+
+        logger.info(
+            f"MultiAgent spawning as sub-agent: parent={parent_agent_id}, "
+            f"sub_session={sub_session_key}"
+        )
+
+        # 过滤工具集：移除 sessions_* 等受限工具
+        restricted_prefixes = ("sessions_", "gateway_", "admin_")
+        filtered_tools = {}
+        if tool_bag:
+            for key, fn in tool_bag.items():
+                if not any(key.startswith(prefix) for prefix in restricted_prefixes):
+                    filtered_tools[key] = fn
+                else:
+                    logger.info(f"Sub-agent tool filtered (restricted): {key}")
+
+        # 执行编排（使用受限工具集）
+        result = self.run(
+            query=query,
+            analysis=analysis,
+            tool_bag=filtered_tools,
+        )
+
+        # 构建 announce 回传 payload
+        announce_payload = {
+            "type": "subagent_result",
+            "session_key": sub_session_key,
+            "parent_session_key": parent_session_key,
+            "merged_output": result.merged_output if hasattr(result, "merged_output") else "",
+            "sub_results": [
+                {
+                    "role": r.role,
+                    "status": r.status,
+                    "output": r.output[:500] if r.output else "",
+                    "score": r.score,
+                }
+                for r in (result.sub_results if hasattr(result, "sub_results") else [])
+            ],
+            "timestamp": time.time(),
+        }
+
+        return {
+            "session_key": sub_session_key,
+            "results": result,
+            "merged_output": result.merged_output if hasattr(result, "merged_output") else "",
+            "announce_payload": announce_payload,
+        }
+
 
 # ═══════════════════════════════════════════
 # 辅助函数

@@ -1,0 +1,107 @@
+{
+  "name": "galaxyos",
+  "version": "8.6.0",
+  "description": "GalaxyOS 认知增强引擎 — 记忆/检索/推理/验证/自进化",
+  "author": "llm-memory-integrat",
+  "license": "MIT",
+  "homepage": "https://cnb.cool/llm-memory-integrat/GalaxyOS",
+  "skills": [
+    {
+      "name": "galaxy-pool-status",
+      "description": "查询 GalaxyOS 全系统运行状态",
+      "source": "galaxy_pool",
+      "progressive_disclosure": {
+        "metadata_chars": 95,
+        "load_body_on_demand": true
+      }
+    },
+    {
+      "name": "claw-recall",
+      "description": "深度语义记忆检索（CRAG 管线 + 混合搜索 + 幻觉防护）",
+      "source": "claw_recall",
+      "progressive_disclosure": {
+        "metadata_chars": 97,
+        "load_body_on_demand": true
+      }
+    },
+    {
+      "name": "claw-store",
+      "description": "存储记忆（幻觉防护 → 突触网络 → 情绪记忆 → 持久化）",
+      "source": "claw_store",
+      "progressive_disclosure": {
+        "metadata_chars": 96,
+        "load_body_on_demand": true
+      }
+    },
+    {
+      "name": "claw-verify",
+      "description": "幻觉验证（记忆 + 知识图谱 + 多源证据交叉引用）",
+      "source": "claw_verify",
+      "progressive_disclosure": {
+        "metadata_chars": 94,
+        "load_body_on_demand": true
+      }
+    },
+    {
+      "name": "claw-rccam",
+      "description": "R-CCAM 认知循环：检索→认知→控制→行动→记忆",
+      "source": "claw_rccam",
+      "progressive_disclosure": {
+        "metadata_chars": 93,
+        "load_body_on_demand": true
+      }
+    },
+    {
+      "name": "claw-events",
+      "description": "查询事件日志（基于 TKG 时序知识图谱）",
+      "source": "claw_events",
+      "progressive_disclosure": {
+        "metadata_chars": 90,
+        "load_body_on_demand": true
+      }
+    },
+    {
+      "name": "claw-health",
+      "description": "系统健康检查（记忆/协调器/工作流引擎/幻觉防护）",
+      "source": "claw_health",
+      "progressive_disclosure": {
+        "metadata_chars": 96,
+        "load_body_on_demand": true
+      }
+    },
+    {
+      "name": "claw-asset-search",
+      "description": "查询 KnowledgeAsset 注册表（MemGAS-SkVM 融合系统）",
+      "source": "claw_asset_search",
+      "progressive_disclosure": {
+        "metadata_chars": 97,
+        "load_body_on_demand": true
+      }
+    },
+    {
+      "name": "claw-node-invoke",
+      "description": "通过 Node 系统调用外设（拍照/定位/录屏/健康数据）",
+      "source": "claw_node_invoke",
+      "progressive_disclosure": {
+        "metadata_chars": 97,
+        "load_body_on_demand": true
+      }
+    }
+  ],
+  "gating": {
+    "requires": {
+      "bins": ["python3"],
+      "env": [],
+      "config": ["contextEngine"]
+    },
+    "os": ["linux", "macos", "windows"],
+    "min_openclaw_version": "2026.3.7"
+  },
+  "progressive_disclosure": {
+    "enabled": true,
+    "metadata_only_loading": true,
+    "max_metadata_chars": 97,
+    "body_load_trigger": "tool_call",
+    "estimated_token_reduction_pct": 65
+  }
+}

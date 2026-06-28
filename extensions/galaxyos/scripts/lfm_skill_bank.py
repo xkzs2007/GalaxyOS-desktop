@@ -746,22 +746,60 @@ class LfmSkillBank:
     # ── 核心：ProtoSkill → Skill 升级 ─────────────────────────
     
     def promote_proto_skills(self) -> List[str]:
-        """将达标的 ProtoSkill 升级为正式 Skill"""
+        """将达标的 ProtoSkill 升级为正式 Skill
+
+        Phase 2.2 改造：毕业前调用 injection_scanner 扫描合约内容，
+        检测 prompt injection 特征。高风险合约隔离，中风险进审核队列，
+        低风险放行。扫描通过的合约记录来源追溯，便于污染回滚。
+        """
         promoted: List[str] = []
-        
+
+        # Phase 2.2: 导入内容扫描器（延迟导入避免循环依赖）
+        try:
+            from injection_scanner import scan_before_graduate, get_provenance_store
+            _scanner_available = True
+        except ImportError:
+            _scanner_available = False
+            logger.warning("injection_scanner not available, skipping content scan")
+
         for sid, ps in list(self._proto_skills.items()):
             if not ps.is_ready(self.config):
                 continue
-            
+
             segments = self.get_segments_by_skill(sid)
             if len(segments) < self.config.min_instances_per_skill:
                 continue
-            
+
             # 学习正式契约
             contract = learn_effects_contract(sid, segments, self.config)
             report = verify_effects_contract(contract, segments, self.config)
             contract = refine_effects_contract(contract, report, self.config)
-            
+
+            # Phase 2.2: 毕业前内容扫描
+            if _scanner_available:
+                scan_result = scan_before_graduate(ps, contract)
+                if scan_result.risky and scan_result.risk_level == "high":
+                    # 高风险：直接隔离，不毕业
+                    logger.warning(
+                        f"ProtoSkill {sid} QUARANTINED (high risk injection): "
+                        f"score={scan_result.score:.2f}, reason={scan_result.reason}"
+                    )
+                    continue
+                elif scan_result.risky and scan_result.risk_level == "medium":
+                    # 中风险：进入审核队列，暂不毕业
+                    logger.info(
+                        f"ProtoSkill {sid} sent to review queue (medium risk): "
+                        f"score={scan_result.score:.2f}"
+                    )
+                    continue
+                # 低风险或安全：放行，记录来源追溯
+                get_provenance_store().record(ps.name, {
+                    "source": "cosplay",
+                    "scan_passed": True,
+                    "scan_score": scan_result.score,
+                    "proto_skill_id": sid,
+                })
+
             skill = LfmSkill(
                 skill_id=sid,
                 name=ps.name[:60],
@@ -772,15 +810,137 @@ class LfmSkillBank:
                 consistency_score=ps.consistency,
                 exploration_value=0.3,  # 新技能初始探索价值
             )
-            
+
             self.add_skill(skill)
             self.remove_proto_skill(sid)
             promoted.append(sid)
-            
+
+            # Phase 3.1: 毕业产物输出为 OpenClaw SKILL.md 格式
+            # 使 OpenClaw 的 250ms hot-reload 技能发现机制能自动识别新技能
+            try:
+                self._export_skill_md(skill, ps)
+            except Exception as e:
+                logger.warning(f"SKILL.md export failed for {sid}: {e}")
+
             logger.info(f"ProtoSkill promoted: {sid} (support={ps.support}, "
                        f"pass_rate={ps.pass_rate:.3f}, n_instances={len(segments)})")
-        
+
         return promoted
+
+    def _export_skill_md(self, skill, proto_skill) -> str:
+        """
+        Phase 3.1: 将毕业技能输出为 OpenClaw SKILL.md 格式
+
+        生成含 YAML frontmatter 的 SKILL.md，写入 workspace/skills/ 目录。
+        OpenClaw 的技能发现机制（250ms debounce hot-reload）会自动加载。
+
+        Args:
+            skill: LfmSkill 实例
+            proto_skill: ProtoSkill 实例
+
+        Returns:
+            str: 写入的 SKILL.md 文件路径
+        """
+        import os
+        import time
+
+        # 确定技能输出目录
+        ws = self.config.workspace or os.environ.get("OPENCLAW_WORKSPACE", "")
+        if not ws:
+            ws = os.path.expanduser("~/.openclaw/workspace")
+        skills_root = os.path.join(ws, "skills")
+        os.makedirs(skills_root, exist_ok=True)
+
+        # 技能目录名（清理非法字符）
+        safe_name = "".join(c if c.isalnum() or c in "-_" else "-" for c in skill.name)
+        if not safe_name or safe_name == "-":
+            safe_name = skill.skill_id[:20]
+        skill_dir = os.path.join(skills_root, safe_name)
+        os.makedirs(skill_dir, exist_ok=True)
+
+        # 构建 YAML frontmatter
+        # Progressive disclosure: description 控制在 97 字符以内
+        description = (skill.description or "")[:97]
+        requires_lines = []
+        if hasattr(proto_skill, "requires") and proto_skill.requires:
+            for key, val in proto_skill.requires.items():
+                requires_lines.append(f"  {key}: {val}")
+
+        frontmatter_lines = [
+            "---",
+            f"name: {safe_name}",
+            f"description: {description}",
+            f"version: {skill.version}",
+            "tags:",
+            "  - auto-learned",
+            "  - cosplay",
+            f"source: lfm-skill-bank",
+            f"skill_id: {skill.skill_id}",
+        ]
+        if requires_lines:
+            frontmatter_lines.append("requires:")
+            frontmatter_lines.extend(requires_lines)
+        frontmatter_lines.append("---")
+
+        # 构建正文
+        body_lines = [
+            f"# {skill.name}",
+            "",
+            f"{skill.description or '自动学习的技能'}",
+            "",
+            "## 技能合约",
+            "",
+        ]
+
+        if skill.contract:
+            contract = skill.contract
+            if hasattr(contract, "eff_add") and contract.eff_add:
+                body_lines.append("### 前置效果（eff_add）")
+                body_lines.append("```")
+                for eff in sorted(contract.eff_add):
+                    body_lines.append(f"  - {eff}")
+                body_lines.append("```")
+                body_lines.append("")
+
+            if hasattr(contract, "eff_del") and contract.eff_del:
+                body_lines.append("### 后置删除（eff_del）")
+                body_lines.append("```")
+                for eff in sorted(contract.eff_del):
+                    body_lines.append(f"  - {eff}")
+                body_lines.append("```")
+                body_lines.append("")
+
+            if hasattr(contract, "eff_event") and contract.eff_event:
+                body_lines.append("### 触发事件（eff_event）")
+                body_lines.append("```")
+                for evt in sorted(contract.eff_event):
+                    body_lines.append(f"  - {evt}")
+                body_lines.append("```")
+                body_lines.append("")
+
+        body_lines.extend([
+            "## 统计信息",
+            "",
+            f"- 支持度（support）: {getattr(proto_skill, 'support', 'N/A')}",
+            f"- 一致性: {getattr(proto_skill, 'consistency', 'N/A'):.3f}" if hasattr(proto_skill, "consistency") else "- 一致性: N/A",
+            f"- 通过率: {getattr(proto_skill, 'pass_rate', 'N/A'):.3f}" if hasattr(proto_skill, "pass_rate") else "- 通过率: N/A",
+            f"- 质量评分: {skill.quality_score:.3f}",
+            f"- 创建时间: {time.strftime('%Y-%m-%d %H:%M:%S')}",
+            "",
+            "## 触发条件",
+            "",
+            "本技能由 COSPLAY/LFM Skill Bank 自动学习生成，在匹配的执行轨迹场景下自动触发。",
+            "",
+        ])
+
+        # 写入文件
+        skill_md_path = os.path.join(skill_dir, "SKILL.md")
+        content = "\n".join(frontmatter_lines) + "\n\n" + "\n".join(body_lines)
+        with open(skill_md_path, "w", encoding="utf-8") as f:
+            f.write(content)
+
+        logger.info(f"SKILL.md exported: {skill_md_path}")
+        return skill_md_path
     
     # ── 核心：Bank Maintenance ──────────────────────────────────
     
