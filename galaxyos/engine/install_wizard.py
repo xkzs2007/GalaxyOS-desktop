@@ -2668,25 +2668,27 @@ def _install_plugin_guide():
 
             # ── 检查 OpenClaw 插槽配置（slots）──
             # OpenClaw 要求在 ~/.openclaw/openclaw.json 中手动指定
-            # plugins.slots.contextEngine = 插件注册的 engine id
-            # GalaxyOS 注册的 contextEngine id = "claw-core-engine"
+            # plugins.slots.contextEngine = "claw-core-engine"
+            # plugins.slots.memory = "galaxyos"  (默认为 memory-core)
+            # 两个插槽都需要指向 GalaxyOS，否则插件装了但不生效
             print(f"\n  {C}🔌 OpenClaw 插槽配置检查:{N}")
             oc_home = Path(os.environ.get("OPENCLAW_HOME", os.environ.get("HOME", "/root") + "/.openclaw"))
             oc_json = oc_home / "openclaw.json"
 
             _slot_ce_ok = False
+            _slot_mem_ok = False
             if oc_json.exists():
                 try:
                     with open(oc_json) as f:
                         oc_cfg = json.load(f)
                     slots = oc_cfg.get("plugins", {}).get("slots", {})
-                    ce_slot = slots.get("contextEngine", "legacy")
                     entries = oc_cfg.get("plugins", {}).get("entries", {})
 
+                    # ── contextEngine 插槽 ──
+                    ce_slot = slots.get("contextEngine", "legacy")
                     if ce_slot == "claw-core-engine":
                         ok(f"slots.contextEngine = \"{ce_slot}\" ✅", indent=1)
                         _slot_ce_ok = True
-                        # 检查 entries 是否启用
                         ce_entry = entries.get("claw-core-engine", {})
                         if ce_entry.get("enabled", False):
                             ok("entries[\"claw-core-engine\"].enabled = true ✅", indent=1)
@@ -2698,28 +2700,54 @@ def _install_plugin_guide():
                         info("GalaxyOS 已安装但未被选为活跃 ContextEngine", indent=1)
                     else:
                         warn(f"slots.contextEngine = \"{ce_slot}\"（被其他引擎占用）", indent=1)
+
+                    # ── memory 插槽 ──
+                    # 默认为 memory-core，GalaxyOS 通过 registerMemoryCapability 注册
+                    # 插件 ID 为 "galaxyos"（来自 plugin.json 的 id 字段）
+                    mem_slot = slots.get("memory", "memory-core")
+                    if mem_slot == "galaxyos":
+                        ok(f"slots.memory = \"{mem_slot}\" ✅", indent=1)
+                        _slot_mem_ok = True
+                        mem_entry = entries.get("galaxyos", {})
+                        if mem_entry.get("enabled", False):
+                            ok("entries[\"galaxyos\"].enabled = true ✅", indent=1)
+                        else:
+                            warn("entries[\"galaxyos\"] 未配置 enabled: true", indent=1)
+                    elif mem_slot == "memory-core":
+                        warn(f"slots.memory = \"memory-core\"（默认内置，未切换到 GalaxyOS）", indent=1)
+                        info("GalaxyOS 记忆管线（DAG+engram+突触）未被激活", indent=1)
+                    else:
+                        warn(f"slots.memory = \"{mem_slot}\"（被其他插件占用）", indent=1)
+
                 except Exception as e:
                     warn(f"读取 {oc_json} 失败: {e}", indent=1)
             else:
                 warn(f"配置文件不存在: {oc_json}", indent=1)
 
-            if not _slot_ce_ok:
+            # ── 任一插槽未激活 → 给出完整配置指引 ──
+            if not _slot_ce_ok or not _slot_mem_ok:
                 print(
-                    f"\n  {Y}⚠️  GalaxyOS 插槽未激活！需手动配置 openclaw.json:{N}"
-                    f"\n  {C}  编辑 ~/.openclaw/openclaw.json，添加以下内容:{N}"
+                    f"\n  {Y}⚠️  GalaxyOS 插槽未完全激活！需手动配置 openclaw.json:{N}"
+                    f"\n  {C}  编辑 ~/.openclaw/openclaw.json，确保以下内容:{N}"
                 )
                 print(f"""  {{
     "plugins": {{
       "slots": {{
-        "contextEngine": "claw-core-engine"
+        "contextEngine": "claw-core-engine",
+        "memory": "galaxyos"
       }},
       "entries": {{
-        "claw-core-engine": {{
-          "enabled": true
-        }}
+        "claw-core-engine": {{ "enabled": true }},
+        "galaxyos": {{ "enabled": true }}
       }}
     }}
   }}""")
+                _tips = []
+                if not _slot_ce_ok:
+                    _tips.append("contextEngine → claw-core-engine（上下文组装/压缩/DAG）")
+                if not _slot_mem_ok:
+                    _tips.append("memory → galaxyos（记忆检索/写入/flushPlan）")
+                print(f"  {Y}  缺失: {', '.join(_tips)}{N}")
                 print(f"  {C}  配置完成后重启 Gateway: supervisorctl restart openclaw-gateway{N}")
                 print(f"  {C}  验证: openclaw doctor{N}")
         except Exception as e:
