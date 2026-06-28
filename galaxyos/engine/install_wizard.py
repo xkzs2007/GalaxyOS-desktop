@@ -2596,12 +2596,32 @@ def _install_plugin_guide():
                 cfg = json.load(f)
             pid = cfg.get("id", "?")
             desc = cfg.get("description", "")[:80]
-            tools = cfg.get("contracts", {}).get("tools", [])
+            contracts = cfg.get("contracts", {})
+            tools = contracts.get("tools", [])
+            context_engine = contracts.get("contextEngine", {})
+            kind_list = cfg.get("kind", [])
+
             info(f"插件 ID: {pid}", indent=1)
             info(f"描述: {desc}...", indent=1)
-            info(f"注册工具: {', '.join(tools[:6])}{'...' if len(tools) > 6 else ''}", indent=1)
+            info(f"注册工具 ({len(tools)} 个): {', '.join(tools[:6])}{'...' if len(tools) > 6 else ''}", indent=1)
 
-            # 检测 OpenClaw 注册状态 + 禁用冲突插件
+            # ── 插槽（contracts）声明展示 ──
+            print(f"\n  {C}📦 插槽声明 (contracts):{N}")
+            if context_engine:
+                ce_id = context_engine.get("id", "?")
+                print(f"    {G}✅ contextEngine{N} → {ce_id}")
+                print(f"       接管: 上下文组装(assemble) / 压缩(compact) / 消息摄入(ingest)")
+                print(f"       权限: ownsCompaction=true（独占压缩权，OpenClaw 不做兜底）")
+            if "memory" in kind_list:
+                print(f"    {G}✅ memory{N} → GalaxyOSMemorySearchManager")
+                print(f"       接管: 记忆检索(memory_search) / 写入(store) / flushPlan / publicArtifacts")
+            if "context-engine" in kind_list:
+                print(f"    {G}✅ context-engine{N} → kind 声明（OpenClaw 按此路由上下文请求）")
+            if not context_engine and "memory" not in kind_list and "context-engine" not in kind_list:
+                print(f"    {Y}⚠️  未声明任何插槽{N}")
+            print()
+
+            # ── 检测 OpenClaw 注册状态 + 禁用冲突插件 ──
             _memory_core_disabled = False
             try:
                 r = subprocess.run(
