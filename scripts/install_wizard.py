@@ -2105,6 +2105,47 @@ def download_lfm_weights(target_dir: Optional[Path] = None) -> bool:
         return True
     warn(f"部分完成 ({ok_cnt}/{len(LFM_MODEL_FILES)})，重试运行 --download-lfm 续传", indent=1)
     return False
+
+
+def download_embedding_model(target_dir: Optional[Path] = None) -> bool:
+    """下载 bge-small-zh-v1.5 ONNX 模型（~96MB，用于向量检索）"""
+    heading("📥 下载 Embedding 模型 (bge-small-zh-v1.5 ONNX)")
+    if target_dir is None:
+        target_dir = WORKSPACE / "models" / "embeddings"
+    target_dir.mkdir(parents=True, exist_ok=True)
+    onnx_path = target_dir / "bge-small-zh.onnx"
+    if onnx_path.exists() and onnx_path.stat().st_size > 10_000_000:
+        sz = onnx_path.stat().st_size / 1024**2
+        ok(f"模型已存在: {sz:.1f} MB")
+        return True
+
+    url = "https://hf-mirror.com/BAAI/bge-small-zh-v1.5/resolve/main/onnx/model.onnx"
+    info(f"下载: {url}")
+    info(f"目标: {onnx_path}")
+    try:
+        import urllib.request
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=120) as resp, open(onnx_path, "wb") as f:
+            total = int(resp.headers.get("Content-Length", 0))
+            downloaded = 0
+            while True:
+                chunk = resp.read(1024 * 1024)
+                if not chunk:
+                    break
+                f.write(chunk)
+                downloaded += len(chunk)
+                if total > 0:
+                    pct = downloaded * 100 // total
+                    print(f"\r  下载进度: {downloaded/1024**2:.1f}/{total/1024**2:.1f} MB ({pct}%)", end="", flush=True)
+            print()
+        ok(f"✅ 下载完成: {onnx_path.stat().st_size / 1024**2:.1f} MB")
+        return True
+    except Exception as e:
+        err(f"下载失败: {e}")
+        info("可手动下载: https://hf-mirror.com/BAAI/bge-small-zh-v1.5", indent=1)
+        return False
+
+
 def _setup_rust(use_make: bool = True):
     """跨平台安装 Rust：Windows / Linux / macOS
     使用 TUNA 镜像加速，自动识别 ARM64/x86_64。
@@ -3421,6 +3462,7 @@ def main():
     parser.add_argument("--fix-torch", action="store_true", help="自动补齐 torch/torch_geometric/hnswlib 等 ML 栈（清华源 + PyG wheel + CPU 索引）")
     parser.add_argument("--python", default=None, help="显式指定 Python 解释器路径（覆盖自动检测，常用于生产环境/容器固定运行时）")
     parser.add_argument("--download-lfm", action="store_true", help="从 hf-mirror 下载 LFM2.5-1.2B-Thinking 真实权重（~2.2GB）")
+    parser.add_argument("--download-embedding", action="store_true", help="从 hf-mirror 下载 bge-small-zh-v1.5 ONNX 模型（~96MB）")
     parser.add_argument("--setup-rust", action="store_true", help="安装 Rust 工具链（国内镜像，自动识别 ARM64/x86_64）")
     parser.add_argument("--update", action="store_true", help="增量更新模式：版本检测 + 仅同步变更文件，保护已有配置")
     parser.add_argument("--migrate", action="store_true", help="数据迁移向导：检测并迁移历史数据到当前版本")
@@ -3453,6 +3495,10 @@ def main():
 
     if args.download_lfm:
         ok = download_lfm_weights()
+        sys.exit(0 if ok else 1)
+
+    if args.download_embedding:
+        ok = download_embedding_model()
         sys.exit(0 if ok else 1)
 
 

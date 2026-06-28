@@ -54,9 +54,20 @@ Thumbs.db
 # ── 构建产物 ──
 **/dist/
 
-# ── 大文件 / 模型 ──
+# ── Rust 编译产物（不入库，用 make native 或 make native-install-prebuilt 生成）──
+extensions/galaxyos/native/galaxyos_native.so
+extensions/galaxyos/native/libgalaxyos_native.so
+extensions/galaxyos/scripts/galaxyos-native
+native/target/release/galaxyos-native
+native/target/release/lfm_server
+extensions/galaxyos/native/prebuilt/
+
+# ── 大文件 / 模型（不入库，用 --download-lfm 或 install_wizard 下载）──
 *.tar.gz
 *.zip
+models/embeddings/*.onnx
+models/embeddings/*.bin
+models/**/model_q4.onnx
 
 # 排除运行时模型目录（非 git 大文件默认排除，force-add 需要的）
 # *.pth 放开给 synapse_pretrain.pth
