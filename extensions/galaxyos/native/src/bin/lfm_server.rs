@@ -1,4 +1,8 @@
-//! LFM Server v2 — UDS socket + ONNX 推理引擎 with state management
+//! LFM Server v2 — 跨平台 IPC + ONNX 推理引擎 with state management
+//!
+//! 平台支持:
+//!   - Linux/macOS (Unix): UDS (Unix Domain Socket)
+//!   - Windows: TCP localhost (127.0.0.1:auto-port)
 //!
 //! 方法:
 //!   ping / get_info / embed_text / update_state / reset_state
@@ -9,7 +13,6 @@ use ort::value::{Tensor, Value};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
-use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
@@ -18,22 +21,124 @@ const CONV_LAYER_IDS: &[usize] = &[0, 1, 3, 4, 6, 7, 9, 11, 13, 15];
 const ATTN_LAYER_IDS: &[usize] = &[2, 5, 8, 10, 12, 14];
 const DIM: usize = 2048;
 const WINDOW: usize = 3;
-// 兼容旧版 claw_worker 的 UDS 路径
-const DEFAULT_UDS: &str = "extensions/galaxyos/var/lfm.sock";
+
+// ════════════════════════════════════════════════════════════════
+// 跨平台 IPC 抽象层
+// ════════════════════════════════════════════════════════════════
+
+#[cfg(unix)]
+mod ipc {
+    use std::os::unix::net::{UnixListener, UnixStream};
+    use std::path::Path;
+
+    pub type Listener = UnixListener;
+    pub type Stream = UnixStream;
+
+    /// 绑定 UDS socket
+    pub fn bind(path: &str) -> std::io::Result<Listener> {
+        if let Some(p) = Path::new(path).parent() {
+            let _ = std::fs::create_dir_all(p);
+        }
+        let _ = std::fs::remove_file(path);
+        let lis = UnixListener::bind(path)?;
+        std::fs::set_permissions(path, std::os::unix::fs::PermissionsExt::from_mode(0o777)).ok();
+        Ok(lis)
+    }
+
+    /// 构建 ready 消息（Unix: uds 路径）
+    pub fn ready_json(path: &str, pid: u32) -> serde_json::Value {
+        serde_json::json!({
+            "event": "ready",
+            "pid": pid,
+            "uds": path,
+            "ipc": "uds",
+            "model": "LFM2.5-1.2B-Q4",
+            "version": "2.0.0"
+        })
+    }
+
+    /// 获取 listener 的 incoming 迭代器
+    pub fn incoming(lis: &Listener) -> impl Iterator<Item = std::io::Result<Stream>> + '_ {
+        lis.incoming()
+    }
+}
+
+#[cfg(windows)]
+mod ipc {
+    use std::net::{TcpListener, TcpStream};
+
+    pub type Listener = TcpListener;
+    pub type Stream = TcpStream;
+
+    /// 绑定 TCP localhost（自动分配端口）
+    pub fn bind(_path: &str) -> std::io::Result<Listener> {
+        // Windows: 绑定 127.0.0.1:0 让 OS 自动分配端口
+        let lis = TcpListener::bind("127.0.0.1:0")?;
+        lis.set_nonblocking(false).ok();
+        Ok(lis)
+    }
+
+    /// 构建 ready 消息（Windows: TCP 端口）
+    pub fn ready_json(path: &str, pid: u32, port: u16) -> serde_json::Value {
+        serde_json::json!({
+            "event": "ready",
+            "pid": pid,
+            "tcp_port": port,
+            "ipc": "tcp",
+            "model": "LFM2.5-1.2B-Q4",
+            "version": "2.0.0"
+        })
+    }
+
+    /// 获取 listener 的 incoming 迭代器
+    pub fn incoming(lis: &Listener) -> impl Iterator<Item = std::io::Result<Stream>> + '_ {
+        lis.incoming()
+    }
+}
+
+// ════════════════════════════════════════════════════════════════
+// Config
+// ════════════════════════════════════════════════════════════════
 
 #[derive(Debug)]
-struct Config { model_dir: String, uds_path: String }
+struct Config {
+    model_dir: String,
+    uds_path: String, // Unix: UDS 路径; Windows: 未使用（TCP 自动分配端口）
+}
 
 fn parse_args() -> Config {
     let mut model_dir = std::env::var("GALAXYOS_LFM_MODEL_DIR").unwrap_or_default();
     let mut uds_path = std::env::var("GALAXYOS_LFM_UDS_PATH").unwrap_or_default();
     if model_dir.is_empty() {
-        let home = std::env::var("HOME").unwrap_or_else(|_| "/root".to_string());
-        model_dir = format!("{}/.openclaw/workspace/models/LFM2.5-1.2B-ONNX", home);
+        let home = std::env::var("HOME").unwrap_or_else(|_| {
+            // Windows 没有 HOME，用 USERPROFILE 或默认
+            if cfg!(windows) {
+                std::env::var("USERPROFILE").unwrap_or_else(|_| "C:\\Users\\Public".to_string())
+            } else {
+                "/root".to_string()
+            }
+        });
+        let model_sub = if cfg!(windows) {
+            "\\.openclaw\\workspace\\models\\LFM2.5-1.2B-ONNX"
+        } else {
+            "/.openclaw/workspace/models/LFM2.5-1.2B-ONNX"
+        };
+        model_dir = format!("{}{}", home, model_sub);
     }
     if uds_path.is_empty() {
-        let home = std::env::var("HOME").unwrap_or_else(|_| "/root".to_string());
-        uds_path = format!("{}/.openclaw/{}", home, DEFAULT_UDS);
+        let home = std::env::var("HOME").unwrap_or_else(|_| {
+            if cfg!(windows) {
+                std::env::var("USERPROFILE").unwrap_or_else(|_| "C:\\Users\\Public".to_string())
+            } else {
+                "/root".to_string()
+            }
+        });
+        if cfg!(windows) {
+            // Windows: 路径仅用于日志，实际用 TCP
+            uds_path = format!("{}\\.openclaw\\extensions\\galaxyos\\var\\lfm.tcp", home);
+        } else {
+            uds_path = format!("{}/.openclaw/extensions/galaxyos/var/lfm.sock", home);
+        }
     }
     Config { model_dir, uds_path }
 }
@@ -267,6 +372,8 @@ fn handle_request(line: &str, eng: &mut LFMEngine) -> String {
             "version":"2.0.0","backend":"ort(Q4)","model":"LFM2.5-1.2B","dim":DIM,
             "conv_layers": CONV_LAYER_IDS, "attn_layers": ATTN_LAYER_IDS,
             "has_state": eng.has_state, "total_seq_len": eng.total_seq,
+            "platform": if cfg!(windows) { "windows" } else { "unix" },
+            "ipc": if cfg!(windows) { "tcp" } else { "uds" },
         }), None),
 
         "embed_text" => {
@@ -330,10 +437,14 @@ fn mk_err(id: i64, msg: &str, t: Option<f64>) -> String {
     serde_json::to_string(&Response { id, result: None, error: Some(msg.into()), timing_ms: t }).unwrap()
 }
 
+// ════════════════════════════════════════════════════════════════
+// 跨平台 main + handle_client
+// ════════════════════════════════════════════════════════════════
+
 fn main() {
     let cfg = parse_args();
     let onnx = format!("{}/onnx/model_q4.onnx", cfg.model_dir);
-    if !Path::new(&onnx).exists() { eprintln!("[lfm] ❌ no model"); std::process::exit(1); }
+    if !Path::new(&onnx).exists() { eprintln!("[lfm] ❌ no model at {}", onnx); std::process::exit(1); }
 
     eprintln!("[lfm] 加载 {} ...", onnx);
     let eng = Arc::new(Mutex::new(match LFMEngine::new(&onnx) {
@@ -341,16 +452,31 @@ fn main() {
         Err(e) => { eprintln!("[lfm] ❌ model init: {}", e); std::process::exit(1); }
     }));
 
-    if let Some(p) = Path::new(&cfg.uds_path).parent() { let _ = std::fs::create_dir_all(p); }
-    let _ = std::fs::remove_file(&cfg.uds_path);
-    let lis = UnixListener::bind(&cfg.uds_path).unwrap_or_else(|e| { eprintln!("[lfm] bind failed"); std::process::exit(1); });
-    std::fs::set_permissions(&cfg.uds_path, std::os::unix::fs::PermissionsExt::from_mode(0o777)).ok();
-    // stdout ready line is the IPC protocol for Python lfm_start()
-    println!("{}", serde_json::json!({"event":"ready","pid":std::process::id(),"uds":cfg.uds_path,"model":"LFM2.5-1.2B-Q4","version":"2.0.0"}));
+    // ── 跨平台 IPC 绑定 ──
+    let lis = ipc::bind(&cfg.uds_path).unwrap_or_else(|e| {
+        eprintln!("[lfm] bind failed: {}", e);
+        std::process::exit(1);
+    });
+
+    // Windows: 获取实际分配的 TCP 端口
+    #[cfg(windows)]
+    let tcp_port = {
+        use std::net::ToSocketAddrs;
+        lis.local_addr().map(|a| a.port()).unwrap_or(0)
+    };
+
+    // stdout ready line — Python lfm_start() 解析此行获取连接信息
+    let pid = std::process::id();
+    #[cfg(unix)]
+    let ready = ipc::ready_json(&cfg.uds_path, pid);
+    #[cfg(windows)]
+    let ready = ipc::ready_json(&cfg.uds_path, pid, tcp_port);
+
+    println!("{}", ready);
     std::io::stdout().flush().ok();
 
     let eng_ref = eng.clone();
-    for s in lis.incoming() {
+    for s in ipc::incoming(&lis) {
         match s {
             Ok(s) => {
                 let eng = eng_ref.clone();
@@ -364,9 +490,9 @@ fn main() {
 const LOCK_SPIN_COUNT: u32 = 64;
 const LOCK_SPIN_INTERVAL_MS: u64 = 10;
 
-fn handle_client(s: UnixStream, eng: Arc<Mutex<LFMEngine>>) {
-    let mut r = BufReader::new(&s);
-    let mut w = &s;
+/// 泛型 handle_client — UnixStream 和 TcpStream 都实现 Read + Write
+fn handle_client<S: std::io::Read + std::io::Write + Send>(s: S, eng: Arc<Mutex<LFMEngine>>) {
+    let mut r = BufReader::new(s);
     let mut line = String::new();
     loop {
         line.clear();
@@ -393,8 +519,8 @@ fn handle_client(s: UnixStream, eng: Arc<Mutex<LFMEngine>>) {
                     Some(g) => g,
                     None => {
                         // Engine busy: client will retry
-                        let _ = writeln!(w, "{\"id\":0,\"error\":\"engine_busy\"}");
-                        w.flush().ok();
+                        let _ = r.get_mut().write_all(b"{\"id\":0,\"error\":\"engine_busy\"}\n");
+                        r.get_mut().flush().ok();
                         continue;
                     }
                 }
@@ -402,7 +528,10 @@ fn handle_client(s: UnixStream, eng: Arc<Mutex<LFMEngine>>) {
         };
         let resp = handle_request(line, &mut *guard);
         drop(guard);
-        if let Err(e) = writeln!(w, "{}", resp) { eprintln!("[lfm] write err"); break; }
-        w.flush().ok();
+        if let Err(_) = r.get_mut().write_all(format!("{}\n", resp).as_bytes()) {
+            eprintln!("[lfm] write err");
+            break;
+        }
+        r.get_mut().flush().ok();
     }
 }

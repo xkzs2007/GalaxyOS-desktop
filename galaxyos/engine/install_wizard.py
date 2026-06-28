@@ -2235,6 +2235,77 @@ def _setup_rust(use_make: bool = True):
         sys.exit(1)
 
 
+def _detect_platform_target() -> str:
+    """检测当前平台并返回预编译包标识（4 目标之一）"""
+    import platform as _pf
+    is_windows = sys.platform.startswith("win")
+    arch = _pf.machine().lower()
+    if is_windows:
+        if arch in ("x86_64", "amd64"):
+            return "windows-x64"
+        elif arch in ("aarch64", "arm64"):
+            return "windows-arm64"
+    else:
+        if arch in ("x86_64", "amd64"):
+            return "linux-x64"
+        elif arch in ("aarch64", "arm64"):
+            return "linux-arm64"
+    # 不支持的架构，回退到 linux-x64
+    return "linux-x64"
+
+
+def install_prebuilt_native():
+    """安装跨平台预编译 Rust 二进制（无需 cargo 编译）
+
+    自动检测平台（Linux/Windows × x64/ARM64），从 libs/ 中解包对应的预编译包。
+    """
+    heading("📦 安装预编译 Rust 二进制（跨平台）")
+
+    platform_target = _detect_platform_target()
+    info(f"检测平台: {platform_target}")
+
+    # 查找对应的预编译包
+    libs_dir = Path(__file__).resolve().parent.parent.parent / "libs"
+    pattern = f"galaxyos-native-*-{platform_target}.tar.gz"
+    matches = list(libs_dir.glob(pattern)) if libs_dir.exists() else []
+
+    if not matches:
+        # 回退：尝试通用包
+        generic = list(libs_dir.glob("galaxyos_native-*.tar.gz")) if libs_dir.exists() else []
+        if generic:
+            info(f"未找到 {platform_target} 专用包，使用通用包: {generic[0].name}")
+            matches = generic
+        else:
+            err(f"未找到预编译包: {pattern}")
+            info("请先运行: make native-build-{platform_target} && make native-package")
+            info("或安装 Rust 工具链后运行: make native")
+            return False
+
+    tarball = matches[0]
+    info(f"解包: {tarball.name}")
+
+    # 解包目标目录
+    scripts_dir = Path(__file__).resolve().parent.parent.parent / "extensions" / "galaxyos" / "scripts"
+    scripts_dir.mkdir(parents=True, exist_ok=True)
+
+    import tarfile
+    try:
+        with tarfile.open(tarball, "r:gz") as tar:
+            tar.extractall(path=str(scripts_dir))
+    except Exception as e:
+        err(f"解包失败: {e}")
+        return False
+
+    # 设置可执行权限（非 Windows）
+    if not sys.platform.startswith("win"):
+        for bin_name in ["galaxyos-native", "lfm_server"]:
+            bin_path = scripts_dir / bin_name
+            if bin_path.exists():
+                bin_path.chmod(0o755)
+
+    info(f"✅ 预编译二进制已安装到: {scripts_dir}")
+    return True
+
 
 def check_v82_pipelines() -> Dict[str, Any]:
     # 兼容旧调用名
@@ -3062,6 +3133,7 @@ def main():
     parser.add_argument("--python", default=None, help="显式指定 Python 解释器路径（覆盖自动检测，常用于生产环境/容器固定运行时）")
     parser.add_argument("--download-lfm", action="store_true", help="从 hf-mirror 下载 LFM2.5-1.2B-Thinking-ONNX Q4 权重（~811MB, ONNX Runtime mmap 共享）")
     parser.add_argument("--setup-rust", action="store_true", help="安装 Rust 工具链（国内镜像，自动识别 ARM64/x86_64）")
+    parser.add_argument("--install-prebuilt", action="store_true", help="安装跨平台预编译 Rust 二进制（自动检测 Linux/Windows × x64/ARM64）")
     parser.add_argument("--update", action="store_true", help="增量更新模式：版本检测 + 仅同步变更文件，保护已有配置")
     parser.add_argument("--migrate", action="store_true", help="数据迁移向导：检测并迁移历史数据到当前版本")
     parser.add_argument("--migrate-auto", action="store_true", help="数据迁移（非互动模式）：自动迁移所有可迁移数据")
@@ -3093,6 +3165,10 @@ def main():
             use_make=Path(__file__).resolve().parent.parent.parent.joinpath("Makefile").exists()
         )
         sys.exit(0)
+
+    if args.install_prebuilt:
+        ok = install_prebuilt_native()
+        sys.exit(0 if ok else 1)
 
 
     if args.fix_torch:

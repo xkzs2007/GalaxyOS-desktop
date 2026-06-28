@@ -166,3 +166,114 @@ native-libs:
 	@mkdir -p extensions/galaxyos/scripts
 	@cp $(VENV)/lib/python3.12/site-packages/galaxyos_native/__init__.py extensions/galaxyos/scripts/galaxyos_native.py 2>/dev/null || true
 	@echo "✅ Pre-built libs installed — import galaxyos_native ready"
+
+# ════════════════════════════════════════════════════════════════
+# 跨平台交叉编译 — 4 目标: Linux x64/ARM64 + Windows x64/ARM64
+# ════════════════════════════════════════════════════════════════
+
+# 目标三元组
+TARGET_LINUX_X64   := x86_64-unknown-linux-gnu
+TARGET_LINUX_ARM64 := aarch64-unknown-linux-gnu
+TARGET_WIN_X64     := x86_64-pc-windows-msvc
+TARGET_WIN_ARM64   := aarch64-pc-windows-msvc
+
+# 预编译包输出目录
+PREBUILT_DIR := extensions/galaxyos/native/prebuilt
+
+# ── native-cross: 安装交叉编译工具链 ──
+native-cross:
+	@echo "📦 Installing cross-compile targets..."
+	@rustup target add $(TARGET_LINUX_X64) 2>/dev/null || true
+	@rustup target add $(TARGET_LINUX_ARM64) 2>/dev/null || true
+	@echo "✅ Cross-compile targets installed"
+	@echo "⚠️  Windows targets require Visual Studio Build Tools (MSVC) on Windows host"
+	@echo "   Or use 'cargo install cross' for Docker-based cross compilation"
+
+# ── native-build-all: 编译所有平台 ──
+native-build-all: native-build-linux-x64 native-build-linux-arm64
+	@echo "✅ All available targets built (see $(PREBUILT_DIR)/)"
+
+# ── native-build-linux-x64: Linux x86_64 ──
+native-build-linux-x64:
+	@echo "🦀 Building for Linux x86_64..."
+	@cd extensions/galaxyos/native && cargo build --release --target $(TARGET_LINUX_X64)
+	@mkdir -p $(PREBUILT_DIR)/linux-x64
+	@cp extensions/galaxyos/native/target/$(TARGET_LINUX_X64)/release/galaxyos-native $(PREBUILT_DIR)/linux-x64/ 2>/dev/null || true
+	@cp extensions/galaxyos/native/target/$(TARGET_LINUX_X64)/release/libgalaxyos_native.so $(PREBUILT_DIR)/linux-x64/ 2>/dev/null || true
+	@cp extensions/galaxyos/native/target/$(TARGET_LINUX_X64)/release/lfm_server $(PREBUILT_DIR)/linux-x64/ 2>/dev/null || true
+	@echo "✅ Linux x86_64 → $(PREBUILT_DIR)/linux-x64/"
+
+# ── native-build-linux-arm64: Linux ARM64 ──
+native-build-linux-arm64:
+	@echo "🦀 Building for Linux ARM64 (aarch64)..."
+	@cd extensions/galaxyos/native && cargo build --release --target $(TARGET_LINUX_ARM64)
+	@mkdir -p $(PREBUILT_DIR)/linux-arm64
+	@cp extensions/galaxyos/native/target/$(TARGET_LINUX_ARM64)/release/galaxyos-native $(PREBUILT_DIR)/linux-arm64/ 2>/dev/null || true
+	@cp extensions/galaxyos/native/target/$(TARGET_LINUX_ARM64)/release/libgalaxyos_native.so $(PREBUILT_DIR)/linux-arm64/ 2>/dev/null || true
+	@cp extensions/galaxyos/native/target/$(TARGET_LINUX_ARM64)/release/lfm_server $(PREBUILT_DIR)/linux-arm64/ 2>/dev/null || true
+	@echo "✅ Linux ARM64 → $(PREBUILT_DIR)/linux-arm64/"
+
+# ── native-build-win-x64: Windows x86_64 (需 Windows 主机或 cross) ──
+native-build-win-x64:
+	@echo "🦀 Building for Windows x86_64..."
+	@cd extensions/galaxyos/native && cargo build --release --target $(TARGET_WIN_X64)
+	@mkdir -p $(PREBUILT_DIR)/windows-x64
+	@cp extensions/galaxyos/native/target/$(TARGET_WIN_X64)/release/galaxyos-native.exe $(PREBUILT_DIR)/windows-x64/ 2>/dev/null || true
+	@cp extensions/galaxyos/native/target/$(TARGET_WIN_X64)/release/galaxyos_native.dll $(PREBUILT_DIR)/windows-x64/ 2>/dev/null || true
+	@cp extensions/galaxyos/native/target/$(TARGET_WIN_X64)/release/lfm_server.exe $(PREBUILT_DIR)/windows-x64/ 2>/dev/null || true
+	@echo "✅ Windows x86_64 → $(PREBUILT_DIR)/windows-x64/"
+
+# ── native-build-win-arm64: Windows ARM64 (需 Windows 主机或 cross) ──
+native-build-win-arm64:
+	@echo "🦀 Building for Windows ARM64..."
+	@cd extensions/galaxyos/native && cargo build --release --target $(TARGET_WIN_ARM64)
+	@mkdir -p $(PREBUILT_DIR)/windows-arm64
+	@cp extensions/galaxyos/native/target/$(TARGET_WIN_ARM64)/release/galaxyos-native.exe $(PREBUILT_DIR)/windows-arm64/ 2>/dev/null || true
+	@cp extensions/galaxyos/native/target/$(TARGET_WIN_ARM64)/release/galaxyos_native.dll $(PREBUILT_DIR)/windows-arm64/ 2>/dev/null || true
+	@cp extensions/galaxyos/native/target/$(TARGET_WIN_ARM64)/release/lfm_server.exe $(PREBUILT_DIR)/windows-arm64/ 2>/dev/null || true
+	@echo "✅ Windows ARM64 → $(PREBUILT_DIR)/windows-arm64/"
+
+# ── native-package: 打包预编译二进制为 tar.gz ──
+native-package:
+	@echo "📦 Packaging prebuilt binaries..."
+	@mkdir -p libs
+	@for platform in linux-x64 linux-arm64 windows-x64 windows-arm64; do \
+		dir="$(PREBUILT_DIR)/$$platform"; \
+		if [ -d "$$dir" ] && [ "$$(ls -A $$dir 2>/dev/null)" ]; then \
+			tarball="libs/galaxyos-native-0.2.0-$$platform.tar.gz"; \
+			tar czf "$$tarball" -C "$$dir" .; \
+			echo "  ✅ $$tarball"; \
+		else \
+			echo "  ⏭️  $$platform: not built (skip)"; \
+		fi; \
+	done
+	@echo "✅ Packaging complete — see libs/galaxyos-native-*.tar.gz"
+
+# ── native-install-prebuilt: 安装预编译二进制（自动检测平台）──
+native-install-prebuilt:
+	@echo "📦 Installing prebuilt binary (auto-detect platform)..."
+	@ARCH=$$(uname -m); \
+	OS=$$(uname -s 2>/dev/null || echo Linux); \
+	case "$$OS:$$ARCH" in \
+		Linux:x86_64|Linux:amd64) PLATFORM="linux-x64" ;; \
+		Linux:aarch64|Linux:arm64) PLATFORM="linux-arm64" ;; \
+		MINGW*:x86_64|CYGWIN*:x86_64|Windows:x86_64) PLATFORM="windows-x64" ;; \
+		MINGW*:aarch64|MINGW*:arm64|Windows:arm64) PLATFORM="windows-arm64" ;; \
+		Darwin:x86_64|Darwin:amd64) PLATFORM="linux-x64" ;; \
+		Darwin:arm64|Darwin:aarch64) PLATFORM="linux-arm64" ;; \
+		*) echo "❌ Unsupported platform: $$OS:$$ARCH"; exit 1 ;; \
+	esac; \
+	echo "  → Platform: $$PLATFORM"; \
+	TARBALL="libs/galaxyos-native-0.2.0-$$PLATFORM.tar.gz"; \
+	if [ ! -f "$$TARBALL" ]; then \
+		echo "❌ Prebuilt package not found: $$TARBALL"; \
+		echo "   Run: make native-build-$$PLATFORM && make native-package"; \
+		exit 1; \
+	fi; \
+	mkdir -p extensions/galaxyos/scripts extensions/galaxyos/native; \
+	tar xzf "$$TARBALL" -C extensions/galaxyos/scripts/; \
+	case "$$PLATFORM" in \
+		linux-*) chmod +x extensions/galaxyos/scripts/galaxyos-native 2>/dev/null || true ;; \
+		windows-*) echo "  → Windows binaries installed" ;; \
+	esac; \
+	echo "✅ Prebuilt binary installed from $$PLATFORM"

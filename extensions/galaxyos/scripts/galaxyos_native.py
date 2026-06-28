@@ -26,35 +26,45 @@ import time
 from pathlib import Path
 from typing import List, Optional
 
-# ── LFM UDS Client ─────────────────────────────────────────────────────
+# ── LFM IPC Client (跨平台: Unix=UDS, Windows=TCP) ───────────────────
 
-_LFM_SOCKET_PATH = None
+import sys as _sys
+
+_LFM_SOCKET_PATH = None      # Unix: UDS 路径
+_LM_TCP_PORT = None          # Windows: TCP 端口
 _LFM_PROCESS = None
+_LFM_IPC_MODE = None         # "uds" 或 "tcp"，从 ready 消息解析
+
+_IS_WINDOWS = _sys.platform.startswith("win")
 
 
 def _lfm_socket_path() -> str:
-    """Get the default LFM UDS socket path (兼容 claw_worker 旧路径)."""
+    """Get the default LFM IPC path (Unix: UDS socket; Windows: 占位路径)."""
+    if _IS_WINDOWS:
+        home = os.environ.get("USERPROFILE", os.environ.get("HOME", "C:\\Users\\Public"))
+        return os.path.join(home, ".openclaw", "extensions", "galaxyos", "var", "lfm.tcp")
     home = os.environ.get("HOME", "/root")
     return os.path.join(home, ".openclaw", "extensions", "galaxyos", "var", "lfm.sock")
 
 
 def _lfm_binary_path() -> Optional[str]:
-    """Find the lfm_server binary."""
+    """Find the lfm_server binary (跨平台: Linux/macOS/Windows)."""
+    exe_suffix = ".exe" if _IS_WINDOWS else ""
     candidates = [
-        # 编译产物（开发环境）
+        # 编译产物（开发环境 — debug）
         os.path.join(
             os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-            "native", "target", "debug", "lfm_server"
+            "native", "target", "debug", f"lfm_server{exe_suffix}"
         ),
-        # 安装产物（发布环境）
+        # 安装产物（发布环境 — release）
         os.path.join(
             os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-            "native", "target", "release", "lfm_server"
+            "native", "target", "release", f"lfm_server{exe_suffix}"
         ),
-        # 绝对路径
+        # 绝对路径（release）
         os.path.join(
             os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-            "native", "target", "debug", "lfm_server"
+            "native", "target", "debug", f"lfm_server{exe_suffix}"
         ),
     ]
     for path in candidates:
@@ -64,19 +74,21 @@ def _lfm_binary_path() -> Optional[str]:
 
 
 def lfm_start(model_dir: str = None, uds_path: str = None) -> str:
-    """Start the LFM UDS server as a subprocess.
+    """Start the LFM server as a subprocess (跨平台).
     
     Args:
         model_dir: Path to LFM2.5-1.2B-ONNX directory
-        uds_path: UDS socket path
+        uds_path: IPC path (Unix: UDS socket; Windows: 未使用, TCP 自动分配)
     
     Returns:
-        The UDS socket path the server is listening on.
+        Unix: UDS socket path; Windows: "tcp://127.0.0.1:{port}"
     """
-    global _LFM_PROCESS, _LFM_SOCKET_PATH
+    global _LFM_PROCESS, _LFM_SOCKET_PATH, _LM_TCP_PORT, _LFM_IPC_MODE
 
     if _LFM_PROCESS is not None and _LFM_PROCESS.poll() is None:
         # Already running
+        if _LFM_IPC_MODE == "tcp" and _LM_TCP_PORT:
+            return f"tcp://127.0.0.1:{_LM_TCP_PORT}"
         return _LFM_SOCKET_PATH or _lfm_socket_path()
 
     binary = _lfm_binary_path()
@@ -84,18 +96,20 @@ def lfm_start(model_dir: str = None, uds_path: str = None) -> str:
         raise RuntimeError("lfm_server binary not found. Run 'cargo build --bin lfm_server' first.")
 
     if model_dir is None:
+        home = os.environ.get("USERPROFILE" if _IS_WINDOWS else "HOME",
+                              os.environ.get("HOME", "/root"))
         workspace = os.environ.get("OPENCLAW_WORKSPACE",
-                                   os.path.join(os.environ.get("HOME", "/root"), ".openclaw", "workspace"))
+                                   os.path.join(home, ".openclaw", "workspace"))
         model_dir = os.path.join(workspace, "models", "LFM2.5-1.2B-ONNX")
 
     if uds_path is None:
         uds_path = _lfm_socket_path()
 
-    # Ensure UDS parent dir exists
+    # Ensure parent dir exists
     os.makedirs(os.path.dirname(uds_path), exist_ok=True)
 
     # Spawn server via environment variables (not CLI args) to avoid
-    # leaking model path and UDS path in `ps aux` output.
+    # leaking model path and IPC path in `ps aux` output.
     _env = os.environ.copy()
     _env["GALAXYOS_LFM_MODEL_DIR"] = model_dir
     _env["GALAXYOS_LFM_UDS_PATH"] = uds_path
@@ -107,7 +121,7 @@ def lfm_start(model_dir: str = None, uds_path: str = None) -> str:
         env=_env
     )
 
-    # Wait for ready signal
+    # Wait for ready signal — 解析 IPC 模式和连接信息
     start_ts = time.time()
     ready_line = None
     while time.time() - start_ts < 30:
@@ -127,15 +141,23 @@ def lfm_start(model_dir: str = None, uds_path: str = None) -> str:
     if ready_line is None:
         raise RuntimeError("lfm_server did not signal ready within 30s")
 
-    _LFM_SOCKET_PATH = uds_path
-    return uds_path
+    # 解析 IPC 模式（从 ready 消息中获取）
+    _LFM_IPC_MODE = ready_line.get("ipc", "uds" if not _IS_WINDOWS else "tcp")
+    if _LFM_IPC_MODE == "tcp":
+        _LM_TCP_PORT = ready_line.get("tcp_port")
+        if not _LM_TCP_PORT:
+            raise RuntimeError("lfm_server ready but no tcp_port in ready message")
+        return f"tcp://127.0.0.1:{_LM_TCP_PORT}"
+    else:
+        _LFM_SOCKET_PATH = ready_line.get("uds", uds_path)
+        return _LFM_SOCKET_PATH
 
 
 def lfm_stop():
-    """Stop the LFM UDS server."""
-    global _LFM_PROCESS, _LFM_SOCKET_PATH
+    """Stop the LFM server."""
+    global _LFM_PROCESS, _LFM_SOCKET_PATH, _LM_TCP_PORT, _LFM_IPC_MODE
     if _LFM_PROCESS is not None and _LFM_PROCESS.poll() is None:
-        # Send shutdown via UDS
+        # Send shutdown via IPC
         try:
             lfm_request("shutdown", timeout=2)
         except Exception:
@@ -148,19 +170,33 @@ def lfm_stop():
             pass
     _LFM_PROCESS = None
     _LFM_SOCKET_PATH = None
+    _LM_TCP_PORT = None
+    _LFM_IPC_MODE = None
 
 
-def _lfm_uds_connect(uds_path: str, timeout: float = 10) -> socket.socket:
-    """Connect to the LFM UDS server."""
-    sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-    sock.settimeout(timeout)
-    sock.connect(uds_path)
-    return sock
+def _lfm_connect(timeout: float = 10) -> socket.socket:
+    """Connect to the LFM server (跨平台: Unix=UDS, Windows=TCP)."""
+    if _LFM_IPC_MODE == "tcp" or (_LFM_IPC_MODE is None and _IS_WINDOWS):
+        # Windows TCP 模式
+        port = _LM_TCP_PORT
+        if not port:
+            raise RuntimeError("LFM server not running (TCP port not set)")
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(timeout)
+        sock.connect(("127.0.0.1", port))
+        return sock
+    else:
+        # Unix UDS 模式
+        uds_path = _LFM_SOCKET_PATH or _lfm_socket_path()
+        sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        sock.settimeout(timeout)
+        sock.connect(uds_path)
+        return sock
 
 
 def _lfm_request_blocking(method: str, params: dict = None, timeout: float = 30) -> dict:
     """
-    Send a JSON-RPC request via UDS.
+    Send a JSON-RPC request via IPC (跨平台: UDS 或 TCP).
 
     Uses raw send/recv instead of makefile+readline because socket.makefile()
     creates an independent BufferedReader that ignores sock.settimeout(),
@@ -169,9 +205,14 @@ def _lfm_request_blocking(method: str, params: dict = None, timeout: float = 30)
     Error messages are redacted to avoid leaking paths and method names
     in production logs.
     """
-    uds_path = _LFM_SOCKET_PATH or _lfm_socket_path()
-    if not os.path.exists(uds_path):
-        raise RuntimeError("LFM server not running (UDS socket not found)")
+    # 检查连接可用性
+    if _LFM_IPC_MODE == "tcp" or (_LFM_IPC_MODE is None and _IS_WINDOWS):
+        if not _LM_TCP_PORT:
+            raise RuntimeError("LFM server not running (TCP port not set)")
+    else:
+        uds_path = _LFM_SOCKET_PATH or _lfm_socket_path()
+        if not os.path.exists(uds_path):
+            raise RuntimeError("LFM server not running (UDS socket not found)")
 
     deadline = time.time() + timeout
     last_error = None
@@ -181,7 +222,7 @@ def _lfm_request_blocking(method: str, params: dict = None, timeout: float = 30)
         if remaining < 1:
             remaining = timeout
 
-        sock = _lfm_uds_connect(uds_path, min(remaining, timeout))
+        sock = _lfm_connect(min(remaining, timeout))
         try:
             sock.settimeout(min(remaining, timeout))
             req = json.dumps({"id": 1, "method": method, "params": params or {}})

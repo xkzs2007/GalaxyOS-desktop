@@ -3,6 +3,9 @@ target/
 Cargo.lock.bak
 *.bak
 
+# 跨平台预编译产物（make native-build-* 生成，不入库）
+prebuilt/
+
 # 编辑器临时文件
 *.swp
 *.swo
