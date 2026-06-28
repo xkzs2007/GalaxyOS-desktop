@@ -14,7 +14,7 @@ GalaxyOS — 安装向导 + 配置向导
   python3 install_wizard.py --kg-test       # 知识图谱功能专项测试
   python3 install_wizard.py --all            # 全量模式（体检 + 睡眠测试 + 修复）
   python3 install_wizard.py --update         # 增量更新：版本检测 + 仅同步变更，保护已有配置
-  python3 install_wizard.py --download-lfm  # 下载 LFM2.5-1.2B-Thinking-ONNX Q4（~811MB）
+  python3 install_wizard.py --download-lfm  # 下载 LFM2.5-1.2B-Thinking 真实权重（~2.2GB）
   python3 install_wizard.py --setup-rust     # 安装 Rust 工具链（国内镜像，ARM64/x86_64自动识别）
   python3 install_wizard.py --check --hardware  # 仅硬件/设备环境检测
 """
@@ -30,6 +30,7 @@ import shutil
 import sqlite3
 import subprocess
 import importlib
+import importlib.util
 import inspect
 import re
 from pathlib import Path
@@ -1562,8 +1563,9 @@ def test_sleep_consolidation() -> Dict[str, Any]:
     replayed = r.get("swr_memories_replayed", 0)
     gain = r.get("swr_weight_gain", 0)
     bursts = r.get("swr_bursts", 0)
-    print(f"  {G if bursts > 0 or "error" not in r else Y} {'✅' if "error" not in r else '⚠️'} 重放 {replayed} 条, 增益 {gain:.3f}, 爆发 {bursts} 次{N}")
-    results["stages"]["nrem_swr"] = {"ok": "error" not in r, "replayed": replayed, "gain": gain, "bursts": bursts}
+    has_err = "error" in r
+    print(f"  {G if bursts > 0 or not has_err else Y} {'✅' if not has_err else '⚠️'} 重放 {replayed} 条, 增益 {gain:.3f}, 爆发 {bursts} 次{N}")
+    results["stages"]["nrem_swr"] = {"ok": not has_err, "replayed": replayed, "gain": gain, "bursts": bursts}
 
     # ── 2) NREM-CASCADE ──
     print(f"\n{C}┌─ {B}阶段 2/5: NREM-CASCADE 三级同步巩固{N}")
@@ -1571,8 +1573,9 @@ def test_sleep_consolidation() -> Dict[str, Any]:
     longtail = r.get("so_longtail_saved", 0)
     pruned = r.get("spindle_pruned", 0)
     linked = r.get("ripple_linked", 0)
-    print(f"  {G if "error" not in r else Y} {'✅' if "error" not in r else '⚠️'} 长尾拯救 {longtail}, 修剪 {pruned}, 跨链接 {linked}{N}")
-    results["stages"]["nrem_cascade"] = {"ok": "error" not in r, "longtail": longtail, "pruned": pruned, "linked": linked}
+    has_err = "error" in r
+    print(f"  {G if not has_err else Y} {'✅' if not has_err else '⚠️'} 长尾拯救 {longtail}, 修剪 {pruned}, 跨链接 {linked}{N}")
+    results["stages"]["nrem_cascade"] = {"ok": not has_err, "longtail": longtail, "pruned": pruned, "linked": linked}
 
     # ── 3) REM-GENERATIVE ──
     print(f"\n{C}┌─ {B}阶段 3/5: REM-GENERATIVE 生成式梦境{N}")
@@ -1592,16 +1595,18 @@ def test_sleep_consolidation() -> Dict[str, Any]:
     scanned = r.get("emotion_memories_scanned", 0)
     em_decay = r.get("emotion_intensity_decayed", 0)
     em_linked = r.get("emotion_links_strengthened", 0)
-    print(f"  {G if "error" not in r else R} {'✅' if "error" not in r else '❌'} 扫描 {scanned}, 衰减 {em_decay:.3f}, 链接 {em_linked}{N}")
-    results["stages"]["rem_emotion"] = {"ok": "error" not in r, "scanned": scanned, "decay": em_decay, "linked": em_linked}
+    has_err = "error" in r
+    print(f"  {G if not has_err else R} {'✅' if not has_err else '❌'} 扫描 {scanned}, 衰减 {em_decay:.3f}, 链接 {em_linked}{N}")
+    results["stages"]["rem_emotion"] = {"ok": not has_err, "scanned": scanned, "decay": em_decay, "linked": em_linked}
 
     # ── 5) DEEP-SLEEP ──
     print(f"\n{C}┌─ {B}阶段 5/5: DEEP-SLEEP 记忆迁移{N}")
     r = cons._deep_sleep_migration()
     migrated = r.get("migrated_count", 0)
     promoted = r.get("promoted_count", 0)
-    print(f"  {G if "error" not in r else Y} {'✅' if "error" not in r else '⚠️'} 迁移 {migrated} 条, 升格 {promoted} 条{N}")
-    results["stages"]["deep_sleep"] = {"ok": "error" not in r, "migrated": migrated, "promoted": promoted}
+    has_err = "error" in r
+    print(f"  {G if not has_err else Y} {'✅' if not has_err else '⚠️'} 迁移 {migrated} 条, 升格 {promoted} 条{N}")
+    results["stages"]["deep_sleep"] = {"ok": not has_err, "migrated": migrated, "promoted": promoted}
 
     # ── 完整周期 ──
     print(f"\n{C}┌─ {B}完整睡眠周期{N}")
@@ -2008,45 +2013,31 @@ def _write_version_marker(version: str):
 # ════════════════════════════════════════════════════════════════
 
 def check_lfm_weights() -> Dict[str, Any]:
-    """检查 LFM2.5-1.2B-Thinking-ONNX Q4 权重是否存在"""
-    heading("🧠 模块检查：LFM2.5 ONNX Q4 权重")
+    """检查 LFM2.5-1.2B-Thinking 真实权重是否存在"""
+    heading("🧠 模块检查：LFM2.5 真实权重")
     results = {"present": False, "size_mb": 0, "model_path": ""}
     
     candidates = [
-        WORKSPACE / "models" / "LFM2.5-1.2B-ONNX",
+        WORKSPACE / "models" / "LFM2.5-1.2B",
+        WORKSPACE / "skills" / "xiaoyi-claw-omega-final" / "models" / "LFM2.5-1.2B",
     ]
     for mp in candidates:
-        onnx_file = mp / "onnx" / "model_q4.onnx"
-        data_file = mp / "onnx" / "model_q4.onnx_data"
-        if onnx_file.exists() and data_file.exists():
-            results["present"] = True
-            results["model_path"] = str(mp)
-            size = data_file.stat().st_size + onnx_file.stat().st_size
-            results["size_mb"] = round(size / 1024 / 1024, 1)
-            ok(f"LFM2.5-1.2B ONNX Q4 权重: {results['size_mb']} MB")
-            for extra in ["config.json", "tokenizer.json", "tokenizer_config.json"]:
-                if (mp / extra).exists():
-                    results[f"has_{extra.replace('.', '_')}"] = True
-            return results
-    
-    # 还检查旧版 safetensors（兼容迁移）
-    old_candidates = [
-        WORKSPACE / "models" / "LFM2.5-1.2B",
-    ]
-    for mp in old_candidates:
         weights = mp / "model.safetensors"
         if weights.exists():
             results["present"] = True
             results["model_path"] = str(mp)
-            results["needs_migration"] = True
             size = weights.stat().st_size
             results["size_mb"] = round(size / 1024 / 1024, 1)
-            warn(f"旧版 safetensors 权重 ({results['size_mb']} MB)，建议迁移到 ONNX Q4", indent=1)
-            info("运行 --download-lfm 自动迁移（保留旧目录）", indent=2)
+            results["size_gb"] = round(size / 1024 / 1024 / 1024, 2)
+            ok(f"LFM2.5-1.2B 实际权重: {results['size_mb']} MB")
+            # 检查额外文件
+            for extra in ["config.json", "tokenizer.json", "generation_config.json"]:
+                if (mp / extra).exists():
+                    results[f"has_{extra.replace('.', '_')}"] = True
             return results
     
-    warn("LFM2.5-1.2B-ONNX Q4 权重未下载（管线 2 将降级到随机 NumPy）", indent=1)
-    info("使用 --download-lfm 一键下载（~811MB, ONNX Runtime, mmap 共享）", indent=2)
+    warn("LFM2.5-1.2B 权重未下载（管线 2 将降级到随机 NumPy）", indent=1)
+    info("使用 --download-lfm 一键下载", indent=2)
     return results
 
 
@@ -2076,61 +2067,43 @@ def _download_hf_file(url: str, dst: Path, desc: str = "") -> bool:
         return False
 
 
-LFM_ONNX_FILES = [
-    ("https://hf-mirror.com/LiquidAI/LFM2.5-1.2B-Thinking-ONNX/resolve/main/onnx/model_q4.onnx",
-     "onnx/model_q4.onnx", "ONNX 图结构(179KB)"),
-    ("https://hf-mirror.com/LiquidAI/LFM2.5-1.2B-Thinking-ONNX/resolve/main/onnx/model_q4.onnx_data",
-     "onnx/model_q4.onnx_data", "ONNX Q4 权重(811MB)"),
-    ("https://hf-mirror.com/LiquidAI/LFM2.5-1.2B-Thinking-ONNX/resolve/main/config.json",
-     "config.json", "模型配置"),
-    ("https://hf-mirror.com/LiquidAI/LFM2.5-1.2B-Thinking-ONNX/resolve/main/tokenizer.json",
-     "tokenizer.json", "分词器(4.6MB，取自原版)"),
-    ("https://hf-mirror.com/LiquidAI/LFM2.5-1.2B-Thinking/resolve/main/tokenizer_config.json",
-     "tokenizer_config.json", "分词器配置(原版)"),
-    ("https://hf-mirror.com/LiquidAI/LFM2.5-1.2B-Thinking-ONNX/resolve/main/generation_config.json",
-     "generation_config.json", "生成配置"),
-    ("https://hf-mirror.com/LiquidAI/LFM2.5-1.2B-Thinking/resolve/main/special_tokens_map.json",
-     "special_tokens_map.json", "特殊token(原版)"),
-    ("https://hf-mirror.com/LiquidAI/LFM2.5-1.2B-Thinking-ONNX/resolve/main/chat_template.jinja",
-     "chat_template.jinja", "对话模板"),
+LFM_MODEL_FILES = [
+    ("https://hf-mirror.com/LiquidAI/LFM2.5-1.2B-Thinking/resolve/main/model.safetensors", "model.safetensors", "权重文件(2.2GB)"),
+    ("https://hf-mirror.com/LiquidAI/LFM2.5-1.2B-Thinking/resolve/main/config.json", "config.json", "模型配置"),
+    ("https://hf-mirror.com/LiquidAI/LFM2.5-1.2B-Thinking/resolve/main/tokenizer.json", "tokenizer.json", "分词器"),
+    ("https://hf-mirror.com/LiquidAI/LFM2.5-1.2B-Thinking/resolve/main/tokenizer_config.json", "tokenizer_config.json", "分词器配置"),
+    ("https://hf-mirror.com/LiquidAI/LFM2.5-1.2B-Thinking/resolve/main/generation_config.json", "generation_config.json", "生成配置"),
+    ("https://hf-mirror.com/LiquidAI/LFM2.5-1.2B-Thinking/resolve/main/special_tokens_map.json", "special_tokens_map.json", "特殊token"),
+    ("https://hf-mirror.com/LiquidAI/LFM2.5-1.2B-Thinking/resolve/main/chat_template.jinja", "chat_template.jinja", "对话模板"),
 ]
 
 
 def download_lfm_weights(target_dir: Optional[Path] = None) -> bool:
-    """从 hf-mirror 下载 LFM2.5-1.2B-Thinking-ONNX Q4
-    
-    下载内容：ONNX 图结构 + Q4 量化权重 + 配套配置文件。
-    ONNX Runtime 通过 mmap 加载权重，多进程共享物理页。
-    """
-    heading("📥 下载 LFM2.5-1.2B-Thinking-ONNX Q4")
+    """从 hf-mirror 下载 LFM2.5-1.2B-Thinking 全部文件"""
+    heading("📥 下载 LFM2.5-1.2B-Thinking")
     if target_dir is None:
-        target_dir = WORKSPACE / "models" / "LFM2.5-1.2B-ONNX"
+        target_dir = WORKSPACE / "models" / "LFM2.5-1.2B"
     info(f"目标目录: {target_dir}")
-    
-    # 检查 ONNX 权重是否已存在
-    onnx_data = target_dir / "onnx" / "model_q4.onnx_data"
-    if onnx_data.exists():
-        sz = onnx_data.stat().st_size / 1024 / 1024
-        ok(f"ONNX Q4 权重已存在: {sz:.0f} MB")
+    if (target_dir / "model.safetensors").exists():
+        sz = (target_dir / "model.safetensors").stat().st_size / 1024**3
+        ok(f"权重已存在: {sz:.1f} GB")
         return True
-    
     ok("开始下载（来源: hf-mirror.com）...")
     start = time.time()
     ok_cnt = 0
-    for url, fn, desc in LFM_ONNX_FILES:
+    for url, fn, desc in LFM_MODEL_FILES:
         dst = target_dir / fn
         if dst.exists():
             ok_cnt += 1
             continue
-        dst.parent.mkdir(parents=True, exist_ok=True)
         ok_cnt += 1 if _download_hf_file(url, dst, desc) else 0
     elapsed = time.time() - start
     _print()
-    if ok_cnt == len(LFM_ONNX_FILES):
-        ok(f"全部完成 ({ok_cnt}/{len(LFM_ONNX_FILES)})，耗时 {elapsed:.0f}s")
-        info(f"路径: {target_dir}/onnx/model_q4.onnx（mmap 共享，~811MB）")
+    if ok_cnt == len(LFM_MODEL_FILES):
+        ok(f"全部完成 ({ok_cnt}/{len(LFM_MODEL_FILES)})，耗时 {elapsed:.0f}s")
+        info(f"路径: {target_dir}")
         return True
-    warn(f"部分完成 ({ok_cnt}/{len(LFM_ONNX_FILES)})，重试运行 --download-lfm 续传", indent=1)
+    warn(f"部分完成 ({ok_cnt}/{len(LFM_MODEL_FILES)})，重试运行 --download-lfm 续传", indent=1)
     return False
 def _setup_rust(use_make: bool = True):
     """跨平台安装 Rust：Windows / Linux / macOS
@@ -2235,77 +2208,6 @@ def _setup_rust(use_make: bool = True):
         sys.exit(1)
 
 
-def _detect_platform_target() -> str:
-    """检测当前平台并返回预编译包标识（4 目标之一）"""
-    import platform as _pf
-    is_windows = sys.platform.startswith("win")
-    arch = _pf.machine().lower()
-    if is_windows:
-        if arch in ("x86_64", "amd64"):
-            return "windows-x64"
-        elif arch in ("aarch64", "arm64"):
-            return "windows-arm64"
-    else:
-        if arch in ("x86_64", "amd64"):
-            return "linux-x64"
-        elif arch in ("aarch64", "arm64"):
-            return "linux-arm64"
-    # 不支持的架构，回退到 linux-x64
-    return "linux-x64"
-
-
-def install_prebuilt_native():
-    """安装跨平台预编译 Rust 二进制（无需 cargo 编译）
-
-    自动检测平台（Linux/Windows × x64/ARM64），从 libs/ 中解包对应的预编译包。
-    """
-    heading("📦 安装预编译 Rust 二进制（跨平台）")
-
-    platform_target = _detect_platform_target()
-    info(f"检测平台: {platform_target}")
-
-    # 查找对应的预编译包
-    libs_dir = Path(__file__).resolve().parent.parent.parent / "libs"
-    pattern = f"galaxyos-native-*-{platform_target}.tar.gz"
-    matches = list(libs_dir.glob(pattern)) if libs_dir.exists() else []
-
-    if not matches:
-        # 回退：尝试通用包
-        generic = list(libs_dir.glob("galaxyos_native-*.tar.gz")) if libs_dir.exists() else []
-        if generic:
-            info(f"未找到 {platform_target} 专用包，使用通用包: {generic[0].name}")
-            matches = generic
-        else:
-            err(f"未找到预编译包: {pattern}")
-            info("请先运行: make native-build-{platform_target} && make native-package")
-            info("或安装 Rust 工具链后运行: make native")
-            return False
-
-    tarball = matches[0]
-    info(f"解包: {tarball.name}")
-
-    # 解包目标目录
-    scripts_dir = Path(__file__).resolve().parent.parent.parent / "extensions" / "galaxyos" / "scripts"
-    scripts_dir.mkdir(parents=True, exist_ok=True)
-
-    import tarfile
-    try:
-        with tarfile.open(tarball, "r:gz") as tar:
-            tar.extractall(path=str(scripts_dir))
-    except Exception as e:
-        err(f"解包失败: {e}")
-        return False
-
-    # 设置可执行权限（非 Windows）
-    if not sys.platform.startswith("win"):
-        for bin_name in ["galaxyos-native", "lfm_server"]:
-            bin_path = scripts_dir / bin_name
-            if bin_path.exists():
-                bin_path.chmod(0o755)
-
-    info(f"✅ 预编译二进制已安装到: {scripts_dir}")
-    return True
-
 
 def check_v82_pipelines() -> Dict[str, Any]:
     # 兼容旧调用名
@@ -2362,8 +2264,8 @@ def _check_v82_pipelines_impl() -> Dict[str, Any]:
         # LFM 权重类型
         lfm = addon.lfm_network
         if lfm is not None and hasattr(lfm, '_forward_text'):
-            ok("  LFM: ONNX Q4 (LFM2.5-1.2B-Thinking-ONNX) ✅")
-            results["lfm_type"] = "onnx_q4"
+            ok("  LFM: 真实权重 (LFM2.5-1.2B-Thinking) ✅")
+            results["lfm_type"] = "real_weight"
         elif lfm is not None:
             info("  LFM: 随机 NumPy 版（降级）")
             results["lfm_type"] = "numpy_random"
@@ -2482,6 +2384,246 @@ def check_v82_modules() -> Dict[str, Any]:
     return results
 
 
+def check_v84_modules() -> Dict[str, Any]:
+    """验证 v8.4 SkillGraph & enhanced_recall 神经集成模块"""
+    heading("🌐 v8.4 SkillGraph & 神经检索集成")
+    results: Dict[str, Any] = {"modules": {}, "ok": 0, "fail": 0, "warn": 0}
+
+    script_dir = os.path.dirname(__file__)
+
+    # 1. SkillGraph
+    try:
+        spec = importlib.util.spec_from_file_location(
+            "skill_graph", os.path.join(script_dir, "skill_graph.py")
+        )
+        if spec and spec.loader:
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            has_graph = hasattr(mod, "SkillGraph")
+            has_retriever = hasattr(mod, "GraphAwareRetriever")
+            has_evo = hasattr(mod, "GraphEvolutionEngine")
+            has_grpo = hasattr(mod, "GRPORunner")
+            ok(f"SkillGraph: 导入OK ({'SkillGraph' if has_graph else '?'} + "
+               f"{'Retriever' if has_retriever else '?'} + "
+               f"{'Evolution' if has_evo else '?'} + "
+               f"{'GRPO' if has_grpo else '?'})")
+            results["modules"]["skill_graph"] = {
+                "ok": True, "class": has_graph,
+                "retriever": has_retriever, "evolution": has_evo, "grpo": has_grpo
+            }
+            results["ok"] += 1
+            # 尝试实例化 GraphAwareRetriever（无数据，仅验证构造路径通）
+            if has_graph and has_retriever:
+                try:
+                    sg = mod.SkillGraph()
+                    retriever = mod.GraphAwareRetriever(sg)
+                    _method_ok = hasattr(retriever, "retrieve") and hasattr(retriever, "_seed_selection")
+                    if _method_ok:
+                        ok("  GraphAwareRetriever.retrieve/_seed_selection 存在")
+                        results["modules"]["skill_graph"]["retriever_methods"] = True
+                    else:
+                        warn("  GraphAwareRetriever 缺 retrieve 方法")
+                        results["warn"] += 1
+                except Exception as e:
+                    warn(f"  SkillGraph 实例化: {str(e)[:120]}")
+                    results["warn"] += 1
+        else:
+            warn("skill_graph.py 文件未找到")
+            results["modules"]["skill_graph"] = {"ok": False, "error": "file_not_found"}
+            results["fail"] += 1
+    except Exception as e:
+        results["modules"]["skill_graph"] = {"ok": False, "error": str(e)[:200]}
+        results["fail"] += 1
+        warn(f"SkillGraph: {e}", indent=1)
+
+    # 2. ModuleType 枚举检查
+    try:
+        spec = importlib.util.spec_from_file_location(
+            "unified_coordinator", os.path.join(script_dir, "unified_coordinator.py")
+        )
+        if spec and spec.loader:
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            mt = getattr(mod, "ModuleType", None)
+            if mt:
+                _checks = [
+                    ("SKILL_GRAPH", hasattr(mt, "SKILL_GRAPH")),
+                    ("DAG_LIQUID", hasattr(mt, "DAG_LIQUID")),
+                    ("DAG_CONTEXT_MANAGER", hasattr(mt, "DAG_CONTEXT_MANAGER")),
+                ]
+                _all_ok = all(v for _, v in _checks)
+                for name, ok_flag in _checks:
+                    if ok_flag:
+                        ok(f"  ModuleType.{name} ✅")
+                    else:
+                        warn(f"  ModuleType.{name} ❌ 缺失")
+                        results["warn"] += 1
+                if _all_ok:
+                    results["modules"]["module_type_enums"] = {"ok": True}
+
+            # 检查 MODULE_REGISTRY 中 skill_graph 条目
+            mr = getattr(mod, "MODULE_REGISTRY", {})
+            _sg_entry = mr.get("skill_graph", {})
+            if _sg_entry:
+                _layer = getattr(_sg_entry, 'layer', '?')
+                ok(f"  MODULE_REGISTRY[skill_graph] ✅ (layer={_layer})")
+            else:
+                warn("  MODULE_REGISTRY 缺少 skill_graph 条目")
+                results["warn"] += 1
+            if "dag_liquid_fusion" in mr:
+                ok(f"  MODULE_REGISTRY[dag_liquid_fusion] ✅")
+        else:
+            warn("unified_coordinator.py 未找到")
+            results["warn"] += 1
+    except Exception as e:
+        warn(f"ModuleType/REGISTRY 检查: {str(e)[:120]}", indent=1)
+        results["warn"] += 1
+
+    # 3. enhanced_recall 接口检查（语法解析方式，避免 import 时 torch 等依赖）
+    try:
+        _xm_path = os.path.join(script_dir, "xiaoyi_memory.py")
+        if os.path.exists(_xm_path):
+            import ast
+            with open(_xm_path) as f:
+                _tree = ast.parse(f.read())
+            for node in ast.walk(_tree):
+                if isinstance(node, ast.FunctionDef) and node.name == "enhanced_recall":
+                    _params = [a.arg for a in node.args.args]
+                    _has_neural = "use_neural" in _params
+                    _has_crag = "use_crag" in _params
+                    if _has_neural:
+                        ok(f"enhanced_recall: use_neural={_has_neural}, use_crag={_has_crag}")
+                        results["modules"]["enhanced_recall"] = {"ok": True, "params": _params}
+                        results["ok"] += 1
+                    else:
+                        warn("enhanced_recall 参数缺少 use_neural（v8.4.2 未集成）")
+                        results["warn"] += 1
+                    break
+            else:
+                warn("xiaoyi_memory.py 中未找到 enhanced_recall 方法")
+                results["warn"] += 1
+        else:
+            warn("xiaoyi_memory.py 未找到")
+            results["warn"] += 1
+    except Exception as e:
+        warn(f"enhanced_recall 检查: {str(e)[:120]}", indent=1)
+        results["warn"] += 1
+
+    total = results["ok"] + results["fail"]
+    if results["fail"] == 0:
+        ok(f"v8.4 模块检查: {results['ok']}/{total} 通过")
+    else:
+        warn(f"v8.4 模块检查: {results['ok']}/{total} 通过, {results['fail']} 失败")
+    if results["warn"] > 0:
+        info(f"{results['warn']} 个警告（非致命）", indent=1)
+
+    return results
+
+
+# ════════════════════════════════════════════════════════════════
+# v8.5 — COSPLAY 全架构移植检查
+# ════════════════════════════════════════════════════════════════
+
+def check_v85_modules() -> Dict[str, Any]:
+    """验证 v8.5 COSPLAY 全架构移植模块（Skill Bank + Boundary Detection + Context Adapter）"""
+    heading("🎭 v8.5 COSPLAY 全架构移植")
+    results: Dict[str, Any] = {"modules": {}, "ok": 0, "fail": 0, "warn": 0}
+    script_dir = os.path.dirname(__file__)
+
+    # 1. lfm_skill_bank
+    try:
+        spec = importlib.util.spec_from_file_location(
+            "lfm_skill_bank", os.path.join(script_dir, "lfm_skill_bank.py")
+        )
+        if spec and spec.loader:
+            mod_sb = importlib.util.module_from_spec(spec)
+            sys.modules["lfm_skill_bank"] = mod_sb  # dataclass 需要 module 注册
+            spec.loader.exec_module(mod_sb)
+            has_bank = hasattr(mod_sb, "LfmSkillBank")
+            has_proto = hasattr(mod_sb, "ProtoSkill")
+            has_contract = hasattr(mod_sb, "LfmSkillEffectsContract")
+            has_segment = hasattr(mod_sb, "LfmSegmentRecord")
+            has_cycle = hasattr(mod_sb, "run_skill_bank_cycle")
+            has_feed = hasattr(mod_sb, "feed_memory_to_skill_bank")
+            ok(f"Skill Bank: {'✅' if has_bank else '❌'}Bank {'✅' if has_proto else '❌'}Proto {'✅' if has_contract else '❌'}Contract {'✅' if has_segment else '❌'}Segment {'✅' if has_cycle else '❌'}Cycle")
+            results["modules"]["lfm_skill_bank"] = {
+                "ok": True,
+                "classes": {"bank": has_bank, "proto": has_proto, "contract": has_contract, "segment": has_segment},
+                "functions": {"cycle": has_cycle, "feed": has_feed},
+            }
+            results["ok"] += 1
+        else:
+            warn("lfm_skill_bank.py not found")
+            results["modules"]["lfm_skill_bank"] = {"ok": False}
+            results["fail"] += 1
+    except Exception as e:
+        results["modules"]["lfm_skill_bank"] = {"ok": False, "error": str(e)[:200]}
+        results["fail"] += 1
+        warn(f"Skill Bank: {e}")
+
+    # 2. lfm_boundary_detector
+    try:
+        spec = importlib.util.spec_from_file_location(
+            "lfm_boundary_detector", os.path.join(script_dir, "lfm_boundary_detector.py")
+        )
+        if spec and spec.loader:
+            mod_bd = importlib.util.module_from_spec(spec)
+            sys.modules["lfm_boundary_detector"] = mod_bd
+            spec.loader.exec_module(mod_bd)
+            has_detector = hasattr(mod_bd, "LfmBoundaryDetector")
+            has_nlp = hasattr(mod_bd, "NLPPredicateExtractor")
+            has_bridge = hasattr(mod_bd, "RCCAMFeedbackBridge")
+            has_full = hasattr(mod_bd, "run_full_cosplay_cycle")
+            ok(f"Boundary Detector: {'✅' if has_detector else '❌'}Detect {'✅' if has_nlp else '❌'}NLP {'✅' if has_bridge else '❌'}Bridge")
+            results["modules"]["lfm_boundary_detector"] = {
+                "ok": True,
+                "classes": {"detector": has_detector, "nlp": has_nlp, "bridge": has_bridge, "full_cycle": has_full},
+            }
+            results["ok"] += 1
+        else:
+            warn("lfm_boundary_detector.py not found")
+            results["modules"]["lfm_boundary_detector"] = {"ok": False}
+            results["fail"] += 1
+    except Exception as e:
+        results["modules"]["lfm_boundary_detector"] = {"ok": False, "error": str(e)[:200]}
+        results["fail"] += 1
+        warn(f"Boundary Detector: {e}")
+
+    # 3. cosplay_context_adapter
+    try:
+        spec = importlib.util.spec_from_file_location(
+            "cosplay_context_adapter", os.path.join(script_dir, "cosplay_context_adapter.py")
+        )
+        if spec and spec.loader:
+            mod_ctx = importlib.util.module_from_spec(spec)
+            sys.modules["cosplay_context_adapter"] = mod_ctx
+            spec.loader.exec_module(mod_ctx)
+            has_adapter = hasattr(mod_ctx, "CosplayContextAdapter")
+            has_config = hasattr(mod_ctx, "CosplayContextConfig")
+            has_enhance = hasattr(mod_ctx, "run_cosplay_enhanced_compact")
+            ok(f"Context Adapter: {'✅' if has_adapter else '❌'}Adapter {'✅' if has_config else '❌'}Config {'✅' if has_enhance else '❌'}Compact")
+            results["modules"]["cosplay_context_adapter"] = {
+                "ok": True,
+                "classes": {"adapter": has_adapter, "config": has_config, "run_compact": has_enhance},
+            }
+            results["ok"] += 1
+        else:
+            warn("cosplay_context_adapter.py not found")
+            results["modules"]["cosplay_context_adapter"] = {"ok": False}
+            results["fail"] += 1
+    except Exception as e:
+        results["modules"]["cosplay_context_adapter"] = {"ok": False, "error": str(e)[:200]}
+        results["fail"] += 1
+        warn(f"Context Adapter: {e}")
+
+    total = results["ok"] + results["fail"]
+    if results["fail"] == 0:
+        ok(f"v8.5 COSPLAY 模块检查: {results['ok']}/{total} 通过")
+    else:
+        warn(f"v8.5 COSPLAY 模块检查: {results['ok']}/{total} 通过, {results['fail']} 失败")
+    return results
+
+
 def generate_report(all_results: Dict[str, Any]) -> Dict[str, Any]:
     """生成汇总报告"""
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -2489,6 +2631,8 @@ def generate_report(all_results: Dict[str, Any]) -> Dict[str, Any]:
     env = all_results.get("env", {})
     mod = all_results.get("modules", {})
     v82_mod = all_results.get("v82_modules", {})
+    v84_mod = all_results.get("v84_modules", {})
+    v85_mod = all_results.get("v85_modules", {})
     sync = all_results.get("sync", {})
     svc = all_results.get("services", {})
     brk = all_results.get("breakers", {})
@@ -2511,6 +2655,13 @@ def generate_report(all_results: Dict[str, Any]) -> Dict[str, Any]:
             "v82_modules_ok": v82_mod.get("ok", 0),
             "v82_modules_fail": v82_mod.get("fail", 0),
             "v82_modules_total": v82_mod.get("ok", 0) + v82_mod.get("fail", 0),
+            "v84_modules_ok": v84_mod.get("ok", 0),
+            "v84_modules_fail": v84_mod.get("fail", 0),
+            "v84_modules_warn": v84_mod.get("warn", 0),
+            "v84_modules_total": v84_mod.get("ok", 0) + v84_mod.get("fail", 0),
+            "v85_modules_ok": v85_mod.get("ok", 0),
+            "v85_modules_fail": v85_mod.get("fail", 0),
+            "v85_modules_total": v85_mod.get("ok", 0) + v85_mod.get("fail", 0),
             "files_out_of_sync": sync.get("out_of_sync", 0),
             "breakers": brk.get("total_breaks", 0),
             "worker_alive": svc.get("worker", {}).get("ping", False),
@@ -2532,6 +2683,12 @@ def generate_report(all_results: Dict[str, Any]) -> Dict[str, Any]:
         score -= mod["fail"] * 8
     if v82_mod.get("fail", 0) > 0:
         score -= v82_mod["fail"] * 5
+    if v84_mod.get("fail", 0) > 0:
+        score -= v84_mod["fail"] * 5
+    if v84_mod.get("warn", 0) > 0:
+        score -= v84_mod["warn"]  # 每个警告扣 1 分
+    if v85_mod.get("fail", 0) > 0:
+        score -= v85_mod["fail"] * 5
     if adj_out_of_sync > 0:
         score -= adj_out_of_sync * 2
     if adj_breakers > 0:
@@ -2569,6 +2726,16 @@ def print_report(report: Dict[str, Any]):
     v82_total = s.get('v82_modules_total', 0)
     if v82_total > 0:
         print(f"  {G}🧬{N} v8.2 神经记忆模块: {v82_ok}/{v82_total}")
+    v84_ok = s.get('v84_modules_ok', 0)
+    v84_total = s.get('v84_modules_total', 0)
+    v84_warn = s.get('v84_modules_warn', 0)
+    if v84_total > 0:
+        warn_str = f" ({v84_warn} 警告)" if v84_warn > 0 else ""
+        print(f"  {G}🌐{N} v8.4 SkillGraph & 神经检索: {v84_ok}/{v84_total}{warn_str}")
+    v85_ok = s.get('v85_modules_ok', 0)
+    v85_total = s.get('v85_modules_total', 0)
+    if v85_total > 0:
+        print(f"  {G}🎭{N} v8.5 COSPLAY 全架构移植: {v85_ok}/{v85_total}")
     slp_ok = s.get('sleep_stages_ok', 0)
     slp_total = s.get('sleep_stages_total', 0)
     if slp_total > 0:
@@ -2596,32 +2763,12 @@ def _install_plugin_guide():
                 cfg = json.load(f)
             pid = cfg.get("id", "?")
             desc = cfg.get("description", "")[:80]
-            contracts = cfg.get("contracts", {})
-            tools = contracts.get("tools", [])
-            context_engine = contracts.get("contextEngine", {})
-            kind_list = cfg.get("kind", [])
-
+            tools = cfg.get("contracts", {}).get("tools", [])
             info(f"插件 ID: {pid}", indent=1)
             info(f"描述: {desc}...", indent=1)
-            info(f"注册工具 ({len(tools)} 个): {', '.join(tools[:6])}{'...' if len(tools) > 6 else ''}", indent=1)
+            info(f"注册工具: {', '.join(tools[:6])}{'...' if len(tools) > 6 else ''}", indent=1)
 
-            # ── 插槽（contracts）声明展示 ──
-            print(f"\n  {C}📦 插槽声明 (contracts):{N}")
-            if context_engine:
-                ce_id = context_engine.get("id", "?")
-                print(f"    {G}✅ contextEngine{N} → {ce_id}")
-                print(f"       接管: 上下文组装(assemble) / 压缩(compact) / 消息摄入(ingest)")
-                print(f"       权限: ownsCompaction=true（独占压缩权，OpenClaw 不做兜底）")
-            if "memory" in kind_list:
-                print(f"    {G}✅ memory{N} → GalaxyOSMemorySearchManager")
-                print(f"       接管: 记忆检索(memory_search) / 写入(store) / flushPlan / publicArtifacts")
-            if "context-engine" in kind_list:
-                print(f"    {G}✅ context-engine{N} → kind 声明（OpenClaw 按此路由上下文请求）")
-            if not context_engine and "memory" not in kind_list and "context-engine" not in kind_list:
-                print(f"    {Y}⚠️  未声明任何插槽{N}")
-            print()
-
-            # ── 检测 OpenClaw 注册状态 + 禁用冲突插件 ──
+            # 检测 OpenClaw 注册状态 + 禁用冲突插件
             _memory_core_disabled = False
             try:
                 r = subprocess.run(
@@ -2665,91 +2812,6 @@ def _install_plugin_guide():
                     f"\n  {Y}    管理记忆，memory-core 已被禁用以免冲突。{N}"
                     f"\n  {Y}    如需回退，运行: openclaw plugins enable memory-core{N}"
                 )
-
-            # ── 检查 OpenClaw 插槽配置（slots）──
-            # OpenClaw 要求在 ~/.openclaw/openclaw.json 中手动指定
-            # plugins.slots.contextEngine = "claw-core-engine"
-            # plugins.slots.memory = "galaxyos"  (默认为 memory-core)
-            # 两个插槽都需要指向 GalaxyOS，否则插件装了但不生效
-            print(f"\n  {C}🔌 OpenClaw 插槽配置检查:{N}")
-            oc_home = Path(os.environ.get("OPENCLAW_HOME", os.environ.get("HOME", "/root") + "/.openclaw"))
-            oc_json = oc_home / "openclaw.json"
-
-            _slot_ce_ok = False
-            _slot_mem_ok = False
-            if oc_json.exists():
-                try:
-                    with open(oc_json) as f:
-                        oc_cfg = json.load(f)
-                    slots = oc_cfg.get("plugins", {}).get("slots", {})
-                    entries = oc_cfg.get("plugins", {}).get("entries", {})
-
-                    # ── contextEngine 插槽 ──
-                    ce_slot = slots.get("contextEngine", "legacy")
-                    if ce_slot == "claw-core-engine":
-                        ok(f"slots.contextEngine = \"{ce_slot}\" ✅", indent=1)
-                        _slot_ce_ok = True
-                        ce_entry = entries.get("claw-core-engine", {})
-                        if ce_entry.get("enabled", False):
-                            ok("entries[\"claw-core-engine\"].enabled = true ✅", indent=1)
-                        else:
-                            warn("entries[\"claw-core-engine\"] 未配置 enabled: true", indent=1)
-                            info("建议在 entries 中添加: \"claw-core-engine\": { \"enabled\": true }", indent=1)
-                    elif ce_slot == "legacy":
-                        warn(f"slots.contextEngine = \"legacy\"（未指定 GalaxyOS）", indent=1)
-                        info("GalaxyOS 已安装但未被选为活跃 ContextEngine", indent=1)
-                    else:
-                        warn(f"slots.contextEngine = \"{ce_slot}\"（被其他引擎占用）", indent=1)
-
-                    # ── memory 插槽 ──
-                    # 默认为 memory-core，GalaxyOS 通过 registerMemoryCapability 注册
-                    # 插件 ID 为 "galaxyos"（来自 plugin.json 的 id 字段）
-                    mem_slot = slots.get("memory", "memory-core")
-                    if mem_slot == "galaxyos":
-                        ok(f"slots.memory = \"{mem_slot}\" ✅", indent=1)
-                        _slot_mem_ok = True
-                        mem_entry = entries.get("galaxyos", {})
-                        if mem_entry.get("enabled", False):
-                            ok("entries[\"galaxyos\"].enabled = true ✅", indent=1)
-                        else:
-                            warn("entries[\"galaxyos\"] 未配置 enabled: true", indent=1)
-                    elif mem_slot == "memory-core":
-                        warn(f"slots.memory = \"memory-core\"（默认内置，未切换到 GalaxyOS）", indent=1)
-                        info("GalaxyOS 记忆管线（DAG+engram+突触）未被激活", indent=1)
-                    else:
-                        warn(f"slots.memory = \"{mem_slot}\"（被其他插件占用）", indent=1)
-
-                except Exception as e:
-                    warn(f"读取 {oc_json} 失败: {e}", indent=1)
-            else:
-                warn(f"配置文件不存在: {oc_json}", indent=1)
-
-            # ── 任一插槽未激活 → 给出完整配置指引 ──
-            if not _slot_ce_ok or not _slot_mem_ok:
-                print(
-                    f"\n  {Y}⚠️  GalaxyOS 插槽未完全激活！需手动配置 openclaw.json:{N}"
-                    f"\n  {C}  编辑 ~/.openclaw/openclaw.json，确保以下内容:{N}"
-                )
-                print(f"""  {{
-    "plugins": {{
-      "slots": {{
-        "contextEngine": "claw-core-engine",
-        "memory": "galaxyos"
-      }},
-      "entries": {{
-        "claw-core-engine": {{ "enabled": true }},
-        "galaxyos": {{ "enabled": true }}
-      }}
-    }}
-  }}""")
-                _tips = []
-                if not _slot_ce_ok:
-                    _tips.append("contextEngine → claw-core-engine（上下文组装/压缩/DAG）")
-                if not _slot_mem_ok:
-                    _tips.append("memory → galaxyos（记忆检索/写入/flushPlan）")
-                print(f"  {Y}  缺失: {', '.join(_tips)}{N}")
-                print(f"  {C}  配置完成后重启 Gateway: supervisorctl restart openclaw-gateway{N}")
-                print(f"  {C}  验证: openclaw doctor{N}")
         except Exception as e:
             err(f"读取插件配置失败: {e}")
     else:
@@ -2788,6 +2850,123 @@ def _install_plugin_guide():
 # ════════════════════════════════════════════════════════════════
 # Phase 7: 数据迁移向导
 # ════════════════════════════════════════════════════════════════
+
+def _register_plugin():
+    """注册 GalaxyOS 插件到 OpenClaw（官方 CLI 三件套：enable -> disable memory-core -> restart -> verify）"""
+    heading("🔌 GalaxyOS 插件注册（官方 CLI 三件套）")
+
+    ext_dir = EXT_DIR
+    plugin_json = ext_dir / "openclaw.plugin.json"
+
+    if not (ext_dir.exists() and plugin_json.exists()):
+        err("GalaxyOS 插件文件不完整")
+        info(f"期望路径: {ext_dir}")
+        info("需要文件: openclaw.plugin.json + plugin-bootstrap.cjs + index.js + scripts/")
+        return
+
+    ok(f"GalaxyOS 插件目录: {ext_dir}")
+
+    # Step 1: enable galaxyos
+    heading("Step 1/4 \u2014 启用 GalaxyOS 插件")
+    info("openclaw plugins enable galaxyos ...", indent=1)
+    r1 = subprocess.run(["openclaw", "plugins", "enable", "galaxyos"],
+                        capture_output=True, text=True, timeout=10)
+    if r1.returncode == 0:
+        ok("GalaxyOS 已启用", indent=1)
+    else:
+        stderr = r1.stderr.strip()
+        if "already" in stderr:
+            ok("GalaxyOS 已经是启用状态", indent=1)
+        else:
+            warn(f"启用结果: {stderr or 'ok'}", indent=1)
+
+    # Step 2: disable memory-core
+    heading("Step 2/4 \u2014 禁用冲突插件 memory-core")
+    info("openclaw plugins disable memory-core ...", indent=1)
+    r2 = subprocess.run(["openclaw", "plugins", "disable", "memory-core"],
+                        capture_output=True, text=True, timeout=10)
+    if r2.returncode == 0:
+        ok("memory-core 已禁用", indent=1)
+    else:
+        stderr = r2.stderr.strip()
+        if "disabled" in stderr or "already" in stderr or "not found" in stderr:
+            ok("memory-core 已禁用或无此插件", indent=1)
+        else:
+            warn(f"禁用结果: {stderr or 'ok'}", indent=1)
+
+    # Step 3: restart gateway
+    heading("Step 3/4 \u2014 重启 OpenClaw Gateway")
+    info("supervisorctl restart openclaw-gateway ...", indent=1)
+    subprocess.run(
+        ["python3", "-m", "supervisor.supervisorctl", "restart", "openclaw-gateway"],
+        capture_output=True, text=True, timeout=15
+    )
+    ok("Gateway 已重启", indent=1)
+
+    # Step 4: verify
+    heading("Step 4/4 \u2014 验证注册结果")
+    import time
+    time.sleep(3)
+    r4 = subprocess.run(["openclaw", "plugins", "list"],
+                        capture_output=True, text=True, timeout=5)
+    out = r4.stdout
+
+    galaxy_ok = "galaxyos" in out and "enabled" in out.lower()
+    if "memory-core" in out:
+        memory_off = "disabled" in out.split("memory-core")[1][:30]
+    else:
+        memory_off = True
+
+    if galaxy_ok:
+        ok("GalaxyOS 插件已注册并启用")
+    else:
+        warn("GalaxyOS 状态异常，试试: openclaw plugins enable galaxyos")
+
+    if memory_off:
+        ok("memory-core 已禁用，无冲突")
+    else:
+        warn("memory-core 仍启用，试试: openclaw plugins disable memory-core")
+
+    print()
+    ok("插件注册完成")
+    info("可用 GalaxyOS 工具: claw_recall, claw_health, claw_store, claw_verify, claw_rccam, ...")
+
+
+def _apply_cspl_patch():
+    """打 CSPL 安全补丁：修复 steer-inject 攻击链，防记忆泄露"""
+    heading("🔐 CSPL 安全补丁（防 steer-inject 攻击）")
+
+    # patches/ 在 repo 根（galaxyos/ 同级），从 _THIS_FILE 逐级往上找
+    _candidate = _THIS_FILE
+    for _ in range(5):
+        _candidate = _candidate.parent
+        if (_candidate / "patches" / "cspl_patch.py").exists():
+            script = _candidate / "patches" / "cspl_patch.py"
+            break
+    else:
+        err(f"CSPL 补丁脚本不存在，请确认 patches/cspl_patch.py 存在")
+        return
+    if not script.exists():
+        err(f"CSPL 补丁脚本不存在: {script}")
+        info("请确保 GalaxyOS 完整安装")
+        return
+
+    info("运行 CSPL 补丁 ...", indent=1)
+    r = subprocess.run([sys.executable, str(script)],
+                       capture_output=True, text=True, timeout=15)
+    for line in r.stdout.splitlines():
+        if line.strip():
+            print(f"  {line}")
+    if r.stderr.strip():
+        for line in r.stderr.strip().splitlines():
+            info(line, indent=2)
+
+    if r.returncode == 0:
+        ok("CSPL 补丁完成")
+        info("建议: 重启 Gateway 后补丁落地")
+    else:
+        err(f"CSPL 补丁失败，退出码 {r.returncode}")
+
 
 def check_existing_data() -> Dict[str, Any]:
     """扫描已有数据，标记可迁移项"""
@@ -3233,12 +3412,16 @@ def main():
     parser.add_argument("--sleep-test", action="store_true", help="仿生睡眠巩固引擎专项测试")
     parser.add_argument("--kg-test", action="store_true", help="知识图谱功能专项测试")
     parser.add_argument("--all", action="store_true", help="全量模式（体检 + 睡眠测试 + 修复）")
-    parser.add_argument("--install-plugin", action="store_true", help="安装/检测 GalaxyOS OpenClaw 插件")
+    parser.add_argument("--apply-cspl-patch", action="store_true",
+        help="打 CSPL 安全补丁：修复 xiaoyi-channel steer-inject 攻击链，防记忆泄露和流程劫持")
+    parser.add_argument("--register-plugin", action="store_true",
+        help="(推荐) 注册 GalaxyOS 插件到 OpenClaw: enable galaxyos + disable memory-core + 重启 Gateway + 验证")
+    parser.add_argument("--install-plugin", action="store_true",
+        help="(旧版) 仅检测 GalaxyOS 插件状态，不做操作")
     parser.add_argument("--fix-torch", action="store_true", help="自动补齐 torch/torch_geometric/hnswlib 等 ML 栈（清华源 + PyG wheel + CPU 索引）")
     parser.add_argument("--python", default=None, help="显式指定 Python 解释器路径（覆盖自动检测，常用于生产环境/容器固定运行时）")
-    parser.add_argument("--download-lfm", action="store_true", help="从 hf-mirror 下载 LFM2.5-1.2B-Thinking-ONNX Q4 权重（~811MB, ONNX Runtime mmap 共享）")
+    parser.add_argument("--download-lfm", action="store_true", help="从 hf-mirror 下载 LFM2.5-1.2B-Thinking 真实权重（~2.2GB）")
     parser.add_argument("--setup-rust", action="store_true", help="安装 Rust 工具链（国内镜像，自动识别 ARM64/x86_64）")
-    parser.add_argument("--install-prebuilt", action="store_true", help="安装跨平台预编译 Rust 二进制（自动检测 Linux/Windows × x64/ARM64）")
     parser.add_argument("--update", action="store_true", help="增量更新模式：版本检测 + 仅同步变更文件，保护已有配置")
     parser.add_argument("--migrate", action="store_true", help="数据迁移向导：检测并迁移历史数据到当前版本")
     parser.add_argument("--migrate-auto", action="store_true", help="数据迁移（非互动模式）：自动迁移所有可迁移数据")
@@ -3256,6 +3439,14 @@ def main():
         WORKSPACE = Path(os.environ.get("OPENCLAW_WORKSPACE", str(_OPENCLAW_HOME / "workspace")))
         ok(f"OpenClaw home: {_OPENCLAW_HOME}")
 
+    if args.apply_cspl_patch:
+        _apply_cspl_patch()
+        return
+
+    if args.register_plugin:
+        _register_plugin()
+        return
+
     if args.install_plugin:
         _install_plugin_guide()
         return
@@ -3270,10 +3461,6 @@ def main():
             use_make=Path(__file__).resolve().parent.parent.parent.joinpath("Makefile").exists()
         )
         sys.exit(0)
-
-    if args.install_prebuilt:
-        ok = install_prebuilt_native()
-        sys.exit(0 if ok else 1)
 
 
     if args.fix_torch:
@@ -3423,6 +3610,8 @@ def main():
     all_results["v82_models"] = check_lfm_weights()
     all_results["v82_pipes"] = check_v82_pipelines()
     all_results["v82_modules"] = check_v82_modules()
+    all_results["v84_modules"] = check_v84_modules()
+    all_results["v85_modules"] = check_v85_modules()
     all_results["sync"] = check_file_sync()
     all_results["services"] = check_services()
     all_results["breakers"] = scan_breakers()

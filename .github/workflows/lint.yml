@@ -17,8 +17,7 @@ jobs:
       - name: Run Ruff
         uses: astral-sh/ruff-action@v3
         with:
-          args: check --select=E,F,W --ignore=E501,E402
-        continue-on-error: true
+          args: check --select=E,F,W --ignore=E501,E402 --exclude=node_modules,target,prebuilt
 
   mypy:
     runs-on: ubuntu-latest
@@ -37,5 +36,40 @@ jobs:
           pip install -r requirements.txt
 
       - name: Run mypy
-        run: mypy services/ --ignore-missing-imports --no-error-summary
-        continue-on-error: true
+        run: mypy services/ galaxyos/engine/ extensions/galaxyos/scripts/ --ignore-missing-imports --no-error-summary
+        continue-on-error: true  # mypy 渐进式：先不拦，但报告问题
+
+  python-compat:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Compile check all .py files
+        run: |
+          python -c "
+          import py_compile, os, sys
+          problems = []
+          for root, dirs, files in os.walk('.'):
+              dirs[:] = [d for d in dirs if d not in ('node_modules', '.git', '__pycache__', 'target', 'prebuilt', '.pnpm-store')]
+              for f in files:
+                  if f.endswith('.py'):
+                      path = os.path.join(root, f)
+                      try:
+                          py_compile.compile(path, doraise=True)
+                      except py_compile.PyCompileError:
+                          problems.append(path)
+          if problems:
+              print(f'❌ {len(problems)} files failed to compile on Python {sys.version}:')
+              for p in problems: print(f'  {p}')
+              sys.exit(1)
+          print(f'✅ All Python files compile on {sys.version}')
+          "

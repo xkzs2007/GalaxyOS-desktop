@@ -12,7 +12,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="galaxyos",
-    version="8.3.0",
+    version="8.6.0",
 
     description="GalaxyOS — 小艺 Claw 核心认知增强引擎 (unified package)",
     long_description=open("README.md", encoding="utf-8").read(),
@@ -22,7 +22,7 @@ setup(
     url="https://cnb.cool/llm-memory-integrat/GalaxyOS",
     packages=find_packages(include=["galaxyos", "galaxyos.*"]),
     include_package_data=True,
-    python_requires=">=3.12",
+    python_requires=">=3.11",
     install_requires=[
         # 核心库
         "numpy==2.4.5",

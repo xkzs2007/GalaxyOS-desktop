@@ -373,7 +373,7 @@ class ChainOfVerificationEngine:
                     f"原始问题: {query}\n\n"
                     f"原始回答:\n{answer}\n\n"
                     f"验证发现的问题:\n{corrections}\n\n"
-                    f"{'参考上下文:\n' + context[:2000] if context else ''}\n\n"
+                    f"{'参考上下文:' + chr(10) + context[:2000] if context else ''}\n\n"
                     f"请输出修正后的完整回答:"}],
                 max_tokens=2000,
                 temperature=0.2

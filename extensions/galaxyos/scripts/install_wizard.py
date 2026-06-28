@@ -1563,8 +1563,9 @@ def test_sleep_consolidation() -> Dict[str, Any]:
     replayed = r.get("swr_memories_replayed", 0)
     gain = r.get("swr_weight_gain", 0)
     bursts = r.get("swr_bursts", 0)
-    print(f"  {G if bursts > 0 or "error" not in r else Y} {'✅' if "error" not in r else '⚠️'} 重放 {replayed} 条, 增益 {gain:.3f}, 爆发 {bursts} 次{N}")
-    results["stages"]["nrem_swr"] = {"ok": "error" not in r, "replayed": replayed, "gain": gain, "bursts": bursts}
+    has_err = "error" in r
+    print(f"  {G if bursts > 0 or not has_err else Y} {'✅' if not has_err else '⚠️'} 重放 {replayed} 条, 增益 {gain:.3f}, 爆发 {bursts} 次{N}")
+    results["stages"]["nrem_swr"] = {"ok": not has_err, "replayed": replayed, "gain": gain, "bursts": bursts}
 
     # ── 2) NREM-CASCADE ──
     print(f"\n{C}┌─ {B}阶段 2/5: NREM-CASCADE 三级同步巩固{N}")
@@ -1572,8 +1573,9 @@ def test_sleep_consolidation() -> Dict[str, Any]:
     longtail = r.get("so_longtail_saved", 0)
     pruned = r.get("spindle_pruned", 0)
     linked = r.get("ripple_linked", 0)
-    print(f"  {G if "error" not in r else Y} {'✅' if "error" not in r else '⚠️'} 长尾拯救 {longtail}, 修剪 {pruned}, 跨链接 {linked}{N}")
-    results["stages"]["nrem_cascade"] = {"ok": "error" not in r, "longtail": longtail, "pruned": pruned, "linked": linked}
+    has_err = "error" in r
+    print(f"  {G if not has_err else Y} {'✅' if not has_err else '⚠️'} 长尾拯救 {longtail}, 修剪 {pruned}, 跨链接 {linked}{N}")
+    results["stages"]["nrem_cascade"] = {"ok": not has_err, "longtail": longtail, "pruned": pruned, "linked": linked}
 
     # ── 3) REM-GENERATIVE ──
     print(f"\n{C}┌─ {B}阶段 3/5: REM-GENERATIVE 生成式梦境{N}")
@@ -1593,16 +1595,18 @@ def test_sleep_consolidation() -> Dict[str, Any]:
     scanned = r.get("emotion_memories_scanned", 0)
     em_decay = r.get("emotion_intensity_decayed", 0)
     em_linked = r.get("emotion_links_strengthened", 0)
-    print(f"  {G if "error" not in r else R} {'✅' if "error" not in r else '❌'} 扫描 {scanned}, 衰减 {em_decay:.3f}, 链接 {em_linked}{N}")
-    results["stages"]["rem_emotion"] = {"ok": "error" not in r, "scanned": scanned, "decay": em_decay, "linked": em_linked}
+    has_err = "error" in r
+    print(f"  {G if not has_err else R} {'✅' if not has_err else '❌'} 扫描 {scanned}, 衰减 {em_decay:.3f}, 链接 {em_linked}{N}")
+    results["stages"]["rem_emotion"] = {"ok": not has_err, "scanned": scanned, "decay": em_decay, "linked": em_linked}
 
     # ── 5) DEEP-SLEEP ──
     print(f"\n{C}┌─ {B}阶段 5/5: DEEP-SLEEP 记忆迁移{N}")
     r = cons._deep_sleep_migration()
     migrated = r.get("migrated_count", 0)
     promoted = r.get("promoted_count", 0)
-    print(f"  {G if "error" not in r else Y} {'✅' if "error" not in r else '⚠️'} 迁移 {migrated} 条, 升格 {promoted} 条{N}")
-    results["stages"]["deep_sleep"] = {"ok": "error" not in r, "migrated": migrated, "promoted": promoted}
+    has_err = "error" in r
+    print(f"  {G if not has_err else Y} {'✅' if not has_err else '⚠️'} 迁移 {migrated} 条, 升格 {promoted} 条{N}")
+    results["stages"]["deep_sleep"] = {"ok": not has_err, "migrated": migrated, "promoted": promoted}
 
     # ── 完整周期 ──
     print(f"\n{C}┌─ {B}完整睡眠周期{N}")

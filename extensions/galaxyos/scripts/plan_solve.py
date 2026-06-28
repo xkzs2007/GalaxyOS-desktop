@@ -237,8 +237,8 @@ class PlanSolve:
 
             prompt = (
                 f"用户问题: {query[:500]}\n"
-                f"{'前置结果:\n' + prior_summary + '\n' if prior_summary else ''}"
-                f"{'上下文: ' + context[:300] + '\n' if context else ''}"
+                f"{'前置结果:' + chr(10) + prior_summary + chr(10) if prior_summary else ''}"
+                f"{'上下文: ' + context[:300] + chr(10) if context else ''}"
                 f"\n当前步骤: {name}\n"
                 f"步骤描述: {desc}\n"
                 f"步骤类型: {stype}\n"

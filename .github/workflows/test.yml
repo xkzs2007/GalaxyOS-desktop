@@ -13,7 +13,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.12"]
+        python-version: ["3.11", "3.12"]
 
     steps:
       - name: Checkout
@@ -25,6 +25,9 @@ jobs:
           python-version: ${{ matrix.python-version }}
           cache: pip
 
+      - name: Install system deps (for hnswlib compilation)
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq python3-dev build-essential
+
       - name: Install dependencies
         run: |
           pip install --upgrade pip
@@ -35,6 +38,27 @@ jobs:
         run: |
           python -c "import numpy, scipy, sklearn, torch, pydantic, faiss, jieba, ncps"
           echo "✅ All core deps loaded"
+
+      - name: Compile check (all .py files)
+        run: |
+          python -c "
+          import py_compile, os, sys
+          problems = []
+          for root, dirs, files in os.walk('.'):
+              dirs[:] = [d for d in dirs if d not in ('node_modules', '.git', '__pycache__', 'target', 'prebuilt', '.pnpm-store')]
+              for f in files:
+                  if f.endswith('.py'):
+                      path = os.path.join(root, f)
+                      try:
+                          py_compile.compile(path, doraise=True)
+                      except py_compile.PyCompileError as e:
+                          problems.append(path)
+          if problems:
+              print(f'❌ {len(problems)} files failed to compile:')
+              for p in problems: print(f'  {p}')
+              sys.exit(1)
+          print(f'✅ All Python files compile on {sys.version}')
+          "
 
       - name: Run tests
         run: |
@@ -50,4 +74,78 @@ jobs:
         with:
           files: ./coverage.xml
           flags: unittests
+        continue-on-error: true
+
+  node-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install pnpm
+        run: npm install -g pnpm
+
+      - name: Install deps
+        run: cd extensions/galaxyos && pnpm install
+
+      - name: Syntax check index.js
+        run: |
+          node -e "
+          const fs = require('fs');
+          const code = fs.readFileSync('extensions/galaxyos/index.js', 'utf-8');
+          try {
+            new Function(code);
+            console.log('✅ index.js syntax OK');
+          } catch(e) {
+            console.error('❌ index.js syntax error:', e.message);
+            process.exit(1);
+          }
+          "
+
+      - name: Check policy coverage
+        run: |
+          COUNT=$(grep -c 'policy: { channels:' extensions/galaxyos/index.js || echo 0)
+          echo "Policy declarations: $COUNT"
+          if [ "$COUNT" -lt 15 ]; then
+            echo "❌ Expected at least 15 policy declarations, found $COUNT"
+            exit 1
+          fi
+          echo "✅ Policy coverage OK"
+
+      - name: Check hook registrations
+        run: |
+          for hook in gateway_start gateway_stop before_tool_call after_tool_call before_compaction after_compaction before_agent_reply agent_end before_prompt_build; do
+            if ! grep -q "api.on(\"$hook\"" extensions/galaxyos/index.js; then
+              echo "❌ Missing hook: $hook"
+              exit 1
+            fi
+          done
+          echo "✅ All 9 hooks registered"
+
+  rust-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cargo mirror (rsproxy)
+        run: |
+          mkdir -p extensions/galaxyos/native/.cargo
+          cat > extensions/galaxyos/native/.cargo/config.toml << 'EOF'
+          [source.crates-io]
+          replace-with = "rsproxy"
+          [source.rsproxy]
+          registry = "https://rsproxy.cn/crates.io-index"
+          EOF
+
+      - name: Cargo check (Linux x86_64)
+        run: cd extensions/galaxyos/native && cargo check --release 2>&1 || echo "⚠️ cargo check failed (deps may need network)"
         continue-on-error: true
