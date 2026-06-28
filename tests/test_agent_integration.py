@@ -29,7 +29,7 @@ logging.getLogger('galaxyos.privileged').setLevel(logging.ERROR)
 # ── Mock LLM 响应工厂 ──
 
 def make_mock_llm_response(content: str, role: str = "assistant") -> dict:
-    """构造 OpenAI-compatible mock 响应"""
+    """构造 OpenAI-compatible mock 响应（dict 格式）"""
     return {
         "choices": [{
             "message": {
@@ -42,15 +42,29 @@ def make_mock_llm_response(content: str, role: str = "assistant") -> dict:
     }
 
 
+def make_mock_llm_chat_response(content: str) -> MagicMock:
+    """构造 OpenAI SDK 属性访问格式的 mock 响应（.choices[0].message.content）"""
+    msg = MagicMock()
+    msg.content = content
+    msg.role = "assistant"
+    choice = MagicMock()
+    choice.message = msg
+    choice.finish_reason = "stop"
+    rsp = MagicMock()
+    rsp.choices = [choice]
+    rsp.usage = MagicMock(total_tokens=len(content) // 4)
+    return rsp
+
+
 def _setup_essential_attrs(claw):
     """为 Agent 设置 process() 路径必需的最小属性集"""
     if not hasattr(claw, 'dag') or claw.dag is None:
         claw.dag = None
     if not hasattr(claw, 'llm_flash') or claw.llm_flash is None:
         claw.llm_flash = MagicMock()
-        claw.llm_flash.chat = MagicMock(return_value=make_mock_llm_response(
-            "这是一个经过 LLM 处理的回答。"
-        ))
+        claw.llm_flash.chat.completions.create = MagicMock(
+            return_value=make_mock_llm_chat_response("这是一个经过 LLM 处理的回答。")
+        )
     if not hasattr(claw, 'llm_pro') or claw.llm_pro is None:
         claw.llm_pro = claw.llm_flash
     if not hasattr(claw, 'dynamic_confidence') or claw.dynamic_confidence is None:
@@ -84,17 +98,13 @@ class TestRCAMPipeline:
             claw.llm_client.chat_completion = MagicMock(return_value=mock_response)
 
             # 关键：设置 agent.llm_flash（process 中 _retrieval_phase 等阶段需要）
+            # 代码通过 llm_flash.chat.completions.create(...) 调用，需要属性访问格式的 mock
+            _flash_answer = "人工智能（AI）是计算机科学的一个分支，致力于创建能够执行通常需要人类智能的任务的系统。"
+            _flash_rsp = make_mock_llm_chat_response(_flash_answer)
             claw.llm_flash = MagicMock()
-            claw.llm_flash.chat = MagicMock(return_value=make_mock_llm_response(
-                json.dumps({
-                    "intent": "question",
-                    "knowledge_type": "factual",
-                    "complexity": "medium",
-                    "thinking_skills": ["search", "explain"],
-                    "emotion_tone": "neutral",
-                })
-            ))
-            claw.llm_pro = claw.llm_flash
+            claw.llm_flash.chat.completions.create = MagicMock(return_value=_flash_rsp)
+            claw.llm_pro = MagicMock()
+            claw.llm_pro.chat.completions.create = MagicMock(return_value=_flash_rsp)
 
             # DAG 设 None（走无 DAG 路径，合法路径）
             if not hasattr(claw, 'dag'):
@@ -162,15 +172,17 @@ class TestAgentErrorHandling:
         # 设置 process() 所需的最小属性
         claw.dag = None
         claw.llm_flash = MagicMock()
-        claw.llm_flash.chat = MagicMock(return_value=make_mock_llm_response(
-            json.dumps({
-                "intent": "question",
-                "knowledge_type": "factual",
-                "complexity": "low",
-                "thinking_skills": [],
-                "emotion_tone": "neutral",
-            })
-        ))
+        claw.llm_flash.chat.completions.create = MagicMock(
+            return_value=make_mock_llm_chat_response(
+                json.dumps({
+                    "intent": "question",
+                    "knowledge_type": "factual",
+                    "complexity": "low",
+                    "thinking_skills": [],
+                    "emotion_tone": "neutral",
+                })
+            )
+        )
         claw.llm_pro = claw.llm_flash
         claw.dynamic_confidence = None
         claw.memory_editor = None
@@ -268,15 +280,17 @@ class TestMultiCycleBehavior:
             claw.llm_client.chat = MagicMock(return_value=mock_response)
 
             claw.llm_flash = MagicMock()
-            claw.llm_flash.chat = MagicMock(return_value=make_mock_llm_response(
-                json.dumps({
-                    "intent": "question",
-                    "knowledge_type": "complex",
-                    "complexity": "high",
-                    "thinking_skills": ["analyze", "synthesize"],
-                    "emotion_tone": "neutral",
-                })
-            ))
+            claw.llm_flash.chat.completions.create = MagicMock(
+                return_value=make_mock_llm_chat_response(
+                    json.dumps({
+                        "intent": "question",
+                        "knowledge_type": "complex",
+                        "complexity": "high",
+                        "thinking_skills": ["analyze", "synthesize"],
+                        "emotion_tone": "neutral",
+                    })
+                )
+            )
             claw.llm_pro = claw.llm_flash
             if not hasattr(claw, 'dag'):
                 claw.dag = None

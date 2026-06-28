@@ -72,11 +72,12 @@ main:
       stages:
         - name: syntax-check
           script: |
-            node -e "
-            const fs = require('fs');
+            node --input-type=module -e "
+            import fs from 'node:fs';
+            import { pathToFileURL } from 'node:url';
             const code = fs.readFileSync('extensions/galaxyos/index.js', 'utf-8');
-            try { new Function(code); console.log('OK: index.js syntax'); }
-            catch(e) { console.error('FAIL:', e.message); process.exit(1); }
+            try { await import(pathToFileURL('extensions/galaxyos/index.js').href); console.log('OK: index.js syntax (ESM import)'); }
+            catch(e) { if (e.message.includes('Cannot find module') || e.message.includes('ERR_MODULE_NOT_FOUND')) { console.log('OK: index.js syntax (import parse OK, runtime deps missing)'); } else { console.error('FAIL:', e.message); process.exit(1); } }
             "
         - name: policy-coverage
           script: |
