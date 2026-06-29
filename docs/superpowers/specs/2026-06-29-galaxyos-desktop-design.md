@@ -4,8 +4,8 @@
 > **本地**：`C:/Users/Administrator/ZCodeProject/galaxyos/` (浅克隆 222 MB)
 > **目标**：OpenClaw 插件 → **ZCode/Codex 级别独立桌面 Agent 应用**
 > **参考论文**：[Agent-as-a-Router (arXiv 2606.22902)](https://arxiv.org/abs/2606.22902) + [MeMo (arXiv 2605.15156)](https://arxiv.org/abs/2605.15156)
-> **设计日期**：2026-06-29 (v6 — 全局背景层)
-> **状态**：✅ **全部完成**。MeMo 3-stage + ACRouter C-A-F 现在是**全局背景层**（默认启动、自动 inline），用户不需要手动点 mode。
+> **设计日期**：2026-06-29 (v7 — 桌面打包)
+> **状态**：✅ **真实桌面 app 跑通**。Electron 32.3.3 main 进程启动 sidecar + 渲染 1280x820 真窗口。MeMo + ACRouter 全局背景层。已为 electron-builder NSIS 打包铺好路。
 
 ---
 
@@ -338,9 +338,76 @@
 - `2026-06-29-stage2.1-multisession.png` — 3 个 session 切换 + skills 列表更新
 - `2026-06-29-stage2.2-model-picker.png` — Model picker dropdown 打开
 - `2026-06-29-stage3.0-memo-3stage.png` — MeMo 模式问 "What is GalaxyOS"，3 阶段协议完整渲染
-- `2026-06-29-stage3.5-acrouter.png` — Ask 模式问 "What is GalaxyOS"，ACRouter 自动路由到 memo_3stage，bubble header 显示 "ACRouter" 徽章 + 4 阶段 routing trace (Context → Action → Feedback → Memorize)
-- `2026-06-29-stage4.0-global-routing-ask.png` — **stage 4 关键截图**：Ask 模式问 "What is GalaxyOS"，bubble header "memo_3stage"（ACRouter 自动决策），footer "⚡ routing: [memo_3stage · score 0.73]"
-- `2026-06-29-stage4.0-global-routing-agent.png` — Agent 模式跑 "!ls -la"，bubble header "GalaxyOS-Agent"（不同 expert），同样有 routing_debug footer
+- `2026-06-29-stage3.5-acrouter.png` — Ask 模式问 "What is GalaxyOS"，ACRouter 自动路由到 memo_3stage，bubble header 显示 "ACRouter" 徽章 + 4 阶段 routing trace
+- `2026-06-29-stage4.0-global-routing-ask.png` — stage 4 关键：Ask 模式问 "What is GalaxyOS"，bubble header "memo_3stage"，footer "⚡ routing: [memo_3stage · score 0.73]"
+- `2026-06-29-stage4.0-global-routing-agent.png` — Agent 模式跑 "!ls -la"，bubble header "GalaxyOS-Agent"
+- `2026-06-29-stage5.0-electron-real-window.png` — **stage 5 关键：真 Electron 窗口**（PowerShell PrintWindow 截的 1280x820 native window），3 栏 ZCode 布局 + 4 模式 + 6 工具 pills + model picker 全部正常显示
+
+## 14. 架构 v7 — 真实桌面 app
+
+Stage 5 实现了 **真桌面 app** 跑通：
+
+```
+┌─────────────────────────────────────────────────┐
+│  electron.exe (Win32 native process)              │
+│   - main.ts (bundled → dist/main.cjs)              │
+│   ├─ log file: desktop-shell/electron.log          │
+│   ├─ sidecar.log: desktop-shell/sidecar.log       │
+│   ├─ Spawns: python galaxyos_sidecar.py            │
+│   │   (PYTHONPATH = desktop-shell/python)          │
+│   │   zmq REP :5757, HTTP SSE :5758               │
+│   │   stdio/stderr → sidecar.log (no EPIPE)         │
+│   ├─ Waits for /sse/health (684ms)                 │
+│   ├─ BrowserWindow 1280x820                        │
+│   │   - preload.cjs (contextBridge IPC)            │
+│   │   - loadFile renderer/index.html               │
+│   │   - injectTokUI() → @jboltai/tokui UMD         │
+│   │     injected via executeJavaScript(IIFE)        │
+│   │     result: {"ok":true,"err":null}            │
+│   └─ window title: "GalaxyOS Desktop"              │
+└─────────────────────────────────────────────────┘
+                  ↑ spawns
+┌─────────────────────────────────────────────────┐
+│  python galaxyos_sidecar.py (child process)       │
+│  - Boots global MeMo (MockMeMoAdapter)            │
+│  - Boots global ACRouter (HeuristicOrch +  Memory)│
+│  - zmq REP :5757 (legacy API)                      │
+│  - HTTP SSE :5758 (renderer fetch target)          │
+│  - Logs: ~/.galaxyos/workspace/sidecar.log         │
+└─────────────────────────────────────────────────┘
+```
+
+**核心问题修复** (Stage 5):
+1. **EPIPE fix**: sidecar 的 stderr 含大量 WARNING，直接 pipe 到 Electron 会爆缓冲区。改成 `openSync(sidecar.log)` + `closeSync` — 父进程不持有 FD。
+2. **Path fix**: 之前 `__dirname` 在 bundled CJS 里被 esbuild 替换成空，APPROOT 是 undefined。改用 `process.cwd()` 简单可靠。
+3. **Package.json main fix**: `dist/main.js` 被 Electron 当 ES module（因为 `type: module`），改回 `.cjs` 扩展名。
+4. **TokUI UMD inject fix**: 之前 `executeJavaScript(code)` 直接把 UMD 当 main script 跑，complex UMD 失败。改用 IIFE 包裹 + 检查 `__TOKUI_INJECTED__` 标志，结果 `{"ok":true,"err":null}`。
+
+**已就位 / 待做**:
+- ✅ 真 Electron 窗口渲染（PrintWindow 截到 1280x820 native window）
+- ✅ Sidecar 进程生命周期管理（spawn → waitForHealth → 启窗口 → 退出时 kill）
+- ⏳ electron-builder NSIS 打包（package.json `build.win.target=nsis` 已配好但未跑）
+- ⏳ bundled Python sidecar（用 PyInstaller 打 .exe 再作为 extraResources）
+- ⏳ IPC bridge（renderer → main → sidecar via stdio，目前 renderer 直连 HTTP）
+
+## 15. commit 历史（v7）
+
+```
+d4d39d0 feat(electron): stage 5.0 — real desktop app launches (window renders)
+a7e25ea docs(spec): v6 — 全局背景层架构（MeMo + ACRouter 默认启动）
+8374b70 feat(global): stage 4.0 — MeMo + ACRouter as always-on background layers
+fc611f4 docs(spec): v5 — 阶段三完成（MeMo + ACRouter），全部 ZCode/Codex 特性交付
+b38f127 feat(acrouter): stage 3.5 — Agent-as-a-Router C-A-F closed loop
+1c9c276 feat(memo): stage 3.0 — MeMo 3-stage parametric knowledge protocol
+e8ef0f5 docs(spec): update to v4 — ZCode/Codex UX 全集对照表 + 实施状态
+560ce7b feat(model-picker): stage 2.2 — topbar model switcher
+6f1b2ee feat(sessions): stage 2.1 — multi-session persistence + ZCode UX
+a1a8abe feat(agent): stage 2 — real tool execution via Agent mode
+15cc8b6 feat(desktop-shell): stage 1.6 — real desktop app + Playwright visual proof
+a128b23 feat(desktop-shell): stage 1.5 — TokUI SSE streaming + ZCode/Codex layout
+5b6c458 feat(desktop-shell): stage 1 — Electron + pyzmq sidecar, OpenClaw decoupled
+0ea42f2 (upstream) fix: CI mock structure
+```
 
 ## 12. 架构 v6 — 全局背景层
 
