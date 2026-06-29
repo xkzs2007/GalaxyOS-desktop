@@ -143,9 +143,15 @@ def open_plan(title: str = "执行计划") -> str:
 
 
 def plan_step(title: str, status: str = "pending",
-              body: str = "", tool: str = "") -> str:
-    """One step in a plan. status: pending / running / done / skipped."""
+              body: str = "", tool: str = "", step_id: Optional[str] = "") -> str:
+    """One step in a plan. status: pending / running / done / skipped.
+
+    v9.3: accepts ``step_id`` for `[upd id:plan_step_N status:done]`
+    binding. Renderer can flip status without re-emitting the whole step.
+    """
     inner = f"[plan-step{_attr('status', status)}{_attr('tt', title)}"
+    if step_id:
+        inner += _attr("id", step_id)
     if tool:
         inner += _attr("tool", tool)
     inner += "]"
@@ -198,6 +204,225 @@ def error_bubble(message: str) -> str:
         f'[p v:danger]{_esc(message)}[/p]'
         f'[/bubble]'
     )
+
+
+# ── v9.3 component builders (15+ new fragments) ───────────────────────
+#
+# Each builder emits one TokUI DSL fragment. Builders are pure functions
+# — they don't talk to the network or filesystem. Keep them small and
+# composable so the streaming code in _do_stream_* can call them in
+# any order.
+
+# ── 1. Progress bar + upd (live status) ───────────────────────────────
+
+def progress_bar(progress_id: str, value: float = 0,
+                 label: str = "", status: str = "primary") -> str:
+    """Render a progress bar bound to a target id (for [upd])."""
+    pct = max(0, min(100, int(value)))
+    attrs = f" id:{progress_id} v:{pct}"
+    if label:
+        attrs += f" l:\"{_esc(label)}\""
+    return f"[progress{attrs}]"
+
+
+def upd(progress_id: str, value: float, status: str = "") -> str:
+    """Emit an [upd] fragment that updates a target element by id.
+
+    Status can be: primary / success / warning / danger / "" (no change).
+    """
+    pct = max(0, min(100, int(value)))
+    attrs = f" id:{progress_id} v:{pct}"
+    if status:
+        attrs += f" status:{status}"
+    return f"[upd{attrs}]"
+
+
+# ── 2. Callout (highlight box) ────────────────────────────────────────
+
+def callout(kind: str, title: str, body: str) -> str:
+    """Render a [callout] — info / success / warning / danger box."""
+    if kind not in ("info", "success", "warning", "danger"):
+        kind = "info"
+    inner = f"[callout t:{kind}{_attr('tt', title)}]{_esc(body)}[/callout]"
+    return inner
+
+
+# ── 3. Stat (big number with trend) ───────────────────────────────────
+
+def stat(value: str, title: str = "", suffix: str = "",
+         trend: Optional[str] = None) -> str:
+    """Render a [stat] — title, value, optional suffix/trend arrow."""
+    attrs = _attr("tt", title) + _attr("v", value)
+    if suffix:
+        attrs += _attr("suf", suffix)
+    if trend:
+        # trend can be "up:12%" / "down:5%" / "flat:0%"
+        attrs += _attr("trend", trend)
+    return f"[stat{attrs}]"
+
+
+# ── 4. Code block (with syntax hint) ──────────────────────────────────
+
+def code_block(code: str, lang: str = "text") -> str:
+    """Render a [code] block — TokUI will syntax-highlight by lang."""
+    # Escape: leave [ and ] alone inside code; TokUI requires quoted
+    # string for content with special chars
+    safe = code.replace("[/code]", "[/code]")  # noop but explicit
+    return f'[code lang:{lang}]\n{safe}\n[/code]'
+
+
+# ── 5. Tag (label/chip) ───────────────────────────────────────────────
+
+def tag(text: str, kind: str = "primary", closable: bool = False) -> str:
+    """Render a [tag] — small label/chip."""
+    attrs = _attr("tx", text) + f" t:{kind}"
+    if closable:
+        attrs += " closable"
+    return f"[tag{attrs}]"
+
+
+# ── 6. Source (citation) ───────────────────────────────────────────────
+
+def source(name: str, snippet: str = "", url: str = "") -> str:
+    """Render a [source] — citation chip for retrieval results."""
+    attrs = _attr("n", name) + _attr("sn", snippet)
+    if url:
+        attrs += _attr("u", url)
+    return f"[source{attrs}]"
+
+
+# ── 7. Quick-reply (one-tap response options) ──────────────────────────
+
+def quick_reply(items: List[str]) -> str:
+    """Render [quick-reply] with given options as a list."""
+    if not items:
+        return ""
+    items_str = ",".join(items)
+    return f"[quick-reply items:\"{_esc(items_str)}\"]"
+
+
+# ── 8. Suggestion (follow-up card) ────────────────────────────────────
+
+def suggestion(title: str, body: str = "", on_click: str = "") -> str:
+    """Render a [suggestion] card inside a [suggestions] container."""
+    attrs = _attr("tt", title) + _attr("tx", body)
+    if on_click:
+        attrs += _attr("clk", on_click)
+    return f"[suggestion{attrs}]"
+
+
+def suggestions_grid(cols: int = 2, items: Optional[List[str]] = None) -> str:
+    """Render a [suggestions] grid container (with default examples)."""
+    if items is None:
+        items = [
+            "用 ACRouter 分析这个问题",
+            "查 SkillGraph 找相关技能",
+            "写入长期记忆",
+        ]
+    out = [f"[suggestions cols:{cols}]"]
+    for it in items:
+        out.append(suggestion(title=it, on_click="picks"))
+    out.append("[/suggestions]")
+    return "".join(out)
+
+
+# ── 9. Latency / Status indicators ────────────────────────────────────
+
+def latency(ms: int, kind: str = "primary") -> str:
+    """Render a [latency] chip — shows response time."""
+    return f"[latency v:{ms} t:{kind}]"
+
+
+# ── 10. Diff (side-by-side or unified) ────────────────────────────────
+
+def diff_block(title: str, before: str, after: str,
+               lang: str = "text") -> str:
+    """Render a [diff] block with old/new content."""
+    out = [f'[diff{_attr("title", title)}{_attr("lang", lang)}]']
+    out.append(f"[p v:muted]- {_esc(before)}[/p]")
+    out.append(f"[p v:success]+ {_esc(after)}[/p]")
+    out.append("[/diff]")
+    return "".join(out)
+
+
+# ── 11. Artifact (Codex/Codex-style rich content) ─────────────────────
+
+def artifact(title: str, lang: str = "text",
+             pos: str = "right", width: str = "60%") -> str:
+    """Open an [artifact] container. Pair with close_artifact()."""
+    return f'[artifact{_attr("tt", title)}{_attr("lang", lang)}{_attr("pos", pos)}{_attr("w", width)}]'
+
+
+def artifact_code(code: str, lang: str = "text") -> str:
+    """The code slot of an artifact."""
+    return f'[artifact-code]\n{_esc(code)}\n[/artifact-code]'
+
+
+def artifact_preview(html_or_md: str) -> str:
+    """The preview slot of an artifact (rendered HTML or markdown)."""
+    return f"[artifact-preview]\n{_esc(html_or_md)}\n[/artifact-preview]"
+
+
+def close_artifact() -> str:
+    return "[/artifact]"
+
+
+# ── 12. Welcome (initial page) ────────────────────────────────────────
+
+def welcome(title: str = "GalaxyOS 桌面端", subtitle: str = "",
+            features: Optional[List[Dict[str, str]]] = None) -> str:
+    """Render a [welcome] page with feature cards."""
+    if features is None:
+        features = [
+            {"tt": "Ask",     "tx": "简单提问（自动路由：MeMo / process / fast_path）", "i": "💬"},
+            {"tt": "Process", "tx": "R-CCAM 五阶段深度推理",                        "i": "🔍"},
+            {"tt": "Agent",   "tx": "工具调用（shell / read / write / grep / diff）", "i": "🛠"},
+            {"tt": "Plan",    "tx": "先出计划，确认后再执行",                       "i": "📋"},
+            {"tt": "MeMo*",   "tx": "调试 MeMo 3-stage 协议",                       "i": "🧠"},
+        ]
+    out = [f'[welcome{_attr("tt", title)}]']
+    for f in features:
+        f_attrs = _attr("tt", f.get("tt", "")) + _attr("tx", f.get("tx", ""))
+        if f.get("i"):
+            f_attrs += _attr("i", f["i"])
+        if f.get("clk"):
+            f_attrs += _attr("clk", f["clk"])
+        out.append(f"[feature{f_attrs}]")
+    out.append("[/welcome]")
+    return "".join(out)
+
+
+# ── 13. Tool-call with timing + summary ───────────────────────────────
+
+def tool_call_with_timing(name: str, started_ms: int,
+                          status: str = "done",
+                          summary: str = "") -> str:
+    """Tool-call with auto-computed duration."""
+    duration = max(0, int(time.time() * 1000) - started_ms) if started_ms else 0
+    return tool_call(name=name, status=status,
+                     duration=f"{duration}ms", summary=summary)
+
+
+# ── 14. Tool result (echoed back into the bubble) ─────────────────────
+
+def tool_result(name: str, ok: bool = True, preview: str = "") -> str:
+    """Render the result of a tool call as a [p] block."""
+    kind = "success" if ok else "danger"
+    marker = "✓" if ok else "✗"
+    body = f"{marker} {name}"
+    if preview:
+        body += f": {_esc(preview[:200])}"
+    return f"[p v:{kind}]{body}[/p]"
+
+
+# ── 15. Multi-line progress (loop status) ─────────────────────────────
+
+def loop_progress(progress_id: str, current: int, total: int,
+                  label: str = "") -> str:
+    """Emit a progress bar fragment with current/total."""
+    pct = (current / total * 100) if total > 0 else 0
+    full_label = f"{label} ({current}/{total})" if label else f"{current}/{total}"
+    return progress_bar(progress_id, value=pct, label=full_label)
 
 
 # ── Top-level conversion ──────────────────────────────────────────────

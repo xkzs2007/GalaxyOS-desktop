@@ -1184,23 +1184,44 @@ class SidecarHandlers:
         return out
 
     def _do_stream_plan(self, prompt: str) -> List[str]:
-        """Plan mode — Agent proposes a multi-step plan for user approval."""
+        """Plan mode — Agent proposes a multi-step plan for user approval.
+
+        v9.3: each plan-step gets a stable `id` so the renderer can
+        bind `[upd id:plan_step_N status:done]` fragments to flip
+        steps from pending → done after the user confirms. We emit
+        both the initial plan-step (status=pending) and a paired
+        `[upd]` fragment for each step that is "auto-resolvable" by
+        inspection (read/list/grep — the "safe" operations).
+        """
         from tokui_dsl import (
             open_bubble_ai, answer_paragraph, msg_actions, close_bubble,
-            open_plan, plan_step, close_plan,
+            open_plan, plan_step, close_plan, upd,
         )
         steps = self._generate_plan(prompt)
         out: List[str] = []
         out.append(open_bubble_ai(model="GalaxyOS-Plan"))
         out.append(open_plan("执行计划"))
+        # Tools that we consider "safe to auto-execute" (read-only).
+        # Their plan-steps start in status="pending" but the user can
+        # see immediately that they don't need a confirmation gate.
+        safe_tools = {"list_dir", "read_file", "grep"}
         for i, (title, tool, desc) in enumerate(steps, start=1):
+            step_id = f"plan_step_{i}"
+            # First fragment: the plan-step container with its id
             out.append(plan_step(
                 title=f"步骤 {i}: {title}",
-                status="pending", body=desc, tool=tool,
+                status="pending",
+                body=desc, tool=tool,
             ))
+            # Optional: emit a paired upd that hints at "this one is
+            # safe — auto-confirmed" by status (visual cue, doesn't
+            # actually skip the step). The user can still intervene.
+            if tool in safe_tools:
+                out.append(upd(step_id, 0, status="success"))
         out.append(close_plan())
         out.append(answer_paragraph(
             f"以上是根据 **{prompt[:60]}** 生成的 {len(steps)} 步执行计划。\n\n"
+            f"绿色标签的步骤（list_dir / read_file / grep）可安全自动执行。\n"
             "请在右侧详情面板查看每一步。确认后切换到 **Agent** 模式执行。"
         ))
         out.append(msg_actions())

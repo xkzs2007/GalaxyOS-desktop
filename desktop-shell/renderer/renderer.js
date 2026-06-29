@@ -422,14 +422,34 @@ function applySettings() {
   // matching color scale. Without this, dark background + TokUI default
   // (light) theme => dim/gray AI output text (UI inconsistency).
   document.documentElement.dataset.tokuiTheme = s.theme || 'dark';
+  // v9.3: build per-slot specs from the 4 new tab bodies
+  const slotSpecs = {};
+  for (const slot of ['llm', 'embedding', 'rerank', 'vlm']) {
+    const provider = $(`setting-${slot}-provider`).value;
+    const model = $(`setting-${slot}-model`).value;
+    const apiKey = $(`setting-${slot}-key`).value;
+    const baseUrl = $(`setting-${slot}-base`).value;
+    if (provider) {
+      slotSpecs[slot] = {
+        provider, model, api_key: apiKey, base_url: baseUrl,
+      };
+    }
+  }
+  // Persist slots to localStorage so they survive reloads
+  s.slots = slotSpecs;
+  saveSettings(s);
   closeSettings();
   // Send to sidecar via IPC — hot-updates LLM config + system prompt
   if (galaxy.updateSettings) {
-    galaxy.updateSettings({
+    const update = {
       api_key: s.apiKey,
       api_base: s.apiBase,
       system_prompt: s.systemPrompt,
-    }).then(r => {
+    };
+    if (Object.keys(slotSpecs).length > 0) {
+      Object.assign(update, slotSpecs);  // adds llm/embedding/rerank/vlm keys
+    }
+    galaxy.updateSettings(update).then(r => {
       console.log('[settings] sidecar response:', r);
     }).catch(e => {
       console.warn('[settings] sidecar update failed:', e);
@@ -449,11 +469,56 @@ document.querySelectorAll('.modal-tab').forEach(tab => {
   tab.addEventListener('click', () => {
     document.querySelectorAll('.modal-tab').forEach(t => t.classList.toggle('active', t === tab));
     const tabName = tab.dataset.tab;
-    $('tab-general').hidden = (tabName !== 'general');
-    $('tab-diagnostics').hidden = (tabName !== 'diagnostics');
+    // Hide all tab bodies
+    for (const id of ['tab-general','tab-llm','tab-embedding','tab-rerank','tab-vlm','tab-diagnostics']) {
+      const el = $(id);
+      if (el) el.hidden = (id !== `tab-${tabName}`);
+    }
     if (tabName === 'diagnostics') loadDiagnostics();
+    if (['llm','embedding','rerank','vlm'].includes(tabName)) populateProviderSelect(tabName);
   });
 });
+
+// ── Provider select population (v9.3) ────────────────────────────────
+
+async function populateProviderSelect(slot) {
+  const sel = $(`setting-${slot}-provider`);
+  if (!sel) return;
+  // If already populated, skip
+  if (sel.options.length > 1 && sel.options[0].value !== '') return;
+  let providers = [];
+  if (window.ModelPicker && typeof window.ModelPicker.listProviders === 'function') {
+    providers = window.ModelPicker.listProviders() || [];
+  }
+  if (!providers.length && window.galaxy && window.galaxy.listProviders) {
+    try {
+      const r = await window.galaxy.listProviders();
+      providers = r.providers || [];
+    } catch (e) { /* ignore */ }
+  }
+  sel.innerHTML = '';
+  const def = document.createElement('option');
+  def.value = '';
+  def.textContent = '— select —';
+  sel.appendChild(def);
+  for (const p of providers) {
+    const opt = document.createElement('option');
+    opt.value = p.id;
+    opt.textContent = `${p.name} (${p.default_model})`;
+    sel.appendChild(opt);
+  }
+  // Restore last saved value
+  try {
+    const s = JSON.parse(localStorage.getItem('galaxyos.settings.v1') || '{}');
+    const saved = (s.slots || {})[slot];
+    if (saved && saved.provider) {
+      sel.value = saved.provider;
+      $(`setting-${slot}-model`).value = saved.model || '';
+      $(`setting-${slot}-key`).value = saved.api_key || '';
+      $(`setting-${slot}-base`).value = saved.base_url || '';
+    }
+  } catch { /* ignore */ }
+}
 
 async function loadDiagnostics() {
   if (!galaxy.stats) return;
