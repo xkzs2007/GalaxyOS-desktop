@@ -58,6 +58,14 @@ class DeepAgentConfig:
     streaming: bool = True
     system_prompt: Optional[str] = None
 
+    # v9.2: explicit provider spec. If set, takes priority over `model`
+    # and bypasses the sidecar for a direct provider call. Format:
+    #   {"provider": "anthropic", "base_url": "...", "api_key": "sk-...",
+    #    "model": "claude-3-5-sonnet-20241022"}
+    # Or use the shorthand `model = "anthropic/claude-3-5-sonnet-..."` which
+    # is auto-rewritten into llm_provider at factory time.
+    llm_provider: Optional[Dict[str, Any]] = None
+
     # Optional metadata (for UI / monitoring)
     metadata: Dict[str, Any] = field(default_factory=dict)
 

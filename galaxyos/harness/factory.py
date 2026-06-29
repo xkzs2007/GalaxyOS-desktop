@@ -130,26 +130,36 @@ def _build_workspace(config: DeepAgentConfig) -> Workspace:
 
 
 def _pick_llm_backend(config: DeepAgentConfig):
-    """Route config.model to the right LLM backend.
+    """Route config to the right LLM backend.
 
-    Routing rules (v9.1):
-      - "lfm2.5-*" / "lfm-*" / models with "local" hint
-          → LiquidStateBackend (LFM ONNX, in-process)
-      - any other model name OR if SidecarHandlers is importable
-          → SidecarBackend (in-process bridge to galaxyos_sidecar.py)
-      - if SidecarBackend fails to construct
-          → fall back to a tiny canned-response backend (so the
-            agent still runs in environments without the sidecar)
+    v9.2 routing rules (checked in order):
 
-    The sidecar is the **primary** path because it has the real
-    engine (XiaoYiClawLLM + MeMo + ACRouter + 76 Skills) and is
-    shared with the desktop renderer.
+    1. ``config.llm_provider`` set (dict spec) → ``ProviderBackendWrapper``
+       Direct httpx against the named provider. Bypasses sidecar entirely.
+       Use this for: headless harness, CI, or any case where you want
+       pure LLM without MeMo / ACRouter / Skills.
+    2. ``config.model`` starts with "lfm" + memory="liquid"
+       → ``LiquidStateBackend`` (local LFM ONNX)
+    3. ``config.model`` looks like "provider/model" (e.g. "openai/gpt-4o")
+       → ``ProviderBackendWrapper`` with provider="openai"
+    4. Default: ``SidecarBackend`` (in-process bridge to SidecarHandlers
+       with the full MeMo + ACRouter + 76 Skills stack)
+    5. If all else fails: ``_CannedBackend`` (always works, no LLM)
     """
     model = (config.model or "").lower().strip()
 
-    # Local LFM is the only case where we DON'T go through the sidecar
-    # (the sidecar's stream_memo_frag path also covers it, but the
-    # dedicated LiquidStateBackend gives finer control over conv state).
+    # 1. Explicit provider spec (e.g. {"provider": "anthropic", ...})
+    if config.llm_provider:
+        try:
+            from .sidecar_bridge import build_provider_backend, ProviderBackendWrapper
+            direct = build_provider_backend(config.llm_provider)
+            if direct is not None:
+                log.info("direct provider backend: %s", direct.backend_name())
+                return ProviderBackendWrapper(direct, config.llm_provider)
+        except Exception as e:
+            log.warning("build_provider_backend failed: %s", e)
+
+    # 2. Local LFM liquid state
     if model.startswith("lfm") and "liquid" in (config.memory or "").lower():
         try:
             from .liquid import LiquidStateBackend
@@ -157,7 +167,30 @@ def _pick_llm_backend(config: DeepAgentConfig):
         except Exception as e:
             log.warning("LiquidStateBackend failed: %s; trying sidecar", e)
 
-    # Primary: sidecar bridge
+    # 3. provider/model shorthand (e.g. "anthropic/claude-3-5-sonnet")
+    if "/" in model:
+        provider_name, model_name = model.split("/", 1)
+        provider_name = provider_name.strip()
+        model_name = model_name.strip()
+        if provider_name in ("openai", "anthropic", "deepseek", "qwen",
+                             "google", "siliconflow", "openrouter",
+                             "ollama", "vllm", "custom", "mock"):
+            try:
+                from .sidecar_bridge import build_provider_backend, ProviderBackendWrapper
+                direct = build_provider_backend({
+                    "provider": provider_name,
+                    "model": model_name,
+                })
+                if direct is not None:
+                    log.info("shorthand backend: %s", direct.backend_name())
+                    return ProviderBackendWrapper(direct, {
+                        "provider": provider_name,
+                        "model": model_name,
+                    })
+            except Exception as e:
+                log.warning("shorthand build_provider_backend failed: %s", e)
+
+    # 4. Default: sidecar bridge (with full engine stack)
     try:
         from .sidecar_bridge import build_sidecar_backend
         backend = build_sidecar_backend(model=config.model)
@@ -166,8 +199,7 @@ def _pick_llm_backend(config: DeepAgentConfig):
     except Exception as e:
         log.warning("SidecarBackend unavailable: %s; using canned fallback", e)
 
-    # Final fallback: canned response (so the agent always "works"
-    # in environments without the sidecar, e.g. CI without desktop-shell)
+    # 5. Final fallback
     return _CannedBackend(name=config.name, model=config.model)
 
 

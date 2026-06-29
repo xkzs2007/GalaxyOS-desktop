@@ -236,6 +236,85 @@ def _last_user_message(messages: List[Dict[str, str]]) -> str:
     return ""
 
 
+# ── Direct provider backend (bypasses SidecarHandlers) ────────────────
+
+def build_provider_backend(spec: Dict[str, Any]) -> Optional[Any]:
+    """Build a direct httpx-based LLM backend from a provider spec.
+
+    Bypasses the SidecarHandlers entirely — useful for harness users
+    who want a lightweight call (no MeMo / no ACRouter / no Skills).
+    The spec format matches llm_providers.build_llm_backend()::
+
+        {
+            "provider":   "anthropic" | "openai" | "deepseek" | ...,
+            "base_url":   "https://api.anthropic.com",  # optional
+            "api_key":    "sk-...",
+            "model":      "claude-3-5-sonnet-...",
+        }
+
+    Returns an LLMBackend object (AnthropicClient / OpenAICompatClient /
+    MockLLMClient) or None if the module can't be loaded.
+    """
+    try:
+        # desktop-shell/python must be on path (same logic as
+        # _load_sidecar_handlers, but we import a different module)
+        from pathlib import Path
+        import sys
+        here = Path(__file__).resolve()
+        sidecar_dir = here.parent.parent.parent / "desktop-shell" / "python"
+        sidecar_str = str(sidecar_dir)
+        if sidecar_str not in sys.path:
+            sys.path.insert(0, sidecar_str)
+        from llm_providers import build_llm_backend  # type: ignore
+        return build_llm_backend(spec)
+    except Exception as e:
+        log.warning("build_provider_backend failed: %s", e)
+        return None
+
+
+class ProviderBackendWrapper:
+    """Wrap a v9.2 llm_providers.LLMBackend into the duck-typed interface
+    that DeepAgent expects (.chat, .stream, .backend_name, .is_sidecar).
+
+    Unlike SidecarBackend, this is a **direct** backend (no sidecar
+    IPC, no MeMo). It uses raw httpx against the provider's API.
+    """
+    def __init__(self, backend: Any, spec: Dict[str, Any]) -> None:
+        self._backend = backend
+        self._spec = dict(spec)
+        self._model = spec.get("model", "default")
+
+    async def chat(self, messages, temperature: float = 0.7,
+                   session_id: str = "default", **kwargs) -> str:
+        try:
+            return await self._backend.chat(
+                messages, temperature=temperature, **kwargs
+            )
+        except Exception as e:
+            log.error("ProviderBackendWrapper.chat failed: %s", e)
+            return f"[{self.backend_name()}] error: {e}"
+
+    async def stream(self, messages, temperature: float = 0.7,
+                     session_id: str = "default", **kwargs):
+        try:
+            async for chunk in self._backend.stream_chat(
+                messages, temperature=temperature, **kwargs
+            ):
+                yield chunk
+        except Exception as e:
+            log.error("ProviderBackendWrapper.stream failed: %s", e)
+            yield f"[{self.backend_name()}] error: {e}"
+
+    def backend_name(self) -> str:
+        return f"ProviderBackend({self._backend.backend_name()})"
+
+    def is_sidecar(self) -> bool:
+        return False
+
+    def is_mock(self) -> bool:
+        return getattr(self._backend, "is_mock", lambda: False)()
+
+
 def _fragments_to_text(fragments: List[str]) -> str:
     """Concatenate TokUI DSL fragments and strip the bracket tags.
 

@@ -227,6 +227,17 @@ class SidecarHandlers:
             "LFM-2.5-1.2B": "lfm-2.5-1.2b",
         }
         # Stage 14.2: build the Executive client from live config
+        # v9.2: also initialise the multi-slot provider router
+        # (llm / llm_pro / embedding / rerank). The Executive is
+        # still built from the legacy single-slot live_config for
+        # backward compat; set_config() can promote to the multi-slot
+        # form when the renderer sends it.
+        try:
+            from llm_providers import MultiSlotRouter
+            self._router = MultiSlotRouter()
+        except Exception as e:
+            log.warning("MultiSlotRouter init failed: %s", e)
+            self._router = None
         self._executive = self._build_executive()
         # Try to apply config to the LLM client on first boot
         self._apply_live_config()
@@ -262,17 +273,44 @@ class SidecarHandlers:
     def set_config(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Hot-update the LLM config from the renderer's settings modal.
 
-        Called via zmq when the user saves settings. Updates
-        api_key / api_base / model / system_prompt, writes
-        llm_config.json, and (if api_key changed) rebuilds the
-        DeepSeekExecutiveClient so the next MeMo call uses the
-        real LLM.
+        v9.2 — accepts BOTH the legacy single-slot form
+        ({api_key, api_base, model, system_prompt}) and the new
+        multi-slot form ({llm: {provider, base_url, api_key, model},
+        llm_pro: {...}, embedding: {...}, rerank: {...}}).
+
+        If any multi-slot spec is present, routes through MultiSlotRouter
+        (independent providers per slot). Otherwise falls back to the
+        legacy single-slot path for backward compat with the old 5-label
+        model picker.
         """
-        changed = []
+        changed: List[str] = []
         api_key_changed = False
+
+        # ── Multi-slot path (v9.2) ─────────────────────────────────
+        multi_slot_keys = {"llm", "llm_pro", "embedding", "rerank"}
+        has_multi_slot = any(k in params for k in multi_slot_keys)
+        if has_multi_slot and self._router is not None:
+            for slot in multi_slot_keys:
+                if slot in params and isinstance(params[slot], dict):
+                    self._router.set_slot(slot, params[slot])
+                    changed.append(f"slot:{slot}")
+            # Also rebuild the Executive from the new llm slot
+            self._executive = self._build_executive()
+            if self._memo_protocol is not None:
+                self._memo_protocol.executive = self._executive
+            # Forward legacy top-level system_prompt if any
+            if "system_prompt" in params:
+                self._live_config["system_prompt"] = str(params["system_prompt"] or "")
+            log.info("Multi-slot config updated: %s", ", ".join(changed))
+            return {
+                "ok": True,
+                "updated": changed,
+                "router_info": self._router.info(),
+            }
+
+        # ── Legacy single-slot path (backward compat) ─────────────
         for k in ("api_key", "api_base", "model", "system_prompt"):
             if k in params and params[k] != self._live_config.get(k):
-                # Map UI model label to API model string
                 if k == "model":
                     raw = str(params[k])
                     self._live_config[k] = self._model_map.get(raw, raw)
@@ -283,12 +321,20 @@ class SidecarHandlers:
                 changed.append(k)
         if changed:
             self._apply_live_config()
-            # Rebuild the Executive client if the API key changed
-            # (going from no-key → with-key or vice versa).
             if api_key_changed:
                 self._executive = self._build_executive()
-                # Update MeMo protocol's executive reference
-                self._memo_protocol.executive = self._executive
+                if self._memo_protocol is not None:
+                    self._memo_protocol.executive = self._executive
+            # Also propagate the legacy config to the "llm" slot of
+            # the multi-slot router (so v9.2 clients reading the
+            # router see the right value).
+            if self._router is not None:
+                self._router.set_slot("llm", {
+                    "provider": "deepseek",
+                    "base_url": self._live_config.get("api_base", ""),
+                    "api_key":  self._live_config.get("api_key", ""),
+                    "model":    self._live_config.get("model", ""),
+                })
             log.info("Live config updated: %s", ", ".join(changed))
         return {"ok": True, "updated": changed, "current_model": self._live_config["model"]}
 
@@ -469,6 +515,23 @@ class SidecarHandlers:
             has_image=bool(params.get("has_image", False)),
             session_key=params.get("session_id", ""),
         )
+
+    def list_providers(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Return the mainstream provider catalogue + current router state.
+
+        v9.2: the renderer calls this to populate the model picker
+        and the provider dropdown in the Settings modal.
+        """
+        from llm_providers import MAINSTREAM_PROVIDERS
+        result: Dict[str, Any] = {
+            "providers": [
+                {"id": p[0], "name": p[1], "default_model": p[2], "hint": p[3]}
+                for p in MAINSTREAM_PROVIDERS
+            ],
+        }
+        if self._router is not None:
+            result["router"] = self._router.info()
+        return result
 
     def health(self, params: Dict[str, Any]) -> Dict[str, Any]:
         # Probe ONNX MeMo lazily so the first /sse/health call after
