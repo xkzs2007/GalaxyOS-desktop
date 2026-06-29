@@ -172,6 +172,8 @@ function setMode(mode) {
   });
   input.placeholder = mode === 'ask'
     ? '简单提问（Enter 发送）'
+    : mode === 'agent'
+    ? 'Agent 任务：!cmd / read file / grep / list / write path=content'
     : '复杂任务（Enter 启动 R-CCAM 5 阶段推理）';
 }
 
@@ -204,10 +206,14 @@ async function handleSend() {
   ui.startStream();
   state.isStreaming = true;
   sendBtn.disabled = true;
-  const endpoint = state.mode === 'ask' ? 'ask' : 'process';
-  const params = state.mode === 'ask'
-    ? { prompt: text, session_id: state.sessionId }
-    : { user_input: text, session_id: state.sessionId };
+  // Pick endpoint + params per mode. Agent mode hits /sse/agent
+  // which actually executes tools (shell_run / read_file / etc.).
+  const endpoint = state.mode === 'ask' ? 'ask'
+                  : state.mode === 'agent' ? 'agent'
+                  : 'process';
+  const params = state.mode === 'process'
+    ? { user_input: text, session_id: state.sessionId }
+    : { prompt: text, session_id: state.sessionId };
   try {
     await consumeSseStream(ui, endpoint, params);
   } catch (e) {

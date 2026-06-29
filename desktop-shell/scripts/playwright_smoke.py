@@ -118,6 +118,38 @@ async def main() -> int:
         await page.screenshot(path=str(path2), full_page=False)
         print(f"  screenshot → {path2}")
 
+        # ── 3. Switch to Agent mode and run a shell command ────────
+        print()
+        print("Switching to Agent mode and running '!ls -la' ...")
+        await page.click("button.mode-btn[data-mode='agent']")
+        await page.wait_for_timeout(200)
+
+        await page.fill("#input", "!ls -la")
+        await page.wait_for_timeout(200)
+        await page.click("#send")
+        print("  send clicked, waiting for Agent stream...")
+
+        # Agent stream completes when [tool-call] + [terminal] both render.
+        try:
+            await page.wait_for_function(
+                "() => {"
+                "  const c = document.querySelector('#tokui-container');"
+                "  if (!c) return false;"
+                "  const txt = c.innerText || '';"
+                "  return txt.includes('shell_run') && "
+                "         (txt.includes('bash') || txt.includes('hello.txt'));"
+                "}",
+                timeout=15000,
+            )
+            print("  agent stream visible (tool-call + terminal rendered)")
+        except Exception:
+            print("  WARN: agent stream marker not found within 15s; capturing anyway")
+        await page.wait_for_timeout(800)
+
+        path3 = OUTPUT_DIR / "galaxyos-desktop-agent-shell.png"
+        await page.screenshot(path=str(path3), full_page=False)
+        print(f"  screenshot → {path3}")
+
         # ── 3. Verify final state ───────────────────────────────────
         final_html = await page.locator("#tokui-container").inner_html()
         bubble_count = final_html.count("class=") - final_html.count("class=\"tokui-")

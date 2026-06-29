@@ -350,8 +350,13 @@ async def _http_server(handlers: SidecarHandlers) -> None:
                 cl = int(headers.get("content-length", "0") or "0")
                 body = await _read_post_body(reader, cl)
 
-            # Route
-            params = {**_parse_query(qs), **body}
+            # Route. We unify query-string params and POST body into a
+            # single dict where each value is a LIST — so handlers can
+            # uniformly do `params.get("k", [""])[0]`.
+            qd = _parse_query(qs)
+            bd = {k: [v] for k, v in body.items()}
+            # Merge: query string then body (body wins on conflict).
+            params: Dict[str, List[str]] = {**qd, **bd}
 
             # SSE routes
             if path == "/sse/ask" and method == "POST":
@@ -366,6 +371,29 @@ async def _http_server(handlers: SidecarHandlers) -> None:
                                       user_input=params.get("user_input", [""])[0],
                                       session_id=params.get("session_id", [""])[0],
                                   ))
+            elif path == "/sse/agent" and method == "POST":
+                # Stage 2 Agent loop: decide tools, execute, stream DSL.
+                # We return a *coroutine* (not a list) — _handle_sse
+                # detects coroutines and awaits them in the running
+                # event loop. This avoids the "asyncio.run() cannot
+                # be called from a running event loop" trap.
+                async def _agent_fragments_coro():
+                    import agent_loop
+                    loop = agent_loop.AgentLoop(
+                        question=params.get("prompt", [""])[0] or params.get("user_input", [""])[0]
+                    )
+                    return await loop.run()
+                await _handle_sse(handlers, lambda frag: _format_sse("tokui", json.dumps({"tokui": frag})),
+                                  writer, _agent_fragments_coro)
+            elif path == "/sse/tools" and method in ("GET", "POST"):
+                # Return the available tool list as JSON (for debugging
+                # and future "Agent knows its tools" feature).
+                import tools
+                body = json.dumps(tools.list_tools(), ensure_ascii=False).encode("utf-8")
+                writer.write(_http_response(200, {
+                    "Content-Type": "application/json",
+                    "Access-Control-Allow-Origin": "*",
+                }, body=body))
             elif path == "/sse/health" and method in ("GET", "POST"):
                 h = handlers.health({})
                 writer.write(_http_response(200, {
@@ -394,6 +422,11 @@ async def _http_server(handlers: SidecarHandlers) -> None:
         We also use ``Connection: close`` so the underlying TCP socket
         is torn down when the stream ends — this guarantees the
         browser's fetch() resolves promptly.
+
+        ``fragment_source`` may be either:
+          (a) a sync function returning an iterable of DSL fragments, or
+          (b) a coroutine (async function) that resolves to an iterable
+        We support both: if it's awaitable, we await it.
         """
         head = (
             b"HTTP/1.1 200 OK\r\n"
@@ -407,22 +440,26 @@ async def _http_server(handlers: SidecarHandlers) -> None:
         writer.write(head)
         await writer.drain()
 
+        # Resolve fragment_source to an iterable (may be a coroutine)
+        import inspect
         try:
-            fragments = fragment_source()
+            src = fragment_source()
+            if inspect.iscoroutine(src):
+                fragments = await src
+            else:
+                fragments = src
+        except Exception as e:
+            log.error("SSE fragment source call failed: %s", e)
+            log.error(traceback.format_exc())
+            fragments = tokui_dsl.error_bubble(f"stream 失败: {e}")
+
+        try:
             for frag in fragments:
                 writer.write(frame(frag))
                 await writer.drain()
         except Exception as e:
-            log.error("SSE fragment source failed: %s", e)
+            log.error("SSE fragment iteration failed: %s", e)
             log.error(traceback.format_exc())
-            # Emit an error event so the client knows
-            try:
-                err_frag = tokui_dsl.error_bubble(f"stream 失败: {e}")
-                for f in err_frag:
-                    writer.write(frame(f))
-                    await writer.drain()
-            except Exception:
-                pass
         writer.write(b"event: end\ndata: [DONE]\n\n")
         await writer.drain()
         # Half-close the write side of the TCP socket so the browser
