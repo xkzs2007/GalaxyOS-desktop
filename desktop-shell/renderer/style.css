@@ -98,6 +98,14 @@ html, body {
 .session-item.active .dot { background: var(--accent); }
 .session-item .title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .session-item .time { font-size: 11px; color: var(--fg-muted); }
+.session-item .session-del {
+  width: 18px; height: 18px; line-height: 16px; text-align: center;
+  font-size: 16px; border-radius: 3px; cursor: pointer; opacity: 0.5;
+  color: var(--fg-dim);
+}
+.session-item .session-del:hover { background: var(--danger); color: white; opacity: 1; }
+.session-item:not(.active) .session-del { display: none; }
+.session-item:hover .session-del { display: inline-block; }
 
 .skills-list {
   display: flex; flex-wrap: wrap; gap: 4px;

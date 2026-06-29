@@ -251,9 +251,7 @@ document.querySelectorAll('.mode-btn').forEach((b) => {
   });
 });
 
-$('new-chat-btn').addEventListener('click', () => {
-  while (tokuiContainer.firstChild) tokuiContainer.removeChild(tokuiContainer.firstChild);
-});
+// new-chat-btn is wired by sessions.js (window.Sessions.init)
 
 $('collapse-details').addEventListener('click', () => {
   document.getElementById('app').classList.toggle('details-collapsed');
@@ -333,21 +331,29 @@ function makeStandaloneGalaxy() {
   const tokuiReady = await waitForTokUI(3000);
   console.log(tokuiReady ? '[renderer] TokUI loaded' : '[renderer] TokUI did not load within 3s');
   await bootTokUI();
+  // Initialise session manager (renders sidebar, restores active session)
+  if (window.Sessions) window.Sessions.init();
+
   // Initial welcome (always wrapped in startStream/endStream so we don't
   // get "feed() called before startStream()" warnings)
-  state.ui.startStream();
-  state.ui.feed(
-    `[bubble role:ai model:GalaxyOS time:就绪]` +
-    `[md]\n# 欢迎使用 GalaxyOS 桌面端\n\n` +
-    `本机桌面版已脱离 OpenClaw，\`XiaoYiClawLLM\` 由 Python 子进程加载。\n\n` +
-    `- **Ask 模式** 走 *ask()*，单步检索 + 答案\n` +
-    `- **Process 模式** 走 *process()*，完整 R-CCAM 五阶段 + 推理链 + 工具调用\n\n` +
-    `试试输入 *"今天我学了 R-CCAM 五阶段"*（用 Process 模式，然后切到 Ask 模式回忆）\n` +
-    `[/md]` +
-    `[msg-actions copy regenerate like dislike visible][/msg-actions]` +
-    `[/bubble]`
-  );
-  state.ui.endStream();
+  const tokuiContainerInner = tokuiContainer.innerHTML.trim();
+  if (!tokuiContainerInner) {
+    // Only emit welcome if no session is being restored
+    state.ui.startStream();
+    state.ui.feed(
+      `[bubble role:ai model:GalaxyOS time:就绪]` +
+      `[md]\n# 欢迎使用 GalaxyOS 桌面端\n\n` +
+      `本机桌面版已脱离 OpenClaw，\`XiaoYiClawLLM\` 由 Python 子进程加载。\n\n` +
+      `- **Ask 模式** 走 *ask()*，单步检索 + 答案\n` +
+      `- **Process 模式** 走 *process()*，完整 R-CCAM 五阶段 + 推理链 + 工具调用\n` +
+      `- **Agent 模式** 走 */sse/agent*，能跑 shell / 读文件 / 写文件 / 搜索 / 列目录\n\n` +
+      `试试输入 *"今天我学了 R-CCAM 五阶段"*（用 Process 模式），或 *!ls -la*（用 Agent 模式）。\n` +
+      `[/md]` +
+      `[msg-actions copy regenerate like dislike visible][/msg-actions]` +
+      `[/bubble]`
+    );
+    state.ui.endStream();
+  }
   setMode('ask');
   healthCheck();
   setInterval(healthCheck, 30000);

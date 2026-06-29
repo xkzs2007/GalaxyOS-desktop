@@ -27,7 +27,7 @@
       <div class="sidebar-header">
         <span class="logo">●</span>
         <span class="brand">GalaxyOS</span>
-        <span class="version" id="version-tag">stage 1.5</span>
+        <span class="version" id="version-tag">stage 2.0</span>
       </div>
 
       <button class="new-chat-btn" id="new-chat-btn">
@@ -38,20 +38,19 @@
       <div class="sessions-section">
         <div class="section-label">会话</div>
         <ul class="sessions-list" id="sessions-list">
-          <li class="session-item active" data-session="default">
-            <span class="dot"></span>
-            <span class="title">默认会话</span>
-            <span class="time">现在</span>
-          </li>
+          <!-- populated by sessions.js -->
         </ul>
       </div>
 
       <div class="skills-section">
         <div class="section-label">已加载技能</div>
         <ul class="skills-list" id="skills-list">
-          <li class="skill-pill">recall</li>
-          <li class="skill-pill">summarize</li>
-          <li class="skill-pill">remember</li>
+          <li class="skill-pill">shell_run</li>
+          <li class="skill-pill">read_file</li>
+          <li class="skill-pill">write_file</li>
+          <li class="skill-pill">list_dir</li>
+          <li class="skill-pill">grep</li>
+          <li class="skill-pill">apply_diff</li>
         </ul>
       </div>
 
@@ -118,5 +117,6 @@
        UMD injection via webContents.executeJavaScript. -->
   <script src="https://unpkg.com/@jboltai/tokui/dist/tokui.umd.js"></script>
   <script type="module" src="renderer.js"></script>
+  <script src="sessions.js"></script>
 </body>
 </html>
