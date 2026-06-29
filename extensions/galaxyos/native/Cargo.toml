@@ -18,8 +18,7 @@ serde_json = "1"
 base64 = "0.22"
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp", "gif"] }
 pyo3 = { version = "0.23", features = ["extension-module"] }
-ort = { version = "2.0.0-rc.12", default-features = false, features = ["load-dynamic"] }
-ort-sys = { version = "2.0.0-rc.12", default-features = false }
+ort = { version = "2.0.0-rc.12", default-features = false, features = ["download-binaries", "ndarray", "std", "copy-dylibs", "tls-rustls"] }
 ndarray = "0.17.2"
 
 [profile.release]
