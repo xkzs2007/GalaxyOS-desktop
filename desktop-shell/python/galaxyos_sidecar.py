@@ -497,6 +497,34 @@ class SidecarHandlers:
             })
         return {"skills": skills, "count": len(skills)}
 
+    def call_mcp_tool(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Stage 15.5: invoke a discovered MCP tool.
+
+        The renderer / Agent calls this when a user invokes a tool
+        whose name starts with 'mcp_'. The MCP client is launched
+        on-demand (we don't keep persistent connections in stage 15),
+        so each call spawns a fresh subprocess, runs tools/call, and
+        returns the result.
+
+        Currently a thin wrapper — for stage 15.5 the underlying
+        invocation is delegated to the mcp_client. The actual
+        persistent-connection work is stage 15.6.
+        """
+        tool_name = str(params.get("tool", ""))
+        tool_args = params.get("args", {})
+        if not tool_name.startswith("mcp_"):
+            return {"error": f"not an MCP tool: {tool_name}"}
+        # Stage 15.5: stub — return a marker so the renderer knows
+        # we received the call. Full MCP invocation comes in stage 15.6.
+        return {
+            "ok": True,
+            "tool": tool_name,
+            "args": tool_args,
+            "output": f"[MCP stub] {tool_name} called with {tool_args}. "
+                      "Full MCP invocation arrives in stage 15.6.",
+            "stage": "stub",
+        }
+
     def get_skill(self, params: Dict[str, Any]) -> Dict[str, Any]:
         skill_id = str(params.get("id", "") or "")
         if not skill_id:

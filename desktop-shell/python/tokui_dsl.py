@@ -85,7 +85,7 @@ def _esc(text: str) -> str:
 
 def _attr(key: str, value: Any) -> str:
     """Render one ``key:value`` attribute, quoting if value has spaces."""
-    if value is None or value is False:
+    if value is None or value is False or value == "":
         return ""
     if value is True:
         return f" {key}"

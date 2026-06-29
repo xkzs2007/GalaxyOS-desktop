@@ -142,7 +142,11 @@
           <span>设置</span>
           <button class="modal-close" id="settings-close">✕</button>
         </div>
-        <div class="modal-body">
+        <div class="modal-tabs">
+          <button class="modal-tab active" data-tab="general">通用</button>
+          <button class="modal-tab" data-tab="diagnostics">诊断</button>
+        </div>
+        <div class="modal-body" id="tab-general">
           <label class="modal-label">LLM API Key</label>
           <input type="password" id="setting-api-key" class="modal-input" placeholder="sk-..." />
           <label class="modal-label">LLM API Base URL</label>
@@ -156,6 +160,15 @@
             <option value="dark">Dark</option>
             <option value="light">Light</option>
           </select>
+        </div>
+        <div class="modal-body" id="tab-diagnostics" hidden>
+          <div class="diagnostics-header">
+            <span>运行时状态</span>
+            <button class="diagnostics-refresh" id="diagnostics-refresh">↻ 刷新</button>
+          </div>
+          <div class="diagnostics-content" id="diagnostics-content">
+            <p class="hint">点击「刷新」以获取最新状态。</p>
+          </div>
         </div>
         <div class="modal-footer">
           <button class="modal-btn" id="settings-save">保存</button>

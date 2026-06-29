@@ -383,3 +383,44 @@ html, body {
 
 #app.details-collapsed { grid-template-columns: var(--sidebar-w) 1fr 0; }
 #app.details-collapsed .details { display: none; }
+
+/* ── Settings tabs ───────────────────────────────────────────── */
+.modal-tabs {
+  display: flex; border-bottom: 1px solid var(--border);
+  padding: 0 16px; background: var(--bg);
+}
+.modal-tab {
+  padding: 8px 16px; background: transparent;
+  border: none; color: var(--fg-dim); cursor: pointer;
+  font-size: 13px; border-bottom: 2px solid transparent;
+}
+.modal-tab:hover { color: var(--fg); }
+.modal-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+/* ── Diagnostics ───────────────────────────────────────────── */
+.diagnostics-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding-bottom: 8px; border-bottom: 1px solid var(--border);
+  margin-bottom: 8px; font-weight: 600; font-size: 13px;
+}
+.diagnostics-refresh {
+  padding: 4px 10px; background: var(--bg); color: var(--fg-dim);
+  border: 1px solid var(--border); border-radius: 4px; font-size: 12px;
+  cursor: pointer;
+}
+.diagnostics-refresh:hover { background: var(--bg-hover); color: var(--fg); }
+.diagnostics-content { font-size: 12px; line-height: 1.6; }
+.diagnostics-content .stat-group {
+  margin-bottom: 12px; padding: 8px;
+  background: var(--bg); border-radius: 4px;
+  border: 1px solid var(--border);
+}
+.diagnostics-content .stat-group h4 {
+  margin: 0 0 4px; font-size: 12px; color: var(--accent);
+}
+.diagnostics-content .stat-row {
+  display: flex; justify-content: space-between;
+  padding: 2px 0; font-family: 'SFMono-Regular', Consolas, monospace; font-size: 11px;
+}
+.diagnostics-content .stat-key { color: var(--fg-dim); }
+.diagnostics-content .stat-val { color: var(--fg); }

@@ -417,6 +417,45 @@ if (settingsClose) settingsClose.addEventListener('click', closeSettings);
 const settingsSave = $('settings-save');
 if (settingsSave) settingsSave.addEventListener('click', applySettings);
 
+// ── Settings tabs (General / Diagnostics) ───────────────────
+document.querySelectorAll('.modal-tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.modal-tab').forEach(t => t.classList.toggle('active', t === tab));
+    const tabName = tab.dataset.tab;
+    $('tab-general').hidden = (tabName !== 'general');
+    $('tab-diagnostics').hidden = (tabName !== 'diagnostics');
+    if (tabName === 'diagnostics') loadDiagnostics();
+  });
+});
+
+async function loadDiagnostics() {
+  if (!galaxy.stats) return;
+  const content = $('diagnostics-content');
+  if (!content) return;
+  content.innerHTML = '<p class="hint">加载中…</p>';
+  try {
+    const s = await galaxy.stats();
+    const r = (k) => `<div class="stat-row"><span class="stat-key">${k}</span><span class="stat-val">${escapeHtml(String(s[k] ?? '—'))}</span></div>`;
+    const rArr = (k) => {
+      const v = s[k];
+      const items = Array.isArray(v) ? v : (v ? Object.entries(v).map(([a,b]) => `${a}=${b}`) : []);
+      return items.length === 0 ? '<span class="hint">empty</span>'
+        : items.slice(0, 6).map(x => `<div class="stat-row"><span class="stat-key">·</span><span class="stat-val">${escapeHtml(x)}</span></div>`).join('');
+    };
+    content.innerHTML =
+      `<div class="stat-group"><h4>Process</h4>${r('pid')}${r('cwd')}${r('rss_mb')}</div>` +
+      `<div class="stat-group"><h4>Engine</h4>${r('engine')}${rArr('engine')}</div>` +
+      `<div class="stat-group"><h4>ACRouter</h4>${rArr('acrouter')}</div>` +
+      `<div class="stat-group"><h4>Config</h4>${rArr('config')}</div>` +
+      `<div class="stat-group"><h4>MCP</h4>${rArr('mcp')}</div>` +
+      `<div class="stat-group"><h4>Tools</h4>${rArr('tools')}</div>`;
+  } catch (e) {
+    content.innerHTML = `<p class="hint">加载失败: ${escapeHtml(String(e.message ?? e))}</p>`;
+  }
+}
+const diagRefresh = $('diagnostics-refresh');
+if (diagRefresh) diagRefresh.addEventListener('click', loadDiagnostics);
+
 // ── File upload ───────────────────────────────────────────────
 const attachBtn = $('attach-btn');
 const fileInput = $('file-input');
@@ -427,12 +466,41 @@ if (attachBtn) {
   attachBtn.addEventListener('click', () => fileInput && fileInput.click());
 }
 if (fileInput) {
-  fileInput.addEventListener('change', () => {
+  fileInput.addEventListener('change', async () => {
     for (const f of fileInput.files) {
-      attachments.push({ name: f.name, size: f.size, file: f });
+      // T15.6: if file is an image, automatically call deepseek_ocr2
+      if (f.type.startsWith('image/')) {
+        try {
+          // Use FileReader to get base64
+          const b64 = await new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result.split(',')[1]);
+            reader.onerror = reject;
+            reader.readAsDataURL(f);
+          });
+          // Send to sidecar via IPC
+          const result = await galaxy.ocr({ base64: b64, prompt: '' });
+          // Display OCR result as a system message
+          ui.startStream();
+          ui.feed(`[p v:muted]📷 已识别 ${tokui_dsl._esc(f.name)}[/p]`);
+          if (result.error) {
+            ui.feed(`[p v:warn]OCR 失败: ${tokui_dsl._esc(result.error)}[/p]`);
+          } else {
+            const text = (result.output || result.text || JSON.stringify(result)).slice(0, 2000);
+            ui.feed(`[md]\n${tokui_dsl._esc(text)}\n[/md]`);
+          }
+          ui.endStream();
+        } catch (e) {
+          console.warn('[upload] OCR failed:', e);
+          attachments.push({ name: f.name, size: f.size, file: f });
+          renderAttachments();
+        }
+      } else {
+        attachments.push({ name: f.name, size: f.size, file: f });
+        renderAttachments();
+      }
     }
     fileInput.value = '';
-    renderAttachments();
   });
 }
 
