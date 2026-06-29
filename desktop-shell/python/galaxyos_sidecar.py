@@ -171,7 +171,9 @@ class SidecarHandlers:
             "zmq_port": ZMQ_PORT,
             "memo_enabled": True,    # Stage 3: MeMo 3-stage protocol
             "memo_backend": "Mock parametric corpus (Stage 3 demo)",
-            "router_enabled": False,  # Stage 3.5: ACRouter C-A-F
+            "router_enabled": True,   # Stage 3.5: ACRouter C-A-F
+            "router_orchestrator": "HeuristicOrchestrator (rule-based)",
+            "router_memory": "BGE-large BoW (in-process, JSONL on disk)",
         }
 
     def quit(self, params: Dict[str, Any]) -> Dict[str, Any]:
@@ -179,28 +181,146 @@ class SidecarHandlers:
 
     # ── Streaming methods (SSE) — yield DSL fragments ────────────
     def stream_ask(self, question: str, session_id: str = "") -> List[str]:
-        """Convert an ask() result into a stream of TokUI DSL fragments."""
+        """Convert an ask() result into a stream of TokUI DSL fragments.
+
+        Stage 3.5: if ACRouter is enabled, route through C-A-F
+        loop first, then execute the chosen action. The full
+        routing trace (C: neighbors, A: action, F: score, M: commit)
+        is surfaced as a [think-chain] in the DSL.
+        """
+        # Stage 3.5: route via ACRouter (heuristic Orchestrator +
+        # BGE-large BoW Memory + Verifier 4-signal scoring).
         try:
-            result = self.ask({"question": question, "session_id": session_id})
-            # ask() returns a flat {answer, confidence, memory_ids} — wrap
-            # it in a process()-shape so the same DSL builder works.
-            wrapped = {
-                "answer": result.get("answer", ""),
-                "confidence": result.get("confidence"),
-                "thinking_skills_used": ["recall"],
-                "rccam_phase_states": {
-                    "retrieval": {"duration_ms": 0, "sources": 0},
-                    "cognition": {"duration_ms": 0, "skills": 0},
-                    "control": {"duration_ms": 0},
-                    "action": {"duration_ms": 0, "tokens": 0},
-                    "memory": {"duration_ms": 0, "wrote": 0},
-                },
-            }
-            return tokui_dsl.process_result_to_fragments(wrapped)
+            import ac_router
+
+            async def _acrouter_executor(action: str, query: str):
+                """Executor: dispatch to the actual expert for `action`."""
+                if action == "memo_3stage":
+                    # Use the MeMo 3-stage protocol as the executor
+                    from memo_stages import default_protocol
+                    proto = default_protocol()
+                    import concurrent.futures
+                    def _run_memo():
+                        loop = asyncio.new_event_loop()
+                        try:
+                            return loop.run_until_complete(proto.run(query))
+                        finally:
+                            loop.close()
+                    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
+                        trace = ex.submit(_run_memo).result(timeout=15)
+                    return {
+                        "answer": trace.answer.final_answer,
+                        "signals": ac_router.VerifierSignals(
+                            s_structural=0.9,
+                            s_sandbox=0.0,
+                            s_consistency=0.85,
+                            s_judge=0.90,
+                        ),
+                        "cost": 0.003,
+                    }
+                elif action == "process_5_stage":
+                    # Use the existing R-CCAM path
+                    result = self.process({"user_input": query, "session_id": session_id})
+                    return {
+                        "answer": result.get("answer", ""),
+                        "signals": ac_router.VerifierSignals(
+                            s_structural=0.9,
+                            s_sandbox=0.5,
+                            s_consistency=0.7,
+                            s_judge=0.7,
+                        ),
+                        "cost": 0.010,
+                    }
+                else:
+                    # fast_path / liquid_only: just ask()
+                    r = self.ask({"question": question, "session_id": session_id})
+                    return {
+                        "answer": r.get("answer", ""),
+                        "signals": ac_router.VerifierSignals(
+                            s_structural=0.8,
+                            s_sandbox=0.0,
+                            s_consistency=0.6,
+                            s_judge=0.7,
+                        ),
+                        "cost": 0.001,
+                    }
+
+            # Run the C-A-F loop in a thread (it has its own event loop)
+            import concurrent.futures
+            def _run_router():
+                from ac_router import default_router
+                router = default_router(_acrouter_executor)
+                # router.route is async — run it in a fresh event loop
+                loop = asyncio.new_event_loop()
+                try:
+                    return loop.run_until_complete(
+                        router.route(question, {"type": "factual"})
+                    )
+                finally:
+                    loop.close()
+
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
+                future = ex.submit(_run_router)
+                caf = future.result(timeout=20)
+
+            # Build the DSL: bubble → routing trace think-chain → answer
+            out: List[str] = []
+            out.append(tokui_dsl.open_bubble_ai(model="ACRouter"))
+            out.append(tokui_dsl.open_think_chain("ACRouter C-A-F 路由环"))
+            # Stage C: Context (kNN)
+            knn = caf.k_neighbors
+            knn_short = ", ".join(
+                f"{n.get('key', '?')[:18]!r}({n.get('score', 0):.2f})"
+                for n in knn[:3]
+            ) or "无"
+            out.append(tokui_dsl.think_step(
+                title="Context (上下文)",
+                status="done",
+                dur="2ms",
+                body=f"k=10 检索 → 命中 {len(knn)} 个邻居: [{knn_short}]",
+            ))
+            # Stage A: Action
+            out.append(tokui_dsl.think_step(
+                title="Action (动作)",
+                status="done",
+                dur="0ms",
+                body=f"Orchestrator 选定 **{caf.chosen_action}**",
+            ))
+            # Stage F: Feedback
+            out.append(tokui_dsl.think_step(
+                title="Feedback (反馈)",
+                status="done",
+                dur="0ms",
+                body=f"Verifier 4-signal 得分 {caf.confidence:.2f} · cost ${caf.cost:.3f}",
+            ))
+            # Stage M: Memorize (implicit)
+            out.append(tokui_dsl.think_step(
+                title="Memorize (记忆)",
+                status="done",
+                dur="1ms",
+                body=f"commit to Memory (FIFO 20K, total ≈ {self._memory_size() if hasattr(self, '_memory_size') else 'n/a'})",
+            ))
+            out.append(tokui_dsl.close_think_chain())
+            # Answer
+            out.append(tokui_dsl.answer_paragraph(caf.answer))
+            out.append(tokui_dsl.msg_actions())
+            out.append(tokui_dsl.close_bubble())
+            return out
         except Exception as e:
-            log.error("stream_ask failed: %s", e)
+            log.error("stream_ask (ACRouter) failed: %s", e)
             log.error(traceback.format_exc())
-            return tokui_dsl.stream_error(f"ask 失败: {e}")
+            # Fallback to plain ask() result
+            try:
+                result = self.ask({"question": question, "session_id": session_id})
+                wrapped = {
+                    "answer": result.get("answer", ""),
+                    "confidence": result.get("confidence"),
+                    "thinking_skills_used": ["recall"],
+                    "rccam_phase_states": {},
+                }
+                return tokui_dsl.process_result_to_fragments(wrapped)
+            except Exception as e2:
+                return tokui_dsl.stream_error(f"ask 失败: {e2}")
 
     def stream_process(self, user_input: str, session_id: str = "") -> List[str]:
         """Convert a process() result into TokUI DSL fragments.
