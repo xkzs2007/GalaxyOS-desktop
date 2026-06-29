@@ -2,7 +2,7 @@
   "name": "galaxyos-desktop",
   "version": "0.1.0-stage1",
   "description": "GalaxyOS Desktop App — Electron shell + Python sidecar. Decouples GalaxyOS from OpenClaw and runs as a standalone desktop Agent.",
-  "main": "dist/main.js",
+  "main": "dist/main.cjs",
   "private": true,
   "type": "module",
   "scripts": {
@@ -44,7 +44,7 @@
       }
     ],
     "mac": { "target": "dmg", "category": "public.app-category.productivity" },
-    "win": { "target": "nsis" },
+    "win": { "target": "nsis", "icon": "renderer/icon.png" },
     "linux": { "target": "AppImage" }
   }
 }
