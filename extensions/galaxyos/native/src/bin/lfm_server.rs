@@ -504,7 +504,7 @@ fn handle_client<S: std::io::Read + std::io::Write + Send>(s: S, eng: Arc<Mutex<
         // Prevents permanent hang when ONNX inference in another thread
         // is slow (OOM, GPU timeout). Python client has socket timeout
         // and retry to handle transient "engine_busy" responses.
-        let guard = match eng.try_lock() {
+        let mut guard = match eng.try_lock() {
             Ok(g) => g,
             Err(_) => {
                 let mut acquired: Option<std::sync::MutexGuard<'_, LFMEngine>> = None;
