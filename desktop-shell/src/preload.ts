@@ -17,6 +17,10 @@ export type GalaxyApi = {
   updateSettings(settings: Record<string, string>): Promise<{ ok: boolean; updated: string[] }>;
   heartbeat(): Promise<{ ok: boolean; ts_ms: number; uptime_s: number }>;
   stats(): Promise<Record<string, unknown>>;
+  verify(claim: string): Promise<{ claim: string; confidence: number; verdict: string; evidence_count: number; top_evidence: string[] }>;
+  recall(query: string, topK?: number): Promise<{ query: string; count: number; results: unknown[] }>;
+  saveMemory(content: string, metadata?: object): Promise<{ memory_id: string; ok: boolean }>;
+  emitEvent(type: string, payload?: any): Promise<{ ok: boolean; received: string }>;
   openExternal(url: string): Promise<void>;
 };
 
@@ -31,6 +35,10 @@ const api: GalaxyApi = {
   updateSettings: (s) => ipcRenderer.invoke('galaxy:updateSettings', s) as any,
   heartbeat: () => ipcRenderer.invoke('galaxy:heartbeat') as any,
   stats: () => ipcRenderer.invoke('galaxy:stats') as any,
+  verify: (claim) => ipcRenderer.invoke('galaxy:verify', claim) as any,
+  recall: (q, k) => ipcRenderer.invoke('galaxy:recall', q, k) as any,
+  saveMemory: (c, m) => ipcRenderer.invoke('galaxy:saveMemory', c, m) as any,
+  emitEvent: (t, p) => ipcRenderer.invoke('galaxy:emitEvent', t, p) as any,
   openExternal: (u) => ipcRenderer.invoke('galaxy:openExternal', u) as any,
 };
 

@@ -525,6 +525,101 @@ class SidecarHandlers:
             "stage": "stub",
         }
 
+    # ── T17: upstream GalaxyOS tool wrappers (claw_verify / claw_recall /
+    #         claw_save_memory) — all backed by real engine methods. ─
+    def claw_verify(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """T17.1: cross-verify an answer against the memory corpus.
+
+        Calls XiaoYiClawLLM.recall(query) and computes a simple
+        confidence score = (corpus hits) / (corpus hits + 1).
+        Renders as a green/yellow/red footer on the bubble.
+        """
+        claim = str(params.get("claim", ""))
+        if not claim:
+            return {"error": "missing 'claim' param"}
+        try:
+            hits = self._llm.recall(claim, top_k=5, enhance_with_kg=False)
+            n_hits = len(hits) if isinstance(hits, list) else 0
+            # Confidence heuristic: 1 hit ≈ 0.5, 2 ≈ 0.7, 3+ ≈ 0.85
+            if n_hits == 0: conf = 0.1
+            elif n_hits == 1: conf = 0.5
+            elif n_hits == 2: conf = 0.7
+            else: conf = min(0.95, 0.7 + 0.05 * n_hits)
+            verdict = "verified" if conf >= 0.7 else ("partial" if conf >= 0.4 else "unverified")
+            return {
+                "claim": claim[:200],
+                "confidence": round(conf, 2),
+                "verdict": verdict,
+                "evidence_count": n_hits,
+                "top_evidence": [h.get("content", "")[:120] for h in (hits or [])[:3]],
+            }
+        except Exception as e:
+            return {"error": str(e)}
+
+    def claw_recall(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """T17.2: retrieve top-k memories matching query.
+
+        Wraps XiaoYiClawLLM.recall (8-stage recall pipeline in v8.4.2;
+        we use the fallback single-vector path that the engine ships
+        out of the box).
+        """
+        query = str(params.get("query", ""))
+        top_k = int(params.get("top_k", 10))
+        session_id = str(params.get("session_id", ""))
+        if not query:
+            return {"error": "missing 'query' param"}
+        try:
+            results = self._llm.recall(
+                query, top_k=top_k,
+                enhance_with_kg=True,
+                session_id=session_id,
+            )
+            return {
+                "query": query,
+                "count": len(results) if isinstance(results, list) else 0,
+                "results": results[:top_k],
+            }
+        except Exception as e:
+            return {"error": str(e)}
+
+    def claw_save_memory(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """T17.3: commit a user-selected bubble to long-term memory.
+
+        Wraps XiaoYiClawLLM.remember with session_id scoping.
+        """
+        content = str(params.get("content", ""))
+        metadata = params.get("metadata", {})
+        session_id = str(params.get("session_id", ""))
+        source = str(params.get("source", "user-selected"))
+        if not content:
+            return {"error": "missing 'content' param"}
+        try:
+            memory_id = self._llm.remember(
+                content=content,
+                metadata=metadata or {"saved_via": "claw_save_memory"},
+                source=source,
+                session_id=session_id,
+            )
+            return {"memory_id": memory_id, "ok": True}
+        except Exception as e:
+            return {"error": str(e)}
+
+    # ── T17.4: R-CCAM 5-phase progress events (hook emissions) ───
+    def emit_event(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """T17.4: emit a lifecycle event to the renderer.
+
+        The 9 GalaxyOS hooks (gateway_start, before_tool_call, etc.)
+        fire throughout the engine. This stub method lets us pipe
+        events into the renderer as TokUI [upd] DSL fragments.
+        Stage 17.4 only stubs the storage path; full event-bus
+        comes in stage 17.5.
+        """
+        import time
+        event_type = str(params.get("type", ""))
+        payload = params.get("payload", {})
+        log.info(f"[event] {event_type}: {list(payload.keys()) if isinstance(payload, dict) else '?'}")
+        return {"ok": True, "received": event_type, "ts": int(time.time() * 1000)}
+
     def get_skill(self, params: Dict[str, Any]) -> Dict[str, Any]:
         skill_id = str(params.get("id", "") or "")
         if not skill_id:
@@ -771,7 +866,13 @@ class SidecarHandlers:
         return self._memo_three_stage(prompt)
 
     def _acrouter_route(self, prompt: str, sid: str) -> List[str]:
-        """Run the global ACRouter C-A-F loop and build DSL."""
+        """Run the global ACRouter C-A-F loop and build DSL.
+
+        T17.4 + T17.5: emits lifecycle hook events as [upd] DSL
+        fragments at before_prompt_build, before_agent_reply, and
+        agent_end. The renderer can listen for these to show live
+        progress (e.g. "thinking..." → "answered").
+        """
         import concurrent.futures
         def _run():
             loop = asyncio.new_event_loop()
@@ -781,10 +882,27 @@ class SidecarHandlers:
                 )
             finally:
                 loop.close()
-        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
-            caf = ex.submit(_run).result(timeout=20)
         out: List[str] = []
-        out.append(tokui_dsl.open_bubble_ai(model=caf.chosen_action))
+        # T17.5: before_prompt_build hook
+        self.emit_event({"type": "before_prompt_build",
+                         "payload": {"prompt": prompt[:100]}})
+        out.append(tokui_dsl.open_bubble_ai(model="GalaxyOS-ACRouter"))
+        # T17.4: thinking [upd] — renderer can show "thinking..." status
+        out.append('[upd id:event_thinking status:running]')
+        try:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
+                caf = ex.submit(_run).result(timeout=20)
+        except Exception as e:
+            log.error("ACRouter route failed: %r", e)
+            out.append(tokui_dsl.answer_paragraph(f"[ACRouter 错误: {e}]"))
+            out.append(tokui_dsl.msg_actions())
+            out.append(tokui_dsl.close_bubble())
+            return out
+        # Mark thinking done
+        out.append('[upd id:event_thinking status:done]')
+        # T17.5: before_agent_reply hook
+        self.emit_event({"type": "before_agent_reply",
+                         "payload": {"action": caf.chosen_action}})
         out.append(tokui_dsl.answer_paragraph(caf.answer or "(no answer)"))
         memo_snip = self._memo_consult(prompt)
         if memo_snip:
@@ -792,6 +910,10 @@ class SidecarHandlers:
         out.append(self._build_routing_footer(caf.chosen_action, caf.confidence))
         out.append(tokui_dsl.msg_actions())
         out.append(tokui_dsl.close_bubble())
+        # T17.5: agent_end hook
+        self.emit_event({"type": "agent_end",
+                         "payload": {"action": caf.chosen_action,
+                                     "confidence": caf.confidence}})
         return out
 
     def _memo_three_stage(self, prompt: str = "What is GalaxyOS") -> List[str]:

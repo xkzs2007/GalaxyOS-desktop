@@ -659,11 +659,67 @@ function registerTokUIHandlers() {
     });
     TokUI.registerHandler('like', (ctx) => {
       console.log('[msg-action] liked');
+      // T17: send like to sidecar (could feed into skill bank later)
+      if (galaxy.emitEvent) {
+        const text = ctx?.element?.innerText || '';
+        galaxy.emitEvent('msg_action_like', { text: text.slice(0, 200) });
+      }
     });
     TokUI.registerHandler('dislike', (ctx) => {
       console.log('[msg-action] disliked');
+      if (galaxy.emitEvent) {
+        const text = ctx?.element?.innerText || '';
+        galaxy.emitEvent('msg_action_dislike', { text: text.slice(0, 200) });
+      }
     });
-    console.log('[renderer] TokUI msg-action handlers registered');
+    // T17.1: verify — calls claw_verify on the bubble text
+    TokUI.registerHandler('verify', async (ctx) => {
+      const text = ctx?.element?.innerText || '';
+      console.log('[msg-action] verifying...');
+      if (!galaxy.verify) return;
+      try {
+        const r = await galaxy.verify(text);
+        const color = r.verdict === 'verified' ? '#10b981'
+                    : r.verdict === 'partial' ? '#f59e0b' : '#ef4444';
+        // Render the verdict in the same bubble
+        if (ctx?.element) {
+          const ver = document.createElement('div');
+          ver.style.cssText = `margin-top:8px;padding:6px 10px;border-radius:4px;background:${color}22;color:${color};font-size:11px;`;
+          ver.textContent = `🔍 ${r.verdict} (${(r.confidence*100).toFixed(0)}%) — ${r.evidence_count} 证据`;
+          ctx.element.appendChild(ver);
+        }
+      } catch (e) { console.warn('[verify] failed:', e); }
+    });
+    // T17.2: recall — retrieves the memories that informed this answer
+    TokUI.registerHandler('recall', async (ctx) => {
+      const text = (ctx?.element?.innerText || '').slice(0, 100);
+      if (!galaxy.recall) return;
+      try {
+        const r = await galaxy.recall(text, 3);
+        if (ctx?.element && r.results) {
+          const box = document.createElement('div');
+          box.style.cssText = 'margin-top:8px;padding:6px 10px;border-radius:4px;background:#4f9dff22;color:#4f9dff;font-size:11px;';
+          box.innerHTML = `<b>📚 检索到 ${r.count} 条相关记忆</b><br>` +
+            r.results.map((m, i) => `<div style="margin-top:4px;opacity:0.85">${i+1}. ${(m.content || m.text || JSON.stringify(m)).slice(0, 80)}…</div>`).join('');
+          ctx.element.appendChild(box);
+        }
+      } catch (e) { console.warn('[recall] failed:', e); }
+    });
+    // T17.3: save — commits bubble to long-term memory
+    TokUI.registerHandler('save', async (ctx) => {
+      const text = ctx?.element?.innerText || '';
+      if (!galaxy.saveMemory) return;
+      try {
+        const r = await galaxy.saveMemory(text, { source: 'msg_action_save' });
+        if (ctx?.element) {
+          const note = document.createElement('div');
+          note.style.cssText = 'margin-top:8px;padding:4px 8px;border-radius:4px;background:#10b98122;color:#10b981;font-size:11px;';
+          note.textContent = `💾 已保存到长期记忆 (${r.memory_id?.slice(0, 8) || ''}…)`;
+          ctx.element.appendChild(note);
+        }
+      } catch (e) { console.warn('[save] failed:', e); }
+    });
+    console.log('[renderer] TokUI msg-action handlers registered (copy/regen/like/dislike/verify/recall/save)');
   } catch (e) {
     console.warn('[renderer] TokUI handler registration failed:', e);
   }

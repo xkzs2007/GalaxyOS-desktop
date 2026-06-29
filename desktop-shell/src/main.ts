@@ -415,6 +415,23 @@ function registerIpc() {
     try { return await zmqCall('stats'); }
     catch (e) { return { ok: false, error: String((e as Error).message) }; }
   });
+  // T17: upstream tool wrappers
+  ipcMain.handle('galaxy:verify', async (_e, claim: string) => {
+    try { return await zmqCall('claw_verify', { claim }); }
+    catch (e) { return { error: String((e as Error).message) }; }
+  });
+  ipcMain.handle('galaxy:recall', async (_e, query: string, topK?: number) => {
+    try { return await zmqCall('claw_recall', { query, top_k: topK || 5 }); }
+    catch (e) { return { results: [], error: String((e as Error).message) }; }
+  });
+  ipcMain.handle('galaxy:saveMemory', async (_e, content: string, metadata?: any) => {
+    try { return await zmqCall('claw_save_memory', { content, metadata }); }
+    catch (e) { return { memory_id: '', error: String((e as Error).message) }; }
+  });
+  ipcMain.handle('galaxy:emitEvent', async (_e, type: string, payload?: any) => {
+    try { return await zmqCall('emit_event', { type, payload: payload || {} }); }
+    catch (e) { return { ok: false, error: String((e as Error).message) }; }
+  });
 }
 
 // Disable GPU hardware acceleration so PrintWindow / BitBlt can
