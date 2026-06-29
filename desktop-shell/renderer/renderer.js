@@ -37,6 +37,7 @@ const state = {
   mode: 'ask',
   sessionId: 'default',
   isStreaming: false,
+  allSkills: [],
 };
 
 // ── TokUI bootstrap ─────────────────────────────────────────────
@@ -172,28 +173,49 @@ async function loadSkills() {
   if (!galaxy.skills) return;
   try {
     const result = await galaxy.skills();
-    const list = document.getElementById('skills-list');
-    if (!list) return;
-    list.innerHTML = '';
-    const skills = (result.skills || []).slice(0, 12);
-    for (const s of skills) {
-      const li = document.createElement('li');
-      li.className = 'skill-pill clickable';
-      li.textContent = s.name || s.id;
-      li.title = s.description || '';
-      li.addEventListener('click', () => showSkillDetail(s.id));
-      list.appendChild(li);
-    }
-    if (result.count > 12) {
-      const li = document.createElement('li');
-      li.className = 'skill-pill';
-      li.style.opacity = '0.5';
-      li.textContent = `+${result.count - 12}`;
-      list.appendChild(li);
-    }
+    state.allSkills = result.skills || [];
+    const countEl = document.getElementById('skill-count');
+    if (countEl) countEl.textContent = `(${result.count})`;
+    renderSkillPills(state.allSkills);
   } catch (e) {
     console.warn('[renderer] skills load failed:', e);
   }
+}
+
+function renderSkillPills(skills) {
+  const list = document.getElementById('skills-list');
+  if (!list) return;
+  list.innerHTML = '';
+  const shown = skills.slice(0, 30);
+  for (const s of shown) {
+    const li = document.createElement('li');
+    li.className = 'skill-pill clickable';
+    li.textContent = s.name || s.id;
+    li.title = s.description || '';
+    li.addEventListener('click', () => showSkillDetail(s.id));
+    list.appendChild(li);
+  }
+  if (skills.length > 30) {
+    const li = document.createElement('li');
+    li.className = 'skill-pill';
+    li.style.opacity = '0.5';
+    li.textContent = `+${skills.length - 30}`;
+    list.appendChild(li);
+  }
+}
+
+function filterSkills(query) {
+  if (!query || !query.trim()) {
+    renderSkillPills(state.allSkills);
+    return;
+  }
+  const q = query.toLowerCase().trim();
+  const filtered = state.allSkills.filter(s =>
+    (s.name || '').toLowerCase().includes(q) ||
+    (s.id || '').toLowerCase().includes(q) ||
+    (s.description || '').toLowerCase().includes(q)
+  );
+  renderSkillPills(filtered);
 }
 
 async function showSkillDetail(skillId) {
@@ -329,6 +351,49 @@ document.querySelectorAll('.mode-btn').forEach((b) => {
 $('collapse-details').addEventListener('click', () => {
   document.getElementById('app').classList.toggle('details-collapsed');
 });
+
+// ── Skill search ──────────────────────────────────────────────
+const skillSearch = $('skill-search');
+if (skillSearch) {
+  skillSearch.addEventListener('input', () => filterSkills(skillSearch.value));
+}
+
+// ── Settings modal ──────────────────────────────────────────────
+const SETTINGS_KEY = 'galaxyos.settings.v1';
+function loadSettings() {
+  try { return JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}'); }
+  catch { return {}; }
+}
+function saveSettings(s) {
+  localStorage.setItem(SETTINGS_KEY, JSON.stringify(s));
+}
+function openSettings() {
+  const s = loadSettings();
+  const modal = $('settings-modal');
+  $('setting-api-key').value = s.apiKey || '';
+  $('setting-api-base').value = s.apiBase || '';
+  $('setting-workspace').value = s.workspace || '';
+  $('setting-theme').value = s.theme || 'dark';
+  modal.hidden = false;
+}
+function closeSettings() { $('settings-modal').hidden = true; }
+function applySettings() {
+  const s = {
+    apiKey: $('setting-api-key').value,
+    apiBase: $('setting-api-base').value,
+    workspace: $('setting-workspace').value,
+    theme: $('setting-theme').value,
+  };
+  saveSettings(s);
+  closeSettings();
+  console.log('[settings] saved', Object.keys(s).join(', '));
+}
+const settingsBtn = $('settings-btn');
+if (settingsBtn) settingsBtn.addEventListener('click', openSettings);
+const settingsClose = $('settings-close');
+if (settingsClose) settingsClose.addEventListener('click', closeSettings);
+const settingsSave = $('settings-save');
+if (settingsSave) settingsSave.addEventListener('click', applySettings);
 
 // ── Standalone-mode shim for window.galaxy.* ───────────────────
 

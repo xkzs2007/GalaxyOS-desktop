@@ -43,15 +43,14 @@
       </div>
 
       <div class="skills-section">
-        <div class="section-label">已加载技能</div>
+        <div class="section-label">已加载技能 <span class="skill-count" id="skill-count"></span></div>
+        <input type="text" id="skill-search" class="skill-search" placeholder="搜索技能…" autocomplete="off" />
         <ul class="skills-list" id="skills-list">
-          <li class="skill-pill">shell_run</li>
-          <li class="skill-pill">read_file</li>
-          <li class="skill-pill">write_file</li>
-          <li class="skill-pill">list_dir</li>
-          <li class="skill-pill">grep</li>
-          <li class="skill-pill">apply_diff</li>
         </ul>
+      </div>
+
+      <div class="settings-section">
+        <button class="settings-btn" id="settings-btn">⚙ 设置</button>
       </div>
 
       <div class="sidebar-footer">
@@ -131,6 +130,32 @@
         </button>
       </footer>
     </main>
+
+    <!-- Settings modal -->
+    <div class="modal-overlay" id="settings-modal" hidden>
+      <div class="modal">
+        <div class="modal-header">
+          <span>设置</span>
+          <button class="modal-close" id="settings-close">✕</button>
+        </div>
+        <div class="modal-body">
+          <label class="modal-label">LLM API Key</label>
+          <input type="password" id="setting-api-key" class="modal-input" placeholder="sk-..." />
+          <label class="modal-label">LLM API Base URL</label>
+          <input type="text" id="setting-api-base" class="modal-input" placeholder="https://api.deepseek.com/v1" />
+          <label class="modal-label">Workspace 路径</label>
+          <input type="text" id="setting-workspace" class="modal-input" placeholder="~/.galaxyos/workspace" />
+          <label class="modal-label">主题</label>
+          <select id="setting-theme" class="modal-select">
+            <option value="dark">Dark</option>
+            <option value="light">Light</option>
+          </select>
+        </div>
+        <div class="modal-footer">
+          <button class="modal-btn" id="settings-save">保存</button>
+        </div>
+      </div>
+    </div>
 
     <!-- RIGHT — details panel (R-CCAM trace, MeMo stages, ACRouter) -->
     <aside class="details" id="details-panel">
