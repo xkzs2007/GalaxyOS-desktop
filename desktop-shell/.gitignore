@@ -12,3 +12,5 @@ build/
 dist/
 electron.log
 sidecar.log
+release/
+build/icon.png

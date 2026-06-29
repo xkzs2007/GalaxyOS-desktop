@@ -161,16 +161,22 @@ function startSidecar(): Promise<void> {
       return;
     }
 
+    // In a packaged build, the sidecar is a standalone .exe —
+    // run it directly, not through python.
+    const isPackagedExe = app.isPackaged && (script.endsWith('.exe') || script.endsWith('galaxyos-sidecar'));
+    const cmd = isPackagedExe ? script : py;
+    const args = isPackagedExe ? [] : [script];
+
     // Redirect sidecar stdout/stderr to a file (EPIPE avoidance).
     const SIDECAR_LOG = process.env.GALAXYOS_SIDECAR_LOG
       || join(process.cwd(), 'sidecar.log');
     const sidecarOut = require('fs').openSync(SIDECAR_LOG, 'a');
     const sidecarErr = require('fs').openSync(SIDECAR_LOG, 'a');
 
-    log(`Starting sidecar: ${py} ${script}`);
+    log(`Starting sidecar: ${cmd} ${args.join(' ')}`);
     log(`Sidecar stdout/stderr → ${SIDECAR_LOG}`);
 
-    sidecar = spawn(py, [script], {
+    sidecar = spawn(cmd, args, {
       env: {
         ...process.env,
         PYTHONPATH:
@@ -181,7 +187,6 @@ function startSidecar(): Promise<void> {
         GALAXYOS_SIDECAR_HTTP_PORT: String(SIDECAR_HTTP_PORT),
         GALAXYOS_SIDECAR_HOST: SIDECAR_HOST,
         GALAXYOS_SIDECAR_LOG: SIDECAR_LOG,
-        // Tell the sidecar to disable its HTTP SSE server (we use zmq)
         GALAXYOS_DISABLE_HTTP: '1',
       },
       detached: process.platform !== 'win32',
@@ -195,7 +200,6 @@ function startSidecar(): Promise<void> {
     sidecar.on('exit', (code) => log(`Sidecar exited with code ${code}`));
     sidecar.on('error', (e) => log(`Sidecar spawn error: ${e.message}`));
 
-    // Wait for the zmq REP socket to be reachable.
     try {
       await waitForZmq(30000);
       sidecarReady = true;
@@ -392,6 +396,11 @@ function registerIpc() {
     await shell.openExternal(url);
   });
 }
+
+// Disable GPU hardware acceleration so PrintWindow / BitBlt can
+// capture the window contents reliably (GPU-composited surfaces
+// appear black in screenshots on Windows).
+app.disableHardwareAcceleration();
 
 // ── App lifecycle ─────────────────────────────────────────────────
 app.whenReady().then(async () => {

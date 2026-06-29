@@ -29,22 +29,60 @@
     "node": ">=20.0.0"
   },
   "build": {
-    "appId": "org.cnb.galaxyos.desktop",
+    "appId": "cool.cnb.galaxyos.desktop",
     "productName": "GalaxyOS",
+    "copyright": "Copyright © 2026 GalaxyOS",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
     "files": [
       "dist/**/*",
       "renderer/**/*",
-      "python/dist/**/*",
+      "node_modules/**/*",
       "package.json"
     ],
     "extraResources": [
       {
-        "from": "python/dist/galaxyos-sidecar",
-        "to": "galaxyos-sidecar"
+        "from": "python/dist/galaxyos-sidecar.exe",
+        "to": "galaxyos-sidecar.exe"
+      },
+      {
+        "from": "python",
+        "to": "python",
+        "filter": [
+          "*.py"
+        ]
       }
     ],
-    "mac": { "target": "dmg", "category": "public.app-category.productivity" },
-    "win": { "target": "nsis", "icon": "renderer/icon.png" },
-    "linux": { "target": "AppImage" }
-  }
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "perMachine": false,
+      "installerIcon": "build/icon.png",
+      "uninstallerIcon": "build/icon.png",
+      "shortcutName": "GalaxyOS"
+    },
+    "mac": {
+      "target": "dmg",
+      "category": "public.app-category.productivity",
+      "icon": "build/icon.png"
+    },
+    "linux": {
+      "target": "AppImage",
+      "icon": "build/icon.png"
+    }
+  },
+  "author": "GalaxyOS Team"
 }

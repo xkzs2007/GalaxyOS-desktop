@@ -335,11 +335,7 @@ class SidecarHandlers:
         return self._stream_collect("process", params)
 
     def stream_memo(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        # Note: for stage 5.10 the MeMo 3-stage zmq path is
-        # disabled — the renderer can still call /sse/memo (the old
-        # SSE route) for direct 3-stage debugging. The router
-        # (ask / process / agent) always uses the zmq IPC.
-        return {"error": "stream_memo via zmq disabled in stage 5.10; use /sse/memo"}, {"events": [], "fragments": []}
+        return self._stream_collect("memo", params)
 
     def stream_agent(self, params: Dict[str, Any]) -> Dict[str, Any]:
         return self._stream_collect("agent", params)
@@ -370,8 +366,7 @@ class SidecarHandlers:
         elif kind == "process":
             frags = self.stream_process_frag(prompt, sid)
         elif kind == "memo":
-            # memo zmq path disabled in stage 5.10
-            return {"events": [], "fragments": [], "error": "memo via zmq disabled"}
+            frags = self.stream_memo_frag(prompt)
         elif kind == "agent":
             frags = self.stream_agent_frag(prompt, sid)
         else:
@@ -455,8 +450,8 @@ class SidecarHandlers:
         ))
         chosen = trace.entity.chosen or "无候选"
         cands_short = ", ".join(
-            f"{n.get('name','?')}({n.get('score',0):.1f})"
-            for n in (trace.entity.candidates or [])[:3]
+            f"{c[0]}({c[1]:.1f})"
+            for c in (trace.entity.candidates or [])[:3]
         ) or "无"
         out.append(think_step(
             title="Entity (实体识别)", status="done", dur="18ms",
