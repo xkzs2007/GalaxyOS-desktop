@@ -97,8 +97,8 @@ fix/*    → Bug 修复
 ## 需要帮助？
 
 - 查看 `README.md` 了解架构概览
-- 查看 `SKILL.md` 了解详细架构文档
-- 查看 `docs/API.md` 了解 API 速查
+- 查看 `galaxyos/harness/` 顶层 docstring 了解 harness API
+- 查看 `docs/API.md` 了解 services 层 API 速查
 - 提 Issue 或 PR 讨论
 
 ## 许可证

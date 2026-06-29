@@ -215,7 +215,6 @@ GalaxyOS/
 ├── requirements.txt
 ├── pyproject.toml
 ├── Makefile                     # 含跨平台编译目标
-├── SKILL.md
 ├── CHANGELOG.md
 └── VERSION                      # 8.6.0
 ```
