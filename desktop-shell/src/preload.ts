@@ -21,6 +21,8 @@ export type GalaxyApi = {
   recall(query: string, topK?: number): Promise<{ query: string; count: number; results: unknown[] }>;
   saveMemory(content: string, metadata?: object): Promise<{ memory_id: string; ok: boolean }>;
   emitEvent(type: string, payload?: any): Promise<{ ok: boolean; received: string }>;
+  graphSearch(query: string, topK?: number): Promise<{ count: number; results: any[] }>;
+  skillNeighbors(name: string): Promise<{ name: string; successors: any[]; predecessors: any[] }>;
   openExternal(url: string): Promise<void>;
 };
 
@@ -39,6 +41,8 @@ const api: GalaxyApi = {
   recall: (q, k) => ipcRenderer.invoke('galaxy:recall', q, k) as any,
   saveMemory: (c, m) => ipcRenderer.invoke('galaxy:saveMemory', c, m) as any,
   emitEvent: (t, p) => ipcRenderer.invoke('galaxy:emitEvent', t, p) as any,
+  graphSearch: (q, k) => ipcRenderer.invoke('galaxy:graphSearch', q, k) as any,
+  skillNeighbors: (n) => ipcRenderer.invoke('galaxy:skillNeighbors', n) as any,
   openExternal: (u) => ipcRenderer.invoke('galaxy:openExternal', u) as any,
 };
 

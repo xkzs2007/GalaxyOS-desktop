@@ -163,11 +163,36 @@ class SidecarHandlers:
         )
         self._acrouter_memory = Memory()
         self._acrouter = default_router(self._acrouter_executor)
+        from ac_router import (
+            CAFRouter, HeuristicOrchestrator, Memory,
+            VerifierSignals, default_router,
+        )
+        self._acrouter_memory = Memory()
+        self._acrouter = default_router(self._acrouter_executor)
         # Cache the module for use in inner methods (avoid re-import)
         self._ac_router_module = _ac_router_mod
         log.info("ACRouter ready (orchestrator: %s, memory: %d entries)",
                  "HeuristicOrchestrator",
                  self._acrouter_memory.size())
+
+        # Stage 13: SkillGraph — load from the 76 skills + edges
+        log.info("Booting SkillGraph...")
+        try:
+            import sys as _sys
+            _scripts = str(path_resolver_desktop._GALAXYOS_REPO / "extensions" / "galaxyos" / "scripts")
+            if _scripts not in _sys.path:
+                _sys.path.insert(0, _scripts)
+            from skill_graph import SkillGraph, GraphAwareRetriever
+            self._skill_graph = SkillGraph(auto_load=False)
+            self._load_skill_graph()
+            self._skill_retriever = GraphAwareRetriever(self._skill_graph)
+            log.info("SkillGraph ready (%d nodes, %d edges)",
+                     self._skill_graph.stats().get("nodes", 0),
+                     self._skill_graph.stats().get("edges", 0))
+        except Exception as e:
+            log.warning("SkillGraph init failed: %s — skills will use flat search", e)
+            self._skill_graph = None
+            self._skill_retriever = None
 
         # Live config — updated by set_config() from the renderer
         self._live_config = {
@@ -619,6 +644,104 @@ class SidecarHandlers:
         payload = params.get("payload", {})
         log.info(f"[event] {event_type}: {list(payload.keys()) if isinstance(payload, dict) else '?'}")
         return {"ok": True, "received": event_type, "ts": int(time.time() * 1000)}
+
+    # ── T13.1: SkillGraph integration ──────────────────────────────
+    def _load_skill_graph(self) -> None:
+        """Populate the SkillGraph from the 76 upstream skills."""
+        import os
+        import re
+        skills_dir = path_resolver_desktop._GALAXYOS_REPO / "skills"
+        if not skills_dir.exists():
+            return
+        for d in sorted(skills_dir.iterdir()):
+            if not d.is_dir() or d.name.startswith("."):
+                continue
+            desc = ""
+            skill_md = d / "SKILL.md"
+            if skill_md.exists():
+                try:
+                    text = skill_md.read_text(encoding="utf-8", errors="replace")
+                    m = re.search(r"^description:\s*(.+)$", text, re.MULTILINE)
+                    if m:
+                        desc = m.group(1).strip().strip('"\'')[:200]
+                except Exception:
+                    pass
+            self._skill_graph.add_node(d.name, description=desc,
+                                       layer=0, module_type="skill")
+        # Heuristic edges: skills sharing 2+ keywords get 'related' edge
+        nodes = list(self._skill_graph.nodes.keys()) if hasattr(self._skill_graph, 'nodes') else []
+        node_kw = {}
+        for n in nodes:
+            nd = self._skill_graph.get_node(n)
+            text = (n + " " + (nd.description or "")).lower()
+            node_kw[n] = set(w for w in re.findall(r"\w+", text) if len(w) > 2)
+        for i, a in enumerate(nodes):
+            for b in nodes[i+1:]:
+                shared = node_kw.get(a, set()) & node_kw.get(b, set())
+                if len(shared) >= 2:
+                    self._skill_graph.add_edge(a, b, relation="related")
+
+    def graph_search(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """T13.1: graph-aware skill search using GraphAwareRetriever."""
+        query = str(params.get("query", ""))
+        top_k = int(params.get("top_k", 5))
+        if not self._skill_retriever:
+            return {"error": "SkillGraph not loaded", "results": []}
+        try:
+            results = self._skill_retriever.retrieve(query, top_k=top_k)
+            out = []
+            for name, score in results:
+                node = self._skill_graph.get_node(name)
+                neighbors = []
+                for edge in self._skill_graph.get_successors(name)[:5]:
+                    n_node = self._skill_graph.get_node(edge.target)
+                    neighbors.append({
+                        "name": edge.target,
+                        "relation": edge.relation,
+                        "description": n_node.description[:100] if n_node else "",
+                    })
+                out.append({
+                    "name": name,
+                    "score": round(score, 3),
+                    "description": node.description[:100] if node else "",
+                    "neighbors": neighbors,
+                })
+            return {"query": query, "count": len(out), "results": out}
+        except Exception as e:
+            return {"error": str(e), "results": []}
+
+    def get_skill_neighbors(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """T13.1: get the graph neighbors of a specific skill node."""
+        skill_name = str(params.get("name", ""))
+        if not self._skill_graph:
+            return {"error": "SkillGraph not loaded"}
+        node = self._skill_graph.get_node(skill_name)
+        if not node:
+            return {"error": f"skill not found: {skill_name}"}
+        successors = []
+        for edge in self._skill_graph.get_successors(skill_name):
+            n = self._skill_graph.get_node(edge.target)
+            successors.append({
+                "name": edge.target,
+                "relation": edge.relation,
+                "description": n.description[:80] if n else "",
+            })
+        predecessors = []
+        for edge in self._skill_graph.get_predecessors(skill_name):
+            n = self._skill_graph.get_node(edge.source)
+            predecessors.append({
+                "name": edge.source,
+                "relation": edge.relation,
+                "description": n.description[:80] if n else "",
+            })
+        return {
+            "name": skill_name,
+            "description": node.description,
+            "out_degree": len(successors),
+            "in_degree": len(predecessors),
+            "successors": successors,
+            "predecessors": predecessors,
+        }
 
     def get_skill(self, params: Dict[str, Any]) -> Dict[str, Any]:
         skill_id = str(params.get("id", "") or "")

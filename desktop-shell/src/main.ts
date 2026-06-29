@@ -432,6 +432,15 @@ function registerIpc() {
     try { return await zmqCall('emit_event', { type, payload: payload || {} }); }
     catch (e) { return { ok: false, error: String((e as Error).message) }; }
   });
+  // T13: SkillGraph
+  ipcMain.handle('galaxy:graphSearch', async (_e, query: string, topK?: number) => {
+    try { return await zmqCall('graph_search', { query, top_k: topK || 5 }); }
+    catch (e) { return { results: [], error: String((e as Error).message) }; }
+  });
+  ipcMain.handle('galaxy:skillNeighbors', async (_e, name: string) => {
+    try { return await zmqCall('get_skill_neighbors', { name }); }
+    catch (e) { return { error: String((e as Error).message) }; }
+  });
 }
 
 // Disable GPU hardware acceleration so PrintWindow / BitBlt can
