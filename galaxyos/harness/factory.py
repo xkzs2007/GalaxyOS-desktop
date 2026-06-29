@@ -118,7 +118,86 @@ def _build_workspace(config: DeepAgentConfig) -> Workspace:
         except Exception as e:
             log.warning("SkillGraph not available: %s", e)
 
+    # 4. LLM backend — route by model name
+    workspace.llm = _pick_llm_backend(config)
+    if workspace.llm is not None:
+        try:
+            log.info("LLM backend: %s", workspace.llm.backend_name())
+        except Exception:
+            pass
+
     return workspace
 
 
-__all__ = ["create_galaxy_agent"]
+def _pick_llm_backend(config: DeepAgentConfig):
+    """Route config.model to the right LLM backend.
+
+    Routing rules (v9.1):
+      - "lfm2.5-*" / "lfm-*" / models with "local" hint
+          → LiquidStateBackend (LFM ONNX, in-process)
+      - any other model name OR if SidecarHandlers is importable
+          → SidecarBackend (in-process bridge to galaxyos_sidecar.py)
+      - if SidecarBackend fails to construct
+          → fall back to a tiny canned-response backend (so the
+            agent still runs in environments without the sidecar)
+
+    The sidecar is the **primary** path because it has the real
+    engine (XiaoYiClawLLM + MeMo + ACRouter + 76 Skills) and is
+    shared with the desktop renderer.
+    """
+    model = (config.model or "").lower().strip()
+
+    # Local LFM is the only case where we DON'T go through the sidecar
+    # (the sidecar's stream_memo_frag path also covers it, but the
+    # dedicated LiquidStateBackend gives finer control over conv state).
+    if model.startswith("lfm") and "liquid" in (config.memory or "").lower():
+        try:
+            from .liquid import LiquidStateBackend
+            return LiquidStateBackend()
+        except Exception as e:
+            log.warning("LiquidStateBackend failed: %s; trying sidecar", e)
+
+    # Primary: sidecar bridge
+    try:
+        from .sidecar_bridge import build_sidecar_backend
+        backend = build_sidecar_backend(model=config.model)
+        if backend is not None:
+            return backend
+    except Exception as e:
+        log.warning("SidecarBackend unavailable: %s; using canned fallback", e)
+
+    # Final fallback: canned response (so the agent always "works"
+    # in environments without the sidecar, e.g. CI without desktop-shell)
+    return _CannedBackend(name=config.name, model=config.model)
+
+
+class _CannedBackend:
+    """Minimal LLM backend that returns a fixed response. Used when
+    neither LiquidStateBackend nor SidecarBackend is available
+    (e.g. headless CI, or a slim harness install).
+    """
+    def __init__(self, name: str = "galaxy-agent", model: str = "default") -> None:
+        self._name = name
+        self._model = model
+
+    async def chat(self, messages, temperature: float = 0.7,
+                   session_id: str = "default", **kwargs) -> str:
+        # Pull the last user message for a slightly less canned reply
+        last = ""
+        for m in reversed(messages or []):
+            if isinstance(m, dict) and m.get("role") == "user":
+                last = str(m.get("content", "") or "")
+                break
+        return (
+            f"[{self._name}/{self._model}] (canned) "
+            f"received: {last[:120] or '(empty)'}"
+        )
+
+    def backend_name(self) -> str:
+        return f"CannedBackend(model={self._model})"
+
+    def is_sidecar(self) -> bool:
+        return False
+
+
+__all__ = ["create_galaxy_agent", "_CannedBackend"]
