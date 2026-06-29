@@ -1,31 +1,36 @@
-# 🌌 GalaxyOS — OpenClaw 认知增强引擎
+# 🌌 GalaxyOS — 独立 Agent APP 框架
 
-> 为 AI Assistant 提供记忆、检索、推理、验证、自进化的全套认知能力
+> 为 LLM 提供记忆、检索、推理、验证、自进化的全套认知能力，**自带桌面端 Agent 应用**
 >
-> **v8.6.0** · OpenClaw 深度集成改造（全 4 阶段落地）+ **桌面端 Agent 应用**
+> **v9.4** · MultiSlotRouter 5-slot optional（LLM 必填，其余可选）· 脱离 OpenClaw 独立运行
 
 ---
 
-## 🖥️ GalaxyOS Desktop（独立桌面 Agent）
+## 🖥️ GalaxyOS Desktop（独立桌面 Agent APP）
 
-GalaxyOS 现在可以脱离 OpenClaw，作为**独立桌面 Agent 应用**运行——类似 ZCode / Codex 的体验：
+类似 ZCode / Codex 的桌面端 AI 体验，开箱即用：
 
 ```
-galaxyos/desktop-shell/
-├── GalaxyOS.exe          ← 双击即用的 Windows 桌面 app（186MB）
-├── galaxyos-sidecar.exe  ← PyInstaller 打包的 Python 引擎（17MB）
-├── renderer/             ← TokUI + ZCode 风格 3 栏 UI
-└── python/               ← sidecar + tools + MeMo + ACRouter + MCP
+desktop-shell/
+├── python/
+│   ├── galaxyos_sidecar.py   # SidecarHandlers (zmq + SSE 双传输)
+│   ├── llm_providers.py      # MultiSlotRouter (11 provider / 5 slot)
+│   └── tokui_dsl.py          # 流式 UI DSL (21 builder)
+├── renderer/
+│   ├── index.html            # 3 栏 ZCode 布局
+│   ├── renderer.js           # SSE 消费者 + 消息操作
+│   └── model_picker.js       # 4 组 provider 目录（主流/本地/自定义/离线）
+├── src/                      # Electron 主进程 (TypeScript)
+└── package.json
 ```
 
-**功能**：3 栏 ZCode 布局 · TokUI 流式 AI 气泡 · Agent 工具调用（shell/read/write/grep/diff）· 76 skills 搜索+调用 · 多会话持久化 · Model picker · MeMo 3-stage 全局记忆 · Agent-as-a-Router C-A-F 路由 · MCP Server 配置 · 键盘快捷键 · Diff view · 设置面板（API Key 热更新）
+**功能**：3 栏布局 · TokUI 流式 AI 气泡 · Agent 工具（shell/read/write/grep/diff）· 69 skills 搜索+调用 · 多会话持久化 · 多 LLM 切换 · MeMo 3-stage 全局记忆 · Agent-as-a-Router C-A-F 路由 · 键盘快捷键 · Diff view · 设置面板（5 tab：通用/LLM/Embedding/Rerank/VLM）
 
 **快速启动**：
 ```bash
-cd galaxyos/desktop-shell
-python -c "import sys; sys.path.insert(0,'python'); import asyncio; from galaxyos_sidecar import main_async; asyncio.run(main_async())"
-# 另一个终端
-cd galaxyos/desktop-shell/renderer && python -m http.server 8080
+cd desktop-shell
+python -c "import sys; sys.path.insert(0,'python'); import asyncio; \
+  from galaxyos_sidecar import main_async; asyncio.run(main_async())"
 # 浏览器打开 http://127.0.0.1:8080
 ```
 
@@ -33,14 +38,36 @@ cd galaxyos/desktop-shell/renderer && python -m http.server 8080
 
 ---
 
-## 总览
+## 🐍 GalaxyOS Harness（Python 库）
 
-`GalaxyOS` 是 **OpenClaw 的底层认知增强引擎**。同时占据两个核心插槽：
+GalaxyOS v9.0 起成为**独立 Python Agent 框架**——`create_galaxy_agent()` 入口对标 openJiuwen 的 `create_deep_agent()`：
 
-| 插槽 | 注册 ID | 接管能力 |
-|------|---------|----------|
-| `contextEngine` | `claw-core-engine` | 上下文组装 / 压缩 / 摄入（ownsCompaction=true） |
-| `memory` | `galaxyos` | 记忆检索 / 写入 / flushPlan / publicArtifacts |
+```python
+from galaxyos.harness import create_galaxy_agent
+
+agent = create_galaxy_agent(
+    name="assistant",
+    model="lfm2.5-1.2b-instruct",   # 或 "anthropic/claude-3-5-sonnet"
+    memory="vector",                 # vector | liquid | mock
+    skill_graph=True,
+)
+result = await agent.run("列出我的技能")
+print(result["result"])
+```
+
+**5 大件**（harness 视角）：
+
+| 组件 | 模块 | 说明 |
+|------|------|------|
+| 1. Agent Loop | `harness.deep_agent.DeepAgent` | async 优先，TaskLoopEvent 三件套 |
+| 2. Tool Registry | `harness.desktop_shell_compat.tools` | 6 工具：shell/read/write/grep/diff/list |
+| 3. LLM Client | `harness.workspace.llm` | 可注入；MultiSlotRouter 路由 |
+| 4. Memory System | `harness.workspace.memory` | vector + liquid + mock 三选一 |
+| 5. SkillGraph | `harness.workspace.skills` | 69 节点 / 278 边的技能图 |
+
+`SidecarBackend`（`harness/sidecar_bridge.py`）桥接 DeepAgent ↔ SidecarHandlers，让 harness 跑桌面端同一套 76 skills 栈。
+
+---
 
 ## 核心能力
 
@@ -48,11 +75,16 @@ cd galaxyos/desktop-shell/renderer && python -m http.server 8080
 |------|------|
 | **液态神经记忆** | LTC 突触 + CfC 推理 + NCP 神经电路 + 仿生遗忘曲线 |
 | **DAG 上下文** | SQLite 持久化 + 摘要节点回溯 + 时间衰减排序 |
-| **COSPLAY 自演化** | 从执行轨迹学习技能合约 → ProtoSkill → 成熟 Skill |
+| **SkillGraph 自演化** | 69 节点 278 边有向图 + 邻接检索 + GRPO 优化 |
 | **LFM 技能库** | 5 维评分（质量/复用/合约/一致/探索）+ 合并·拆分·精修·淘汰 |
 | **R-CCAM 认知循环** | Retrieval→Cognition→Control→Action→Memory 五阶段 |
-| **MultiAgent 协同** | 5 角色 + 公告板 + Judge 蒸馏 + 交叉验证 |
-| **OpenClaw 深度集成** | 9 钩子 + 15 工具（含 policy）+ 跨平台 Rust |
+| **MeMo 3-stage** | Grounding → Entity → Answer 全局记忆协议 |
+| **ACRouter C-A-F** | Agent-as-a-Router：复杂度感知分发 |
+| **MultiSlotRouter** | 11 provider × 5 slot（LLM 必填，其余可选） |
+| **TokUI DSL** | 21 builder 流式 UI 协议（SSE `data: {tokui: "..."}`） |
+| **Harness + Sidecar** | 同进程双形态：Python 库 / 桌面 APP |
+
+---
 
 ## 快速开始
 
@@ -61,195 +93,236 @@ cd galaxyos/desktop-shell/renderer && python -m http.server 8080
 git clone https://cnb.cool/llm-memory-integrat/GalaxyOS.git
 cd GalaxyOS
 pip install -r requirements.txt
-cd extensions/galaxyos && pnpm install && cd ../..
 
-# 2. ⚠️ 必须：编辑 ~/.openclaw/openclaw.json 指定插槽
-# 见下方"必需配置"
+# 2. 跑 Python 库
+python3.12 -c "
+from galaxyos.harness import create_galaxy_agent
+import asyncio
+agent = create_galaxy_agent(name='demo', model='mock-1')
+print(asyncio.run(agent.run('hi')))
+"
 
-# 3. 重启 Gateway
-supervisorctl restart openclaw-gateway
-
-# 4. 验证
-python3.12 -m galaxyos.scripts.install_wizard --check
-openclaw doctor
+# 3. 跑桌面端（另一个终端）
+cd desktop-shell && python python/galaxyos_sidecar.py
+# 浏览器打开 http://127.0.0.1:8080
 ```
 
-## 必需配置
+> v9.2 起支持 LLM provider 简写：`create_galaxy_agent(model="anthropic/claude-3-5-sonnet")` 直接走 Anthropic 端点。
 
-⚠️ **不配 = 不生效**。OpenClaw 的插槽是运行时独占的，GalaxyOS 装了不等于被选中：
+---
 
-```json
-{
-  "plugins": {
-    "slots": {
-      "contextEngine": "claw-core-engine",
-      "memory": "galaxyos"
-    },
-    "entries": {
-      "claw-core-engine": { "enabled": true },
-      "galaxyos": { "enabled": true }
-    }
-  }
-}
-```
+## LLM Provider 配置（v9.2–v9.4）
 
-默认走 `legacy` + `memory-core`，所有 GalaxyOS 能力不生效。
+GalaxyOS **不绑定任何远端 LLM**。`MultiSlotRouter` 管理 5 个独立 slot：
 
-详见 [OpenClaw Context Engine 文档](https://docs.openclaw.ai/concepts/context-engine) 和 [Memory 文档](https://docs.openclaw.ai/concepts/memory)。
+| Slot | 必填？ | 典型用途 | 未配置时回退 |
+|------|--------|----------|------------|
+| `llm` | ✅ 必填 | 主对话推理 | 无（必须配置） |
+| `llm_pro` | ❌ 可选 | 复杂任务升级 | `llm` slot |
+| `embedding` | ❌ 可选 | 向量检索 | BoW 检索（`ac_router.py`） |
+| `rerank` | ❌ 可选 | 检索重排 | 原始 top-k |
+| `vlm` | ❌ 可选 | 图片 OCR / 多模态 | "VLM 未配置" 提示 |
 
-## 9 个生命周期钩子
+**11 个支持的 provider**（`MAINSTREAM_PROVIDERS` 目录）：
 
-| 钩子 | 触发 | 用途 |
-|------|------|------|
-| `gateway_start` | Gateway 启动 | 注册 lane type + heartbeat + cron |
-| `gateway_stop` | Gateway 停止 | 统一关闭所有组件 |
-| `before_tool_call` | 工具调用前 | 记录调用前状态给 BoundaryDetector |
-| `after_tool_call` | 工具调用后 | 幂等捕获结果，更新 Skill Bank + engram + DAG |
-| `before_compaction` | 压缩前 | 高价值上下文持久化到 engram + DAG |
-| `after_compaction` | 压缩后 | 向量索引同步 |
-| `before_agent_reply` | Agent 回复前 | 异步触发 R-CCAM 认知循环 |
-| `agent_end` | Agent 回复后 | L0 日志 + 关键词追踪 + 持久化记忆 |
-| `before_prompt_build` | 提示构建前 | R-CCAM 注入 + 动态锚定 + 记忆验证 |
+| 类别 | Provider | 默认模型 |
+|------|----------|----------|
+| 主流 | OpenAI / DeepSeek / Qwen DashScope / Anthropic / Google Gemini | 各自旗舰 |
+| 托管 | SiliconFlow / OpenRouter | 多模型聚合 |
+| 本地 | Ollama / vLLM | 开源 LLM |
+| 自定义 | Custom (OpenAI 兼容) | 用户填 |
+| 离线 | Mock | mock-1（脱机回声） |
 
-## 15 个工具
+**配置方式**：Settings 4 tab（LLM/Embedding/Rerank/VLM）+ 启用复选框，**不勾 = 走本地 fallback**。
 
-所有工具都声明 `policy` 字段（channels / roles / rateLimit）：
+详见 `desktop-shell/python/llm_providers.py` + `docs/API.md`。
 
-| 工具 | 用途 | Rate Limit |
-|------|------|-----------|
-| `galaxy_pool` | GalaxyPool 状态查询 | 30/min |
-| `claw_rccam_progress` | R-CCAM 实时进度 | 60/min |
-| `claw_recall` | 深度语义记忆检索 | 60/min |
-| `claw_lobster` | Lobster 管道执行 | 20/min |
-| `claw_health` | 系统健康检查 | 30/min |
-| `claw_vector_info` | 向量计算能力 | 30/min |
-| `claw_events` | 事件日志查询 | 60/min |
-| `claw_store` | 记忆存储 | 30/min |
-| `claw_verify` | 幻觉验证 | 30/min |
-| `claw_rccam` | R-CCAM 认知循环 | 20/min |
-| `claw_save_memory` | 记忆持久化 | 30/min |
-| `claw_compile_skill` | Skill 编译（SkVM） | 10/min |
-| `claw_asset_search` | KnowledgeAsset 搜索 | 60/min |
-| `claw_asset_register` | KnowledgeAsset 注册 | 20/min |
-| `claw_node_invoke` | Node 外设调用 | 10/min |
+---
 
 ## 架构
 
 ```
-┌────────────────────────────────────────────────────────────┐
-│                    OpenClaw Gateway                         │
-│  (12+ 消息平台 / 7 层纵深防御 / Lane Queue)                  │
-└────────────────────────────────────────────────────────────┘
-                             │
-   ┌─────────────────────────┼─────────────────────────┐
-   ▼                         ▼                         ▼
-┌────────────┐      ┌──────────────┐         ┌──────────────┐
-│contextEngine│     │  memory slot │         │   hooks      │
-│claw-core-eng│     │   galaxyos   │         │ 9 lifecycle  │
-└──────┬─────┘      └──────┬───────┘         └──────┬───────┘
-       └────────────────────┼───────────────────────┘
-                            ▼
-┌────────────────────────────────────────────────────────────┐
-│              GalaxyOS v8.6.0 — 8 大子系统                    │
-├────────────────────────────────────────────────────────────┤
-│  1. 液态神经核心 (LTC/CfC/NCP/SSM)                          │
-│  2. DAG 上下文 (SQLite + 摘要回溯 + 时间衰减)                │
-│  3. COSPLAY 适配 (边界检测 + 合约学习 + 毕业)                │
-│  4. LFM 技能库 (ProtoSkill → Skill + 5 维评分)              │
-│  5. R-CCAM 认知循环 (5 阶段 + 元认知调节)                    │
-│  6. MultiAgent 编排 (5 角色 + 公告板 + 蒸馏)                 │
-│  7. 防幻觉 10 重检测 (Self-RAG/CRAG/CoVe)                    │
-│  8. Rust 跨平台 (Linux/Windows × x64/ARM64)                  │
-└────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────┐
+│                   GalaxyOS v9.4 — 两大入口                        │
+├──────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  ┌────────────────────────┐    ┌─────────────────────────────┐  │
+│  │   Harness (Python lib)  │    │   Desktop Shell (Electron)  │  │
+│  │  create_galaxy_agent() │    │  3 栏 ZCode 布局            │  │
+│  │  DeepAgent + Workspace │    │  renderer + SidecarHandlers │  │
+│  │  + TaskLoopEvent       │    │  (zmq + SSE 双传输)         │  │
+│  └────────────┬───────────┘    └────────────┬────────────────┘  │
+│               │                              │                   │
+│               └──────────────┬───────────────┘                   │
+│                              ▼                                   │
+│  ┌──────────────────────────────────────────────────────────┐  │
+│  │              galaxyos/ — 核心运行时                         │  │
+│  ├──────────────────────────────────────────────────────────┤  │
+│  │  harness/         DeepAgent / Workspace / TaskLoop        │  │
+│  │  engine/          MeMo 3-stage + R-CCAM 5 阶段            │  │
+│  │  orchestration/   ACRouter C-A-F + SkillGraph            │  │
+│  │  privileged/      ACP 调试端点（可选）                     │  │
+│  │  scripts/         install_wizard / skill_version_check    │  │
+│  └──────────────────────────────────────────────────────────┘  │
+│                              │                                   │
+│                              ▼                                   │
+│  ┌──────────────────────────────────────────────────────────┐  │
+│  │              services/ — 检索/记忆/认知层                   │  │
+│  │  retrieval_hub / hybrid_search / unified_vector_store     │  │
+│  │  crag / rag_optimizer / memory_consolidation              │  │
+│  │  cognitive_map / chain_of_verification / hallucination    │  │
+│  └──────────────────────────────────────────────────────────┘  │
+│                              │                                   │
+│                              ▼                                   │
+│  ┌──────────────────────────────────────────────────────────┐  │
+│  │              skills/ — 69 节点 278 边技能图                 │  │
+│  │  skill-creator / proactive-tasks / find-skills / ...      │  │
+│  └──────────────────────────────────────────────────────────┘  │
+│                              │                                   │
+│                              ▼                                   │
+│  ┌──────────────────────────────────────────────────────────┐  │
+│  │              LLM Providers — 11 provider × 5 slot          │  │
+│  │  OpenAI / Anthropic / DeepSeek / Qwen / Gemini /          │  │
+│  │  SiliconFlow / OpenRouter / Ollama / vLLM / Custom / Mock │  │
+│  └──────────────────────────────────────────────────────────┘  │
+└──────────────────────────────────────────────────────────────────┘
 ```
 
-## 安全模型
+---
 
-4 层防护：
+## R-CCAM 5 阶段
 
-1. **工具策略** — 14 工具全部声明 channels/roles/rateLimit
-2. **Skill Bank 合约扫描** — `injection_scanner.py` 3 级检测（高/中/低风险）
-3. **Channel 感知** — 群聊场景记忆写入降级为只读
-4. **结构化 Session Key** — `workspace:channel:userId` 隔离
-
-## 跨平台 Rust 扩展
-
-`lfm_server.rs` 条件编译：
-- **Linux/macOS**：UDS (Unix Domain Socket)
-- **Windows**：TCP localhost（自动分配端口）
-
-4 目标交叉编译：
-```bash
-make native-cross                  # 安装 target
-make native-build-linux-x64        # Linux x86_64
-make native-build-linux-arm64      # Linux ARM64
-make native-build-win-x64          # Windows x86_64
-make native-build-win-arm64        # Windows ARM64
-make native-package                # 打包 4 平台 tar.gz
-make native-install-prebuilt       # 自动检测平台安装
 ```
+Retrieval → Cognition → Control → Action → Memory
+    │            │          │         │        │
+    ▼            ▼          ▼         ▼        ▼
+  检索候选    推理分析    路由决策    工具执行    写回记忆
+  (BGE/BoW)  (LLM)    (ACRouter)  (shell/IO)   (vector+engram)
+```
+
+每阶段通过 `PhaseState` 对象传递（`services/rccam_state.py`），从 God Object 模式提取。
+
+---
 
 ## 目录结构
 
 ```
 GalaxyOS/
-├── extensions/galaxyos/
-│   ├── index.js                 # 主插件（~5200 行）— 9 钩子 / 15 工具 / 2 插槽
-│   ├── openclaw.plugin.json     # 插件契约
-│   ├── clawhub.json             # ClawHub 发布清单（9 技能 ≤97 字符）
-│   ├── scripts/                 # Python 脚本
-│   │   ├── injection_scanner.py # Skill Bank 内容扫描器
-│   │   ├── lfm_skill_bank.py    # LFM 技能库
-│   │   ├── multi_agent_orchestrator.py
-│   │   ├── dag_context_manager.py
-│   │   └── ...
-│   └── native/                  # Rust 跨平台原生扩展
-├── galaxyos/                    # 统一 Python 包
-│   ├── engine/
-│   ├── privileged/
-│   │   └── acp_server.py        # 含 3 个调试端点
+├── galaxyos/                    # 核心 Python 包
+│   ├── harness/                 # DeepAgent + Workspace + TaskLoop + sidecar_bridge
+│   ├── engine/                  # MeMo + R-CCAM + SkillGraph + ACRouter
+│   ├── orchestration/           # 跨模块编排
+│   ├── privileged/              # 调试端点（ACP server）
+│   ├── scripts/                 # install_wizard / skill_version_check
+│   └── shared/                  # 公共工具
+├── desktop-shell/               # 桌面端 Agent APP
+│   ├── python/                  # sidecar + LLM providers + TokUI DSL
+│   ├── renderer/                # HTML/JS 前端
+│   ├── src/                     # Electron 主进程
+│   └── package.json
+├── services/                    # 检索/记忆/认知层模块
+│   ├── retrieval_hub.py
+│   ├── hybrid_search.py
+│   ├── crag.py / crag_pipeline.py
+│   ├── memory_consolidation.py
+│   ├── cognitive_map.py
+│   ├── chain_of_verification.py
+│   ├── enhanced_hallucination_guard.py
+│   ├── rccam_state.py
 │   └── ...
-├── skills/                      # 技能库（60+ 个）
-├── libs/                        # 预编译包
-├── tests/                       # 137 测试用例
-├── requirements.txt
+├── skills/                      # 69 节点技能图（含 skill-creator / proactive-tasks / find-skills）
+├── legacy/                      # 旧版 OpenClaw 实现（保留历史，不推荐使用）
+├── models/                      # 预训练模型（LFM ONNX 等）
+├── data/                        # 持久化数据（向量库 / 记忆）
+├── extensions/                  # 第三方扩展（cli-anything 等）
+├── docs/                        # API 速查 / 设计文档 / 论文路线图
+├── tests/                       # 单元测试
+├── bin/                         # 命令行工具
+├── core/                        # 核心抽象
+├── governance/                  # 治理规则
+├── patches/                     # 补丁脚本
+├── backups/                     # 备份
+├── conftest.py                  # pytest 路径注入
 ├── pyproject.toml
-├── Makefile                     # 含跨平台编译目标
+├── requirements.txt / requirements-core.txt / requirements-heavy.txt
+├── Makefile
 ├── CHANGELOG.md
-└── VERSION                      # 8.6.0
+├── CONTRIBUTING.md
+├── docs/API.md                  # 完整 API 速查
+└── VERSION
 ```
+
+---
 
 ## 版本历史
 
-### v8.6.0 (2026-06-28) — OpenClaw 深度集成改造
+### v9.4 (2026-06-30) — MultiSlotRouter 5-slot optional
 
-**Phase 1 核心断链修复**：5 个新钩子 + 结构化 session key + 幂等层 + lane 声明
-**Phase 2 安全与隔离加固**：14 工具 policy + 内容扫描器 + 群聊只读降级
-**Phase 3 系统对齐**：SKILL.md 输出 + Heartbeat/Cron + Sub-Agent + ACP 调试端点
-**Phase 4 生态融合**：Node 系统集成 + ClawHub 发布 + progressive disclosure
+- MultiSlotRouter 新增 `vlm` slot，扩到 5 个独立槽
+- 每个 slot 默认 `enabled=False`，调用方按需启用
+- `is_enabled()` / `disable_slot()` 新 API
+- Settings UI 4 tab 加"启用"复选框，LLM 默认开，其余默认关
+- sidecar `set_config` 区分"主动禁用"vs"保持现状"，未传 slot 不再 reset
+- 只有 `llm` slot 变化时才重建 Executive（embedding/rerank/vlm 切换不打断 LLM 流）
+- +10 MultiSlotRouter 测试 + 9 sidecar set_config 测试（70/70 v9.x 测试通过）
+- 删根目录 `SKILL.md`（OpenClaw 阶段残留，v9 不再需要）
 
-**Rust 跨平台**：Unix/Windows 条件编译 + 4 目标交叉编译 + 预编译包打包
+### v9.3 (2026-06-29) — TokUI DSL 扩展 + 4-tab 设置
 
-**安装向导增强**：检查 slots 配置 + 给出完整 openclaw.json 示例
+- `tokui_dsl.py` 从 6 builder 扩到 21（progress / upd / callout / stat / code / tag / source / quick-reply / suggestion / latency / diff / artifact / welcome / tool-result / loop-progress / plan-step with step_id）
+- Settings UI 加 4 tab（LLM / Embedding / Rerank / VLM）+ provider 目录
+- plan-step 加 `[upd id:plan_step_N status:success]` 翻转协议
+- httpx.MockTransport 测试验证 Bearer / x-api-key / SSE 解析
 
-### v8.5.3 (2026-06-25) — MultiAgent P1+P2 全量
+### v9.2 (2026-06-29) — Multi-provider LLM layer
 
-### v8.4.2 (2026-06-23) — enhanced_recall 8 阶段 + SkillGraph
+- 11 provider 支持（OpenAI / DeepSeek / Qwen / Anthropic / Google / SiliconFlow / OpenRouter / Ollama / vLLM / Custom / Mock）
+- 纯 httpx 实现（无 SDK 依赖）
+- MultiSlotRouter 4 slot（llm / llm_pro / embedding / rerank）
+- 前端 Model picker 4 组目录（主流 / 本地 / 自定义 / 离线）
+- 34 unit test（provider 路由 / 多 slot / mock transport / Anthropic 协议）
+
+### v9.1 (2026-06-29) — SidecarBackend 桥接
+
+- `harness/sidecar_bridge.py::SidecarBackend` in-process 桥接 DeepAgent ↔ SidecarHandlers
+- `ProviderBackendWrapper` 包装任意 LLMBackend 让 DeepAgent.run() 走 httpx
+- 17 harness sidecar bridge 测试
+
+### v9.0 (2026-06-29) — 独立 Agent APP 框架
+
+- 砍 OpenClaw 包袱，独立 Python 包
+- `galaxyos.harness` 顶层入口（对标 openJiuwen `create_deep_agent`）
+- DeepAgent / Workspace / TaskLoopEvent 三件套
+- SidecarHandlers 30+ RPC 方法复用
+- 桌面端双形态（harness lib + desktop-shell app）
+
+### v8.6.0 (2026-06-28) — OpenClaw 深度集成（历史）
+
+> v8.6.0 是 GalaxyOS 与 OpenClaw 集成的最后一个版本。v9.0 起 GalaxyOS 独立运行，**不再依赖 OpenClaw gateway / slots / hooks**。如需旧集成方式，代码仍在 `legacy/openclaw/`。
+
+---
 
 ## 生态
 
-- **[OpenClaw](https://github.com/openclaw/openclaw)** — AI Assistant 框架
-- **[ClawHub](https://cnb.cool)** — 技能包市场
+- **[docs/API.md](docs/API.md)** — 完整 API 速查
+- **[docs/paper-roadmap.md](docs/paper-roadmap.md)** — 论文路线图（R-CCAM / MeMo / COSPLAY）
+- **[docs/superpowers/](docs/superpowers/)** — 设计文档 + 评审记录
+- **[CONTRIBUTING.md](CONTRIBUTING.md)** — 贡献指南
+- **[CHANGELOG.md](CHANGELOG.md)** — 完整变更日志
+- **[galaxyos/harness/](galaxyos/harness/)** — harness API docstring
+
+---
 
 ## 开发
 
-| 资源 | 说明 |
+| 命令 | 说明 |
 |------|------|
-| [CONTRIBUTING.md](CONTRIBUTING.md) | 贡献指南 |
-| [CHANGELOG.md](CHANGELOG.md) | 版本变更记录 |
-| `make test` | 运行测试 |
-| `make native` | 编译 Rust 扩展 |
+| `make test` | 运行单元测试 |
 | `python3.12 -m galaxyos.scripts.install_wizard --check` | 自检 |
+| `cd desktop-shell && python python/galaxyos_sidecar.py` | 启动桌面端 sidecar |
+| `cd desktop-shell && python -m http.server 8080` | 启动前端 |
+
+---
 
 ## 许可证
 

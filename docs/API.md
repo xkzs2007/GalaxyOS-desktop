@@ -1,12 +1,133 @@
 # GalaxyOS API 速查
 
-核心模块的公开 API 一览。适合新维护者快速了解各模块能力。
+> GalaxyOS v9.4 — 核心模块的公开 API 一览。适合新维护者快速了解各模块能力。
+>
+> 架构总览见 [`README.md`](../README.md)；harness 详细 docstring 见 `galaxyos/harness/`。
+
+---
 
 ## 主入口
 
-### `XiaoYiClawLLM` (`services/xiaoyi_claw_api.py`)
+### `create_galaxy_agent` (`galaxyos/harness/factory.py`) — v9.0
 
-统一 API 入口，整合所有底层能力。
+**v9.0 新加**：harness 顶层入口，对标 openJiuwen `create_deep_agent()`。
+
+```python
+from galaxyos.harness import create_galaxy_agent
+
+agent = create_galaxy_agent(
+    name="assistant",
+    model="lfm2.5-1.2b-instruct",   # 或 "anthropic/claude-3-5-sonnet"
+    workspace_dir="~/.galaxyos/workspace",
+    tools=["shell", "read_file", "write_file", "grep", "diff", "list_files"],
+    memory="vector",                 # vector | liquid | mock
+    skill_graph=True,
+    max_iterations=20,
+    temperature=0.7,
+    system_prompt="你是一个专业的编程助手",
+)
+result = await agent.run("你好")
+print(result["result"], result.get("skills_used"))
+```
+
+环境变量（未显式传时读取）：
+
+| 变量 | 默认 |
+|------|------|
+| `GALAXYOS_AGENT_NAME` | `"galaxy-agent"` |
+| `GALAXYOS_AGENT_MODEL` | `"lfm2.5-1.2b-instruct"` |
+| `GALAXYOS_HOME` | `~/.galaxyos` |
+
+### `SidecarHandlers` (`desktop-shell/python/galaxyos_sidecar.py`) — v9.0
+
+桌面端 sidecar 的 RPC 处理层。30+ 方法，zmq + SSE 双传输复用。
+
+```python
+import sys; sys.path.insert(0, "desktop-shell/python")
+from galaxyos_sidecar import SidecarHandlers
+
+h = SidecarHandlers()
+# 健康检查
+status = h.health({})
+# 多 slot LLM 配置（v9.2-v9.4）
+h.set_config({
+    "llm":       {"enabled": True, "provider": "anthropic", "api_key": "sk-...",
+                  "model": "claude-3-5-sonnet-20241022"},
+    "embedding": {"enabled": False},   # 走 BoW fallback
+    "rerank":    {"enabled": False},   # 不重排
+    "vlm":       {"enabled": False},   # 图片附件显示 "VLM 未配置"
+})
+# LLM provider 目录
+catalog = h.list_providers({})["providers"]   # 11 个
+```
+
+### `MultiSlotRouter` (`desktop-shell/python/llm_providers.py`) — v9.2
+
+**v9.2-v9.4 新加**：5 slot 独立 provider 路由。LLM 必填，其余可选。
+
+```python
+from llm_providers import MultiSlotRouter, build_llm_backend, MAINSTREAM_PROVIDERS
+
+router = MultiSlotRouter()  # 5 slot, 全部默认 disabled
+router.set_slot("llm", {"provider": "anthropic", "api_key": "sk-...",
+                         "model": "claude-3-5-sonnet"})
+router.set_slot("embedding", {"provider": "openai", "api_key": "sk-...",
+                              "model": "text-embedding-3-small"})
+# 启用 / 禁用
+router.is_enabled("vlm")           # False
+router.disable_slot("embedding")   # 强制回退到 BoW / mock
+# 后端工厂
+backend = build_llm_backend({"provider": "deepseek", "api_key": "sk-...",
+                             "model": "deepseek-chat"})
+# 主目录
+for p in MAINSTREAM_PROVIDERS:
+    print(p)  # (id, name, default_model, hint)
+```
+
+### `SidecarBackend` (`galaxyos/harness/sidecar_bridge.py`) — v9.1
+
+**v9.1 新加**：in-process 桥接 DeepAgent ↔ SidecarHandlers。
+
+```python
+from galaxyos.harness.sidecar_bridge import (
+    build_sidecar_backend, build_provider_backend, ProviderBackendWrapper,
+)
+
+# 1. 走 SidecarHandlers 完整栈（76 skills + MeMo + ACRouter）
+backend = build_sidecar_backend(model="qwen-2.5")
+result = await backend.chat([{"role": "user", "content": "hi"}])
+
+# 2. 直连 provider（headless / CI 用）
+direct = build_provider_backend({"provider": "anthropic", "api_key": "sk-...",
+                                 "model": "claude-3-5-sonnet"})
+result = await direct.chat([{"role": "user", "content": "hi"}])
+```
+
+### `TokUI DSL` (`desktop-shell/python/tokui_dsl.py`) — v9.3
+
+**v9.3 新加**：21 builder 流式 UI DSL。
+
+```python
+from tokui_dsl import (
+    bubble, md, p, progress, upd, callout, stat, code, tag, source,
+    quick_reply, suggestion, latency, diff, artifact, welcome,
+    tool_result, loop_progress, plan_step,
+)
+
+# 流式输出
+ui.feed(bubble(role="ai", model="GalaxyOS"))
+ui.feed(md("# Hello\n\n这是**加粗**文字。"))
+ui.feed(progress("loading", percent=42))
+ui.feed(plan_step("step-1", "检索", status="running"))
+ui.feed(plan_step("step-1", "检索", status="success"))  # upd 翻转
+ui.feed(callout("完成", v="success"))
+ui.feed(tool_result("recall", status="done", duration=0.5))
+```
+
+### `XiaoYiClawLLM` (`services/xiaoyi_claw_api.py`) — 旧入口
+
+> v8.6 时期的主入口。v9 起推荐用 `create_galaxy_agent()` 或 `SidecarHandlers`。
+> 此 API 保留是为了向后兼容，新代码不应再使用。
 
 ```python
 from services.xiaoyi_claw_api import XiaoYiClawLLM
@@ -34,7 +155,7 @@ claw.health_check() → Dict
 claw.get_status() → Dict
 ```
 
-### 便捷函数 (`services/claw_helpers.py`)
+### 便捷函数 (`services/claw_helpers.py`) — 旧便捷入口
 
 ```python
 from services.claw_helpers import remember, recall, forget, get_entity, learn
@@ -331,6 +452,40 @@ state.retrieved_memories, state.analysis, state.strategy, ...
 
 ---
 
+## MultiAgent 编排
+
+### `MultiAgentOrchestrator` (`services/multi_agent_orchestrator.py`)
+
+5 角色 + 公告板 + Judge 蒸馏 + 交叉验证。
+
+```python
+from services.multi_agent_orchestrator import MultiAgentOrchestrator
+
+orch = MultiAgentOrchestrator(llm_flash=llm, max_workers=4)
+result = orch.run(query="...", analysis={"input_class": "complex"}, tool_bag={...})
+# result["answer"], result["announce_payload"], result["judge_score"]
+```
+
+---
+
+## LFM Skill Bank
+
+### `LfmSkillBank` (`galaxyos/engine/lfm_skill_bank.py`)
+
+5 维评分技能库（质量/复用/合约/一致/探索）。
+
+```python
+from galaxyos.engine.lfm_skill_bank import get_skill_bank, feed_memory_to_skill_bank
+
+bank = get_skill_bank()
+bank.discover_proto_skills()    # 从 segments 聚类发现 ProtoSkill
+bank.promote_proto_skills()     # 毕业为成熟 Skill
+bank.run_maintenance()          # Merge/Split/Refine/Retire
+bank.retrieve_skills(query_embedding=emb, top_k=5)  # 检索
+```
+
+---
+
 ## 安装向导
 
 ```bash
@@ -342,138 +497,50 @@ python scripts/install_wizard.py --all     # 全量体检
 
 ---
 
-## 配置
+## 配置（v9.2-v9.4 多 slot）
 
-`config/llm_config.json` 管理所有外部 API：
+GalaxyOS **不绑定任何远端 LLM**。`MultiSlotRouter` 管理 5 个独立 slot：
 
-| 字段 | 用途 | 提供商 |
-|------|------|--------|
-| `llm` | 对话推理 | DeepSeek v4-flash |
-| `llm_pro` | 批量处理 | DeepSeek v4-pro |
-| `embedding` | 文本向量 (bge-m3) | 硅基流动 |
-| `rerank` | 结果重排 (bge-reranker-v2-m3) | 硅基流动 |
-| `vlm` | 图像理解 | 硅基流动 |
+| Slot | 必填？ | 用途 | 未配置回退 |
+|------|--------|------|-----------|
+| `llm` | ✅ | 主对话推理 | 无（必须） |
+| `llm_pro` | ❌ | 复杂任务升级 | `llm` slot |
+| `embedding` | ❌ | 向量检索 | BoW 检索（`ac_router.py`） |
+| `rerank` | ❌ | 检索重排 | 原始 top-k |
+| `vlm` | ❌ | 图片 OCR / 多模态 | "VLM 未配置" 提示 |
 
-模板: `config/llm_config.example.json`
+**provider 目录**（`MAINSTREAM_PROVIDERS`）：
 
----
+| 类别 | Provider | 默认模型 |
+|------|----------|----------|
+| 主流 | openai / deepseek / qwen / anthropic / google | 各自旗舰 |
+| 托管 | siliconflow / openrouter | 多模型聚合 |
+| 本地 | ollama / vllm | 开源 LLM |
+| 自定义 | custom (OpenAI 兼容) | 用户填 |
+| 离线 | mock | mock-1（脱机回声） |
 
-## 安全与隔离（v8.6.0 新增）
+**配置方式**：
 
-### `InjectionScanner` (`extensions/galaxyos/scripts/injection_scanner.py`)
-
-Skill Bank 合约内容扫描器，检测 prompt injection 特征。
-
-```python
-from injection_scanner import get_scanner, scan_before_graduate
-
-scanner = get_scanner()
-result = scanner.scan(contract_text)
-# result.risky / result.score / result.risk_level (safe/low/medium/high)
-
-# 毕业前扫描（集成在 LfmSkillBank.promote_proto_skills 中）
-result = scan_before_graduate(proto_skill, contract)
-# 高风险 → 隔离不毕业；中风险 → 审核队列；低风险 → 放行
-```
-
-### `ReviewQueue` / `ProvenanceStore`
-
-```python
-from injection_scanner import get_review_queue, get_provenance_store
-
-rq = get_review_queue()
-rq.list_pending()        # 待审核技能列表
-rq.size()                # 队列大小
-
-ps = get_provenance_store()
-ps.record(name, info)    # 记录技能来源
-ps.find_contaminated(min_score=0.5)  # 查找污染技能（回滚用）
-```
+- **Settings UI**：桌面端 `Settings` 模态框 4 tab（LLM/Embedding/Rerank/VLM）+ 启用复选框
+- **CLI / lib**：直接调 `MultiSlotRouter.set_slot(slot, spec)`
+- **环境变量**：`LLM_API_KEY` / `LLM_API_BASE` / `DEEPSEEK_API_KEY`（向后兼容）
 
 ---
 
-## MultiAgent 编排（v8.5.3 + v8.6.0 增强）
-
-### `MultiAgentOrchestrator` (`extensions/galaxyos/scripts/multi_agent_orchestrator.py`)
-
-```python
-from multi_agent_orchestrator import MultiAgentOrchestrator
-
-orch = MultiAgentOrchestrator(llm_flash=llm, max_workers=4)
-
-# 常规编排
-result = orch.run(query="...", analysis={"input_class": "complex"}, tool_bag={...})
-
-# v8.6.0: OpenClaw Sub-Agent 模式（遵循 session key 格式/受限工具集/announce 回传）
-result = orch.spawn_as_sub_agent(
-    query="...",
-    parent_agent_id="agent-1",
-    parent_session_key="ws:dm:user1",
-    analysis={"input_class": "complex"},
-    tool_bag={"web_search": search_fn},
-)
-# result["session_key"] → "agent:agent-1:subagent:xxxx"
-# result["announce_payload"] → 回传主会话的 payload
-```
-
----
-
-## LFM Skill Bank（v8.5.2 + v8.6.0 增强）
-
-### `LfmSkillBank` (`extensions/galaxyos/scripts/lfm_skill_bank.py`)
-
-```python
-from lfm_skill_bank import get_skill_bank, feed_memory_to_skill_bank
-
-bank = get_skill_bank()
-bank.discover_proto_skills()    # 从 segments 聚类发现 ProtoSkill
-bank.promote_proto_skills()     # 毕业（含 injection_scanner 扫描 + SKILL.md 输出）
-bank.run_maintenance()          # Merge/Split/Refine/Retire
-bank.retrieve_skills(query_embedding=emb, top_k=5)  # 检索
-
-# v8.6.0: 毕业后自动输出 SKILL.md 到 workspace/skills/
-# bank._export_skill_md(skill, proto_skill) → path
-```
-
----
-
-## ACP 调试端点（v8.6.0 新增）
-
-### `ACPServer` (`galaxyos/privileged/acp_server.py`)
-
-```python
-from acp_server import ACPServer
-
-server = ACPServer()
-# 原有 5 工具: memory_search / memory_add / query_rewrite / rrf_fusion / embedding_encode
-# v8.6.0 新增 3 个调试端点:
-#   debug_dag_visualize  → DAG 节点+边列表（编辑器可视化）
-#   debug_engram_inspect → engram 记忆检查
-#   debug_skill_bank_status → Skill Bank 状态 + 审核队列 + 来源追溯
-```
-
----
-
-## 跨平台 Rust 扩展（v8.6.0 新增）
-
-### `lfm_server` (`extensions/galaxyos/native/src/bin/lfm_server.rs`)
-
-条件编译跨平台 IPC：
-- **Unix**（Linux/macOS）: UDS (`UnixListener`)
-- **Windows**: TCP localhost (`TcpListener`, 自动分配端口)
+## 测试运行
 
 ```bash
-# 4 目标交叉编译
-make native-build-linux-x64
-make native-build-linux-arm64
-make native-build-win-x64
-make native-build-win-arm64
+# 全部
+python3.12 -m pytest tests/
 
-# 打包 + 安装
-make native-package
-make native-install-prebuilt   # 自动检测平台
+# v9.x 新测试
+python3.12 -m pytest tests/test_llm_providers.py tests/test_sidecar_set_config.py \
+  tests/test_harness_sidecar_bridge.py
+
+# 单文件
+python3.12 -m pytest tests/test_rccam_state.py -v
 ```
 
 ---
 
-> 更多细节见 `SKILL.md` 架构文档和 `README.md`。
+> 更多细节见 [`README.md`](../README.md) 架构总览，以及 `galaxyos/harness/` 顶层 docstring。
