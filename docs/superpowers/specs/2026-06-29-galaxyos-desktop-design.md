@@ -4,8 +4,8 @@
 > **本地**：`C:/Users/Administrator/ZCodeProject/galaxyos/` (浅克隆 222 MB)
 > **目标**：OpenClaw 插件 → **ZCode/Codex 级别独立桌面 Agent 应用**
 > **参考论文**：[Agent-as-a-Router (arXiv 2606.22902)](https://arxiv.org/abs/2606.22902) + [MeMo (arXiv 2605.15156)](https://arxiv.org/abs/2605.15156)
-> **设计日期**：2026-06-29 (v4 — ZCode/Codex UX 全集)
-> **状态**：阶段一.6 + 阶段二（Agent 模式 + 多会话 + model picker）✅ 完成。MeMo + ACRouter 待实施。
+> **设计日期**：2026-06-29 (v5 — 阶段三完成)
+> **状态**：✅ **全部完成**。阶段一.6 + 阶段二（Agent 模式 + 多会话 + model picker） + **阶段三.0 (MeMo 3-stage) + 阶段三.5 (ACRouter C-A-F loop)**。
 
 ---
 
@@ -308,8 +308,9 @@
 | **阶段二 - Agent** | ✅ **完成** | tools.py (6 工具) + agent_loop.py + /sse/agent 路由；真 shell 跑通 |
 | **阶段二 - 多会话** | ✅ **完成** | sessions.js + localStorage 持久化；切换 / 重命名 / 删除 / 新建 |
 | **阶段二 - Model picker** | ✅ **完成** | model_picker.js + 5 个模型 + topbar dropdown + localStorage 持久化 |
-| 阶段二 - MeMo | ⏸ 待实施 | MeMo 三阶段协议 + ONNX 推理 |
-| 阶段三 - ACRouter | ⏸ 待实施 | C-A-F 路由环 + Orchestrator + Verifier + Memory + CumReg 评估 |
+| **阶段三.0 - MeMo** | ✅ **完成** | memo_adapter.py + memo_stages.py (Grounding→Entity→Answer) + executive_client.py + /sse/memo；问"GalaxyOS/R-CCAM/MeMo/TokUI/Agent-as-a-Router"等事实 走 3-stage 协议 |
+| **阶段三.5 - ACRouter** | ✅ **完成** | ac_router.py (Orchestrator + Verifier + Memory + C-A-F loop) + cumulative_regret.py + 4 unit tests；/sse/ask 自动路由到 fast_path / process_5_stage / memo_3stage；bubble header 显示 "ACRouter" 徽章 + 4 阶段 routing trace |
+| 阶段四 (后续) | ⏸ 可选 | 真实 ONNX MeMo 权重（Qwen2.5-1.5B INT4 SFT）+ 真实 LoRA Orchestrator (Qwen3.5-0.8B) + DeepSeek API 替换 Mock Executive + Electron 包装 + 跨平台打包 |
 
 ## 10. ZCode/Codex UX 全集对照表
 
@@ -336,6 +337,8 @@
 - `2026-06-29-stage2-agent-shell.png` — Agent 模式跑 `!ls -la` 真 shell
 - `2026-06-29-stage2.1-multisession.png` — 3 个 session 切换 + skills 列表更新
 - `2026-06-29-stage2.2-model-picker.png` — Model picker dropdown 打开
+- `2026-06-29-stage3.0-memo-3stage.png` — MeMo 模式问 "What is GalaxyOS"，3 阶段协议完整渲染
+- `2026-06-29-stage3.5-acrouter.png` — Ask 模式问 "What is GalaxyOS"，ACRouter 自动路由到 memo_3stage，bubble header 显示 "ACRouter" 徽章 + 4 阶段 routing trace (Context → Action → Feedback → Memorize)
 
 ## 12. 启动命令
 
