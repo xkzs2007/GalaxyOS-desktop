@@ -174,6 +174,8 @@ function setMode(mode) {
     ? '简单提问（Enter 发送）'
     : mode === 'agent'
     ? 'Agent 任务：!cmd / read file / grep / list / write path=content'
+    : mode === 'memo'
+    ? 'MeMo 三阶段：问 GalaxyOS / R-CCAM / MeMo / TokUI / Agent-as-a-Router 之类的事实'
     : '复杂任务（Enter 启动 R-CCAM 5 阶段推理）';
 }
 
@@ -206,11 +208,15 @@ async function handleSend() {
   ui.startStream();
   state.isStreaming = true;
   sendBtn.disabled = true;
-  // Pick endpoint + params per mode. Agent mode hits /sse/agent
-  // which actually executes tools (shell_run / read_file / etc.).
-  const endpoint = state.mode === 'ask' ? 'ask'
-                  : state.mode === 'agent' ? 'agent'
-                  : 'process';
+  // Pick endpoint + params per mode.
+  //   ask     → /sse/ask    (single-step recall)
+  //   process → /sse/process (R-CCAM 5-stage)
+  //   agent   → /sse/agent  (real tool execution)
+  //   memo    → /sse/memo   (MeMo 3-stage protocol)
+  const endpoint =
+    state.mode === 'process' ? 'process' :
+    state.mode === 'agent' ? 'agent' :
+    state.mode === 'memo' ? 'memo' : 'ask';
   const params = state.mode === 'process'
     ? { user_input: text, session_id: state.sessionId }
     : { prompt: text, session_id: state.sessionId };

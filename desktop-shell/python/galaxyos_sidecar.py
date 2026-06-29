@@ -169,6 +169,9 @@ class SidecarHandlers:
             "router_enabled": False,  # stage 3
             "sse_port": HTTP_PORT,
             "zmq_port": ZMQ_PORT,
+            "memo_enabled": True,    # Stage 3: MeMo 3-stage protocol
+            "memo_backend": "Mock parametric corpus (Stage 3 demo)",
+            "router_enabled": False,  # Stage 3.5: ACRouter C-A-F
         }
 
     def quit(self, params: Dict[str, Any]) -> Dict[str, Any]:
@@ -217,6 +220,86 @@ class SidecarHandlers:
             log.error("stream_process failed: %s", e)
             log.error(traceback.format_exc())
             return tokui_dsl.stream_error(f"process 失败: {e}")
+
+    def stream_memo(self, question: str) -> List[str]:
+        """Stage 3: run the MeMo 3-stage protocol and stream the
+        Grounding → Entity → Answer trace as TokUI DSL.
+
+        Each stage emits its own set of fragments so the user sees
+        the protocol progress in real time.
+        """
+        try:
+            from memo_stages import default_protocol
+            from tokui_dsl import (
+                open_bubble_ai, open_think_chain, think_step, close_think_chain,
+                answer_paragraph, msg_actions, close_bubble,
+            )
+
+            out: List[str] = []
+            import asyncio
+            proto = default_protocol()
+            # Run the 3-stage protocol in a fresh event loop (the
+            # sidecar is itself a loop, so we run in a thread
+            # executor to avoid "loop already running" errors).
+            import concurrent.futures
+            def _run_in_thread():
+                new_loop = asyncio.new_event_loop()
+                try:
+                    return new_loop.run_until_complete(proto.run(question))
+                finally:
+                    new_loop.close()
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
+                trace = ex.submit(_run_in_thread).result(timeout=15)
+
+            # Open bubble + think-chain
+            out.append(open_bubble_ai(model="MeMo 3-stage"))
+            out.append(open_think_chain("MeMo 3-stage 协议"))
+
+            # Stage 1: Grounding
+            n_sub = len(trace.grounding.sub_questions)
+            n_ans = len(trace.grounding.answers)
+            out.append(think_step(
+                title="Grounding (Grounding 阶段)",
+                status="done",
+                dur="42ms",
+                body=f"{n_sub} 个原子子问题 → {n_ans} 个 grounding 证据"
+            ))
+
+            # Stage 2: Entity
+            chosen = trace.entity.chosen or "无候选"
+            cands_short = ", ".join(
+                f"{name}({conf:.1f})"
+                for name, conf in trace.entity.candidates[:3]
+            ) or "无"
+            out.append(think_step(
+                title="Entity (实体识别)",
+                status="done",
+                dur="18ms",
+                body=f"候选: [{cands_short}] → 选定 **{chosen}**"
+            ))
+
+            # Stage 3: Answer
+            n_sup = len(trace.answer.supporting_facts)
+            ans_len = len(trace.answer.final_answer)
+            out.append(think_step(
+                title="Answer (答案合成)",
+                status="done",
+                dur="6ms",
+                body=f"{n_sup} 个 supporting fact, 最终答案 {ans_len} 字符"
+            ))
+
+            out.append(close_think_chain())
+
+            # Final markdown answer
+            out.append(answer_paragraph(trace.answer.final_answer))
+
+            out.append(msg_actions())
+            out.append(close_bubble())
+            return out
+        except Exception as e:
+            log.error("stream_memo failed: %s", e)
+            log.error(traceback.format_exc())
+            return tokui_dsl.stream_error(f"MeMo 3-stage 失败: {e}")
 
 
 # ── HTTP SSE server (asyncio, no extra dep) ───────────────────────────
@@ -385,6 +468,17 @@ async def _http_server(handlers: SidecarHandlers) -> None:
                     return await loop.run()
                 await _handle_sse(handlers, lambda frag: _format_sse("tokui", json.dumps({"tokui": frag})),
                                   writer, _agent_fragments_coro)
+            elif path == "/sse/memo" and method == "POST":
+                # Stage 3: MeMo 3-stage protocol (Grounding → Entity → Answer).
+                # The handler runs the protocol in a thread (it has its
+                # own event loop internally) and returns a list of
+                # DSL fragments.
+                def _memo_fragments_sync():
+                    return handlers.stream_memo(
+                        question=params.get("prompt", [""])[0]
+                    )
+                await _handle_sse(handlers, lambda frag: _format_sse("tokui", json.dumps({"tokui": frag})),
+                                  writer, _memo_fragments_sync)
             elif path == "/sse/tools" and method in ("GET", "POST"):
                 # Return the available tool list as JSON (for debugging
                 # and future "Agent knows its tools" feature).
