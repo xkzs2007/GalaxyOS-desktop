@@ -1,5 +1,101 @@
 # Changelog
 
+## [v9.4.1] — 2026-06-30
+
+### Fixed
+- **CI**: 修复 `.cnb.yml` 让 v9.4 能在 cnb.cool 跑过
+  - `requirements-core.txt` +`pytest-asyncio>=0.23.0`（v9 测试用了 `@pytest.mark.asyncio`）
+  - 删 `security-check` / `node-check` 整段（v8.6 OpenClaw 集成残留：injection_scanner + Node 插件 `extensions/galaxyos/index.js`）
+  - 加 `harness-import-check` + `desktop-shell-import-check` 验证 v9.4 5-slot 契约
+  - 加 `llm-provider-test` 单独跑 3 个 v9.x 测试文件
+  - `pr-test` 简化为只跑 3 个 v9.x 测试
+  - `$:tag_push` Rust 编译 → PyInstaller 打包 desktop-shell sidecar
+
+## [v9.4.0] — 2026-06-30
+
+### Added
+- **MultiSlotRouter 5-slot optional**（`desktop-shell/python/llm_providers.py`）
+  - 5 个独立 slot：`llm` / `llm_pro` / `embedding` / `rerank` / `vlm`
+  - 每个 slot 默认 `enabled=False`（即使 backend 是 mock 也算"未启用"）
+  - 新增 `is_enabled(slot)` / `disable_slot(slot)` API
+  - `set_slot(spec)` 接受 `{"enabled": false}` 显式禁用
+  - `info()` 暴露 `enabled` 字段
+- **Settings UI 4 tab**（`desktop-shell/renderer/index.html`）
+  - LLM/Embedding/Rerank/VLM 各自独立 tab + 启用复选框
+  - LLM 默认勾选（必填），其余默认关（可选，回退到本地实现）
+  - 关闭时 tab body 半透明 + 不可点
+- **sidecar `set_config` 分派改进**（`desktop-shell/python/galaxyos_sidecar.py`）
+  - `multi_slot_keys` 把 `vlm` 加上
+  - 区分"主动禁用"vs"保持现状"（`{"enabled": false}` → `disable_slot`，未传 slot → 不动）
+  - 只有 `llm` slot 变化时才重建 Executive（不打断在飞的 embedding/rerank/vlm 切换）
+
+### Tests
+- +10 `MultiSlotRouter` v9.4 测试（5-slot / 默认 disabled / disable_slot / 显式 enabled / info 加 enabled 字段）
+- +9 `sidecar set_config` 单元测试（5-slot 分派 / enable=false 调 disable_slot / llm 变化才 rebuild / system_prompt 转发 / router_info 返回）
+- **70/70 v9.x 测试通过**（34 旧 + 17 harness sidecar bridge + 19 v9.4 新）
+
+## [v9.3.0] — 2026-06-29
+
+### Added
+- **TokUI DSL 扩展**（`desktop-shell/python/tokui_dsl.py`）从 6 builder 扩到 21
+  - 新增：`progress_bar` / `upd` / `callout` / `stat` / `code_block` / `tag` / `source` / `quick_reply` / `suggestion` / `suggestions_grid` / `latency` / `diff_block` / `artifact` / `welcome` / `tool_result` / `loop_progress`
+  - `plan_step` 加 `step_id` 参数支持 `[upd id:plan_step_N status:success]` 翻转协议
+- **Settings UI 4 tab**（`desktop-shell/renderer/index.html`）
+  - LLM / Embedding / Rerank / VLM 独立配置
+  - provider 目录分 4 组（主流 / 本地 / 自定义 / 离线）
+- **Model picker 4 组目录**（`desktop-shell/renderer/model_picker.js`）
+
+### Tests
+- +3 httpx.MockTransport 端到端测试（OpenAI-compat Bearer / Anthropic x-api-key / SSE 解析）
+
+## [v9.2.0] — 2026-06-29
+
+### Added
+- **11 provider 多 LLM 支持**（`desktop-shell/python/llm_providers.py`）
+  - 主流：OpenAI / DeepSeek / Qwen DashScope / Anthropic / Google Gemini
+  - 托管：SiliconFlow / OpenRouter
+  - 本地：Ollama / vLLM
+  - 自定义：Custom (OpenAI 兼容)
+  - 离线：Mock
+- **纯 httpx 实现**（无 SDK 依赖）—— OpenAICompatClient 覆盖 6+ vendor
+- **AnthropicClient**（x-api-key / anthropic-version 协议）
+- **MockLLMClient**（脱机回声，用于无 key 场景）
+- **MultiSlotRouter**（v9.2 4-slot：llm / llm_pro / embedding / rerank）
+
+### Tests
+- +34 llm_providers 单元测试（provider 路由 / 多 slot / OpenAI/Anthropic payload / mock transport / SSE 流）
+
+## [v9.1.0] — 2026-06-29
+
+### Added
+- **SidecarBackend 桥接**（`galaxyos/harness/sidecar_bridge.py`）
+  - in-process 桥接 DeepAgent ↔ SidecarHandlers（绕开 zmq 进程间开销）
+  - `build_sidecar_backend()` / `build_provider_backend()` 工厂
+  - `ProviderBackendWrapper` 把任意 LLMBackend 包成 DeepAgent 可调的形状
+- **Agent.run() 实际调用 sidecar 30+ RPC**，返回真实结果而非 canned fallback
+
+### Tests
+- +17 harness sidecar bridge 单元测试（agent.run / stream 路径 / fragment 解析 / 后端名透传）
+
+## [v9.0.0] — 2026-06-29
+
+### Changed（破坏性）
+- **脱离 OpenClaw 独立运行**——GalaxyOS v9.0 起是**独立 Agent APP 框架**，不再依赖 OpenClaw gateway / slots / hooks
+- 砍 OpenClaw 包袱：Node 插件 `extensions/galaxyos/`、Rust 原生扩展、injection_scanner gateway 集成、ClawHub 发布、claw_* 工具表全部移除
+- 顶层入口从 `XiaoYiClawLLM` 改为 `galaxyos.harness.create_galaxy_agent()`（对标 openJiuwen `create_deep_agent`）
+
+### Added
+- **galaxyos.harness 包**（`galaxyos/harness/`）
+  - `create_galaxy_agent(name, model, ...)` 工厂入口
+  - `DeepAgent` async-first 主类
+  - `Workspace` 工具 / 记忆 / LLM 客户端 / SkillGraph 容器
+  - `TaskLoopEvent` 三件套（Start / Progress / End）
+  - `desktop_shell_compat` 6 工具（shell/read/write/grep/diff/list）
+- **SidecarHandlers**（`desktop-shell/python/galaxyos_sidecar.py`）30+ RPC 方法，zmq + SSE 双传输复用
+- **desktop-shell 桌面 APP**（`desktop-shell/`）3 栏 ZCode 布局 / TokUI 流式 AI 气泡 / Agent 工具调用
+
+---
+
 ## [v8.6.0] — 2026-06-28
 
 ### OpenClaw 深度集成改造（全 4 阶段）
