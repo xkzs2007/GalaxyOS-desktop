@@ -1,210 +1,176 @@
-# GalaxyOS Desktop (Stage 1.5 — TokUI)
+# GalaxyOS Desktop
 
-> **Status**: stage 1.5 — desktop shell + OpenClaw decoupled + **TokUI**
-> streaming UI + ZCode/Codex-style 3-column layout. No MeMo / ACRouter
-> yet (those are stages 2 and 3).
+> **ZCode/Codex 级别的独立桌面 AI Agent** — 脱离 OpenClaw，直接运行 GalaxyOS 引擎
+>
+> Stage 7 · 22 commits · TokUI + MeMo + ACRouter + MCP + 76 Skills
 
-## What this is
+## 截图
 
-A standalone desktop application wrapper around the GalaxyOS engine,
-decoupled from the OpenClaw plugin runtime. Looks and behaves like
-**ZCode / Codex**: a 3-column layout (left sidebar with sessions and
-skills, center chat with streaming AI bubbles, right details panel for
-R-CCAM trace).
+| 功能 | 截图文件 |
+|---|---|
+| 欢迎界面 | `docs/superpowers/specs/evidence/screenshots/2026-06-29-stage1.6-initial.png` |
+| Agent 模式跑 shell | `docs/superpowers/specs/evidence/screenshots/2026-06-29-stage2-agent-shell.png` |
+| 多会话管理 | `docs/superpowers/specs/evidence/screenshots/2026-06-29-stage2.1-multisession.png` |
+| Model picker | `docs/superpowers/specs/evidence/screenshots/2026-06-29-stage2.2-model-picker.png` |
+| MeMo 3-stage 协议 | `docs/superpowers/specs/evidence/screenshots/2026-06-29-stage3.0-memo-3stage.png` |
+| ACRouter 自动路由 | `docs/superpowers/specs/evidence/screenshots/2026-06-29-stage4.0-global-routing-ask.png` |
+| 真 Electron 窗口 | `docs/superpowers/specs/evidence/screenshots/2026-06-29-stage5.0-electron-real-window.png` |
+| 打包后 GalaxyOS.exe | `docs/superpowers/specs/evidence/screenshots/2026-06-29-stage5.3-packaged-exe.png` |
+| 76 Skills 加载 | `docs/superpowers/specs/evidence/screenshots/2026-06-29-stage6-76-skills-loaded.png` |
 
-The center column uses **[TokUI](https://tokui.jboltai.com/)** (jboltai
-team) as the UI library. The sidecar streams TokUI DSL fragments over
-HTTP SSE, and the renderer feeds them into the `TokUI` client, which
-parses incrementally and renders as the bytes arrive.
+## 功能清单
 
-## Layout
+| 功能 | 状态 | 说明 |
+|---|---|---|
+| **3 栏 ZCode 布局** | ✅ | sidebar / center chat / details panel |
+| **TokUI 流式 AI 气泡** | ✅ | think-chain / tool-call / terminal / sandbox / msg-actions |
+| **4 模式** | ✅ | Ask（自动路由）/ Process（R-CCAM）/ Agent（工具调用）/ MeMo*（调试） |
+| **多会话管理** | ✅ | 新建 / 切换 / 重命名 / 删除 / localStorage 持久化 |
+| **Model picker** | ✅ | 5 模型 · topbar dropdown · localStorage 持久化 |
+| **模型设置生效** | ✅ | API Key / Base URL 热更新 → sidecar 写 llm_config.json |
+| **76 Skills** | ✅ | 搜索框 · 点击查看详情 · 从原项目 skills/ 动态加载 |
+| **Settings 面板** | ✅ | API Key / Base URL / Workspace / Theme |
+| **Agent 工具调用** | ✅ | shell_run / read_file / write_file / list_dir / grep / apply_diff |
+| **Diff view** | ✅ | Agent 模式 `diff path "old"→"new"` → `[sandbox lang:diff]` |
+| **MCP Server 配置** | ✅ | mcp_client.py · 读 ~/.galaxyos/mcp.json · 发现 tools/list · 合并到注册表 |
+| **MeMo 3-stage** | ✅ | Grounding → Entity → Answer · 全局背景层 · parametric 记忆 |
+| **ACRouter C-A-F** | ✅ | Context → Action → Feedback → Memorize · 全局路由 · routing_debug footer |
+| **键盘快捷键** | ✅ | Ctrl+N / Ctrl+, / Ctrl+B / Ctrl+K / Esc |
+| **msg-action 按钮** | ✅ | copy / regenerate / like / dislike |
+| **zmq IPC bridge** | ✅ | renderer → main → sidecar via zmq REQ/REP |
+| **PyInstaller 打包** | ✅ | galaxyos-sidecar.exe (17MB) |
+| **electron-builder** | ✅ | GalaxyOS.exe (186MB standalone) |
+| **应用图标** | ✅ | 512x512 GalaxyOS brand icon |
+| **OpenClaw 解耦** | ✅ | path_resolver shim · 不需要 OpenClaw 运行 |
+
+## 架构
+
+```
+┌──────────────────────────────────────────────────────────┐
+│  GalaxyOS.exe (Electron 32, 1280×820 native window)       │
+│  ┌──────────┐  ┌─────────────────┐  ┌─────────────────┐   │
+│  │ Sidebar  │  │  Center (TokUI) │  │  Details Panel  │   │
+│  │ sessions │  │  流式 AI 气泡    │  │  R-CCAM trace   │   │
+│  │ skills   │  │  4 mode 切换     │  │  Skill 详情      │   │
+│  │ settings │  │  composer        │  │  Diff view      │   │
+│  └──────────┘  └────────┬─────────┘  └─────────────────┘   │
+│                         │ IPC (zmq REQ/REP :5757)          │
+│  ┌──────────────────────▼──────────────────────────────┐  │
+│  │  Python Sidecar (galaxyos-sidecar.exe)               │  │
+│  │  ┌─────────┐  ┌──────────┐  ┌────────────────────┐  │  │
+│  │  │ XiaoYi  │  │  MeMo    │  │  ACRouter          │  │  │
+│  │  │ ClawLLM │  │  3-stage │  │  C-A-F loop        │  │  │
+│  │  │ (engine)│  │  (global)│  │  Orch+Verif+Memory │  │  │
+│  │  └─────────┘  └──────────┘  └────────────────────┘  │  │
+│  │  ┌──────────┐  ┌──────────┐  ┌────────────────────┐  │  │
+│  │  │ 6 Tools  │  │ MCP      │  │ 76 Skills          │  │  │
+│  │  │ shell/   │  │ Client   │  │ (from skills/)     │  │  │
+│  │  │ read/    │  │          │  │                    │  │  │
+│  │  │ write/   │  │          │  │                    │  │  │
+│  │  │ grep/    │  │          │  │                    │  │  │
+│  │  │ diff     │  │          │  │                    │  │  │
+│  │  └──────────┘  └──────────┘  └────────────────────┘  │  │
+│  └─────────────────────────────────────────────────────┘  │
+└──────────────────────────────────────────────────────────┘
+```
+
+## 快速启动
+
+### 方式 1：开发模式
+
+```bash
+# 1. 安装依赖
+cd galaxyos/desktop-shell
+npm install
+python -m pip install -r ../requirements-core.txt pyzmq openai
+
+# 2. 构建 + 启动
+npm run dev
+```
+
+### 方式 2：直接运行
+
+```bash
+# 1. 启 sidecar
+cd galaxyos/desktop-shell
+python -c "import sys; sys.path.insert(0,'python'); import asyncio; from galaxyos_sidecar import main_async; asyncio.run(main_async())"
+
+# 2. 启 renderer (任意浏览器)
+cd galaxyos/desktop-shell/renderer && python -m http.server 8080
+
+# 3. 浏览器打开 http://127.0.0.1:8080
+```
+
+### 方式 3：打包后的 GalaxyOS.exe
+
+```bash
+cd galaxyos/desktop-shell
+# 打 sidecar
+cd python && pyinstaller galaxyos-sidecar.spec && cd ..
+# 打 Electron
+node_modules/.bin/electron-builder --win --dir
+# 运行
+./release/win-unpacked/GalaxyOS.exe
+```
+
+## 配置
+
+### LLM API Key
+点 **⚙ 设置**（或 Ctrl+,）→ 填 API Key + Base URL → 保存。Sidecar 热更新 `llm_config.json`，之后所有回答走真实 LLM。
+
+### MCP Servers
+编辑 `~/.galaxyos/mcp.json`：
+```json
+{"servers": [{"name": "fs", "command": "npx", "args": ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"]}]}
+```
+Sidecar 启动时自动发现 MCP 工具并合并到 Agent 工具注册表。
+
+### Workspace
+默认 `~/.galaxyos/workspace/sandbox/`。Agent 的文件操作（read/write/grep）限制在此目录内。
+
+## 文件结构
 
 ```
 desktop-shell/
-├── package.json                  # Electron + @jboltai/tokui + zeromq + esbuild
-├── tsconfig.json                 # TS for main + preload
-├── esbuild.config.mjs            # bundles main + preload → dist/
+├── package.json              # Electron + esbuild + electron-builder
+├── esbuild.config.mjs        # bundles main.ts + preload.ts → dist/
+├── galaxyos-sidecar.spec     # PyInstaller config
 ├── src/
-│   ├── main.ts                   # Electron main: spawns sidecar, zmq client,
-│   │                             #   IPC handlers, **injects TokUI UMD** into renderer
-│   └── preload.ts                # contextBridge → window.galaxy.*
+│   ├── main.ts               # Electron main: spawn sidecar, zmq REQ, IPC
+│   └── preload.ts            # contextBridge → window.galaxy.*
 ├── renderer/
-│   ├── index.html                # 3-column ZCode/Codex layout
-│   ├── style.css                 # dark theme
-│   └── renderer.js               # SSE consumer, TokUI client, mode switcher
+│   ├── index.html            # 3 栏 ZCode 布局 + settings modal
+│   ├── renderer.js           # SSE consumer + TokUI + shortcuts + handlers
+│   ├── sessions.js           # 多会话管理
+│   ├── model_picker.js       # Model switcher dropdown
+│   └── style.css             # Dark theme
 ├── python/
-│   ├── path_resolver_desktop.py  # shim that replaces path_resolver
-│   ├── tokui_dsl.py              # GalaxyOS process() → TokUI DSL mapping
-│   └── galaxyos_sidecar.py       # pyzmq REP + HTTP SSE (dual transport)
+│   ├── galaxyos_sidecar.py   # zmq REP server + all RPC methods
+│   ├── path_resolver_desktop.py  # OpenClaw 解耦 shim
+│   ├── tokui_dsl.py          # process() → TokUI DSL fragments
+│   ├── tools.py              # 6 工具 (shell/read/write/list/grep/diff)
+│   ├── agent_loop.py         # Heuristic Agent tool dispatcher
+│   ├── memo_adapter.py       # MeMo Memory model (Mock + ONNX stub)
+│   ├── memo_stages.py        # Grounding → Entity → Answer protocol
+│   ├── executive_client.py   # MeMo Executive (Mock + DeepSeek)
+│   ├── ac_router.py          # Agent-as-a-Router C-A-F loop
+│   ├── cumulative_regret.py  # Evaluation metric
+│   ├── mcp_client.py         # MCP server discovery + tool merge
+│   └── tests/
+│       └── test_cumulative_regret.py
 ├── scripts/
-│   ├── dev.mjs                   # one-shot dev launcher
-│   └── build-python.sh           # PyInstaller bundle
-├── README.md                     # you are here
-└── .gitignore
+│   ├── dev.mjs               # one-shot dev launcher
+│   ├── build-python.sh       # PyInstaller wrapper
+│   └── playwright_smoke.py   # visual E2E test
+├── build/icon.png            # 512×512 app icon
+└── README.md                 # this file
 ```
 
-## How it works (one paragraph)
+## 设计文档
 
-`main.ts` spawns `galaxyos_sidecar.py` as a child process. The sidecar
-imports `path_resolver_desktop` *first* — this installs itself as
-`sys.modules['path_resolver']`, replacing the OpenClaw-coupled upstream
-default with a desktop-friendly one (`~/.galaxyos/` or
-`$GALAXYOS_HOME`). Once the shim is in place, the sidecar lazily
-imports `XiaoYiClawLLM` and binds two transports:
+完整设计 spec：[`docs/superpowers/specs/2026-06-29-galaxyos-desktop-design.md`](../docs/superpowers/specs/2026-06-29-galaxyos-desktop-design.md)
 
-1. **pyzmq REP** at `tcp://127.0.0.1:5757` for structured RPCs
-   (`ask/remember/recall/process/health/quit`)
-2. **HTTP SSE** at `http://127.0.0.1:5758/sse/{ask,process,health}` for
-   streaming TokUI DSL — each `data: {"tokui": "..."}` is a complete
-   fragment the renderer feeds into the TokUI client
+## 仓库
 
-When the page loads, `main.ts` reads `@jboltai/tokui/dist/tokui.umd.js`
-and injects it via `webContents.executeJavaScript`, exposing
-`window.TokUI` to `renderer.js`. The renderer creates a `new TokUI(...)`
-instance on the center `#tokui-container` and connects its
-`streamAsk`/`streamProcess` helpers to the sidecar's SSE endpoints.
-Fragments arrive in 60fps-coalesced batches, fed into
-`ui.feed(...)`/`ui.endStream()`, and rendered as proper TokUI bubbles,
-think-chains, tool-calls, markdown bodies, and action chips.
-
-## TokUI DSL mapping (Stage 1.5)
-
-`tokui_dsl.process_result_to_fragments()` converts a `XiaoYiClawLLM.process()`
-result into a sequence of TokUI fragments:
-
-| GalaxyOS result              | TokUI DSL fragment                                  |
-|------------------------------|-----------------------------------------------------|
-| (whole response)             | `[bubble role:ai model:Qwen-2.5 time:HH:MM]`       |
-| phase retrieval              | `[think-step status:done tt:检索 dur:120ms]`        |
-| phase cognition              | `[think-step status:done tt:认知 dur:350ms]`        |
-| ... (5 phases total)         | `[/think-chain]`                                   |
-| thinking skill               | `[tool-call name:recall status:done duration:—]`    |
-| answer text                  | `[md]\n**bold** etc.\n[/md]`                        |
-| confidence                   | `[p v:muted]置信度 82%[/p]`                         |
-| (close)                      | `[msg-actions copy regenerate like dislike visible]` + `[/bubble]` |
-| `[DONE]`                     | (SSE terminator)                                   |
-
-Stage 2 will map MeMo 3-stage progress to `[upd id:step status:running]`
-events; Stage 3 will add ACRouter C-A-F phases as `[plan tt:路由决策]`
-+ `[plan-step]`.
-
-## Run
-
-Prereqs: Python 3.11+, Node.js 20+.
-
-```bash
-cd desktop-shell
-npm install
-npm run build:main             # esbuild → dist/main.cjs
-python -m venv .venv
-.venv/Scripts/python -m pip install -r ../requirements-core.txt
-.venv/Scripts/python -m pip install pyzmq
-npm run dev                    # bundles + launches Electron
-```
-
-The first dev launch takes a few minutes for pip + npm. Subsequent
-launches are < 5s.
-
-## Verifying the sidecar standalone
-
-```bash
-.venv/Scripts/python desktop-shell/python/galaxyos_sidecar.py
-
-# In another shell, hit the SSE endpoint with a raw socket:
-python -c "
-import socket
-s = socket.create_connection(('127.0.0.1', 5758), timeout=8)
-s.sendall(b'POST /sse/health HTTP/1.1\r\nHost: x\r\nContent-Length: 0\r\nConnection: close\r\n\r\n')
-print(b''.join(iter(lambda: s.recv(4096), b'')).decode())
-"
-
-# Or /sse/ask with a prompt:
-python -c "
-import socket
-body = b'prompt=hello&session_id=demo'
-s = socket.create_connection(('127.0.0.1', 5758), timeout=8)
-req = (f'POST /sse/ask HTTP/1.1\r\nHost: x\r\nContent-Type: application/x-www-form-urlencoded\r\nContent-Length: {len(body)}\r\nConnection: close\r\n\r\n').encode() + body
-s.sendall(req)
-print(b''.join(iter(lambda: s.recv(4096), b'')).decode())
-"
-```
-
-Expected SSE output (excerpt):
-
-```
-HTTP/1.1 200 OK
-Content-Type: text/event-stream
-...
-
-event: tokui
-data: {"tokui": "[bubble role:ai model:Qwen-2.5 time:13:05]"}
-
-event: tokui
-data: {"tokui": "[think-chain tt:推理过程]"}
-
-event: tokui
-data: {"tokui": "[think-step status:done tt:检索 dur:120ms][p 召回 8 条候选][/think-step]"}
-
-...
-
-event: end
-data: [DONE]
-```
-
-## Stage 1.5 acceptance
-
-- [x] `python -m pip install -r requirements-core.txt` imports `galaxyos`
-- [x] Sidecar boots without OpenClaw
-- [x] HTTP `/sse/health` returns JSON
-- [x] HTTP `/sse/ask` and `/sse/process` stream TokUI DSL over SSE
-- [x] `tokui_dsl.py` has 14/12 unit tests passing
-- [x] `path_resolver_desktop.py` has 7/7 unit tests passing
-- [x] Renderer mounts TokUI dynamically via `executeJavaScript` injection
-- [x] 3-column ZCode/Codex-style layout (sidebar / center / details)
-- [ ] Electron end-to-end smoke (needs `npm install` + first launch)
-- [ ] Visual verification of the streaming bubble UI (needs first launch)
-
-## What's NOT in Stage 1.5
-
-- **MeMo** (Stage 2): frozen knowledge model + Grounding→Entity→Answer
-  as `[think-step status:running]` + `[upd id:step status:done]`
-- **Agent-as-a-Router C-A-F loop** (Stage 3): Orchestrator + Verifier + Memory
-  as `[plan tt:路由决策]` + `[plan-step status:done]`
-- **TokUI handler registration** (Stage 2): the `clk:onClick` / `sub:event`
-  patterns work in TokUI but the renderer doesn't yet call
-  `TokUI.registerHandler(...)` for `copy / regenerate / like / dislike`
-- **Build/packaging**: `electron-builder` + PyInstaller — stub is there
-  but not validated
-
-## OpenClaw interop
-
-If `OPENCLAW_HOME` is set and points to a real OpenClaw install
-(`extensions/` or `openclaw.json` exists), the shim honours it. The
-desktop app then becomes a *front-end* to your existing OpenClaw data
-without migration. Otherwise it defaults to `~/.galaxyos/`.
-
-## Architecture (Stage 1.5)
-
-```
-┌────────────────────────────────────────────────────────────────────┐
-│ GalaxyOS Desktop App (Electron 32)                                 │
-│ ┌─────────┐ ┌──────────────────────┐ ┌─────────────────┐            │
-│ │Sidebar  │ │ Center (TokUI mount) │ │ Right details   │            │
-│ │sessions │ │ <div id=tokui>       │ │ R-CCAM trace    │            │
-│ │skills   │ │  + dynamic inject    │ │ MeMo (stage 2)  │            │
-│ │health   │ │    of @jboltai/tokui │ │ C-A-F (stage 3) │            │
-│ └─────────┘ └──────────────────────┘ └─────────────────┘            │
-│              ▲                                                     │
-│              │ SSE (text/event-stream)                              │
-│              │ http://127.0.0.1:5758/sse/{ask,process}              │
-│              ▼                                                     │
-│ ┌────────────────────────────────────────────────────────────┐    │
-│ │ Python sidecar (galaxyos-sidecar)                          │    │
-│ │ - asyncio HTTP server (stdlib; no aiohttp)                 │    │
-│ │ - pyzmq REP server (stdlib)                                │    │
-│ │ - path_resolver_desktop shim in sys.modules                │    │
-│ │ - tokui_dsl.process_result_to_fragments()                  │    │
-│ │ - XiaoYiClawLLM (graceful degradation for missing deps)   │    │
-│ └────────────────────────────────────────────────────────────┘    │
-└────────────────────────────────────────────────────────────────────┘
-```
+- **Fork**: https://cnb.cool/TIAMO.xianyao/galaxyos-desktop
+- **Upstream**: https://cnb.cool/llm-memory-integrat/GalaxyOS

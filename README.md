@@ -2,7 +2,34 @@
 
 > 为 AI Assistant 提供记忆、检索、推理、验证、自进化的全套认知能力
 >
-> **v8.6.0** · OpenClaw 深度集成改造（全 4 阶段落地）
+> **v8.6.0** · OpenClaw 深度集成改造（全 4 阶段落地）+ **桌面端 Agent 应用**
+
+---
+
+## 🖥️ GalaxyOS Desktop（独立桌面 Agent）
+
+GalaxyOS 现在可以脱离 OpenClaw，作为**独立桌面 Agent 应用**运行——类似 ZCode / Codex 的体验：
+
+```
+galaxyos/desktop-shell/
+├── GalaxyOS.exe          ← 双击即用的 Windows 桌面 app（186MB）
+├── galaxyos-sidecar.exe  ← PyInstaller 打包的 Python 引擎（17MB）
+├── renderer/             ← TokUI + ZCode 风格 3 栏 UI
+└── python/               ← sidecar + tools + MeMo + ACRouter + MCP
+```
+
+**功能**：3 栏 ZCode 布局 · TokUI 流式 AI 气泡 · Agent 工具调用（shell/read/write/grep/diff）· 76 skills 搜索+调用 · 多会话持久化 · Model picker · MeMo 3-stage 全局记忆 · Agent-as-a-Router C-A-F 路由 · MCP Server 配置 · 键盘快捷键 · Diff view · 设置面板（API Key 热更新）
+
+**快速启动**：
+```bash
+cd galaxyos/desktop-shell
+python -c "import sys; sys.path.insert(0,'python'); import asyncio; from galaxyos_sidecar import main_async; asyncio.run(main_async())"
+# 另一个终端
+cd galaxyos/desktop-shell/renderer && python -m http.server 8080
+# 浏览器打开 http://127.0.0.1:8080
+```
+
+详见 [`desktop-shell/README.md`](desktop-shell/README.md) 和 [`docs/superpowers/specs/2026-06-29-galaxyos-desktop-design.md`](docs/superpowers/specs/2026-06-29-galaxyos-desktop-design.md)
 
 ---
 
