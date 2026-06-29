@@ -1,81 +1,12 @@
-# ── Python ──
+# 巨型模型权重
+models/**/*.onnx_data
+models/**/*.bin
+models/**/*.gguf
+models/**/*.safetensors
+# 整个 LFM ONNX 模型目录（通过 install_wizard.py --download-lfm-onnx 下载）
+models/LFM2.5-1.2B-ONNX/
+# 下载日志
+models/**/logs/*.log
+# Python 缓存
 __pycache__/
-*.py[cod]
-*.egg-info/
-build/
-*.so
-.venv/
-venv/
-
-# ── Node.js ──
-node_modules/
-package-lock.json
-
-# ── 测试/CI ──
-.pytest_cache/
-htmlcov/
-.coverage
-coverage.xml
-*.prof
-
-# ── 运行时数据 ──
-.learnings/
-*.db
-*.sqlite3
-
-# ── 配置文件（含密钥风险） ──
-# 真实 llm_config.json（任何位置的）不入库
-config/llm_config.json
-galaxyos/config/llm_config.json
-*/config/llm_config.json
-**/llm_config.json
-*.env
-.env.*
-.env.local
-*.key
-*.pem
-credentials.json
-service-account.json
-# 通配：任何 *_config.json / *secrets*.json（防止以后新增路径漏配）
-*secrets*.json
-**/secrets.json
-
-# ── IDE ──
-.idea/
-.vscode/
-*.swp
-*.swo
-*~
-
-# ── OS ──
-.DS_Store
-Thumbs.db
-
-# ── 构建产物 ──
-**/dist/
-
-# ── Rust 编译产物（不入库，用 make native 或 make native-install-prebuilt 生成）──
-extensions/galaxyos/native/galaxyos_native.so
-extensions/galaxyos/native/libgalaxyos_native.so
-extensions/galaxyos/scripts/galaxyos-native
-native/target/release/galaxyos-native
-native/target/release/lfm_server
-extensions/galaxyos/native/prebuilt/
-
-# ── 大文件 / 模型（不入库，用 --download-lfm 或 install_wizard 下载）──
-*.tar.gz
-*.zip
-models/embeddings/*.onnx
-models/embeddings/*.bin
-models/**/model_q4.onnx
-
-# 排除运行时模型目录（非 git 大文件默认排除，force-add 需要的）
-# *.pth 放开给 synapse_pretrain.pth
-# *.onnx 已在 models/embeddings/ 中
-# *.bin 不入（382MB RCCAM 权重）
-# *.pkl 入（127KB 分类器模型）
-
-# Rust/Cargo build cache
-extensions/galaxyos/native/target/
-extensions/galaxyos/var/
-workspace/
+**/__pycache__/

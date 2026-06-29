@@ -140,11 +140,22 @@ class SidecarHandlers:
 
         # Stage 4: global background layers
         log.info("Booting global MeMo memory layer...")
-        from memo_adapter import MockMeMoAdapter
+        from memo_adapter import (
+            MockMeMoAdapter, OnnxMeMoAdapter, load_default_adapter,
+        )
         from executive_client import MockExecutiveClient
         from memo_stages import MeMoProtocol
         import ac_router as _ac_router_mod  # avoid name shadowing
-        self._memo = MockMeMoAdapter()
+        # Probe for real ONNX weights first (LFM2.5 downloaded via
+        # install_wizard --download-lfm-onnx). Falls back to Mock if
+        # weights are missing/corrupt. Cached at module level inside
+        # load_default_adapter so this is a one-time cost.
+        try:
+            self._memo = load_default_adapter()
+            log.info("MeMo backend: %s", self._memo.backend_name())
+        except Exception as e:
+            log.warning("load_default_adapter() failed (%s); using Mock", e)
+            self._memo = MockMeMoAdapter()
         # _executive is built in _build_executive() AFTER _live_config
         # is initialised (see below)
         self._executive = None
@@ -152,8 +163,14 @@ class SidecarHandlers:
             memo=self._memo, executive=MockExecutiveClient(),  # placeholder
             overall_timeout_s=10.0,
         )
+        # Cache the backend identity + (if ONNX) the model size for
+        # /sse/health surface. Also remember whether we have real
+        # weights so /sse/memo can warn on cold start.
+        self._memo_backend_name = self._memo.backend_name()
+        self._memo_is_onnx = isinstance(self._memo, OnnxMeMoAdapter)
+        self._memo_load_lock = asyncio.Lock()  # for lazy onnx load
         log.info("MeMo memory layer ready (backend: %s)",
-                 self._memo.backend_name())
+                 self._memo_backend_name)
 
         # ACRouter as global dispatcher
         log.info("Booting global ACRouter...")
@@ -454,6 +471,24 @@ class SidecarHandlers:
         )
 
     def health(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        # Probe ONNX MeMo lazily so the first /sse/health call after
+        # startup returns the *real* backend name (not "not yet loaded").
+        if self._memo_is_onnx and not self._memo._session:  # type: ignore[attr-defined]
+            try:
+                self._memo._ensure_loaded()  # type: ignore[attr-defined]
+                self._memo_backend_name = self._memo.backend_name()  # type: ignore[attr-defined]
+            except Exception as e:
+                log.warning("Lazy ONNX load during /sse/health failed: %s", e)
+
+        # Stats block: only present if we have a call-counting backend
+        memo_stats: Dict[str, Any] = {}
+        if hasattr(self._memo, "call_count"):
+            memo_stats["call_count"] = self._memo.call_count  # type: ignore[attr-defined]
+        if hasattr(self._memo, "last_latency_ms"):
+            memo_stats["last_latency_ms"] = round(
+                self._memo.last_latency_ms, 2  # type: ignore[attr-defined]
+            )
+
         return {
             "status": "ok",
             "version": "0.2.0-stage1.5",
@@ -461,13 +496,13 @@ class SidecarHandlers:
             "workspace": str(path_resolver_desktop.WORKSPACE_ROOT),
             "uptime_s": round(time.time() - START_TIME, 2),
             "rccam_enabled": True,
-            "memo_enabled": False,    # stage 2
-            "router_enabled": False,  # stage 3
+            "memo_enabled": True,    # Stage 3: MeMo 3-stage protocol
+            "router_enabled": True,   # Stage 3.5: ACRouter C-A-F
             "sse_port": HTTP_PORT,
             "zmq_port": ZMQ_PORT,
-            "memo_enabled": True,    # Stage 3: MeMo 3-stage protocol
-            "memo_backend": "Mock parametric corpus (Stage 3 demo)",
-            "router_enabled": True,   # Stage 3.5: ACRouter C-A-F
+            "memo_backend": self._memo_backend_name,
+            "memo_is_onnx": self._memo_is_onnx,
+            "memo_stats": memo_stats,
             "router_orchestrator": "HeuristicOrchestrator (rule-based)",
             "router_memory": "BGE-large BoW (in-process, JSONL on disk)",
             "skills_count": len(self.list_skills({}).get("skills", [])),

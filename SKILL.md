@@ -1,27 +1,47 @@
 ---
 name: galaxyos
-description: GalaxyOS 认知增强引擎 v8.6.0 — OpenClaw 深度集成 + 液态神经记忆 + 技能自演化
+description: GalaxyOS v9.0.0 — 独立自建 Agent APP 框架，液态神经记忆 + 技能自演化 + 离线 LLM
 author: 2997417176
 license: MIT
-tags: [context-engine, memory, llm, dag, rccam, cosplay, lfm, qaqc, nps, syna, lsafety, progressive-disclosure]
+tags: [agent, deep-agent, harness, liquid-memory, lfm, dag, rccam, cosplay, skill-graph, openjiuwen-aligned]
 ---
 
-# GalaxyOS v8.6.0
+# GalaxyOS v9.0.0
 
-> **定位**：OpenClaw 的认知增强引擎，占据两个核心插槽
-> **架构**：DAG 上下文 + 液态记忆 + COSPLAY 技能自演化 + MultiAgent 协同
-> **最新特性**：v8.6.0 OpenClaw 深度集成改造（4 阶段全量落地）
+> **定位**：**自建 Agent APP 框架**（v9.0 起脱离 OpenClaw 独立运行）
+> **架构**：Harness 运行时 + DeepAgent + Workspace + TaskLoopEvent + 液态记忆 + 技能自演化
+> **参考**：对标 [openJiuwen（华为九天）](https://github.com/OPENJIUWEN-AI/AGENT-CORE) 的 harness/ 模式
+> **最新特性**：v9.0.0 独立化重构（砍 OpenClaw 包袱 + harness 层 + desktop-shell 桥接）
 
 ---
 
 ## 🎯 核心能力
 
-GalaxyOS 作为 OpenClaw 插件，同时占据两个插槽：
+GalaxyOS 现在是一个**完整自建 Agent APP 框架**，核心入口：
 
-| 插槽 | 注册 ID | 接管能力 |
-|------|--------|----------|
-| **contextEngine** | `claw-core-engine` | 上下文组装 (assemble) / 压缩 (compact) / 摄入 (ingest) |
-| **memory** | `galaxyos` | 记忆检索 / 写入 / flushPlan / publicArtifacts |
+```python
+from galaxyos.harness import create_galaxy_agent
+
+agent = create_galaxy_agent(
+    name="assistant",
+    model="lfm2.5-1.2b-instruct",
+    memory="vector",   # vector | liquid | mock
+)
+result = await agent.run("List my skills")
+```
+
+包含 8 大件：
+
+| 组件 | 模块 | 状态 |
+|------|------|------|
+| 1. Agent Loop | `harness.deep_agent.DeepAgent` | ✅ |
+| 2. Tool Registry | `harness.desktop_shell_compat.tools` | ✅ 6 工具 |
+| 3. LLM Client | `harness.workspace.llm` (可注入) | ✅ |
+| 4. Memory System | `harness.workspace.memory` | ✅ vector + liquid |
+| 5. Context Manager | `harness.task_loop` | ✅ |
+| 6. Workspace | `harness.workspace.Workspace` | ✅ |
+| 7. Streaming | `harness.task_loop.TaskLoopEvent` | ✅ |
+| 8. Skill System | `harness.workspace.skills` (SkillGraph) | ✅ 76 skills |
 
 ### 7 大能力模块
 

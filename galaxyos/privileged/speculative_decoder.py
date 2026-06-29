@@ -504,6 +504,303 @@ class SpeculativeDecoder:
         return stats
 
 
+# ==================== DSpark-Style Confidence-Scheduled Decoder ====================
+# Inspired by: deepseek-ai/DeepSpec (DSpark: block-wise draft + confidence early-stop)
+# Source: https://github.com/deepseek-ai/DeepSpec
+# Reference: DSpark_paper.pdf bundled in DeepSpec repo
+#
+# 与经典 Speculative Decoding 的区别 (DSpark-style):
+# 1. Block-wise verify: draft 一次性产出一个 block (默认 K=7) 的 token 链，target
+#    并行验证整个 block 段，定位首个 rejection 位置。
+# 2. Confidence-Scheduled K: 不是固定 K，而是根据历史 acceptance_rate 自适应调整
+#    draft 长度 (类似 DFlash 的动态 block size，但走置信度路径)：
+#    - 高接受率 (>0.8) → 扩展 K，搏长接受
+#    - 中接受率 (0.5-0.8) → 保持当前 K
+#    - 低接受率 (<0.5) → 收缩 K，减少 wasted compute
+# 3. Confidence early-stop: 客户端支持返回 draft 置信度（avg logprob / max prob），
+#    当置信度低于 threshold 时立即停止本轮 draft（DSpark eval.py 行为）。
+# 4. 不改变输出分布 (与 Leviathan 2023 一致：拒绝后 target 重新生成保证分布等价)。
+#
+# 设计权衡：本项目里 draft/target 都用同一个 llm_client.chat()，没有真实 drafter
+# 训练流程；因此该调度器只解决"推理时调度"层，训练 drafter 请用 DeepSpec 仓库
+# (SpecForge + Eagle3/DFlash/DSpark) 在外部完成。
+
+
+@dataclass
+class ConfidenceScheduledConfig:
+    """DSpark 风格调度配置"""
+    initial_block_size: int = 7              # 初始 draft block 长度 (对齐 DeepSpec block7)
+    min_block_size: int = 2                  # 自适应下限
+    max_block_size: int = 16                 # 自适应上限
+    confidence_threshold: float = 0.0        # draft 置信度早停阈值 (0.0=不早停, 仅采集)
+    high_accept_threshold: float = 0.8       # 接受率高于此值 → 扩张 K
+    low_accept_threshold: float = 0.5        # 接受率低于此值 → 收缩 K
+    expansion_factor: float = 1.5            # K 扩张乘子
+    shrink_factor: float = 0.5               # K 收缩乘子
+    max_total_blocks: int = 200              # 安全上限
+
+
+@dataclass
+class BlockVerificationResult:
+    """Block-wise 验证结果 (DSpark 风格)"""
+    block_size: int                          # 本轮 block 长度
+    accepted_count: int                      # block 内被接受的 token 数
+    rejected_at: int                         # 首个拒绝位置 (-1 = 全部接受)
+    acceptance_rate: float                   # 本轮 block 接受率
+    stopped_early: bool = False              # 是否因 confidence 早停
+    avg_confidence: float = 1.0              # 本轮 draft 平均置信度
+    latency_ms: float = 0.0
+
+
+class _ConfidenceDraftModel(DraftModel):
+    """DSpark 风格 draft wrapper: 在生成 draft 之外，额外返回 confidence。
+
+    因为当前基础设施没有 logprobs API，confidence 用一个 0.0-1.0 的占位值。
+    真实部署时应该用目标模型的 logprob API 或 drafter head 的 sigmoid 输出。
+    """
+
+    def __init__(self, *args, confidence_provider=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        # confidence_provider: 可调用对象 (messages, token_ids) -> float
+        # 如果为 None，使用 1.0 (不早停)
+        self._confidence_provider = confidence_provider
+
+    def estimate_confidence(self, messages, token_ids) -> float:
+        """估算 draft 的置信度 (0.0-1.0)"""
+        if not token_ids or self._confidence_provider is None:
+            return 1.0
+        try:
+            conf = float(self._confidence_provider(messages, token_ids))
+            return max(0.0, min(1.0, conf))
+        except Exception:
+            return 1.0
+
+
+class ConfidenceScheduledDecoder:
+    """
+    DSpark 风格置信度调度投机解码器
+
+    工作循环 (与 DeepSpec 仓库 README 一致)：
+        1. Draft 生成 block_size 个 token (含 confidence)
+        2. 若 confidence < threshold 早停 → 截短 block
+        3. Target 一次性验证整个 block，定位首个 rejection
+        4. 更新累计 acceptance_rate，按调度规则调整下一轮 block_size
+        5. 接受区间的 token 进入输出，rejection 位置由 target 续生成
+
+    使用示例:
+        >>> draft = _ConfidenceDraftModel(llm_client=small, model_name="qwen3-4b-draft")
+        >>> target = TargetModel(llm_client=large, model_name="qwen3-72b")
+        >>> decoder = ConfidenceScheduledDecoder(draft_model=draft, target_model=target)
+        >>> result = decoder.decode([{"role":"user","content":"hi"}])
+        >>> print(result.text, result.speedup)
+    """
+
+    def __init__(
+        self,
+        draft_model: Optional[_ConfidenceDraftModel] = None,
+        target_model: Optional[TargetModel] = None,
+        config: Optional[ConfidenceScheduledConfig] = None,
+    ):
+        self.draft_model = draft_model or _ConfidenceDraftModel()
+        self.target_model = target_model or TargetModel()
+        self.config = config or ConfidenceScheduledConfig()
+
+        # 调度状态
+        self.current_block_size = self.config.initial_block_size
+        # 统计
+        self.stats = {
+            'total_decodes': 0,
+            'total_blocks': 0,
+            'total_draft_tokens': 0,
+            'total_accepted_tokens': 0,
+            'total_latency_ms': 0.0,
+            'early_stop_count': 0,
+            'acceptance_window': [],  # 近 N 轮 acceptance 用于调度
+        }
+
+    def _update_block_size(self, acceptance_rate: float) -> int:
+        """根据本轮接受率自适应调整下一轮 block_size (Confidence-Scheduled K)"""
+        if acceptance_rate >= self.config.high_accept_threshold:
+            new_size = min(
+                self.config.max_block_size,
+                max(self.current_block_size + 1,
+                    int(self.current_block_size * self.config.expansion_factor)),
+            )
+        elif acceptance_rate <= self.config.low_accept_threshold:
+            new_size = max(
+                self.config.min_block_size,
+                int(self.current_block_size * self.config.shrink_factor),
+            )
+        else:
+            new_size = self.current_block_size  # 保持
+        return new_size
+
+    def decode(
+        self,
+        messages: List[Dict[str, str]],
+        max_tokens: int = 500,
+        temperature: float = 0.7,
+    ) -> SpecDecodingResult:
+        """DSpark 风格 block-wise 置信度调度解码"""
+        start_time = time.time()
+        all_tokens: List[str] = []
+        draft_results: List[DraftResult] = []
+        verifications: List[BlockVerificationResult] = []
+        total_draft = 0
+        total_accepted = 0
+
+        remaining = max_tokens
+        block_count = 0
+        self.current_block_size = self.config.initial_block_size
+        # 重置 acceptance 窗口，确保每次 decode 独立
+        self.stats['acceptance_window'] = []
+
+        while remaining > 0 and block_count < self.config.max_total_blocks:
+            block_count += 1
+            k = min(self.current_block_size, remaining)
+
+            # Step 1: draft 一个 block
+            draft = self.draft_model.generate_draft(
+                messages=messages,
+                max_tokens=k,
+                temperature=temperature,
+            )
+            draft_results.append(draft)
+
+            if not draft.tokens:
+                break
+
+            # Step 2: confidence 早停
+            avg_conf = self.draft_model.estimate_confidence(
+                messages, draft.token_ids,
+            )
+            stopped_early = False
+            if (self.config.confidence_threshold > 0.0
+                    and avg_conf < self.config.confidence_threshold):
+                stopped_early = True
+                # DSpark 行为：截短 block，仅提交前 N 个 token (N = floor(k*conf))
+                keep = max(1, int(len(draft.tokens) * avg_conf))
+                draft = DraftResult(
+                    tokens=draft.tokens[:keep],
+                    token_ids=draft.token_ids[:keep],
+                    logprobs=draft.logprobs[:keep],
+                    draft_model=draft.draft_model,
+                    latency_ms=draft.latency_ms,
+                )
+                self.stats['early_stop_count'] += 1
+
+            # Step 3: target 验证整 block
+            verification = self.target_model.verify_draft(
+                messages=messages,
+                draft_tokens=draft.tokens,
+            )
+            block_v = BlockVerificationResult(
+                block_size=len(draft.tokens),
+                accepted_count=verification.accepted_count,
+                rejected_at=verification.rejected_at,
+                acceptance_rate=verification.acceptance_rate,
+                stopped_early=stopped_early,
+                avg_confidence=avg_conf,
+                latency_ms=verification.latency_ms,
+            )
+            verifications.append(block_v)
+
+            accepted = verification.accepted_tokens
+            if accepted:
+                all_tokens.extend(accepted)
+                total_draft += len(draft.tokens)
+                total_accepted += len(accepted)
+                remaining -= len(accepted)
+
+            # Step 4: 自适应 K (滑动窗口均值)
+            self.stats['acceptance_window'].append(verification.acceptance_rate)
+            if len(self.stats['acceptance_window']) > 5:
+                self.stats['acceptance_window'].pop(0)
+            recent_rate = (
+                sum(self.stats['acceptance_window'])
+                / len(self.stats['acceptance_window'])
+            )
+            self.current_block_size = self._update_block_size(recent_rate)
+
+            # 全部接受 → 继续 block；否则跳出走 fallback
+            if verification.rejected_at == -1 and not stopped_early:
+                continue
+            break
+
+        # Fallback: 无 token 时直接 target 生成
+        if not all_tokens and self.target_model.llm_client:
+            direct = self.target_model.llm_client.chat(
+                messages,
+                max_tokens=remaining,
+                temperature=temperature,
+                use_cache=False,
+            )
+            if direct:
+                all_tokens = TargetModel._split_to_tokens(direct)
+
+        total_latency = (time.time() - start_time) * 1000
+        text = "".join(all_tokens)
+        acceptance_rate = total_accepted / total_draft if total_draft > 0 else 0.0
+        # 加速比公式同 SpeculativeDecoder: (K+1) / (K*(1-accept)+1)
+        k_avg = (total_draft / block_count) if block_count else self.config.initial_block_size
+        if acceptance_rate > 0:
+            speedup = (k_avg + 1) / (k_avg * (1 - acceptance_rate) + 1)
+        else:
+            speedup = 1.0
+
+        self.stats['total_decodes'] += 1
+        self.stats['total_blocks'] += block_count
+        self.stats['total_draft_tokens'] += total_draft
+        self.stats['total_accepted_tokens'] += total_accepted
+        self.stats['total_latency_ms'] += total_latency
+
+        return SpecDecodingResult(
+            text=text,
+            tokens=all_tokens,
+            draft_results=draft_results,
+            verification_results=[],  # 兼容字段：实际 block 验证在 verifications
+            total_draft_tokens=total_draft,
+            total_accepted_tokens=total_accepted,
+            overall_acceptance_rate=round(acceptance_rate, 4),
+            total_latency_ms=round(total_latency, 2),
+            speedup=round(speedup, 2),
+            metadata={
+                'algorithm': 'DSpark-style',
+                'block_count': block_count,
+                'avg_block_size': round(k_avg, 2),
+                'early_stop_count': self.stats['early_stop_count'],
+                'final_block_size': self.current_block_size,
+                'block_verifications': [
+                    {
+                        'block_size': v.block_size,
+                        'accepted': v.accepted_count,
+                        'rejected_at': v.rejected_at,
+                        'acceptance_rate': round(v.acceptance_rate, 4),
+                        'stopped_early': v.stopped_early,
+                        'avg_confidence': round(v.avg_confidence, 4),
+                    } for v in verifications
+                ],
+            },
+        )
+
+    def get_stats(self) -> Dict:
+        stats = dict(self.stats)
+        if stats['total_draft_tokens'] > 0:
+            stats['overall_acceptance_rate'] = (
+                stats['total_accepted_tokens'] / stats['total_draft_tokens']
+            )
+        else:
+            stats['overall_acceptance_rate'] = 0.0
+        if stats['total_decodes'] > 0:
+            stats['avg_latency_ms'] = (
+                stats['total_latency_ms'] / stats['total_decodes']
+            )
+            stats['avg_blocks_per_decode'] = (
+                stats['total_blocks'] / stats['total_decodes']
+            )
+        return stats
+
+
 # 导出
 __all__ = [
     'SpeculativeDecoder',
@@ -514,6 +811,11 @@ __all__ = [
     'DraftResult',
     'VerificationResult',
     'SpecDecodingResult',
+    # DSpark-style
+    'ConfidenceScheduledDecoder',
+    'ConfidenceScheduledConfig',
+    'BlockVerificationResult',
+    '_ConfidenceDraftModel',
 ]
 
 

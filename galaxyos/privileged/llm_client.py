@@ -1049,11 +1049,47 @@ class LLMClient:
                 self._speculative_decoder = None
         return self._speculative_decoder
 
+    @property
+    def confidence_scheduled_decoder(self):
+        """
+        惰性初始化 DSpark 风格置信度调度投机解码器
+
+        算法: deepseek-ai/DeepSpec (DSpark) 启发的 block-wise 调度
+        - 块大小 K 自适应 (高接受率扩张 / 低接受率收缩)
+        - confidence 早停 (阈值>0 时启用)
+        - 不改变输出分布 (与 Leviathan 2023 等价)
+        来源: https://github.com/deepseek-ai/DeepSpec
+        """
+        if not hasattr(self, '_cs_decoder') or self._cs_decoder is None:
+            try:
+                from speculative_decoder import (
+                    ConfidenceScheduledDecoder,
+                    ConfidenceScheduledConfig,
+                    TargetModel,
+                    _ConfidenceDraftModel,
+                )
+                target = TargetModel(llm_client=self, model_name=self.model)
+                draft = _ConfidenceDraftModel(
+                    llm_client=self,
+                    model_name=f"{self.model}-draft",
+                )
+                self._cs_decoder = ConfidenceScheduledDecoder(
+                    draft_model=draft,
+                    target_model=target,
+                    config=ConfidenceScheduledConfig(),
+                )
+                logger.info("DSpark 风格置信度调度解码器已初始化")
+            except ImportError as e:
+                logger.warning(f"confidence_scheduled_decoder 不可用: {e}")
+                self._cs_decoder = None
+        return self._cs_decoder
+
     def chat_with_speculative(
         self,
         messages: List[Dict[str, str]],
         max_tokens: Optional[int] = None,
         temperature: float = 0.7,
+        algorithm: str = "classic",
     ) -> Optional[str]:
         """
         使用投机解码进行对话
@@ -1064,14 +1100,22 @@ class LLMClient:
             messages: 对话消息列表
             max_tokens: 最大输出 token 数
             temperature: 温度参数
+            algorithm: 调度算法
+                - "classic": Leviathan 2023 标准 Speculative Decoding
+                - "dspark": DSpark 风格 block-wise + confidence-scheduled (DeepSpec 启发)
 
         Returns:
             模型回复文本
         """
-        if self.speculative_decoder is None:
+        if algorithm == "dspark":
+            decoder = self.confidence_scheduled_decoder
+        else:
+            decoder = self.speculative_decoder
+
+        if decoder is None:
             return self.chat(messages, max_tokens=max_tokens, temperature=temperature)
 
-        result = self.speculative_decoder.decode(
+        result = decoder.decode(
             messages=messages,
             max_tokens=max_tokens or self.max_tokens,
             temperature=temperature,

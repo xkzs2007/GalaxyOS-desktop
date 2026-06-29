@@ -404,6 +404,8 @@ function openSettings() {
   $('setting-workspace').value = s.workspace || '';
   $('setting-system-prompt').value = s.systemPrompt || '';
   $('setting-theme').value = s.theme || 'dark';
+  // Apply TokUI theme to <html> so bubble/md text color follows dark/light
+  document.documentElement.dataset.tokuiTheme = s.theme || 'dark';
   modal.hidden = false;
 }
 function closeSettings() { $('settings-modal').hidden = true; }
@@ -416,6 +418,10 @@ function applySettings() {
     theme: $('setting-theme').value,
   };
   saveSettings(s);
+  // Sync TokUI theme attribute so bubble content (text/md/p) uses the
+  // matching color scale. Without this, dark background + TokUI default
+  // (light) theme => dim/gray AI output text (UI inconsistency).
+  document.documentElement.dataset.tokuiTheme = s.theme || 'dark';
   closeSettings();
   // Send to sidecar via IPC — hot-updates LLM config + system prompt
   if (galaxy.updateSettings) {

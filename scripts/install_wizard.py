@@ -2078,6 +2078,26 @@ LFM_MODEL_FILES = [
 ]
 
 
+# LiquidAI 官方 ONNX 量化仓库 (LiquidAI/LFM2.5-1.2B-Thinking-ONNX)
+# 路径 ~/.openclaw/workspace/models/LFM2.5-1.2B-ONNX/onnx/model_q4.onnx
+# 与 Rust lfm_server.rs:122,124,446 期望的路径完全一致
+LFM_ONNX_MODEL_FILES = [
+    # Q4 量化（推荐，与 Rust 端 lfm_server 默认读取路径一致）
+    ("https://hf-mirror.com/LiquidAI/LFM2.5-1.2B-Thinking-ONNX/resolve/main/onnx/model_q4.onnx", "onnx/model_q4.onnx", "Q4 量化图结构(~180KB, ONNX Runtime 自动加载同名 .onnx_data)"),
+    ("https://hf-mirror.com/LiquidAI/LFM2.5-1.2B-Thinking-ONNX/resolve/main/onnx/model_q4.onnx_data", "onnx/model_q4.onnx_data", "Q4 外部权重数据(~811MB)"),
+    # FP16（高质量, ~2.4GB）
+    ("https://hf-mirror.com/LiquidAI/LFM2.5-1.2B-Thinking-ONNX/resolve/main/onnx/model_fp16.onnx", "onnx/model_fp16.onnx", "FP16 图结构"),
+    ("https://hf-mirror.com/LiquidAI/LFM2.5-1.2B-Thinking-ONNX/resolve/main/onnx/model_fp16.onnx_data", "onnx/model_fp16.onnx_data", "FP16 外部权重数据"),
+    # 必需配置
+    ("https://hf-mirror.com/LiquidAI/LFM2.5-1.2B-Thinking-ONNX/resolve/main/tokenizer.json", "tokenizer.json", "分词器"),
+    ("https://hf-mirror.com/LiquidAI/LFM2.5-1.2B-Thinking-ONNX/resolve/main/tokenizer_config.json", "tokenizer_config.json", "分词器配置"),
+    ("https://hf-mirror.com/LiquidAI/LFM2.5-1.2B-Thinking-ONNX/resolve/main/config.json", "config.json", "模型配置"),
+    ("https://hf-mirror.com/LiquidAI/LFM2.5-1.2B-Thinking-ONNX/resolve/main/generation_config.json", "generation_config.json", "生成配置"),
+    ("https://hf-mirror.com/LiquidAI/LFM2.5-1.2B-Thinking-ONNX/resolve/main/chat_template.jinja", "chat_template.jinja", "对话模板"),
+    # 注：官方 ONNX 仓库不发布 special_tokens_map.json（其内容已内嵌在 tokenizer.json）
+]
+
+
 def download_lfm_weights(target_dir: Optional[Path] = None) -> bool:
     """从 hf-mirror 下载 LFM2.5-1.2B-Thinking 全部文件"""
     heading("📥 下载 LFM2.5-1.2B-Thinking")
@@ -2104,6 +2124,80 @@ def download_lfm_weights(target_dir: Optional[Path] = None) -> bool:
         info(f"路径: {target_dir}")
         return True
     warn(f"部分完成 ({ok_cnt}/{len(LFM_MODEL_FILES)})，重试运行 --download-lfm 续传", indent=1)
+    return False
+
+
+def download_lfm_onnx_weights(target_dir: Optional[Path] = None,
+                                quant: str = "q4") -> bool:
+    """从 LiquidAI 官方 ONNX 仓库下载 LFM2.5-1.2B-Thinking 量化权重。
+
+    目标目录结构（与 Rust lfm_server.rs 期望一致）：
+        ~/.openclaw/workspace/models/LFM2.5-1.2B-ONNX/
+            onnx/
+                model_q4.onnx        # INT4 量化（默认）
+                model_q4.onnx_data
+                model_fp16.onnx      # 可选
+                model_fp16.onnx_data
+            tokenizer.json
+            config.json
+            ...
+
+    Args:
+        target_dir: 自定义目标目录，None 时默认 WORKSPACE/models/LFM2.5-1.2B-ONNX
+        quant: "q4" (推荐, ~1.2GB) | "fp16" (~2.4GB) | "all" (全下)
+
+    Returns:
+        True=全部成功，False=部分/失败
+    """
+    heading("📥 下载 LFM2.5-1.2B-Thinking ONNX (官方量化版)")
+    if target_dir is None:
+        target_dir = WORKSPACE / "models" / "LFM2.5-1.2B-ONNX"
+    target_dir.mkdir(parents=True, exist_ok=True)
+    info(f"目标目录: {target_dir}")
+    info(f"量化方案: {quant}  (与 Rust lfm_server.rs 路径约定一致)")
+
+    # 检查是否已下载（以 model_q4.onnx 为标志）
+    marker = target_dir / "onnx" / "model_q4.onnx"
+    if marker.exists() and marker.stat().st_size > 100_000_000:
+        sz = marker.stat().st_size / 1024**3
+        ok(f"Q4 ONNX 已存在: {sz:.2f} GB  ({marker})")
+        return True
+
+    # 按 quant 过滤下载列表
+    common = (
+        "tokenizer.json", "tokenizer_config.json",
+        "config.json", "generation_config.json",
+    )
+    if quant == "q4":
+        files = [f for f in LFM_ONNX_MODEL_FILES
+                 if "q4" in f[1] or f[1] in common]
+    elif quant == "fp16":
+        files = [f for f in LFM_ONNX_MODEL_FILES
+                 if "fp16" in f[1] or f[1] in common]
+    elif quant == "all":
+        files = LFM_ONNX_MODEL_FILES
+    else:
+        err(f"未知 quant={quant}，可选: q4 | fp16 | all")
+        return False
+
+    ok(f"开始下载（来源: LiquidAI/LFM2.5-1.2B-Thinking-ONNX）...")
+    start = time.time()
+    ok_cnt = 0
+    for url, fn, desc in files:
+        dst = target_dir / fn
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        if dst.exists() and dst.stat().st_size > 1024:
+            ok_cnt += 1
+            continue
+        ok_cnt += 1 if _download_hf_file(url, dst, desc) else 0
+    elapsed = time.time() - start
+    _print()
+    if ok_cnt == len(files):
+        ok(f"全部完成 ({ok_cnt}/{len(files)})，耗时 {elapsed:.0f}s")
+        info(f"路径: {target_dir}")
+        info(f"可被 Rust lfm_server 加载: {target_dir}/onnx/model_q4.onnx")
+        return True
+    warn(f"部分完成 ({ok_cnt}/{len(files)})，重试运行 --download-lfm-onnx 续传", indent=1)
     return False
 
 
@@ -3461,7 +3555,9 @@ def main():
         help="(旧版) 仅检测 GalaxyOS 插件状态，不做操作")
     parser.add_argument("--fix-torch", action="store_true", help="自动补齐 torch/torch_geometric/hnswlib 等 ML 栈（清华源 + PyG wheel + CPU 索引）")
     parser.add_argument("--python", default=None, help="显式指定 Python 解释器路径（覆盖自动检测，常用于生产环境/容器固定运行时）")
-    parser.add_argument("--download-lfm", action="store_true", help="从 hf-mirror 下载 LFM2.5-1.2B-Thinking 真实权重（~2.2GB）")
+    parser.add_argument("--download-lfm", action="store_true", help="从 hf-mirror 下载 LFM2.5-1.2B-Thinking 原始 safetensors 权重（~2.2GB，Python transformers 用）")
+    parser.add_argument("--download-lfm-onnx", action="store_true", help="从 LiquidAI 官方 ONNX 仓库下载 LFM2.5-1.2B-Thinking ONNX 量化权重（默认 Q4 INT4 ~1.2GB，可与 Rust lfm_server.rs 配合）")
+    parser.add_argument("--download-lfm-onnx-quant", default="q4", choices=["q4", "fp16", "all"], help="ONNX 量化方案：q4(~1.2GB,默认) | fp16(~2.4GB) | all(全下)")
     parser.add_argument("--download-embedding", action="store_true", help="从 hf-mirror 下载 bge-small-zh-v1.5 ONNX 模型（~96MB）")
     parser.add_argument("--setup-rust", action="store_true", help="安装 Rust 工具链（国内镜像，自动识别 ARM64/x86_64）")
     parser.add_argument("--update", action="store_true", help="增量更新模式：版本检测 + 仅同步变更文件，保护已有配置")
@@ -3495,6 +3591,10 @@ def main():
 
     if args.download_lfm:
         ok = download_lfm_weights()
+        sys.exit(0 if ok else 1)
+
+    if args.download_lfm_onnx:
+        ok = download_lfm_onnx_weights(quant=args.download_lfm_onnx_quant)
         sys.exit(0 if ok else 1)
 
     if args.download_embedding:
