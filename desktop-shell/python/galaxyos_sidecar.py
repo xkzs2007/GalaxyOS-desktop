@@ -375,6 +375,39 @@ class SidecarHandlers:
             })
         return {"skills": skills, "count": len(skills)}
 
+    def get_skill(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Return the full SKILL.md content for a single skill."""
+        skill_id = str(params.get("id", "") or "")
+        if not skill_id:
+            return {"error": "missing 'id' param"}
+        import re
+        skills_dir = path_resolver_desktop._GALAXYOS_REPO / "skills"
+        skill_md = skills_dir / skill_id / "SKILL.md"
+        if not skill_md.exists():
+            return {"error": f"skill not found: {skill_id}"}
+        try:
+            text = skill_md.read_text(encoding="utf-8", errors="replace")
+            fm = {}
+            m = re.match(r"^---\s*\n(.*?)\n---\s*\n?(.*)", text, re.DOTALL)
+            if m:
+                yaml_block = m.group(1)
+                body = m.group(2)
+                for line in yaml_block.split("\n"):
+                    kv = line.split(":", 1)
+                    if len(kv) == 2:
+                        fm[kv[0].strip()] = kv[1].strip().strip('"\'')
+            else:
+                body = text
+            return {
+                "id": skill_id,
+                "name": fm.get("name", skill_id),
+                "description": fm.get("description", ""),
+                "version": fm.get("version", ""),
+                "body": body[:5000],
+            }
+        except Exception as e:
+            return {"error": str(e)}
+
     # ── Streaming methods (zmq-callable variants) ─────────────────
     # The zmq REP loop calls these synchronously. We return a
     # JSON-serialisable dict that the protocol handler can re-emit

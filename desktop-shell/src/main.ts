@@ -399,6 +399,10 @@ function registerIpc() {
     try { return await zmqCall('list_skills'); }
     catch (e) { return { skills: [], count: 0, error: String((e as Error).message) }; }
   });
+  ipcMain.handle('galaxy:skill', async (_e, skillId: string) => {
+    try { return await zmqCall('get_skill', { id: skillId }); }
+    catch (e) { return { error: String((e as Error).message) }; }
+  });
 }
 
 // Disable GPU hardware acceleration so PrintWindow / BitBlt can

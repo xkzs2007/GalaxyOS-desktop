@@ -175,13 +175,13 @@ async function loadSkills() {
     const list = document.getElementById('skills-list');
     if (!list) return;
     list.innerHTML = '';
-    // Show up to 12 skills as pills; the rest are available via scroll
     const skills = (result.skills || []).slice(0, 12);
     for (const s of skills) {
       const li = document.createElement('li');
-      li.className = 'skill-pill';
+      li.className = 'skill-pill clickable';
       li.textContent = s.name || s.id;
       li.title = s.description || '';
+      li.addEventListener('click', () => showSkillDetail(s.id));
       list.appendChild(li);
     }
     if (result.count > 12) {
@@ -194,6 +194,32 @@ async function loadSkills() {
   } catch (e) {
     console.warn('[renderer] skills load failed:', e);
   }
+}
+
+async function showSkillDetail(skillId) {
+  if (!galaxy.skill) return;
+  try {
+    const detail = await galaxy.skill(skillId);
+    // Show the skill in the details panel (right column)
+    const detailsBody = document.getElementById('details-body');
+    if (!detailsBody) return;
+    const body = detail.body || '(no content)';
+    detailsBody.innerHTML = `
+      <div class="skill-detail">
+        <h3>${escapeHtml(detail.name || skillId)}</h3>
+        <p class="hint">${escapeHtml(detail.description || '')}</p>
+        ${detail.version ? `<p class="hint">v${escapeHtml(detail.version)}</p>` : ''}
+        <pre class="skill-body">${escapeHtml(body.slice(0, 2000))}</pre>
+      </div>`;
+  } catch (e) {
+    console.warn('[renderer] skill detail failed:', e);
+  }
+}
+
+function escapeHtml(s) {
+  const d = document.createElement('div');
+  d.textContent = String(s || '');
+  return d.innerHTML;
 }
 
 // ── UI handlers ──────────────────────────────────────────────

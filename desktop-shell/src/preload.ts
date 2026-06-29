@@ -13,6 +13,7 @@ export type GalaxyApi = {
   process(userInput: string, sessionId?: string): Promise<Record<string, unknown>>;
   health(): Promise<Record<string, unknown>>;
   skills(): Promise<{ skills: Array<{id: string; name: string; description: string}>; count: number }>;
+  skill(id: string): Promise<{ id: string; name: string; description: string; body: string }>;
   openExternal(url: string): Promise<void>;
 };
 
@@ -23,6 +24,7 @@ const api: GalaxyApi = {
   process: (u, sid) => ipcRenderer.invoke('galaxy:process', u, sid) as any,
   health: () => ipcRenderer.invoke('galaxy:health') as any,
   skills: () => ipcRenderer.invoke('galaxy:skills') as any,
+  skill: (id) => ipcRenderer.invoke('galaxy:skill', id) as any,
   openExternal: (u) => ipcRenderer.invoke('galaxy:openExternal', u) as any,
 };
 
