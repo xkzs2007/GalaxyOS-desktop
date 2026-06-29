@@ -5,3 +5,10 @@ __pycache__/
 *.pyc
 .DS_Store
 *.log
+resources/galaxyos-sidecar.exe
+python/dist/
+python/build/
+build/
+dist/
+electron.log
+sidecar.log
