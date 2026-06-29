@@ -2,10 +2,10 @@
 
 > **项目**：https://cnb.cool/llm-memory-integrat/GalaxyOS (v8.6.0, commit 0ea42f2)
 > **本地**：`C:/Users/Administrator/ZCodeProject/galaxyos/` (浅克隆 222 MB)
-> **目标**：OpenClaw 插件 → 独立桌面 Agent 应用，阶段三引入 Agent-as-a-Router C-A-F 路由环 + MeMo Grounding→Entity→Answer 三阶段协议
+> **目标**：OpenClaw 插件 → **ZCode/Codex 级别独立桌面 Agent 应用**
 > **参考论文**：[Agent-as-a-Router (arXiv 2606.22902)](https://arxiv.org/abs/2606.22902) + [MeMo (arXiv 2605.15156)](https://arxiv.org/abs/2605.15156)
-> **设计日期**：2026-06-29 (v3)
-> **状态**：阶段一.5 完成（TokUI SSE streaming + ZCode 风格 3 栏布局 + 14/12 单元测试 + 端到端 SSE smoke 通过），阶段二/三待实施
+> **设计日期**：2026-06-29 (v4 — ZCode/Codex UX 全集)
+> **状态**：阶段一.6 + 阶段二（Agent 模式 + 多会话 + model picker）✅ 完成。MeMo + ACRouter 待实施。
 
 ---
 
@@ -303,10 +303,56 @@
 
 | 阶段 | 状态 | 关键产物 |
 |---|---|---|
-| 阶段一 W1 | ✅ 完成 | 脚手架 + shim + sidecar + Electron + renderer |
-| 阶段一 W2 | ⏳ 待首次运行 | `npm run dev` 端到端 + 2 upstream PR |
-| 阶段二 W3-W4 | ⏸ 待启动 | MeMo 适配器 + 3 阶段协议 + 混合推理 |
-| 阶段三 W5 | ⏸ 待启动 | C-A-F 路由环 + cumulative regret + LoRA |
+| 阶段一.5 | ✅ 完成 | TokUI SSE streaming + ZCode/Codex 布局 |
+| 阶段一.6 | ✅ 完成 | 真实 desktop app + Playwright 视觉证据（2 张 screenshot） |
+| **阶段二 - Agent** | ✅ **完成** | tools.py (6 工具) + agent_loop.py + /sse/agent 路由；真 shell 跑通 |
+| **阶段二 - 多会话** | ✅ **完成** | sessions.js + localStorage 持久化；切换 / 重命名 / 删除 / 新建 |
+| **阶段二 - Model picker** | ✅ **完成** | model_picker.js + 5 个模型 + topbar dropdown + localStorage 持久化 |
+| 阶段二 - MeMo | ⏸ 待实施 | MeMo 三阶段协议 + ONNX 推理 |
+| 阶段三 - ACRouter | ⏸ 待实施 | C-A-F 路由环 + Orchestrator + Verifier + Memory + CumReg 评估 |
+
+## 10. ZCode/Codex UX 全集对照表
+
+| ZCode/Codex 特性 | 状态 | 落点 |
+|---|---|---|
+| 3 栏布局 (sidebar / center / details) | ✅ | `renderer/index.html` |
+| 流式 AI 气泡 | ✅ | `@jboltai/tokui` via `renderer/renderer.js` |
+| **3 模式** (Ask / Process / Agent) | ✅ | `index.html` composer-mode buttons |
+| **多会话管理** (新建 / 切换 / 重命名 / 删除 / 持久化) | ✅ | `renderer/sessions.js` |
+| **Model picker** (5 个模型 + topbar dropdown + 持久化) | ✅ | `renderer/model_picker.js` |
+| **Tool calling** (shell / file / grep) | ✅ | `python/tools.py` + `python/agent_loop.py` |
+| 端到端 SSE streaming | ✅ | `python/galaxyos_sidecar.py` (zmq REP + HTTP SSE 双协议) |
+| Code block syntax highlight + copy | ⏸ 阶段二后续 | 需要客户端 highlight.js |
+| Diff view | ⏸ 阶段二后续 | `apply_diff` 工具已就绪，diff DSL 已有 |
+| Plan mode | ⏸ 阶段三 | C-A-F 路由的副产品 |
+| Settings panel (API key / theme) | ⏸ 可选 | localStorage 已有位置 |
+| Permission prompts | ⏸ 阶段三 | 配合 C-A-F verifier 一起做 |
+
+## 11. 截图证据
+
+`docs/superpowers/specs/evidence/screenshots/`
+- `2026-06-29-stage1.6-initial.png` — 首次启动欢迎 bubble
+- `2026-06-29-stage1.6-after-ask.png` — Process 模式问 R-CCAM 拿到 R-CCAM 五阶段
+- `2026-06-29-stage2-agent-shell.png` — Agent 模式跑 `!ls -la` 真 shell
+- `2026-06-29-stage2.1-multisession.png` — 3 个 session 切换 + skills 列表更新
+- `2026-06-29-stage2.2-model-picker.png` — Model picker dropdown 打开
+
+## 12. 启动命令
+
+```bash
+# 1. 启 sidecar
+cd galaxyos/desktop-shell
+python -c "import sys; sys.path.insert(0, 'python'); \
+  import asyncio; from galaxyos_sidecar import main_async; \
+  asyncio.run(main_async())"
+
+# 2. 启 renderer (任意浏览器)
+cd galaxyos/desktop-shell/renderer
+python -m http.server 8080
+
+# 3. 浏览器开 http://127.0.0.1:8080
+# → ZCode 风格 + TokUI + 3 模式 + 多会话 + model picker
+```
 
 ---
 
