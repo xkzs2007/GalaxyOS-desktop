@@ -4,8 +4,8 @@
 > **本地**：`C:/Users/Administrator/ZCodeProject/galaxyos/` (浅克隆 222 MB)
 > **目标**：OpenClaw 插件 → **ZCode/Codex 级别独立桌面 Agent 应用**
 > **参考论文**：[Agent-as-a-Router (arXiv 2606.22902)](https://arxiv.org/abs/2606.22902) + [MeMo (arXiv 2605.15156)](https://arxiv.org/abs/2605.15156)
-> **设计日期**：2026-06-29 (v5 — 阶段三完成)
-> **状态**：✅ **全部完成**。阶段一.6 + 阶段二（Agent 模式 + 多会话 + model picker） + **阶段三.0 (MeMo 3-stage) + 阶段三.5 (ACRouter C-A-F loop)**。
+> **设计日期**：2026-06-29 (v6 — 全局背景层)
+> **状态**：✅ **全部完成**。MeMo 3-stage + ACRouter C-A-F 现在是**全局背景层**（默认启动、自动 inline），用户不需要手动点 mode。
 
 ---
 
@@ -339,6 +339,82 @@
 - `2026-06-29-stage2.2-model-picker.png` — Model picker dropdown 打开
 - `2026-06-29-stage3.0-memo-3stage.png` — MeMo 模式问 "What is GalaxyOS"，3 阶段协议完整渲染
 - `2026-06-29-stage3.5-acrouter.png` — Ask 模式问 "What is GalaxyOS"，ACRouter 自动路由到 memo_3stage，bubble header 显示 "ACRouter" 徽章 + 4 阶段 routing trace (Context → Action → Feedback → Memorize)
+- `2026-06-29-stage4.0-global-routing-ask.png` — **stage 4 关键截图**：Ask 模式问 "What is GalaxyOS"，bubble header "memo_3stage"（ACRouter 自动决策），footer "⚡ routing: [memo_3stage · score 0.73]"
+- `2026-06-29-stage4.0-global-routing-agent.png` — Agent 模式跑 "!ls -la"，bubble header "GalaxyOS-Agent"（不同 expert），同样有 routing_debug footer
+
+## 12. 架构 v6 — 全局背景层
+
+**Stage 4 关键架构变化**：MeMo 3-stage 协议 + ACRouter C-A-F 路由从"用户可选 mode"变成"全局默认背景层"。
+
+```
+                              ┌────────────────────────────┐
+                              │  Python Sidecar Process      │
+                              │                              │
+                              │  ┌────────────────────────┐  │
+                              │  │ SidecarHandlers         │  │
+                              │  │   _llm (XiaoYiClawLLM)  │  │
+                              │  │   _memo (MockMeMo)      │◀─┐ 全局
+                              │  │   _executive (Mock)     │  │ 启动
+                              │  │   _memo_protocol        │  │
+                              │  │   _acrouter_memory      │  │
+                              │  │   _acrouter             │◀─┤ 全局
+                              │  └────────────────────────┘  │ 启动
+                              │                              │
+                              │  /sse/ask (default)          │
+                              │     ↓                         │
+                              │  ACRouter.route(q)           │
+                              │     ↓ C-A-F loop             │
+                              │     ↓                         │
+                              │  Pick expert:                │
+                              │    fast_path / memo_3stage / │
+                              │    liquid_only /             │
+                              │    process_5_stage           │
+                              │     ↓                         │
+                              │  Execute via executor        │
+                              │     ↓                         │
+                              │  Build DSL:                   │
+                              │    [bubble]                   │
+                              │      [md]answer[/md]          │
+                              │      [p]💡 记忆补充[/p] (可选) │
+                              │      [p]⚡ routing: ...[/p]   │ ← 关键信号
+                              │      [msg-actions]            │
+                              │    [/bubble]                 │
+                              └────────────────────────────┘
+                                       ↑ SSE
+                              ┌────────────────────────────┐
+                              │  Electron Renderer           │
+                              │                              │
+                              │  Mode buttons:               │
+                              │    [Ask] / [Process] /       │
+                              │    [Agent] / [MeMo*]         │
+                              │    (MeMo* = 手动调试模式)      │
+                              └────────────────────────────┘
+```
+
+**4 个 mode 现在的语义**：
+- **Ask** — 普通提问（ACRouter 自动选 fast_path / memo_3stage / liquid_only）
+- **Process** — 复杂任务（ACRouter 倾向选 process_5_stage）
+- **Agent** — 工具执行（ACRouter 检测到 `!/read/write/grep` 关键词强制 process_5_stage）
+- **MeMo*** — **手动调试模式**，直接调 3-stage 协议不走 ACRouter（用于观察 Grounding → Entity → Answer 每一步）
+
+**routing_debug footer** 是新的关键信号 — 每个 assistant bubble 底部都有一行 `⚡ routing: [action · score N]`，让用户知道全局路由层做了什么决策。
+
+## 13. commit 历史（v6）
+
+```
+8374b70 feat(global): stage 4.0 — MeMo + ACRouter as always-on background layers
+fc611f4 docs(spec): v5 — 阶段三完成（MeMo + ACRouter），全部 ZCode/Codex 特性交付
+b38f127 feat(acrouter): stage 3.5 — Agent-as-a-Router C-A-F closed loop
+1c9c276 feat(memo): stage 3.0 — MeMo 3-stage parametric knowledge protocol
+e8ef0f5 docs(spec): update to v4 — ZCode/Codex UX 全集对照表 + 实施状态
+560ce7b feat(model-picker): stage 2.2 — topbar model switcher
+6f1b2ee feat(sessions): stage 2.1 — multi-session persistence + ZCode UX
+a1a8abe feat(agent): stage 2 — real tool execution via Agent mode
+15cc8b6 feat(desktop-shell): stage 1.6 — real desktop app + Playwright visual proof
+a128b23 feat(desktop-shell): stage 1.5 — TokUI SSE streaming + ZCode/Codex layout
+5b6c458 feat(desktop-shell): stage 1 — Electron + pyzmq sidecar, OpenClaw decoupled
+0ea42f2 (upstream) fix: CI mock structure
+```
 
 ## 12. 启动命令
 
