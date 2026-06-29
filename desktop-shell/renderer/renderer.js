@@ -333,6 +333,7 @@ function makeStandaloneGalaxy() {
   await bootTokUI();
   // Initialise session manager (renders sidebar, restores active session)
   if (window.Sessions) window.Sessions.init();
+  if (window.ModelPicker) window.ModelPicker.init();
 
   // Initial welcome (always wrapped in startStream/endStream so we don't
   // get "feed() called before startStream()" warnings)

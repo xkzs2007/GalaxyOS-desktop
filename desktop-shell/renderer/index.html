@@ -72,12 +72,47 @@
           <span class="crumb" id="active-session-name">默认会话</span>
         </div>
         <div class="topbar-actions">
-          <span class="stage-badge" id="stage-badge">stage 1.5 · TokUI</span>
+          <button class="model-picker" id="model-picker" title="切换模型">
+            <span class="model-dot"></span>
+            <span class="model-name" id="model-name">Qwen-2.5</span>
+            <span class="model-chevron">▾</span>
+          </button>
+          <span class="stage-badge" id="stage-badge">stage 2.1 · TokUI</span>
         </div>
       </header>
 
       <div id="tokui-container" class="tokui-container">
         <!-- TokUI mount point. The client renders streamed DSL here. -->
+      </div>
+
+      <!-- Model picker dropdown (hidden by default) -->
+      <div class="model-picker-menu" id="model-picker-menu" hidden>
+        <div class="menu-title">选择模型</div>
+        <button class="model-option" data-model="Qwen-2.5">
+          <span class="model-dot"></span>
+          <span class="model-label">Qwen-2.5</span>
+          <span class="model-desc">默认 — 通用快</span>
+        </button>
+        <button class="model-option" data-model="Qwen-3">
+          <span class="model-dot"></span>
+          <span class="model-label">Qwen-3</span>
+          <span class="model-desc">更强推理</span>
+        </button>
+        <button class="model-option" data-model="DeepSeek-V4">
+          <span class="model-dot"></span>
+          <span class="model-label">DeepSeek-V4</span>
+          <span class="model-desc">代码友好</span>
+        </button>
+        <button class="model-option" data-model="Gemini-3-Flash">
+          <span class="model-dot"></span>
+          <span class="model-label">Gemini-3-Flash</span>
+          <span class="model-desc">长上下文</span>
+        </button>
+        <button class="model-option" data-model="LFM-2.5-1.2B">
+          <span class="model-dot"></span>
+          <span class="model-label">LFM-2.5-1.2B</span>
+          <span class="model-desc">本地快（阶段三）</span>
+        </button>
       </div>
 
       <footer class="composer">
@@ -118,5 +153,6 @@
   <script src="https://unpkg.com/@jboltai/tokui/dist/tokui.umd.js"></script>
   <script type="module" src="renderer.js"></script>
   <script src="sessions.js"></script>
+  <script src="model_picker.js"></script>
 </body>
 </html>

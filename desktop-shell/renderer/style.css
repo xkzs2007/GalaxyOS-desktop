@@ -133,6 +133,7 @@ html, body {
   display: flex; flex-direction: column;
   background: var(--bg);
   min-width: 0;
+  position: relative;  /* for model picker dropdown absolute positioning */
 }
 .topbar {
   display: flex; align-items: center; justify-content: space-between;
@@ -148,6 +149,43 @@ html, body {
   background: var(--accent-soft); color: var(--accent);
   font-weight: 500;
 }
+
+/* ── Model picker ───────────────────────────────────────────── */
+.model-picker {
+  display: flex; align-items: center; gap: 6px;
+  padding: 4px 10px; border-radius: 4px;
+  background: var(--bg); color: var(--fg);
+  border: 1px solid var(--border);
+  font-size: 12px; cursor: pointer;
+}
+.model-picker:hover { background: var(--bg-hover); }
+.model-picker .model-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--success);
+}
+.model-picker .model-chevron { font-size: 10px; color: var(--fg-muted); }
+
+.model-picker-menu {
+  position: absolute; top: 36px; right: 16px;
+  background: var(--bg-elev); border: 1px solid var(--border-strong);
+  border-radius: 8px; padding: 4px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+  min-width: 240px; z-index: 100;
+}
+.model-picker-menu .menu-title {
+  font-size: 11px; color: var(--fg-muted);
+  padding: 4px 8px; text-transform: uppercase; letter-spacing: 0.5px;
+}
+.model-picker-menu .model-option {
+  display: flex; align-items: center; gap: 10px; width: 100%;
+  padding: 8px 10px; background: transparent; border: none;
+  color: var(--fg); text-align: left; cursor: pointer; border-radius: 4px;
+}
+.model-picker-menu .model-option:hover { background: var(--bg-hover); }
+.model-picker-menu .model-option.selected { background: var(--accent-soft); color: var(--accent); }
+.model-picker-menu .model-option .model-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); flex-shrink: 0; }
+.model-picker-menu .model-option .model-label { flex: 1; font-weight: 500; }
+.model-picker-menu .model-option .model-desc { font-size: 11px; color: var(--fg-muted); }
 
 .tokui-container {
   flex: 1; overflow-y: auto;
