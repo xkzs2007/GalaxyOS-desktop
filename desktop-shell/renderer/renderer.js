@@ -153,13 +153,46 @@ async function healthCheck() {
     const stage = h.rccam_enabled ? 'R-CCAM ✓' : 'R-CCAM ✗';
     const memo = h.memo_enabled ? 'MeMo ✓' : 'MeMo ✗';
     const router = h.router_enabled ? 'Router ✓' : 'Router ✗';
+    const skillsN = h.skills_count != null ? ` · ${h.skills_count} skills` : '';
     connText.textContent = `已连接 · v${h.version}`;
-    healthDetail.innerHTML = `${stage} · ${memo} · ${router}<br>zmq :${h.zmq_port} · sse :${h.sse_port}`;
+    healthDetail.innerHTML = `${stage} · ${memo} · ${router}${skillsN}<br>zmq :${h.zmq_port} · sse :${h.sse_port}`;
+    // If skills_count is available, fetch and render them
+    if (h.skills_count && h.skills_count > 0 && galaxy.skills) {
+      loadSkills();
+    }
   } catch (e) {
     connDot.classList.remove('ok');
     connDot.classList.add('err');
     connText.textContent = `连接失败`;
     healthDetail.textContent = String(e.message ?? e);
+  }
+}
+
+async function loadSkills() {
+  if (!galaxy.skills) return;
+  try {
+    const result = await galaxy.skills();
+    const list = document.getElementById('skills-list');
+    if (!list) return;
+    list.innerHTML = '';
+    // Show up to 12 skills as pills; the rest are available via scroll
+    const skills = (result.skills || []).slice(0, 12);
+    for (const s of skills) {
+      const li = document.createElement('li');
+      li.className = 'skill-pill';
+      li.textContent = s.name || s.id;
+      li.title = s.description || '';
+      list.appendChild(li);
+    }
+    if (result.count > 12) {
+      const li = document.createElement('li');
+      li.className = 'skill-pill';
+      li.style.opacity = '0.5';
+      li.textContent = `+${result.count - 12}`;
+      list.appendChild(li);
+    }
+  } catch (e) {
+    console.warn('[renderer] skills load failed:', e);
   }
 }
 
@@ -335,6 +368,13 @@ function makeStandaloneGalaxy() {
       const res = await fetch('http://127.0.0.1:5758/sse/health', { method: 'POST' });
       if (!res.ok) throw new Error(`health HTTP ${res.status}`);
       return res.json();
+    },
+    skills: async () => {
+      // In standalone mode, fetch skills from the sidecar's zmq
+      // (proxied through SSE health endpoint which includes skills_count)
+      const h = await fetch('http://127.0.0.1:5758/sse/health', { method: 'POST' });
+      const health = await h.json();
+      return { skills: [], count: health.skills_count || 0 };
     },
   };
 }

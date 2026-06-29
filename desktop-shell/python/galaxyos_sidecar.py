@@ -54,8 +54,15 @@ from typing import Any, Dict, List, Optional
 _THIS_DIR = Path(__file__).resolve().parent
 # Sidecar is at desktop-shell/python/, so the repo root is two levels up.
 _REPO_ROOT = _THIS_DIR.parent.parent
-if str(_REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(_REPO_ROOT))
+# Order matters: engine + privileged dirs must be on path BEFORE
+# the engine's bare imports (e.g. `from unified_vector_store import ...`)
+# resolve. We insert them at the FRONT so they take priority.
+_ENGINE_DIR = _REPO_ROOT / "galaxyos" / "engine"
+_PRIVILEGED_DIR = _REPO_ROOT / "galaxyos" / "privileged"
+_GALAXYOS_PKG = _REPO_ROOT / "galaxyos"
+for d in (_ENGINE_DIR, _PRIVILEGED_DIR, _GALAXYOS_PKG, _REPO_ROOT):
+    if d.exists() and str(d) not in sys.path:
+        sys.path.insert(0, str(d))
 # Honor explicit override
 _repo_env = os.environ.get("GALAXYOS_REPO")
 if _repo_env and _repo_env not in sys.path:
@@ -316,10 +323,57 @@ class SidecarHandlers:
             "router_enabled": True,   # Stage 3.5: ACRouter C-A-F
             "router_orchestrator": "HeuristicOrchestrator (rule-based)",
             "router_memory": "BGE-large BoW (in-process, JSONL on disk)",
+            "skills_count": len(self.list_skills({}).get("skills", [])),
         }
 
     def quit(self, params: Dict[str, Any]) -> Dict[str, Any]:
         return {"bye": True}
+
+    def list_skills(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """List the 76 GalaxyOS skills from the upstream skills/ dir.
+
+        Each skill is a directory containing SKILL.md (Anthropic skill
+        convention). We read the YAML frontmatter to get the name +
+        description, then return them as a JSON list for the
+        renderer sidebar to display.
+        """
+        import re
+        skills_dir = path_resolver_desktop._GALAXYOS_REPO / "skills"
+        if not skills_dir.exists():
+            return {"skills": [], "count": 0}
+        skills = []
+        for d in sorted(skills_dir.iterdir()):
+            if not d.is_dir() or d.name.startswith(".") or d.name.startswith("_"):
+                continue
+            skill_md = d / "SKILL.md"
+            name = d.name
+            description = ""
+            version = ""
+            if skill_md.exists():
+                try:
+                    text = skill_md.read_text(encoding="utf-8", errors="replace")
+                    # Parse YAML frontmatter (between --- markers)
+                    m = re.match(r"^---\s*\n(.*?)\n---", text, re.DOTALL)
+                    if m:
+                        yaml_block = m.group(1)
+                        name_m = re.search(r"^name:\s*(.+)$", yaml_block, re.MULTILINE)
+                        if name_m:
+                            name = name_m.group(1).strip().strip('"\'')
+                        desc_m = re.search(r"^description:\s*(.+)$", yaml_block, re.MULTILINE)
+                        if desc_m:
+                            description = desc_m.group(1).strip().strip('"\'')[:100]
+                        ver_m = re.search(r"^version:\s*(.+)$", yaml_block, re.MULTILINE)
+                        if ver_m:
+                            version = ver_m.group(1).strip().strip('"\'')
+                except Exception:
+                    pass
+            skills.append({
+                "id": d.name,
+                "name": name,
+                "description": description,
+                "version": version,
+            })
+        return {"skills": skills, "count": len(skills)}
 
     # ── Streaming methods (zmq-callable variants) ─────────────────
     # The zmq REP loop calls these synchronously. We return a

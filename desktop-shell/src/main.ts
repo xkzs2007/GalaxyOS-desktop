@@ -395,6 +395,10 @@ function registerIpc() {
   ipcMain.handle('galaxy:openExternal', async (_e, url: string) => {
     await shell.openExternal(url);
   });
+  ipcMain.handle('galaxy:skills', async () => {
+    try { return await zmqCall('list_skills'); }
+    catch (e) { return { skills: [], count: 0, error: String((e as Error).message) }; }
+  });
 }
 
 // Disable GPU hardware acceleration so PrintWindow / BitBlt can

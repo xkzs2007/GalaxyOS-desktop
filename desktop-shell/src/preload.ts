@@ -12,6 +12,7 @@ export type GalaxyApi = {
   recall(query: string, topK?: number, sessionId?: string): Promise<{ results: unknown[] }>;
   process(userInput: string, sessionId?: string): Promise<Record<string, unknown>>;
   health(): Promise<Record<string, unknown>>;
+  skills(): Promise<{ skills: Array<{id: string; name: string; description: string}>; count: number }>;
   openExternal(url: string): Promise<void>;
 };
 
@@ -21,7 +22,8 @@ const api: GalaxyApi = {
   recall: (q, k, sid) => ipcRenderer.invoke('galaxy:recall', q, k, sid) as any,
   process: (u, sid) => ipcRenderer.invoke('galaxy:process', u, sid) as any,
   health: () => ipcRenderer.invoke('galaxy:health') as any,
-  openExternal: (u) => ipcRenderer.invoke('galaxy:open-external', u) as any,
+  skills: () => ipcRenderer.invoke('galaxy:skills') as any,
+  openExternal: (u) => ipcRenderer.invoke('galaxy:openExternal', u) as any,
 };
 
 contextBridge.exposeInMainWorld('galaxy', api);
