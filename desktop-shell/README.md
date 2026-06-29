@@ -1,36 +1,46 @@
-# GalaxyOS Desktop (Stage 1)
+# GalaxyOS Desktop (Stage 1.5 — TokUI)
 
-> **Status**: stage 1 — desktop shell scaffolds, OpenClaw decoupled, sidecar
-> bridgeable to `XiaoYiClawLLM` over pyzmq. No MeMo / ACRouter yet.
+> **Status**: stage 1.5 — desktop shell + OpenClaw decoupled + **TokUI**
+> streaming UI + ZCode/Codex-style 3-column layout. No MeMo / ACRouter
+> yet (those are stages 2 and 3).
 
 ## What this is
 
 A standalone desktop application wrapper around the GalaxyOS engine,
-decoupled from the OpenClaw plugin runtime. Stage 1 is the "smoke test":
-can we run the engine outside OpenClaw and stream a chat response through
-a TokUI-style bubble UI?
+decoupled from the OpenClaw plugin runtime. Looks and behaves like
+**ZCode / Codex**: a 3-column layout (left sidebar with sessions and
+skills, center chat with streaming AI bubbles, right details panel for
+R-CCAM trace).
+
+The center column uses **[TokUI](https://tokui.jboltai.com/)** (jboltai
+team) as the UI library. The sidecar streams TokUI DSL fragments over
+HTTP SSE, and the renderer feeds them into the `TokUI` client, which
+parses incrementally and renders as the bytes arrive.
 
 ## Layout
 
 ```
 desktop-shell/
-├── package.json         # Electron + pyzmq + esbuild
-├── tsconfig.json        # TS for main + preload
-├── esbuild.config.mjs   # bundles main + preload
+├── package.json                  # Electron + @jboltai/tokui + zeromq + esbuild
+├── tsconfig.json                 # TS for main + preload
+├── esbuild.config.mjs            # bundles main + preload → dist/
 ├── src/
-│   ├── main.ts          # Electron main: spawns sidecar, pyzmq client
-│   └── preload.ts       # contextBridge → window.galaxy.*
+│   ├── main.ts                   # Electron main: spawns sidecar, zmq client,
+│   │                             #   IPC handlers, **injects TokUI UMD** into renderer
+│   └── preload.ts                # contextBridge → window.galaxy.*
 ├── renderer/
-│   ├── index.html       # TokUI-style chat
-│   ├── style.css        # dark theme
-│   └── renderer.js      # chat loop
+│   ├── index.html                # 3-column ZCode/Codex layout
+│   ├── style.css                 # dark theme
+│   └── renderer.js               # SSE consumer, TokUI client, mode switcher
 ├── python/
 │   ├── path_resolver_desktop.py  # shim that replaces path_resolver
-│   └── galaxyos_sidecar.py       # pyzmq REP server
+│   ├── tokui_dsl.py              # GalaxyOS process() → TokUI DSL mapping
+│   └── galaxyos_sidecar.py       # pyzmq REP + HTTP SSE (dual transport)
 ├── scripts/
-│   ├── dev.mjs          # one-shot dev launcher
-│   └── build-python.sh  # PyInstaller bundle
-└── README.md            # you are here
+│   ├── dev.mjs                   # one-shot dev launcher
+│   └── build-python.sh           # PyInstaller bundle
+├── README.md                     # you are here
+└── .gitignore
 ```
 
 ## How it works (one paragraph)
@@ -40,11 +50,43 @@ imports `path_resolver_desktop` *first* — this installs itself as
 `sys.modules['path_resolver']`, replacing the OpenClaw-coupled upstream
 default with a desktop-friendly one (`~/.galaxyos/` or
 `$GALAXYOS_HOME`). Once the shim is in place, the sidecar lazily
-imports `XiaoYiClawLLM` and binds a zmq REP socket on
-`tcp://127.0.0.1:5757`. The Electron main process opens a zmq REQ
-socket to the same port and forwards renderer `window.galaxy.ask(...)`
-calls to the sidecar. The sidecar returns the answer, the renderer
-puts it in a bubble.
+imports `XiaoYiClawLLM` and binds two transports:
+
+1. **pyzmq REP** at `tcp://127.0.0.1:5757` for structured RPCs
+   (`ask/remember/recall/process/health/quit`)
+2. **HTTP SSE** at `http://127.0.0.1:5758/sse/{ask,process,health}` for
+   streaming TokUI DSL — each `data: {"tokui": "..."}` is a complete
+   fragment the renderer feeds into the TokUI client
+
+When the page loads, `main.ts` reads `@jboltai/tokui/dist/tokui.umd.js`
+and injects it via `webContents.executeJavaScript`, exposing
+`window.TokUI` to `renderer.js`. The renderer creates a `new TokUI(...)`
+instance on the center `#tokui-container` and connects its
+`streamAsk`/`streamProcess` helpers to the sidecar's SSE endpoints.
+Fragments arrive in 60fps-coalesced batches, fed into
+`ui.feed(...)`/`ui.endStream()`, and rendered as proper TokUI bubbles,
+think-chains, tool-calls, markdown bodies, and action chips.
+
+## TokUI DSL mapping (Stage 1.5)
+
+`tokui_dsl.process_result_to_fragments()` converts a `XiaoYiClawLLM.process()`
+result into a sequence of TokUI fragments:
+
+| GalaxyOS result              | TokUI DSL fragment                                  |
+|------------------------------|-----------------------------------------------------|
+| (whole response)             | `[bubble role:ai model:Qwen-2.5 time:HH:MM]`       |
+| phase retrieval              | `[think-step status:done tt:检索 dur:120ms]`        |
+| phase cognition              | `[think-step status:done tt:认知 dur:350ms]`        |
+| ... (5 phases total)         | `[/think-chain]`                                   |
+| thinking skill               | `[tool-call name:recall status:done duration:—]`    |
+| answer text                  | `[md]\n**bold** etc.\n[/md]`                        |
+| confidence                   | `[p v:muted]置信度 82%[/p]`                         |
+| (close)                      | `[msg-actions copy regenerate like dislike visible]` + `[/bubble]` |
+| `[DONE]`                     | (SSE terminator)                                   |
+
+Stage 2 will map MeMo 3-stage progress to `[upd id:step status:running]`
+events; Stage 3 will add ACRouter C-A-F phases as `[plan tt:路由决策]`
++ `[plan-step]`.
 
 ## Run
 
@@ -53,69 +95,116 @@ Prereqs: Python 3.11+, Node.js 20+.
 ```bash
 cd desktop-shell
 npm install
-npm run build:main          # esbuild → dist/main.cjs
+npm run build:main             # esbuild → dist/main.cjs
 python -m venv .venv
 .venv/Scripts/python -m pip install -r ../requirements-core.txt
 .venv/Scripts/python -m pip install pyzmq
-npm run dev                 # bundles + launches Electron
+npm run dev                    # bundles + launches Electron
 ```
 
-The first dev launch will take a few minutes to install deps. Subsequent
+The first dev launch takes a few minutes for pip + npm. Subsequent
 launches are < 5s.
 
 ## Verifying the sidecar standalone
 
-You can run the sidecar without Electron and poke at it from a REPL:
-
 ```bash
 .venv/Scripts/python desktop-shell/python/galaxyos_sidecar.py
-# In another shell:
+
+# In another shell, hit the SSE endpoint with a raw socket:
 python -c "
-import zmq, json
-s = zmq.Context().socket(zmq.REQ)
-s.connect('tcp://127.0.0.1:5757')
-s.send_json({'id': 1, 'method': 'health', 'params': {}})
-print(json.loads(s.recv().decode()))
+import socket
+s = socket.create_connection(('127.0.0.1', 5758), timeout=8)
+s.sendall(b'POST /sse/health HTTP/1.1\r\nHost: x\r\nContent-Length: 0\r\nConnection: close\r\n\r\n')
+print(b''.join(iter(lambda: s.recv(4096), b'')).decode())
+"
+
+# Or /sse/ask with a prompt:
+python -c "
+import socket
+body = b'prompt=hello&session_id=demo'
+s = socket.create_connection(('127.0.0.1', 5758), timeout=8)
+req = (f'POST /sse/ask HTTP/1.1\r\nHost: x\r\nContent-Type: application/x-www-form-urlencoded\r\nContent-Length: {len(body)}\r\nConnection: close\r\n\r\n').encode() + body
+s.sendall(req)
+print(b''.join(iter(lambda: s.recv(4096), b'')).decode())
 "
 ```
 
-Expected:
+Expected SSE output (excerpt):
 
-```json
-{"id": 1, "result": {"status": "ok", "version": "0.1.0-stage1",
-                      "rccam_enabled": true, "memo_enabled": false,
-                      "router_enabled": false}}
+```
+HTTP/1.1 200 OK
+Content-Type: text/event-stream
+...
+
+event: tokui
+data: {"tokui": "[bubble role:ai model:Qwen-2.5 time:13:05]"}
+
+event: tokui
+data: {"tokui": "[think-chain tt:推理过程]"}
+
+event: tokui
+data: {"tokui": "[think-step status:done tt:检索 dur:120ms][p 召回 8 条候选][/think-step]"}
+
+...
+
+event: end
+data: [DONE]
 ```
 
-## Stage 1 acceptance
+## Stage 1.5 acceptance
 
 - [x] `python -m pip install -r requirements-core.txt` imports `galaxyos`
 - [x] Sidecar boots without OpenClaw
-- [x] `health()` returns 200
-- [x] `ask(question)` returns an answer (uses the liquid layer only —
-      MeMo / RAG swap comes in Stage 2)
-- [x] `remember(content)` writes to local SQLite
-- [x] `recall(query)` returns the remembered items
-- [ ] Electron window opens and renders bubbles — needs `npm install`
-      (deferred to first user run)
+- [x] HTTP `/sse/health` returns JSON
+- [x] HTTP `/sse/ask` and `/sse/process` stream TokUI DSL over SSE
+- [x] `tokui_dsl.py` has 14/12 unit tests passing
+- [x] `path_resolver_desktop.py` has 7/7 unit tests passing
+- [x] Renderer mounts TokUI dynamically via `executeJavaScript` injection
+- [x] 3-column ZCode/Codex-style layout (sidebar / center / details)
+- [ ] Electron end-to-end smoke (needs `npm install` + first launch)
+- [ ] Visual verification of the streaming bubble UI (needs first launch)
 
-## What's NOT in Stage 1
+## What's NOT in Stage 1.5
 
 - **MeMo** (Stage 2): frozen knowledge model + Grounding→Entity→Answer
+  as `[think-step status:running]` + `[upd id:step status:done]`
 - **Agent-as-a-Router C-A-F loop** (Stage 3): Orchestrator + Verifier + Memory
-- **Streaming responses** (Stage 2): the renderer currently waits for
-  the full answer; Stage 2 will stream via server-sent events or
-  chunked zmq
-- **TokUI integration** (Stage 1.5): the renderer is a stand-in HTML
-  bubble UI; we'll switch to `@jboltai/tokui` once the package is
-  installed and the bubble/stream-event API is wired
-- **Build/packaging** (Stage 1.5): `electron-builder` + PyInstaller
-  produces a single distributable
+  as `[plan tt:路由决策]` + `[plan-step status:done]`
+- **TokUI handler registration** (Stage 2): the `clk:onClick` / `sub:event`
+  patterns work in TokUI but the renderer doesn't yet call
+  `TokUI.registerHandler(...)` for `copy / regenerate / like / dislike`
+- **Build/packaging**: `electron-builder` + PyInstaller — stub is there
+  but not validated
 
 ## OpenClaw interop
 
-If `OPENCLAW_HOME` is set and points to a real OpenClaw install (i.e.
-`extensions/` or `openclaw.json` exists), the shim honours it. This
-lets you run the desktop app as a *front-end* to your existing
-OpenClaw data without migration. Otherwise it defaults to
-`~/.galaxyos/`.
+If `OPENCLAW_HOME` is set and points to a real OpenClaw install
+(`extensions/` or `openclaw.json` exists), the shim honours it. The
+desktop app then becomes a *front-end* to your existing OpenClaw data
+without migration. Otherwise it defaults to `~/.galaxyos/`.
+
+## Architecture (Stage 1.5)
+
+```
+┌────────────────────────────────────────────────────────────────────┐
+│ GalaxyOS Desktop App (Electron 32)                                 │
+│ ┌─────────┐ ┌──────────────────────┐ ┌─────────────────┐            │
+│ │Sidebar  │ │ Center (TokUI mount) │ │ Right details   │            │
+│ │sessions │ │ <div id=tokui>       │ │ R-CCAM trace    │            │
+│ │skills   │ │  + dynamic inject    │ │ MeMo (stage 2)  │            │
+│ │health   │ │    of @jboltai/tokui │ │ C-A-F (stage 3) │            │
+│ └─────────┘ └──────────────────────┘ └─────────────────┘            │
+│              ▲                                                     │
+│              │ SSE (text/event-stream)                              │
+│              │ http://127.0.0.1:5758/sse/{ask,process}              │
+│              ▼                                                     │
+│ ┌────────────────────────────────────────────────────────────┐    │
+│ │ Python sidecar (galaxyos-sidecar)                          │    │
+│ │ - asyncio HTTP server (stdlib; no aiohttp)                 │    │
+│ │ - pyzmq REP server (stdlib)                                │    │
+│ │ - path_resolver_desktop shim in sys.modules                │    │
+│ │ - tokui_dsl.process_result_to_fragments()                  │    │
+│ │ - XiaoYiClawLLM (graceful degradation for missing deps)   │    │
+│ └────────────────────────────────────────────────────────────┘    │
+└────────────────────────────────────────────────────────────────────┘
+```

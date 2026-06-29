@@ -1,19 +1,20 @@
 // src/main.ts — Electron main process for GalaxyOS Desktop.
 //
-// Responsibilities (Stage 1):
-//   1. Spawn the Python sidecar as a child process.
+// Responsibilities (Stage 1.5):
+//   1. Spawn the Python sidecar as a child process (zmq REP + HTTP SSE).
 //   2. Open a pyzmq REQ socket and route renderer→sidecar RPCs.
 //   3. Expose a contextBridge API via preload (window.galaxy.*).
-//   4. Show a TokUI bubble UI that streams ask() responses.
+//   4. Show a ZCode/Codex-style 3-column UI with TokUI bubble chat.
+//   5. Expose @jboltai/tokui to the renderer via window.TokUI.
 //
 // Stage 2 will add: MeMo model load progress, 3-stage visualization.
 // Stage 3 will add: ACRouter C-A-F loop status, routing debug panel.
 
-import { app, BrowserWindow, ipcMain, shell } from 'electron';
+import { app, BrowserWindow, ipcMain, shell, session as electronSession } from 'electron';
 import { spawn, ChildProcess } from 'node:child_process';
-import { resolve, dirname } from 'node:path';
+import { resolve, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { existsSync } from 'node:fs';
+import { existsSync, mkdirSync } from 'node:fs';
 import * as zmq from 'zeromq';  // napi binding; user adds it as a dep in Stage 1.5
 // Fallback: if zeromq isn't installed at runtime, we surface a clear error.
 
@@ -24,8 +25,11 @@ const APP_ROOT = resolve(__dirname, '..');  // desktop-shell/
 const PYTHON_DIR = resolve(APP_ROOT, 'python');
 const SIDECAR_SCRIPT = resolve(PYTHON_DIR, 'galaxyos_sidecar.py');
 const RENDERER_HTML = resolve(APP_ROOT, 'renderer', 'index.html');
+const TOKUI_DIST_CSS = resolve(APP_ROOT, 'node_modules', '@jboltai', 'tokui', 'dist', 'tokui.css');
+const TOKUI_DIST_JS = resolve(APP_ROOT, 'node_modules', '@jboltai', 'tokui', 'dist', 'tokui.umd.js');
 
 const SIDECAR_PORT = Number(process.env.GALAXYOS_SIDECAR_PORT ?? 5757);
+const SIDECAR_HTTP_PORT = Number(process.env.GALAXYOS_SIDECAR_HTTP_PORT ?? 5758);
 const SIDECAR_HOST = process.env.GALAXYOS_SIDECAR_HOST ?? '127.0.0.1';
 
 // ── Sidecar process handle ────────────────────────────────────────────
@@ -49,6 +53,7 @@ function startSidecar(): Promise<void> {
         ...process.env,
         PYTHONPATH: PYTHON_DIR + (process.env.PYTHONPATH ? `;${process.env.PYTHONPATH}` : ''),
         GALAXYOS_SIDECAR_PORT: String(SIDECAR_PORT),
+        GALAXYOS_SIDECAR_HTTP_PORT: String(SIDECAR_HTTP_PORT),
         GALAXYOS_SIDECAR_HOST: SIDECAR_HOST,
       },
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -126,10 +131,10 @@ function registerIpc(): void {
 // ── Window ────────────────────────────────────────────────────────────
 function createWindow(): void {
   const win = new BrowserWindow({
-    width: 1100,
-    height: 760,
-    minWidth: 720,
-    minHeight: 480,
+    width: 1280,
+    height: 820,
+    minWidth: 880,
+    minHeight: 540,
     title: 'GalaxyOS Desktop',
     webPreferences: {
       preload: resolve(__dirname, 'preload.cjs'),
@@ -138,8 +143,48 @@ function createWindow(): void {
       sandbox: false,
     },
   });
+
+  // Allow the renderer to load TokUI's UMD assets via file:// if the
+  // user hasn't npm-installed yet (we serve a friendly 404 stub).
+  win.webContents.on('did-fail-load', (_e, code, desc, url) => {
+    log(`did-fail-load: ${code} ${desc} (${url})`);
+  });
+
+  // Inject the TokUI UMD script (if present) into the renderer once
+  // it has finished loading. We do this by sending an IPC; the
+  // preload then attaches window.TokUI from the loaded UMD.
+  win.webContents.once('did-finish-load', () => {
+    injectTokUI(win);
+  });
+
   win.loadFile(RENDERER_HTML).catch((e) => log(`loadFile failed: ${e}`));
   win.on('closed', () => stopSidecar());
+}
+
+/**
+ * Inject the @jboltai/tokui UMD bundle into the renderer so that
+ * ``window.TokUI`` is available to renderer.js.
+ *
+ * We do this dynamically rather than via a <script> tag in index.html
+ * because the file is only present after ``npm install``. If the
+ * package is missing, we ship a tiny stub so the renderer doesn't
+ * crash — it just falls back to the raw-DSL stub.
+ */
+async function injectTokUI(win: BrowserWindow): Promise<void> {
+  if (!existsSync(TOKUI_DIST_JS)) {
+    log(`TokUI UMD not found at ${TOKUI_DIST_JS} — renderer will use stub.`);
+    return;
+  }
+  try {
+    const fs = await import('node:fs/promises');
+    const code = await fs.readFile(TOKUI_DIST_JS, 'utf-8');
+    await win.webContents.executeJavaScript(
+      `(() => { ${code}; if (typeof TokUI !== 'undefined') window.TokUI = TokUI; })();`,
+    );
+    log('TokUI UMD injected into renderer');
+  } catch (e) {
+    log(`TokUI injection failed: ${(e as Error).message}`);
+  }
 }
 
 // ── Logging ───────────────────────────────────────────────────────────

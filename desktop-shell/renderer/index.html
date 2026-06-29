@@ -3,39 +3,105 @@
 <head>
   <meta charset="UTF-8" />
   <meta http-equiv="Content-Security-Policy"
-        content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;" />
+        content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' http://127.0.0.1:5758 ws://127.0.0.1:5758;" />
   <title>GalaxyOS Desktop</title>
+  <!-- TokUI CSS is injected by the main process via webContents.executeJavaScript
+       if @jboltai/tokui is npm-installed; otherwise renderer.js falls back to
+       a stub. We do NOT link tokui.css here because the file may not exist
+       before npm install. -->
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
   <div id="app">
-    <header class="topbar">
-      <div class="brand">
-        <span class="logo">●</span>
-        <span class="name">GalaxyOS</span>
-        <span class="stage">stage 1</span>
-      </div>
-      <div class="status">
-        <span id="conn-indicator" class="dot"></span>
-        <span id="conn-text">connecting…</span>
-      </div>
-    </header>
 
-    <main id="chat" class="chat">
-      <div class="bubble system">
-        <div class="bubble-body">
-          <p>你好。我是 GalaxyOS 桌面端。</p>
-          <p class="hint">本机桌面版已脱离 OpenClaw，<code>XiaoYiClawLLM</code> 直接由 Python 子进程加载。</p>
-          <p class="hint">试试输入：<em>"今天我学了 R-CCAM 五阶段"</em>（记得），然后 <em>"R-CCAM 是什么"</em>（回忆）。</p>
-        </div>
+    <!-- LEFT SIDEBAR — sessions + actions (ZCode/Codex pattern) -->
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <span class="logo">●</span>
+        <span class="brand">GalaxyOS</span>
+        <span class="version" id="version-tag">stage 1.5</span>
       </div>
+
+      <button class="new-chat-btn" id="new-chat-btn">
+        <span class="icon">+</span>
+        <span>新对话</span>
+      </button>
+
+      <div class="sessions-section">
+        <div class="section-label">会话</div>
+        <ul class="sessions-list" id="sessions-list">
+          <li class="session-item active" data-session="default">
+            <span class="dot"></span>
+            <span class="title">默认会话</span>
+            <span class="time">现在</span>
+          </li>
+        </ul>
+      </div>
+
+      <div class="skills-section">
+        <div class="section-label">已加载技能</div>
+        <ul class="skills-list" id="skills-list">
+          <li class="skill-pill">recall</li>
+          <li class="skill-pill">summarize</li>
+          <li class="skill-pill">remember</li>
+        </ul>
+      </div>
+
+      <div class="sidebar-footer">
+        <div class="conn-row">
+          <span id="conn-indicator" class="dot"></span>
+          <span id="conn-text">连接中…</span>
+        </div>
+        <div class="conn-row sub" id="health-detail"></div>
+      </div>
+    </aside>
+
+    <!-- CENTER — main chat (TokUI mounts here) -->
+    <main class="main">
+      <header class="topbar">
+        <div class="crumbs">
+          <span class="crumb">GalaxyOS</span>
+          <span class="sep">/</span>
+          <span class="crumb" id="active-session-name">默认会话</span>
+        </div>
+        <div class="topbar-actions">
+          <span class="stage-badge" id="stage-badge">stage 1.5 · TokUI</span>
+        </div>
+      </header>
+
+      <div id="tokui-container" class="tokui-container">
+        <!-- TokUI mount point. The client renders streamed DSL here. -->
+      </div>
+
+      <footer class="composer">
+        <div class="composer-mode">
+          <button class="mode-btn active" data-mode="ask">Ask</button>
+          <button class="mode-btn" data-mode="process">Process</button>
+        </div>
+        <div class="composer-input-wrap">
+          <textarea id="input" rows="1" autocomplete="off"
+                    placeholder="问点什么…（Enter 发送，Shift+Enter 换行）"></textarea>
+        </div>
+        <button id="send" class="send-btn" disabled>
+          <span>发送</span>
+        </button>
+      </footer>
     </main>
 
-    <footer class="composer">
-      <input id="input" type="text" autocomplete="off"
-             placeholder="问点什么…（Enter 发送，Shift+Enter 换行）" />
-      <button id="send">发送</button>
-    </footer>
+    <!-- RIGHT — details panel (R-CCAM trace, MeMo stages, ACRouter) -->
+    <aside class="details" id="details-panel">
+      <div class="details-header">
+        <span class="section-label">执行详情</span>
+        <button class="collapse-btn" id="collapse-details" title="折叠">›</button>
+      </div>
+      <div class="details-body" id="details-body">
+        <div class="empty-state">
+          <p>选择一条消息，查看 R-CCAM 推理过程与召回记忆。</p>
+          <p class="hint">（阶段二将展示 MeMo 三阶段；阶段三将展示 Agent-as-a-Router 路由。）</p>
+        </div>
+      </div>
+    </aside>
+
   </div>
 
   <script type="module" src="renderer.js"></script>

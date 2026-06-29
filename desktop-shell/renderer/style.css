@@ -1,56 +1,232 @@
-/* renderer/style.css — GalaxyOS Desktop Stage 1
+/* renderer/style.css — GalaxyOS Desktop Stage 1.5 (TokUI + ZCode/Codex layout)
  *
- * Minimal TokUI-style layout: dark theme, bubble chat, sticky composer.
- * Stage 2 will add 3-stage MeMo trace cards.
- * Stage 3 will add ACRouter C-A-F debug sidebar.
+ * 3-column grid:
+ *   ┌─────────┬──────────────────────┬──────────┐
+ *   │ sidebar │     main chat        │  details │
+ *   │ sessions│   (TokUI mount)      │  (trace) │
+ *   │ skills  │                      │          │
+ *   │ health  │                      │          │
+ *   └─────────┴──────────────────────┴──────────┘
+ *
+ * Stage 2 will populate the details panel with MeMo 3-stage cards.
+ * Stage 3 will populate it with ACRouter C-A-F plan cards.
  */
 
 :root {
   --bg: #0f1115;
   --bg-elev: #181b22;
+  --bg-hover: #1f232c;
   --fg: #e6e8ee;
   --fg-dim: #8a92a6;
+  --fg-muted: #5a6378;
   --accent: #4f9dff;
-  --accent-soft: rgba(79, 157, 255, 0.15);
+  --accent-soft: rgba(79, 157, 255, 0.12);
   --user: #2a2f3a;
   --system: #1c2030;
   --border: #2a2f3a;
+  --border-strong: #3a4150;
+  --success: #10b981;
+  --warn: #f59e0b;
+  --danger: #ef4444;
+
+  --sidebar-w: 240px;
+  --details-w: 320px;
 }
 
 * { box-sizing: border-box; }
-html, body { margin: 0; padding: 0; height: 100%; background: var(--bg); color: var(--fg);
-  font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; }
+html, body {
+  margin: 0; padding: 0; height: 100%;
+  background: var(--bg); color: var(--fg);
+  font: 13px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI",
+        "PingFang SC", "Microsoft YaHei", sans-serif;
+  overflow: hidden;
+}
 
-#app { display: flex; flex-direction: column; height: 100vh; }
+#app {
+  display: grid;
+  grid-template-columns: var(--sidebar-w) 1fr var(--details-w);
+  height: 100vh;
+}
 
-.topbar { display: flex; align-items: center; justify-content: space-between;
-  padding: 10px 16px; border-bottom: 1px solid var(--border); background: var(--bg-elev); }
-.brand { display: flex; align-items: center; gap: 8px; font-weight: 600; }
-.brand .logo { color: var(--accent); font-size: 18px; }
-.brand .stage { font-size: 11px; padding: 2px 6px; border-radius: 4px;
-  background: var(--accent-soft); color: var(--accent); }
-.status { display: flex; align-items: center; gap: 6px; color: var(--fg-dim); font-size: 12px; }
-.dot { width: 8px; height: 8px; border-radius: 50%; background: #f59e0b; display: inline-block; }
-.dot.ok { background: #10b981; }
-.dot.err { background: #ef4444; }
+/* ── Sidebar ─────────────────────────────────────────────────────── */
+.sidebar {
+  background: var(--bg-elev);
+  border-right: 1px solid var(--border);
+  display: flex; flex-direction: column;
+  padding: 12px;
+  gap: 12px;
+  overflow-y: auto;
+}
 
-.chat { flex: 1; overflow-y: auto; padding: 16px; }
-.bubble { max-width: 80%; margin: 8px 0; padding: 10px 14px; border-radius: 10px;
-  background: var(--system); border: 1px solid var(--border); }
-.bubble.user { background: var(--user); margin-left: auto; }
-.bubble.system { background: var(--system); }
-.bubble .bubble-body p { margin: 4px 0; }
-.bubble .hint { color: var(--fg-dim); font-size: 12px; }
-.bubble code { background: var(--bg); padding: 1px 5px; border-radius: 3px;
-  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace; font-size: 12px; }
-.bubble em { color: var(--accent); font-style: normal; }
+.sidebar-header {
+  display: flex; align-items: center; gap: 8px;
+  font-weight: 600; padding: 4px 4px 8px;
+}
+.sidebar-header .logo { color: var(--accent); font-size: 18px; }
+.sidebar-header .version {
+  margin-left: auto;
+  font-size: 10px; padding: 2px 6px; border-radius: 3px;
+  background: var(--accent-soft); color: var(--accent);
+  font-weight: 500;
+}
 
-.composer { display: flex; gap: 8px; padding: 12px; border-top: 1px solid var(--border);
-  background: var(--bg-elev); }
-.composer input { flex: 1; padding: 8px 12px; background: var(--bg); color: var(--fg);
-  border: 1px solid var(--border); border-radius: 6px; font-size: 14px; outline: none; }
-.composer input:focus { border-color: var(--accent); }
-.composer button { padding: 8px 18px; background: var(--accent); color: white;
-  border: none; border-radius: 6px; font-size: 14px; cursor: pointer; }
-.composer button:disabled { background: var(--border); cursor: not-allowed; }
-.composer button:hover:not(:disabled) { filter: brightness(1.1); }
+.new-chat-btn {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 12px; border-radius: 6px;
+  background: var(--accent); color: white; border: none;
+  font-size: 13px; cursor: pointer; font-weight: 500;
+}
+.new-chat-btn:hover { filter: brightness(1.1); }
+
+.section-label {
+  font-size: 11px; color: var(--fg-muted);
+  text-transform: uppercase; letter-spacing: 0.5px;
+  padding: 4px 4px;
+}
+
+.sessions-list, .skills-list {
+  list-style: none; margin: 0; padding: 0;
+}
+.session-item {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 8px; border-radius: 4px; cursor: pointer;
+  font-size: 13px;
+}
+.session-item:hover { background: var(--bg-hover); }
+.session-item.active { background: var(--accent-soft); color: var(--accent); }
+.session-item .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--fg-muted); }
+.session-item.active .dot { background: var(--accent); }
+.session-item .title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.session-item .time { font-size: 11px; color: var(--fg-muted); }
+
+.skills-list {
+  display: flex; flex-wrap: wrap; gap: 4px;
+  padding: 4px;
+}
+.skill-pill {
+  padding: 2px 8px; border-radius: 10px;
+  background: var(--bg-hover); color: var(--fg-dim);
+  font-size: 11px;
+}
+
+.sidebar-footer {
+  margin-top: auto; padding-top: 8px;
+  border-top: 1px solid var(--border);
+  font-size: 11px; color: var(--fg-dim);
+}
+.conn-row { display: flex; align-items: center; gap: 6px; padding: 2px 4px; }
+.conn-row.sub { color: var(--fg-muted); font-size: 10px; padding-left: 16px; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--warn); }
+.dot.ok { background: var(--success); }
+.dot.err { background: var(--danger); }
+
+/* ── Main ───────────────────────────────────────────────────────── */
+.main {
+  display: flex; flex-direction: column;
+  background: var(--bg);
+  min-width: 0;
+}
+.topbar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 16px; border-bottom: 1px solid var(--border);
+  background: var(--bg-elev); flex-shrink: 0;
+}
+.crumbs { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--fg-dim); }
+.crumbs .crumb { color: var(--fg); }
+.crumbs .sep { color: var(--fg-muted); }
+.topbar-actions { display: flex; align-items: center; gap: 8px; }
+.stage-badge {
+  font-size: 10px; padding: 3px 8px; border-radius: 3px;
+  background: var(--accent-soft); color: var(--accent);
+  font-weight: 500;
+}
+
+.tokui-container {
+  flex: 1; overflow-y: auto;
+  padding: 16px 24px;
+  background: var(--bg);
+}
+
+.composer {
+  display: flex; gap: 8px; padding: 12px 16px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-elev);
+  align-items: flex-end;
+  flex-shrink: 0;
+}
+.composer-mode {
+  display: flex; flex-direction: column; gap: 2px;
+}
+.mode-btn {
+  padding: 6px 10px; background: var(--bg); color: var(--fg-dim);
+  border: 1px solid var(--border); border-radius: 4px;
+  font-size: 11px; cursor: pointer;
+}
+.mode-btn.active {
+  background: var(--accent-soft); color: var(--accent);
+  border-color: var(--accent);
+}
+.composer-input-wrap { flex: 1; }
+.composer textarea {
+  width: 100%; resize: none; padding: 8px 12px;
+  background: var(--bg); color: var(--fg);
+  border: 1px solid var(--border); border-radius: 6px;
+  font: inherit; outline: none; max-height: 200px;
+}
+.composer textarea:focus { border-color: var(--accent); }
+.send-btn {
+  padding: 8px 16px; background: var(--accent); color: white;
+  border: none; border-radius: 6px; font-weight: 500;
+  cursor: pointer; height: 36px;
+}
+.send-btn:disabled { background: var(--border); cursor: not-allowed; }
+.send-btn:hover:not(:disabled) { filter: brightness(1.1); }
+
+/* ── Details panel ─────────────────────────────────────────────── */
+.details {
+  background: var(--bg-elev);
+  border-left: 1px solid var(--border);
+  display: flex; flex-direction: column;
+  overflow: hidden;
+}
+.details-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+}
+.collapse-btn {
+  background: none; border: 1px solid var(--border);
+  color: var(--fg-dim); width: 22px; height: 22px;
+  border-radius: 3px; cursor: pointer; font-size: 12px;
+  display: flex; align-items: center; justify-content: center;
+}
+.collapse-btn:hover { background: var(--bg-hover); color: var(--fg); }
+
+.details-body {
+  flex: 1; overflow-y: auto;
+  padding: 12px;
+  font-size: 12px;
+}
+.details-body .empty-state { color: var(--fg-muted); padding: 20px 8px; }
+.details-body .empty-state p { margin: 8px 0; }
+.details-body .empty-state .hint { font-size: 11px; }
+
+/* Phase trace cards (Stage 1.5 — populated when /sse/process returns) */
+.phase-card {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 10px;
+  margin-bottom: 8px;
+  font-size: 12px;
+}
+.phase-card .phase-head {
+  display: flex; justify-content: space-between;
+  font-weight: 500; margin-bottom: 4px;
+}
+.phase-card .phase-head .name { color: var(--accent); }
+.phase-card .phase-head .dur { color: var(--fg-muted); font-weight: normal; font-size: 11px; }
+.phase-card .phase-body { color: var(--fg-dim); font-size: 11px; }
+
+#app.details-collapsed { grid-template-columns: var(--sidebar-w) 1fr 0; }
+#app.details-collapsed .details { display: none; }

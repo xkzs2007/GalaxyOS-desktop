@@ -4,8 +4,8 @@
 > **本地**：`C:/Users/Administrator/ZCodeProject/galaxyos/` (浅克隆 222 MB)
 > **目标**：OpenClaw 插件 → 独立桌面 Agent 应用，阶段三引入 Agent-as-a-Router C-A-F 路由环 + MeMo Grounding→Entity→Answer 三阶段协议
 > **参考论文**：[Agent-as-a-Router (arXiv 2606.22902)](https://arxiv.org/abs/2606.22902) + [MeMo (arXiv 2605.15156)](https://arxiv.org/abs/2605.15156)
-> **设计日期**：2026-06-29 (v2)
-> **状态**：阶段一完成（脚手架 + 路径解耦 shim + sidecar + Electron main + TokUI 风格 renderer），阶段二/三待实施
+> **设计日期**：2026-06-29 (v3)
+> **状态**：阶段一.5 完成（TokUI SSE streaming + ZCode 风格 3 栏布局 + 14/12 单元测试 + 端到端 SSE smoke 通过），阶段二/三待实施
 
 ---
 
@@ -106,23 +106,37 @@
 
 ## 3. 三阶段实施计划
 
-### 阶段一（2 周）—— 桌面化跑起来 ✅ 已完成脚手架
+### 阶段一.5（TokUI SSE 集成）✅ 完成
 
 **已完成**（2026-06-29）：
-- ✅ `galaxyos/desktop-shell/` 脚手架（package.json, tsconfig, esbuild, scripts/）
-- ✅ `path_resolver_desktop.py` 兼容 shim（默认 `~/.<APP>/`，OpenClaw 探测 fallback）
-- ✅ `galaxyos_sidecar.py` pyzmq REP server（ask/remember/recall/process/health/quit）
-- ✅ `src/main.ts` Electron 主进程（spawn sidecar + zmq REQ client + IPC 路由）
-- ✅ `src/preload.ts` contextBridge API（window.galaxy.*）
-- ✅ `renderer/` TokUI 风格 chat UI（dark theme + bubble + composer）
-- ✅ `scripts/dev.mjs` 一键 dev（venv + pip + esbuild + electron）
-- ✅ `scripts/build-python.sh` PyInstaller bundle
-- ✅ `desktop-shell/README.md` 开发者向文档
+- ✅ `python/tokui_dsl.py` DSL 转换层（14 单元测试通过）
+  - `process_result_to_fragments(result)` 把 GalaxyOS `process()` 返回值
+    映射为 bubble → think-chain (5 phase) → tool-call → md 答案 → 置信度 → actions → close
+- ✅ `galaxyos_sidecar.py` 加 HTTP SSE 端点（stdlib asyncio，零依赖）
+  - 双协议并存：pyzmq REP (5757) + HTTP SSE (5758)
+  - 3 个 SSE 路由：`/sse/ask`、`/sse/process`、`/sse/health`
+  - 每个 `data: {"tokui": "..."}` 是完整 TokUI 片段；`data: [DONE]` 终止
+  - 端到端验证：raw socket 测试 1500/1720 bytes，14 SSE events，正确 DSL
+- ✅ `src/main.ts` 动态注入 `@jboltai/tokui/dist/tokui.umd.js`
+  - `webContents.executeJavaScript` 在 `did-finish-load` 后注入
+  - 暴露 `window.TokUI` 给 renderer
+  - 文件缺失时优雅降级（renderer 用 stub 显示原始 DSL）
+- ✅ `renderer/index.html` ZCode/Codex 风格 3 栏布局
+  - 左侧：sessions + skills + health
+  - 中间：TokUI mount + mode 切换 (Ask/Process) + composer
+  - 右侧：details 面板（R-CCAM trace，stage 2/3 扩展）
+- ✅ `renderer/renderer.js` SSE 消费者
+  - 用 `fetch().body.getReader()` 读 SSE 帧
+  - 微批合并（3 fragments/批）保证 60fps
+  - 完整 `[DONE]` 边界处理
+  - stub fallback（如 TokUI 不可用）
+- ✅ `package.json` 加 `zeromq` napi binding
+- ✅ `docs/superpowers/specs/evidence/2026-06-29-stage1.5-sse-smoke.txt` SSE 端到端证据
 
 **未完成**（首次用户跑 `npm run dev` 时）：
-- [ ] `npm install` 安装 Electron / esbuild / zeromq 等
-- [ ] 端到端测试：起 Electron → 问问题 → 看到 bubble
-- [ ] upstream 2 个独立 PR（path shim + llm_client path 化）— 等首次跑通再提
+- [ ] `npm install` 装 Electron + zeromq + 验证 TokUI UMD 注入
+- [ ] 端到端测试：起 Electron → 看到 TokUI 渲染 → 问问题 → 看到 bubble 流式
+- [ ] TokUI `registerHandler` 接入 copy/regenerate/like/dislike 按钮
 - [ ] `electron-builder` 打包配置验证
 
 ### 阶段二（2 周）—— MeMo 三阶段协议接入

@@ -16,7 +16,8 @@
   },
   "dependencies": {
     "@jboltai/tokui": "^0.1.0",
-    "pyzmq": "^25.1.2"
+    "pyzmq": "^25.1.2",
+    "zeromq": "^6.0.0"
   },
   "devDependencies": {
     "electron": "^32.0.0",
