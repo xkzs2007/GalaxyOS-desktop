@@ -104,7 +104,21 @@ def _load_engine():
 # ── Method dispatch (shared by zmq + SSE) ─────────────────────────────
 class SidecarHandlers:
     """All sidecar RPC handlers live here. Both transports reuse this
-    class so behavior stays consistent."""
+    class so behavior stays consistent.
+
+    Stage 4 (global background layer):
+      - MeMo (the parametric memory layer) is initialised ONCE at
+        startup and held in self._memo. Any mode (ask / process /
+        agent) that hits the sidecar consults MeMo first; if the
+        Memory model returns a confident answer, it gets inlined
+        into the response (in [p v:muted] footer).
+      - ACRouter is the global dispatcher. ask / process / agent
+        all go through the C-A-F loop; only the "MeMo" mode
+        bypasses (it calls the 3-stage protocol directly for
+        debugging). The router picks the best expert for each
+        query; the choice is surfaced as a meta footer on every
+        assistant bubble.
+    """
 
     def __init__(self) -> None:
         log.info("Loading GalaxyOS engine (this may take a few seconds)...")
@@ -116,6 +130,134 @@ class SidecarHandlers:
         self._XiaoYiClawLLM = XiaoYiClawLLM
         log.info("Engine ready: XiaoYiClawLLM at %s",
                  path_resolver_desktop.GALAXYOS_ENGINE)
+
+        # Stage 4: global background layers
+        log.info("Booting global MeMo memory layer...")
+        from memo_adapter import MockMeMoAdapter
+        from executive_client import MockExecutiveClient
+        from memo_stages import MeMoProtocol
+        import ac_router as _ac_router_mod  # avoid name shadowing
+        self._memo = MockMeMoAdapter()
+        self._executive = MockExecutiveClient()
+        self._memo_protocol = MeMoProtocol(
+            memo=self._memo, executive=self._executive,
+            overall_timeout_s=10.0,
+        )
+        log.info("MeMo memory layer ready (backend: %s)",
+                 self._memo.backend_name())
+
+        # ACRouter as global dispatcher
+        log.info("Booting global ACRouter...")
+        from ac_router import (
+            CAFRouter, HeuristicOrchestrator, Memory,
+            VerifierSignals, default_router,
+        )
+        self._acrouter_memory = Memory()
+        self._acrouter = default_router(self._acrouter_executor)
+        # Cache the module for use in inner methods (avoid re-import)
+        self._ac_router_module = _ac_router_mod
+        log.info("ACRouter ready (orchestrator: %s, memory: %d entries)",
+                 "HeuristicOrchestrator",
+                 self._acrouter_memory.size())
+
+    # ── Global ACRouter executor ──────────────────────────────────
+    # Dispatches by chosen action to the actual GalaxyOS expert.
+
+    async def _acrouter_executor(self, action: str, query: str):
+        """Executor closure passed to the ACRouter. Runs in a thread
+        (the sidecar is the event loop).
+        """
+        if action == "memo_3stage":
+            # Use the global MeMo 3-stage protocol
+            import concurrent.futures
+            def _run_memo():
+                loop = asyncio.new_event_loop()
+                try:
+                    return loop.run_until_complete(self._memo_protocol.run(query))
+                finally:
+                    loop.close()
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
+                trace = ex.submit(_run_memo).result(timeout=15)
+            return {
+                "answer": trace.answer.final_answer,
+                "signals": self._ac_router_module.VerifierSignals(
+                    s_structural=0.95,
+                    s_sandbox=0.0,
+                    s_consistency=0.9,
+                    s_judge=0.9,
+                ),
+                "cost": 0.003,
+            }
+        elif action == "process_5_stage":
+            # Full R-CCAM via process()
+            result = self.process({"user_input": query, "session_id": ""})
+            return {
+                "answer": result.get("answer", ""),
+                "signals": self._ac_router_module.VerifierSignals(
+                    s_structural=0.9,
+                    s_sandbox=0.4,
+                    s_consistency=0.7,
+                    s_judge=0.7,
+                ),
+                "cost": 0.010,
+            }
+        else:
+            # fast_path / liquid_only: single ask()
+            r = self.ask({"question": query, "session_id": ""})
+            return {
+                "answer": r.get("answer", ""),
+                "signals": self._ac_router_module.VerifierSignals(
+                    s_structural=0.8,
+                    s_sandbox=0.0,
+                    s_consistency=0.6,
+                    s_judge=0.7,
+                ),
+                "cost": 0.001,
+            }
+
+    # ── Global MeMo consult ─────────────────────────────────────
+    # Quick top-1 retrieval: if MeMo has a confident match, we
+    # surface a [p v:muted] "记忆补充: ..." footer. Cheap.
+
+    def _memo_consult(self, query: str) -> Optional[str]:
+        """Try to find a known fact in the Mock MeMo corpus.
+
+        Returns a short snippet suitable for inlining, or None.
+        For the real ONNX backend, this becomes a full Grounding
+        call.
+        """
+        import asyncio
+        try:
+            loop = asyncio.new_event_loop()
+            try:
+                # Stage 1 only — just the grounding question
+                snippets = loop.run_until_complete(
+                    asyncio.gather(
+                        self._memo.answer(query, max_tokens=64),
+                        self._memo.answer(f"What is {query}", max_tokens=64),
+                    )
+                )
+            finally:
+                loop.close()
+        except Exception:
+            return None
+        # Heuristic: if the snippets are "found something" and not
+        # the "no specific information" fallback, inline them.
+        useful = [s for s in snippets
+                  if s and "No specific information" not in s
+                  and "不知道" not in s and len(s) > 20]
+        if not useful:
+            return None
+        return useful[0][:200]  # cap at 200 chars
+
+    def _build_routing_footer(self, action: str, score: float) -> str:
+        """One-line footer summarising the router's decision.
+
+        Renders as a [p] paragraph (the [v:muted] variant gives it
+        a dim color). The action name + 4-signal score is what the
+        user sees on every bubble.
+        """
+        return f'[p v:muted]⚡ routing: [{action} · score {score:.2f}][/p]'
 
     # ── Structured methods (zmq) ────────────────────────────────
     def ask(self, params: Dict[str, Any]) -> Dict[str, Any]:
@@ -183,126 +325,39 @@ class SidecarHandlers:
     def stream_ask(self, question: str, session_id: str = "") -> List[str]:
         """Convert an ask() result into a stream of TokUI DSL fragments.
 
-        Stage 3.5: if ACRouter is enabled, route through C-A-F
-        loop first, then execute the chosen action. The full
-        routing trace (C: neighbors, A: action, F: score, M: commit)
-        is surfaced as a [think-chain] in the DSL.
+        Stage 4: every ask() call goes through the global ACRouter
+        (C-A-F closed loop). The router picks the best expert
+        (fast_path / liquid_only / memo_3stage / process_5_stage)
+        and we surface:
+          - the main answer (from the chosen expert)
+          - a small "记忆补充" footer (from the global MeMo layer
+            if it has a confident match)
+          - a routing_debug footer: [A: <action> · F: <score>]
         """
-        # Stage 3.5: route via ACRouter (heuristic Orchestrator +
-        # BGE-large BoW Memory + Verifier 4-signal scoring).
         try:
-            import ac_router
-
-            async def _acrouter_executor(action: str, query: str):
-                """Executor: dispatch to the actual expert for `action`."""
-                if action == "memo_3stage":
-                    # Use the MeMo 3-stage protocol as the executor
-                    from memo_stages import default_protocol
-                    proto = default_protocol()
-                    import concurrent.futures
-                    def _run_memo():
-                        loop = asyncio.new_event_loop()
-                        try:
-                            return loop.run_until_complete(proto.run(query))
-                        finally:
-                            loop.close()
-                    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
-                        trace = ex.submit(_run_memo).result(timeout=15)
-                    return {
-                        "answer": trace.answer.final_answer,
-                        "signals": ac_router.VerifierSignals(
-                            s_structural=0.9,
-                            s_sandbox=0.0,
-                            s_consistency=0.85,
-                            s_judge=0.90,
-                        ),
-                        "cost": 0.003,
-                    }
-                elif action == "process_5_stage":
-                    # Use the existing R-CCAM path
-                    result = self.process({"user_input": query, "session_id": session_id})
-                    return {
-                        "answer": result.get("answer", ""),
-                        "signals": ac_router.VerifierSignals(
-                            s_structural=0.9,
-                            s_sandbox=0.5,
-                            s_consistency=0.7,
-                            s_judge=0.7,
-                        ),
-                        "cost": 0.010,
-                    }
-                else:
-                    # fast_path / liquid_only: just ask()
-                    r = self.ask({"question": question, "session_id": session_id})
-                    return {
-                        "answer": r.get("answer", ""),
-                        "signals": ac_router.VerifierSignals(
-                            s_structural=0.8,
-                            s_sandbox=0.0,
-                            s_consistency=0.6,
-                            s_judge=0.7,
-                        ),
-                        "cost": 0.001,
-                    }
-
-            # Run the C-A-F loop in a thread (it has its own event loop)
             import concurrent.futures
             def _run_router():
-                from ac_router import default_router
-                router = default_router(_acrouter_executor)
-                # router.route is async — run it in a fresh event loop
                 loop = asyncio.new_event_loop()
                 try:
                     return loop.run_until_complete(
-                        router.route(question, {"type": "factual"})
+                        self._acrouter.route(question, {"type": "factual"})
                     )
                 finally:
                     loop.close()
-
             with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
                 future = ex.submit(_run_router)
                 caf = future.result(timeout=20)
 
-            # Build the DSL: bubble → routing trace think-chain → answer
+            # Build DSL: bubble → answer → optional memory footer → routing footer
             out: List[str] = []
-            out.append(tokui_dsl.open_bubble_ai(model="ACRouter"))
-            out.append(tokui_dsl.open_think_chain("ACRouter C-A-F 路由环"))
-            # Stage C: Context (kNN)
-            knn = caf.k_neighbors
-            knn_short = ", ".join(
-                f"{n.get('key', '?')[:18]!r}({n.get('score', 0):.2f})"
-                for n in knn[:3]
-            ) or "无"
-            out.append(tokui_dsl.think_step(
-                title="Context (上下文)",
-                status="done",
-                dur="2ms",
-                body=f"k=10 检索 → 命中 {len(knn)} 个邻居: [{knn_short}]",
-            ))
-            # Stage A: Action
-            out.append(tokui_dsl.think_step(
-                title="Action (动作)",
-                status="done",
-                dur="0ms",
-                body=f"Orchestrator 选定 **{caf.chosen_action}**",
-            ))
-            # Stage F: Feedback
-            out.append(tokui_dsl.think_step(
-                title="Feedback (反馈)",
-                status="done",
-                dur="0ms",
-                body=f"Verifier 4-signal 得分 {caf.confidence:.2f} · cost ${caf.cost:.3f}",
-            ))
-            # Stage M: Memorize (implicit)
-            out.append(tokui_dsl.think_step(
-                title="Memorize (记忆)",
-                status="done",
-                dur="1ms",
-                body=f"commit to Memory (FIFO 20K, total ≈ {self._memory_size() if hasattr(self, '_memory_size') else 'n/a'})",
-            ))
-            out.append(tokui_dsl.close_think_chain())
-            # Answer
-            out.append(tokui_dsl.answer_paragraph(caf.answer))
+            out.append(tokui_dsl.open_bubble_ai(model=caf.chosen_action))
+            out.append(tokui_dsl.answer_paragraph(caf.answer or "(no answer)"))
+            # Global MeMo supplementary footer (if a confident fact exists)
+            memo_snip = self._memo_consult(question)
+            if memo_snip:
+                out.append(f'[p v:muted]💡 记忆补充: {tokui_dsl._esc(memo_snip)}[/p]')
+            # Routing_debug footer — the small "what did the router do" line
+            out.append(self._build_routing_footer(caf.chosen_action, caf.confidence))
             out.append(tokui_dsl.msg_actions())
             out.append(tokui_dsl.close_bubble())
             return out
@@ -325,21 +380,14 @@ class SidecarHandlers:
     def stream_process(self, user_input: str, session_id: str = "") -> List[str]:
         """Convert a process() result into TokUI DSL fragments.
 
-        Stage 1.5: process() runs to completion first, then we emit all
-        fragments at once. This is *not yet* true streaming — Stage 2
-        will hook into ``rccam_phase_states`` to emit ``[upd]`` events
-        as each phase completes.
+        Stage 4: process() also goes through the global ACRouter.
+        The router typically picks `process_5_stage` for complex
+        questions, but for clearly-factual questions it may pick
+        `memo_3stage` (parametric retrieval is faster + cheaper).
         """
-        try:
-            result = self.process({
-                "user_input": user_input,
-                "session_id": session_id,
-            })
-            return tokui_dsl.process_result_to_fragments(result)
-        except Exception as e:
-            log.error("stream_process failed: %s", e)
-            log.error(traceback.format_exc())
-            return tokui_dsl.stream_error(f"process 失败: {e}")
+        # Delegate to stream_ask — same ACRouter + global MeMo path.
+        # The router will choose the right expert based on the query.
+        return self.stream_ask(user_input, session_id)
 
     def stream_memo(self, question: str) -> List[str]:
         """Stage 3: run the MeMo 3-stage protocol and stream the

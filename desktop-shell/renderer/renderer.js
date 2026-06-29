@@ -171,12 +171,12 @@ function setMode(mode) {
     b.classList.toggle('active', b.dataset.mode === mode);
   });
   input.placeholder = mode === 'ask'
-    ? '简单提问（Enter 发送）'
+    ? '简单提问（自动路由：MeMo / process / fast_path）'
     : mode === 'agent'
     ? 'Agent 任务：!cmd / read file / grep / list / write path=content'
     : mode === 'memo'
-    ? 'MeMo 三阶段：问 GalaxyOS / R-CCAM / MeMo / TokUI / Agent-as-a-Router 之类的事实'
-    : '复杂任务（Enter 启动 R-CCAM 5 阶段推理）';
+    ? 'MeMo 调试：直调 3-stage 协议（Grounding → Entity → Answer）'
+    : '复杂任务（自动路由：走 R-CCAM 五阶段）';
 }
 
 function escapeDsl(s) {
@@ -209,10 +209,18 @@ async function handleSend() {
   state.isStreaming = true;
   sendBtn.disabled = true;
   // Pick endpoint + params per mode.
-  //   ask     → /sse/ask    (single-step recall)
-  //   process → /sse/process (R-CCAM 5-stage)
-  //   agent   → /sse/agent  (real tool execution)
-  //   memo    → /sse/memo   (MeMo 3-stage protocol)
+  //   ask     → /sse/ask    (default: routed through global ACRouter;
+  //                          also consults global MeMo as background
+  //                          memory; routing_debug appears as a footer
+  //                          line on every bubble)
+  //   process → /sse/process (same: routed through global ACRouter;
+  //                          router typically picks process_5_stage)
+  //   agent   → /sse/agent  (real tool execution; also routed
+  //                          through ACRouter)
+  //   memo    → /sse/memo   (MANUAL debug mode: directly calls the
+  //                          MeMo 3-stage protocol, bypassing ACRouter;
+  //                          useful for inspecting the Grounding →
+  //                          Entity → Answer trace step by step)
   const endpoint =
     state.mode === 'process' ? 'process' :
     state.mode === 'agent' ? 'agent' :
