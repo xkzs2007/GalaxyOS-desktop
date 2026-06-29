@@ -15,6 +15,8 @@ export type GalaxyApi = {
   skills(): Promise<{ skills: Array<{id: string; name: string; description: string}>; count: number }>;
   skill(id: string): Promise<{ id: string; name: string; description: string; body: string }>;
   updateSettings(settings: Record<string, string>): Promise<{ ok: boolean; updated: string[] }>;
+  heartbeat(): Promise<{ ok: boolean; ts_ms: number; uptime_s: number }>;
+  stats(): Promise<Record<string, unknown>>;
   openExternal(url: string): Promise<void>;
 };
 
@@ -27,6 +29,8 @@ const api: GalaxyApi = {
   skills: () => ipcRenderer.invoke('galaxy:skills') as any,
   skill: (id) => ipcRenderer.invoke('galaxy:skill', id) as any,
   updateSettings: (s) => ipcRenderer.invoke('galaxy:updateSettings', s) as any,
+  heartbeat: () => ipcRenderer.invoke('galaxy:heartbeat') as any,
+  stats: () => ipcRenderer.invoke('galaxy:stats') as any,
   openExternal: (u) => ipcRenderer.invoke('galaxy:openExternal', u) as any,
 };
 

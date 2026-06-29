@@ -407,6 +407,14 @@ function registerIpc() {
     try { return await zmqCall('set_config', settings); }
     catch (e) { return { ok: false, error: String((e as Error).message) }; }
   });
+  ipcMain.handle('galaxy:heartbeat', async () => {
+    try { return await zmqCall('heartbeat'); }
+    catch (e) { return { ok: false, error: String((e as Error).message) }; }
+  });
+  ipcMain.handle('galaxy:stats', async () => {
+    try { return await zmqCall('stats'); }
+    catch (e) { return { ok: false, error: String((e as Error).message) }; }
+  });
 }
 
 // Disable GPU hardware acceleration so PrintWindow / BitBlt can

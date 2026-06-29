@@ -145,9 +145,11 @@ class SidecarHandlers:
         from memo_stages import MeMoProtocol
         import ac_router as _ac_router_mod  # avoid name shadowing
         self._memo = MockMeMoAdapter()
-        self._executive = MockExecutiveClient()
+        # _executive is built in _build_executive() AFTER _live_config
+        # is initialised (see below)
+        self._executive = None
         self._memo_protocol = MeMoProtocol(
-            memo=self._memo, executive=self._executive,
+            memo=self._memo, executive=MockExecutiveClient(),  # placeholder
             overall_timeout_s=10.0,
         )
         log.info("MeMo memory layer ready (backend: %s)",
@@ -182,17 +184,50 @@ class SidecarHandlers:
             "Gemini-3-Flash": "gemini-3-flash",
             "LFM-2.5-1.2B": "lfm-2.5-1.2b",
         }
+        # Stage 14.2: build the Executive client from live config
+        self._executive = self._build_executive()
         # Try to apply config to the LLM client on first boot
         self._apply_live_config()
+
+    def _build_executive(self):
+        """Build the Executive (LLM client) for MeMo from live config.
+
+        If an API key is set in live config OR env vars, instantiate
+        DeepSeekExecutiveClient. Otherwise fall back to MockExecutiveClient.
+        """
+        cfg = self._live_config
+        if cfg.get("api_key"):
+            try:
+                from executive_client import DeepSeekExecutiveClient
+                log.info("Using DeepSeekExecutiveClient (model=%s, api_base=%s)",
+                         cfg["model"], cfg["api_base"])
+                # DeepSeekExecutiveClient takes (api_key, model=) only.
+                # The base URL is configured via env var DEEPSEEK_API_BASE
+                # in the executive_client module itself; we propagate
+                # the user's setting so the client picks it up.
+                if cfg.get("api_base"):
+                    os.environ["DEEPSEEK_API_BASE"] = cfg["api_base"]
+                return DeepSeekExecutiveClient(
+                    api_key=cfg["api_key"],
+                    model=cfg["model"],
+                )
+            except Exception as e:
+                log.warning("DeepSeekExecutiveClient init failed: %r — falling back to Mock", e)
+        from executive_client import MockExecutiveClient
+        log.info("Using MockExecutiveClient (no API key set)")
+        return MockExecutiveClient()
 
     def set_config(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Hot-update the LLM config from the renderer's settings modal.
 
         Called via zmq when the user saves settings. Updates
-        api_key / api_base / model / system_prompt, then re-inits
-        the LLM client if needed.
+        api_key / api_base / model / system_prompt, writes
+        llm_config.json, and (if api_key changed) rebuilds the
+        DeepSeekExecutiveClient so the next MeMo call uses the
+        real LLM.
         """
         changed = []
+        api_key_changed = False
         for k in ("api_key", "api_base", "model", "system_prompt"):
             if k in params and params[k] != self._live_config.get(k):
                 # Map UI model label to API model string
@@ -201,9 +236,17 @@ class SidecarHandlers:
                     self._live_config[k] = self._model_map.get(raw, raw)
                 else:
                     self._live_config[k] = str(params[k] or "")
+                if k == "api_key":
+                    api_key_changed = True
                 changed.append(k)
         if changed:
             self._apply_live_config()
+            # Rebuild the Executive client if the API key changed
+            # (going from no-key → with-key or vice versa).
+            if api_key_changed:
+                self._executive = self._build_executive()
+                # Update MeMo protocol's executive reference
+                self._memo_protocol.executive = self._executive
             log.info("Live config updated: %s", ", ".join(changed))
         return {"ok": True, "updated": changed, "current_model": self._live_config["model"]}
 
@@ -513,6 +556,76 @@ class SidecarHandlers:
         return {"servers": {k: len(v) for k, v in discovered.items()},
                 "details": discovered}
 
+    # ── Health / heartbeat / stats (Stage 14.3) ───────────────────
+    def heartbeat(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Lightweight liveness ping — returns the current monotonic ms.
+
+        Used by the renderer's status footer to show a live connection
+        indicator that updates every 30s. Cheap (no I/O).
+        """
+        import time as _t
+        return {"ok": True, "ts_ms": int(_t.time() * 1000), "uptime_s": int(_t.time() - START_TIME)}
+
+    def stats(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Snapshot of sidecar + engine + ACRouter + MCP state.
+
+        Shown in the renderer's settings/details panel as a
+        "Diagnostics" view.
+        """
+        import os as _os
+        import time as _t
+        # Engine stats
+        engine_module_failures = 0
+        engine_active_modules = []
+        try:
+            llm = self._llm
+            engine_active_modules = list(llm.modules.keys()) if hasattr(llm, "modules") else []
+        except Exception:
+            pass
+        # Tool count
+        try:
+            import tools as _tools
+            tool_count = len(_tools.TOOLS)
+        except Exception:
+            tool_count = 0
+        # MCP stats
+        try:
+            import mcp_client as _mcp
+            mcp_servers = _mcp.list_servers()
+        except Exception:
+            mcp_servers = []
+        # Process stats
+        try:
+            import resource as _r
+            rusage = _r.getrusage(_r.RUSAGE_SELF)
+            rss_mb = rusage.ru_maxrss / 1024  # KB → MB (Linux); on Windows just KB
+        except Exception:
+            rss_mb = 0
+        return {
+            "ts_ms": int(_t.time() * 1000),
+            "uptime_s": int(_t.time() - START_TIME),
+            "engine": {
+                "active_modules": engine_active_modules,
+                "active_count": len(engine_active_modules),
+            },
+            "tools": {"count": tool_count},
+            "mcp": {"servers": mcp_servers, "count": len(mcp_servers)},
+            "acrouter": {
+                "memory_size": self._acrouter_memory.size() if self._acrouter_memory else 0,
+                "executive": type(self._executive).__name__ if self._executive else "None",
+            },
+            "config": {
+                "model": self._live_config.get("model"),
+                "has_api_key": bool(self._live_config.get("api_key")),
+                "api_base": self._live_config.get("api_base"),
+            },
+            "process": {
+                "pid": _os.getpid(),
+                "rss_mb": rss_mb,
+                "cwd": _os.getcwd(),
+            },
+        }
+
     # ── Streaming methods (zmq-callable variants) ─────────────────
     # The zmq REP loop calls these synchronously. We return a
     # JSON-serialisable dict that the protocol handler can re-emit
@@ -528,6 +641,39 @@ class SidecarHandlers:
 
     def stream_memo(self, params: Dict[str, Any]) -> Dict[str, Any]:
         return self._stream_collect("memo", params)
+
+    def stream_ocr(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Stage 14.4: DeepSeek-OCR-2 image understanding.
+
+        Accepts either an image path on the sandbox or a base64
+        data URL. Returns a TokUI [image] block with the OCR
+        output + extracted text.
+        """
+        try:
+            from galaxyos.engine.deepseek_ocr2_adapter import DeepSeekOCR2Adapter
+            adapter = DeepSeekOCR2Adapter()
+        except Exception as e:
+            return {"events": [f'[p v:danger]❌ OCR adapter 加载失败: {e}[/p]'],
+                    "fragments": [f'[p v:danger]❌ OCR adapter 加载失败: {e}[/p]']}
+        image_path = str(params.get("path", ""))
+        image_b64 = str(params.get("base64", ""))
+        prompt = str(params.get("prompt", "<|grounding|>Convert the document to markdown."))
+        out: List[str] = []
+        try:
+            if image_path:
+                result = adapter.ocr_file(image_path, prompt=prompt)
+            elif image_b64:
+                result = adapter.ocr_base64(image_b64, prompt=prompt)
+            else:
+                return {"events": ['[p v:warn]需要 image path 或 base64[/p]'],
+                        "fragments": ['[p v:warn]需要 image path 或 base64[/p]']}
+            out.append(f'[image title:OCR src:{image_path or "base64"}]')
+            out.append(f'[md]\n{result.get("text", "")}\n[/md]')
+            out.append('[msg-actions copy regenerate like dislike visible][/msg-actions]')
+            out.append('[/image]')
+        except Exception as e:
+            out.append(f'[p v:danger]❌ OCR 失败: {e}[/p]')
+        return {"events": [{"tokui": f} for f in out], "fragments": out}
 
     def stream_plan(self, params: Dict[str, Any]) -> Dict[str, Any]:
         return self._stream_collect("plan", params)

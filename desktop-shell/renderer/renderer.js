@@ -157,7 +157,6 @@ async function healthCheck() {
     const skillsN = h.skills_count != null ? ` · ${h.skills_count} skills` : '';
     connText.textContent = `已连接 · v${h.version}`;
     healthDetail.innerHTML = `${stage} · ${memo} · ${router}${skillsN}<br>zmq :${h.zmq_port} · sse :${h.sse_port}`;
-    // If skills_count is available, fetch and render them
     if (h.skills_count && h.skills_count > 0 && galaxy.skills) {
       loadSkills();
     }
@@ -168,6 +167,24 @@ async function healthCheck() {
     healthDetail.textContent = String(e.message ?? e);
   }
 }
+
+// Stage 14.3: heartbeat — show live uptime + last ping in the status footer
+let lastHeartbeat = 0;
+async function heartbeat() {
+  if (!galaxy.heartbeat) return;
+  try {
+    const hb = await galaxy.heartbeat();
+    if (hb.ok) {
+      lastHeartbeat = Date.now();
+      const m = Math.floor(hb.uptime_s / 60);
+      const s = hb.uptime_s % 60;
+      // Show the uptime in the status footer (next to the conn status)
+      const uptimeEl = document.getElementById('conn-uptime');
+      if (uptimeEl) uptimeEl.textContent = `uptime ${m}m${s}s`;
+    }
+  } catch (e) { /* ignore */ }
+}
+setInterval(heartbeat, 30000);  // every 30s
 
 async function loadSkills() {
   if (!galaxy.skills) return;
