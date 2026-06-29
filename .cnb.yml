@@ -19,8 +19,8 @@ main:
         build:
           dockerfile: Dockerfile.ci
           by:
-            - requirements-core.txt
-            - requirements-heavy.txt
+            - Dockerfile.ci
+            - .cnb.yml
       stages:
         - name: compile-check
           script: |
@@ -81,7 +81,8 @@ main:
         build:
           dockerfile: Dockerfile.ci
           by:
-            - requirements-core.txt
+            - Dockerfile.ci
+            - .cnb.yml
       stages:
         - name: provider-tests
           script: |
@@ -106,8 +107,8 @@ main:
         build:
           dockerfile: Dockerfile.ci
           by:
-            - requirements-core.txt
-            - requirements-heavy.txt
+            - Dockerfile.ci
+            - .cnb.yml
       stages:
         - name: compile-check
           script: |

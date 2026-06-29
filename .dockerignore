@@ -1,0 +1,26 @@
+# GalaxyOS — Docker 构建忽略
+#
+# v9.4：requirements-*.txt 已内联进 Dockerfile.ci（bash heredoc），
+# 不再被 COPY。忽略它们避免 cnb buildkit 把它们算进 cache key
+# 时撞 ref（曾导致 "dockerfile-caches not found" + "requirements-
+# heavy.txt not found" 报错）。
+requirements-core.txt
+requirements-heavy.txt
+requirements.txt
+
+# 其他构建无关
+.git
+.gitignore
+__pycache__
+*.pyc
+node_modules
+target
+prebuilt
+libs/
+models/
+data/
+backups/
+.vscode/
+.idea/
+*.log
+.DS_Store
