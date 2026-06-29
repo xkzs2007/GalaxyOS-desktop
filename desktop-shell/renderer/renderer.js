@@ -257,6 +257,8 @@ function setMode(mode) {
     ? 'Agent 任务：!cmd / read file / grep / list / write path=content'
     : mode === 'memo'
     ? 'MeMo 调试：直调 3-stage 协议（Grounding → Entity → Answer）'
+    : mode === 'plan'
+    ? 'Plan 模式：描述任务，Agent 先出计划再执行'
     : '复杂任务（自动路由：走 R-CCAM 五阶段）';
 }
 
@@ -290,22 +292,11 @@ async function handleSend() {
   state.isStreaming = true;
   sendBtn.disabled = true;
   // Pick endpoint + params per mode.
-  //   ask     → /sse/ask    (default: routed through global ACRouter;
-  //                          also consults global MeMo as background
-  //                          memory; routing_debug appears as a footer
-  //                          line on every bubble)
-  //   process → /sse/process (same: routed through global ACRouter;
-  //                          router typically picks process_5_stage)
-  //   agent   → /sse/agent  (real tool execution; also routed
-  //                          through ACRouter)
-  //   memo    → /sse/memo   (MANUAL debug mode: directly calls the
-  //                          MeMo 3-stage protocol, bypassing ACRouter;
-  //                          useful for inspecting the Grounding →
-  //                          Entity → Answer trace step by step)
   const endpoint =
     state.mode === 'process' ? 'process' :
     state.mode === 'agent' ? 'agent' :
-    state.mode === 'memo' ? 'memo' : 'ask';
+    state.mode === 'memo' ? 'memo' :
+    state.mode === 'plan' ? 'plan' : 'ask';
   const params = state.mode === 'process'
     ? { user_input: text, session_id: state.sessionId }
     : { prompt: text, session_id: state.sessionId };
@@ -373,6 +364,7 @@ function openSettings() {
   $('setting-api-key').value = s.apiKey || '';
   $('setting-api-base').value = s.apiBase || '';
   $('setting-workspace').value = s.workspace || '';
+  $('setting-system-prompt').value = s.systemPrompt || '';
   $('setting-theme').value = s.theme || 'dark';
   modal.hidden = false;
 }
@@ -382,15 +374,17 @@ function applySettings() {
     apiKey: $('setting-api-key').value,
     apiBase: $('setting-api-base').value,
     workspace: $('setting-workspace').value,
+    systemPrompt: $('setting-system-prompt').value,
     theme: $('setting-theme').value,
   };
   saveSettings(s);
   closeSettings();
-  // Send to sidecar via IPC — this hot-updates the LLM config
+  // Send to sidecar via IPC — hot-updates LLM config + system prompt
   if (galaxy.updateSettings) {
     galaxy.updateSettings({
       api_key: s.apiKey,
       api_base: s.apiBase,
+      system_prompt: s.systemPrompt,
     }).then(r => {
       console.log('[settings] sidecar response:', r);
     }).catch(e => {
@@ -405,6 +399,41 @@ const settingsClose = $('settings-close');
 if (settingsClose) settingsClose.addEventListener('click', closeSettings);
 const settingsSave = $('settings-save');
 if (settingsSave) settingsSave.addEventListener('click', applySettings);
+
+// ── File upload ───────────────────────────────────────────────
+const attachBtn = $('attach-btn');
+const fileInput = $('file-input');
+const attachmentPreview = $('attachment-preview');
+const attachments = [];
+
+if (attachBtn) {
+  attachBtn.addEventListener('click', () => fileInput && fileInput.click());
+}
+if (fileInput) {
+  fileInput.addEventListener('change', () => {
+    for (const f of fileInput.files) {
+      attachments.push({ name: f.name, size: f.size, file: f });
+    }
+    fileInput.value = '';
+    renderAttachments();
+  });
+}
+
+function renderAttachments() {
+  if (!attachmentPreview) return;
+  attachmentPreview.innerHTML = '';
+  for (let i = 0; i < attachments.length; i++) {
+    const a = attachments[i];
+    const chip = document.createElement('span');
+    chip.className = 'attachment-chip';
+    chip.innerHTML = `📎 ${escapeHtml(a.name)} <span class="remove" data-i="${i}">✕</span>`;
+    chip.querySelector('.remove').addEventListener('click', () => {
+      attachments.splice(i, 1);
+      renderAttachments();
+    });
+    attachmentPreview.appendChild(chip);
+  }
+}
 
 // ── Standalone-mode shim for window.galaxy.* ───────────────────
 

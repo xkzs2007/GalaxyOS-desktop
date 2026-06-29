@@ -281,7 +281,27 @@ html, body {
   background: var(--accent-soft); color: var(--accent);
   border-color: var(--accent);
 }
-.composer-input-wrap { flex: 1; }
+.composer-input-wrap { flex: 1; position: relative; }
+.attachment-preview {
+  display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 4px;
+}
+.attachment-preview:empty { display: none; }
+.attachment-chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 2px 8px; border-radius: 4px;
+  background: var(--accent-soft); color: var(--accent);
+  font-size: 11px;
+}
+.attachment-chip .remove { cursor: pointer; opacity: 0.6; }
+.attachment-chip .remove:hover { opacity: 1; }
+.attach-btn {
+  background: var(--bg); color: var(--fg-dim);
+  border: 1px solid var(--border); border-radius: 6px;
+  width: 36px; height: 36px; cursor: pointer; font-size: 16px;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+.attach-btn:hover { background: var(--bg-hover); color: var(--fg); }
 .composer textarea {
   width: 100%; resize: none; padding: 8px 12px;
   background: var(--bg); color: var(--fg);

@@ -65,6 +65,27 @@ def _extract_path(text: str) -> Optional[str]:
     return None
 
 
+_EXT_LANG_MAP = {
+    ".py": "python", ".js": "javascript", ".ts": "typescript",
+    ".jsx": "javascript", ".tsx": "typescript", ".java": "java",
+    ".c": "c", ".cpp": "cpp", ".h": "c", ".hpp": "cpp",
+    ".rs": "rust", ".go": "go", ".rb": "ruby", ".php": "php",
+    ".sh": "bash", ".bash": "bash", ".zsh": "bash",
+    ".html": "html", ".css": "css", ".scss": "scss",
+    ".json": "json", ".xml": "xml", ".yaml": "yaml", ".yml": "yaml",
+    ".md": "markdown", ".sql": "sql", ".vue": "vue",
+    ".kt": "kotlin", ".swift": "swift", ".dart": "dart",
+    ".toml": "toml", ".ini": "ini", ".cfg": "ini",
+}
+
+
+def _infer_lang(file_path: str) -> str:
+    """Infer a syntax-highlighting language from the file extension."""
+    import os
+    ext = os.path.splitext(file_path)[1].lower()
+    return _EXT_LANG_MAP.get(ext, "text")
+
+
 def _extract_cmd(text: str) -> Optional[str]:
     """For shell_run, extract the command from a prefix.
 
@@ -254,8 +275,11 @@ class AgentLoop:
                 snippet = result.get("content", "")
                 if len(snippet) > 1500:
                     snippet = snippet[:1500] + f"\n... [{result.get('size_bytes', 0) - 1500} more bytes]"
+                # Infer language from file extension for syntax highlighting
+                file_path = params.get("path", "")
+                lang = _infer_lang(file_path)
                 out.append(
-                    f'[sandbox title:{params.get("path", "file")} lang:text]'
+                    f'[sandbox title:{file_path} lang:{lang}]'
                     f'{tokui_dsl._esc(snippet)}'
                     f'[/sandbox]'
                 )

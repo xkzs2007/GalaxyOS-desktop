@@ -529,6 +529,9 @@ class SidecarHandlers:
     def stream_memo(self, params: Dict[str, Any]) -> Dict[str, Any]:
         return self._stream_collect("memo", params)
 
+    def stream_plan(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        return self._stream_collect("plan", params)
+
     def stream_agent(self, params: Dict[str, Any]) -> Dict[str, Any]:
         return self._stream_collect("agent", params)
 
@@ -559,6 +562,8 @@ class SidecarHandlers:
             frags = self.stream_process_frag(prompt, sid)
         elif kind == "memo":
             frags = self.stream_memo_frag(prompt)
+        elif kind == "plan":
+            frags = self._do_stream_plan(prompt)
         elif kind == "agent":
             frags = self.stream_agent_frag(prompt, sid)
         else:
@@ -660,6 +665,49 @@ class SidecarHandlers:
         out.append(msg_actions())
         out.append(close_bubble())
         return out
+
+    def _do_stream_plan(self, prompt: str) -> List[str]:
+        """Plan mode — Agent proposes a multi-step plan for user approval."""
+        from tokui_dsl import (
+            open_bubble_ai, answer_paragraph, msg_actions, close_bubble,
+            open_plan, plan_step, close_plan,
+        )
+        steps = self._generate_plan(prompt)
+        out: List[str] = []
+        out.append(open_bubble_ai(model="GalaxyOS-Plan"))
+        out.append(open_plan("执行计划"))
+        for i, (title, tool, desc) in enumerate(steps, start=1):
+            out.append(plan_step(
+                title=f"步骤 {i}: {title}",
+                status="pending", body=desc, tool=tool,
+            ))
+        out.append(close_plan())
+        out.append(answer_paragraph(
+            f"以上是根据 **{prompt[:60]}** 生成的 {len(steps)} 步执行计划。\n\n"
+            "请在右侧详情面板查看每一步。确认后切换到 **Agent** 模式执行。"
+        ))
+        out.append(msg_actions())
+        out.append(close_bubble())
+        return out
+
+    def _generate_plan(self, prompt: str) -> List[tuple]:
+        """Generate a heuristic plan from the prompt."""
+        lower = prompt.lower()
+        steps = []
+        steps.append(("探索环境", "list_dir", "列出 sandbox 目录结构"))
+        if any(k in lower for k in ("read", "查看", "understand", "理解")):
+            steps.append(("阅读相关文件", "read_file", "读取相关文件内容"))
+        if any(k in lower for k in ("write", "create", "创建", "实现", "build")):
+            steps.append(("实现功能", "write_file", "创建或修改文件"))
+            steps.append(("验证", "shell_run", "运行验证命令"))
+        if any(k in lower for k in ("fix", "bug", "修复", "debug")):
+            steps.append(("定位问题", "grep", "搜索相关代码"))
+            steps.append(("应用修复", "apply_diff", "修改代码"))
+            steps.append(("验证修复", "shell_run", "运行验证"))
+        if any(k in lower for k in ("search", "find", "搜索", "查找")):
+            steps.append(("搜索内容", "grep", "搜索匹配项"))
+        steps.append(("总结结果", "fast_path", "汇总结果"))
+        return steps
 
 
 def _http_response(status: int, headers: Dict[str, str], body: bytes = b"") -> bytes:

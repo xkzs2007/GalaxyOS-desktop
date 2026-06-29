@@ -119,12 +119,16 @@
           <button class="mode-btn active" data-mode="ask">Ask</button>
           <button class="mode-btn" data-mode="process">Process</button>
           <button class="mode-btn" data-mode="agent" title="Agent — can run shell, read/write files, search">Agent</button>
-          <button class="mode-btn" data-mode="memo" title="MeMo 调试模式 — 直接调 3-stage 协议（不走 ACRouter）">MeMo*</button>
+          <button class="mode-btn" data-mode="plan" title="Plan — 先出计划，确认后再执行">Plan</button>
+          <button class="mode-btn" data-mode="memo" title="MeMo 调试模式">MeMo*</button>
         </div>
         <div class="composer-input-wrap">
+          <div id="attachment-preview" class="attachment-preview"></div>
           <textarea id="input" rows="1" autocomplete="off"
                     placeholder="问点什么…（Enter 发送，Shift+Enter 换行）"></textarea>
         </div>
+        <button id="attach-btn" class="attach-btn" title="上传文件">📎</button>
+        <input type="file" id="file-input" hidden multiple />
         <button id="send" class="send-btn" disabled>
           <span>发送</span>
         </button>
@@ -145,6 +149,8 @@
           <input type="text" id="setting-api-base" class="modal-input" placeholder="https://api.deepseek.com/v1" />
           <label class="modal-label">Workspace 路径</label>
           <input type="text" id="setting-workspace" class="modal-input" placeholder="~/.galaxyos/workspace" />
+          <label class="modal-label">System Prompt（系统提示词）</label>
+          <textarea id="setting-system-prompt" class="modal-input" rows="3" placeholder="你是一个专业的编程助手…" style="resize:vertical;font-family:inherit;"></textarea>
           <label class="modal-label">主题</label>
           <select id="setting-theme" class="modal-select">
             <option value="dark">Dark</option>

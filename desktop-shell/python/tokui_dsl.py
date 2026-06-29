@@ -135,6 +135,29 @@ def close_think_chain() -> str:
     return "[/think-chain]"
 
 
+# ── Plan builders (ZCode/Codex plan mode) ──────────────────────────
+
+def open_plan(title: str = "执行计划") -> str:
+    """Open a [plan] container."""
+    return f"[plan{_attr('tt', title)}]"
+
+
+def plan_step(title: str, status: str = "pending",
+              body: str = "", tool: str = "") -> str:
+    """One step in a plan. status: pending / running / done / skipped."""
+    inner = f"[plan-step{_attr('status', status)}{_attr('tt', title)}"
+    if tool:
+        inner += _attr("tool", tool)
+    inner += "]"
+    if body:
+        inner += f"[p {_esc(body)}]"
+    return inner + f"[/plan-step]"
+
+
+def close_plan() -> str:
+    return "[/plan]"
+
+
 def answer_paragraph(text: str) -> str:
     """Render the final answer as a Markdown block (TokUI ``[md]`` parses
     bold/italic/list, which is what we want for richer answers)."""
