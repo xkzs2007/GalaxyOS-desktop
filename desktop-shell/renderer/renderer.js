@@ -584,7 +584,47 @@ function registerTokUIHandlers() {
   }
 }
 
-// ── Boot ──────────────────────────────────────────────────────
+// ── Context menu (right-click on messages) ────────────────────
+const ctxMenu = document.createElement('div');
+ctxMenu.className = 'context-menu';
+ctxMenu.hidden = true;
+document.body.appendChild(ctxMenu);
+
+function showContextMenu(x, y, items) {
+  ctxMenu.innerHTML = '';
+  for (const item of items) {
+    const el = document.createElement('div');
+    el.className = 'ctx-item' + (item.danger ? ' danger' : '');
+    el.textContent = item.label;
+    el.addEventListener('click', () => {
+      ctxMenu.hidden = true;
+      item.action();
+    });
+    ctxMenu.appendChild(el);
+  }
+  ctxMenu.style.left = x + 'px';
+  ctxMenu.style.top = y + 'px';
+  ctxMenu.hidden = false;
+}
+
+document.addEventListener('click', () => { ctxMenu.hidden = true; });
+document.addEventListener('contextmenu', (e) => {
+  // Find the closest TokUI bubble
+  const bubble = e.target.closest('[class*="bubble"]');
+  if (!bubble) return;
+  e.preventDefault();
+  const text = bubble.innerText || '';
+  showContextMenu(e.clientX, e.clientY, [
+    { label: '📋 复制', action: () => navigator.clipboard.writeText(text) },
+    { label: '🔄 重新生成', action: () => {
+      const isUser = bubble.className.includes('user');
+      if (isUser) { input.value = text.trim(); handleSend(); }
+      else { const ub = tokuiContainer.querySelector('[class*="bubble"][class*="user"]');
+             if (ub) { input.value = ub.innerText.trim(); handleSend(); } }
+    }},
+    { label: '❌ 删除', danger: true, action: () => bubble.remove() },
+  ]);
+});
 
 (async () => {
   const tokuiReady = await waitForTokUI(3000);

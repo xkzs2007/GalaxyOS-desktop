@@ -322,9 +322,19 @@ class AgentLoop:
 
             # 6) If the tool errored, surface it
             if not result.get("ok"):
-                out.append(
-                    f'[p v:danger]❌ {tokui_dsl._esc(result.get("error", "未知错误"))}[/p]'
-                )
+                if result.get("needs_approval"):
+                    out.append(
+                        f'[p v:warn]⚠️ 需要确认: {tokui_dsl._esc(result.get("command", name))}[/p]'
+                    )
+                    out.append(
+                        f'[confirm id:approve_{idx} tool:{name} cmd:{tokui_dsl._esc(result.get("command",""))}]'
+                        f'[p]点击确认执行此操作[/p]'
+                        f'[/confirm]'
+                    )
+                else:
+                    out.append(
+                        f'[p v:danger]❌ {tokui_dsl._esc(result.get("error", "未知错误"))}[/p]'
+                    )
                 out.append(
                     f'[upd id:{tc_id} status:error]'
                 )

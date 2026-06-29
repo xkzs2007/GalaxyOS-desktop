@@ -84,10 +84,10 @@ def _safe_path(rel: str) -> Path:
 
 # ── Tool implementations ───────────────────────────────────────────
 
-async def shell_run(cmd: str, timeout_s: int = 15) -> Dict[str, Any]:
+async def shell_run(cmd: str, timeout_s: int = 15, _approved: bool = False) -> Dict[str, Any]:
     """Run a shell command in the sandbox root.
 
-    Returns: {ok, output, exit_code, duration_ms, error}
+    Returns: {ok, output, exit_code, duration_ms, error, needs_approval}
     """
     if not cmd or not cmd.strip():
         return {"ok": False, "error": "empty command", "exit_code": -1}
@@ -97,6 +97,20 @@ async def shell_run(cmd: str, timeout_s: int = 15) -> Dict[str, Any]:
     for pat in forbidden:
         if pat in cmd:
             return {"ok": False, "error": f"forbidden pattern: {pat}", "exit_code": -1}
+
+    # Check if this is a destructive command that needs approval
+    destructive_patterns = ["rm ", "del ", "rmdir", "format", ">", ">>", "chmod", "chown",
+                           "kill", "shutdown", "reboot", "pip install", "npm install",
+                           "git push", "git reset --hard"]
+    needs_approval = any(p in cmd for p in destructive_patterns)
+    if needs_approval and not _approved:
+        return {
+            "ok": False,
+            "error": "needs_approval",
+            "needs_approval": True,
+            "command": cmd,
+            "exit_code": -1,
+        }
 
     cwd = str(_sandbox_root())
     t0 = time.time()

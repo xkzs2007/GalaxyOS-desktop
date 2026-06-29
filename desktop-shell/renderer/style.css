@@ -302,6 +302,24 @@ html, body {
   flex-shrink: 0;
 }
 .attach-btn:hover { background: var(--bg-hover); color: var(--fg); }
+
+/* ── Context menu ───────────────────────────────────────────── */
+.context-menu {
+  position: fixed; z-index: 300;
+  background: var(--bg-elev); border: 1px solid var(--border-strong);
+  border-radius: 6px; padding: 4px; min-width: 160px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+}
+.context-menu[hidden] { display: none; }
+.ctx-item {
+  padding: 6px 12px; cursor: pointer; border-radius: 4px;
+  font-size: 13px; color: var(--fg);
+}
+.ctx-item:hover { background: var(--bg-hover); }
+.ctx-item.danger { color: var(--danger); }
+.ctx-item.danger:hover { background: rgba(239,68,68,0.15); }
+
+/* ── Boot section ───────────────────────────────────────────── */
 .composer textarea {
   width: 100%; resize: none; padding: 8px 12px;
   background: var(--bg); color: var(--fg);
