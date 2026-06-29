@@ -156,13 +156,13 @@ $:
         - name: install-cross-toolchain
           script: |
             rustup target add aarch64-unknown-linux-gnu
-            apt-get update -qq && apt-get install -y -qq gcc-aarch64-linux-gnu python3-dev python3.11-dev
+            apt-get update -qq && apt-get install -y -qq gcc-aarch64-linux-gnu python3-dev
         - name: cargo-build
-          env:
-            CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
-            PYO3_CROSS_PYTHON_VERSION: "3.11"
-            PYO3_CROSS_LIB_DIR: /usr/lib/python3.11
           script: |
+            PY_VER=$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')
+            export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc
+            export PYO3_CROSS_PYTHON_VERSION="$PY_VER"
+            export PYO3_CROSS_LIB_DIR="/usr/lib/python${PY_VER}"
             cd extensions/galaxyos/native
             cargo build --release --target aarch64-unknown-linux-gnu 2>&1
             mkdir -p /tmp/artifacts/linux-arm64
