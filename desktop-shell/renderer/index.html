@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;" />
+  <title>GalaxyOS Desktop</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="app">
+    <header class="topbar">
+      <div class="brand">
+        <span class="logo">●</span>
+        <span class="name">GalaxyOS</span>
+        <span class="stage">stage 1</span>
+      </div>
+      <div class="status">
+        <span id="conn-indicator" class="dot"></span>
+        <span id="conn-text">connecting…</span>
+      </div>
+    </header>
+
+    <main id="chat" class="chat">
+      <div class="bubble system">
+        <div class="bubble-body">
+          <p>你好。我是 GalaxyOS 桌面端。</p>
+          <p class="hint">本机桌面版已脱离 OpenClaw，<code>XiaoYiClawLLM</code> 直接由 Python 子进程加载。</p>
+          <p class="hint">试试输入：<em>"今天我学了 R-CCAM 五阶段"</em>（记得），然后 <em>"R-CCAM 是什么"</em>（回忆）。</p>
+        </div>
+      </div>
+    </main>
+
+    <footer class="composer">
+      <input id="input" type="text" autocomplete="off"
+             placeholder="问点什么…（Enter 发送，Shift+Enter 换行）" />
+      <button id="send">发送</button>
+    </footer>
+  </div>
+
+  <script type="module" src="renderer.js"></script>
+</body>
+</html>

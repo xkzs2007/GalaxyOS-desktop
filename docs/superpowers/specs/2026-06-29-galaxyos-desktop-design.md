@@ -1,0 +1,305 @@
+# GalaxyOS Desktop — 5 周三阶段改造设计 spec
+
+> **项目**：https://cnb.cool/llm-memory-integrat/GalaxyOS (v8.6.0, commit 0ea42f2)
+> **本地**：`C:/Users/Administrator/ZCodeProject/galaxyos/` (浅克隆 222 MB)
+> **目标**：OpenClaw 插件 → 独立桌面 Agent 应用，阶段三引入 Agent-as-a-Router C-A-F 路由环 + MeMo Grounding→Entity→Answer 三阶段协议
+> **参考论文**：[Agent-as-a-Router (arXiv 2606.22902)](https://arxiv.org/abs/2606.22902) + [MeMo (arXiv 2605.15156)](https://arxiv.org/abs/2605.15156)
+> **设计日期**：2026-06-29 (v2)
+> **状态**：阶段一完成（脚手架 + 路径解耦 shim + sidecar + Electron main + TokUI 风格 renderer），阶段二/三待实施
+
+---
+
+## 0. 核心原则
+
+1. **三阶段可独立交付**：阶段一跑起来 / 阶段二加 MeMo / 阶段三加 C-A-F 路由
+2. **核心改动 cherry-pick 回 upstream**：OpenClaw 解耦用条件导入 + 适配层模式
+3. **代码改动只在 `galaxyos/desktop-shell/`**（阶段一）+ `galaxyos/engine/router/`（阶段三）；阶段二改 4 个 upstream 文件但都 cherry-pick 友好
+4. **MeMo 不剔除，作为 frozen 知识编码层**：Qwen-1.5B SFT 冻结 + Grounding→Entity→Answer 三阶段
+5. **C-A-F 路由是阶段三核心创新**：Orchestrator + Verifier + Memory 三组件 + cumulative regret 评估
+6. **GalaxyOS 现有资产与两篇论文天然同构**：
+   - R-CCAM 五阶段 ↔ C-A-F 闭环
+   - 突触网络 + LTC ↔ ACRouter Memory
+   - Hallucination Guard ↔ Verifier
+
+---
+
+## 1. 现状摸底（v2）
+
+### 1.1 仓库画像
+- **Python 核心**：`galaxyos/engine/` = 193 .py / 113K LOC；8 个大模块支柱
+- **OpenClaw 集成**：`extensions/galaxyos/index.js` 262K 字节 / **5187 行** / 9 hooks + 14 tools
+- **OpenClaw 传输**：UDS + ZMQ PUB/SUB (5559/5560) + mmap (4 个共享区) + stdin/stdout JSON-RPC
+- **测试**：36 .py / ~100+ 用例（**0 个 test_retrieval_hub.py**）
+- **重型依赖**：`requirements-heavy.txt` 7 个包（mkl/tbb/faiss-cpu/hnswlib/onnxruntime/torch/transformers）
+
+### 1.2 关键发现：GalaxyOS 现有架构与两篇论文高度同构
+
+| Agent-as-a-Router 组件 | GalaxyOS 现有等价物 | 改造工作 |
+|---|---|---|
+| **C-A-F 闭环** | R-CCAM 五阶段 (Retrieval→Cognition→Control→Action→Memory) | 把 R-CCAM 的 M 阶段升级为 F→M |
+| **Orchestrator** | `_cognition_phase` 的 `dynamic_confidence` | 升级为独立 `Orchestrator` 类 (Qwen3.5-0.8B LoRA) |
+| **Verifier** | `_verify_local_with_web` + `HallucinationGuard` + `_assess_retrieval_quality` | 增强为多信号聚合：AST / sandbox / self-consistency / LLM-as-Judge |
+| **Memory (online vector store)** | `MemorySynapseNetwork` (1022 行) + `ltc_synapse.py` + `titans_neural_memory.py` | 改造为 BGE-large + 20K FIFO + kNN-10 |
+
+| MeMo 推理协议 | GalaxyOS 现有 | 改造 |
+|---|---|---|
+| **Grounding→Entity→Answer** | R-CCAM Retrieval→Cognition→Action | 重构 `_retrieval_phase` 为 MeMo 3-stage |
+| **Memory model (frozen SFT)** | 无 | 新增 `memo_onnx.py`，Qwen-1.5B INT4 ONNX |
+| **Executive model (frozen)** | DeepSeek API 已存在 | 适配为 Executive role |
+| **Constant-time inference** | 现有 RRF ∝ 语料大小 | 替换为 MeMo 单一前向 |
+
+---
+
+## 2. 整体架构
+
+```
+┌────────────────────────────────────────────────────────────────────┐
+│ GalaxyOS Desktop App (Electron + TokUI)                           │
+│ ┌────────────────┐ ┌─────────────────┐ ┌─────────────────┐        │
+│ │ Main Process   │ │ Renderer TokUI  │ │ Native Helpers  │        │
+│ │ - pyzmq client │ │ - bubble/chain  │ │ - tray/notif    │        │
+│ │ - TokUIBuilder │ │ - routing dbg   │ │                 │        │
+│ └────────┬───────┘ └─────────────────┘ └─────────────────┘        │
+│          │ zmq REQ/REP (localhost:5757)                            │
+│          ▼                                                          │
+│ ┌────────────────────────────────────────────────────────────┐    │
+│ │ Python Sidecar (galaxyos-sidecar)                          │    │
+│ │ ╔═══════════════════════════════════════════════════════╗   │    │
+│ │ ║ Stage 3: Agent-as-a-Router (C-A-F loop) [阶段三]     ║   │    │
+│ │ ║ ┌────────────┐ ┌────────────┐ ┌──────────────────┐  ║   │    │
+│ │ ║ │Orchestrator│ │ Verifier   │ │ Memory (online)  │  ║   │    │
+│ │ ║ │Qwen3.5-0.8B│ │-AST/sandbox│ │BGE-large+20K FIFO│  ║   │    │
+│ │ ║ │LoRA policy │ │-self-cons. │ │+MemorySynapseNet │  ║   │    │
+│ │ ║ └─────┬──────┘ │-LLM-judge  │ └────┬─────────────┘  ║   │    │
+│ │ ║       │decide  └─────┬──────┘      │memorize        ║   │    │
+│ │ ║       └──────────────┼─────────────┘                ║   │    │
+│ │ ║                      ▼ cumulative regret             ║   │    │
+│ │ ╚═══════════════════════════════════════════════════════╝   │    │
+│ │                      ▼                                       │    │
+│ │ ╔═══════════════════════════════════════════════════════╗   │    │
+│ │ ║ Stage 2: MeMo 3-Stage [阶段二]                        ║   │    │
+│ │ ║ ┌─────────────┐  ┌──────────────────────────────┐    ║   │    │
+│ │ ║ │Memory Model │  │ Executive Model (frozen)     │    ║   │    │
+│ │ ║ │Qwen-1.5B SFT│  │ DeepSeek API                 │    ║   │    │
+│ │ ║ │INT4 ONNX    │  │ Grounding: q→{q'_j}           │    ║   │    │
+│ │ ║ │900MB frozen │  │ Entity: converge on e*        │    ║   │    │
+│ │ ║ └─────────────┘  │ Answer: synthesize â          │    ║   │    │
+│ │ ║                  └──────────────────────────────┘    ║   │    │
+│ │ ╚═══════════════════════════════════════════════════════╝   │    │
+│ │                      ▼                                       │    │
+│ │ ┌──────────────────────────────────────────────────────┐    │    │
+│ │ │ Stage 1: GalaxyOS 液态层 (保留)                        │    │    │
+│ │ │ - ltc_synapse / cfc_inference / memory_synapse_net   │    │    │
+│ │ │ - titans (阶段三启用)                                  │    │    │
+│ │ │ - 4 通道检索 (阶段二) vs 5 通道 (阶段一保留)           │    │    │
+│ │ └──────────────────────────────────────────────────────┘    │    │
+│ │                      ▼                                       │    │
+│ │ Public API: ask / remember / recall / process (含 routing_debug)│    │
+│ └────────────────────────────────────────────────────────────┘    │
+│                                                                   │
+│ 本地数据 ~/.<APP>/ : config/ vector.hnsw dag.db synapse.jsonl    │
+│ router_memory.jsonl models/{bge-large,memo,orchestrator}         │
+└────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 3. 三阶段实施计划
+
+### 阶段一（2 周）—— 桌面化跑起来 ✅ 已完成脚手架
+
+**已完成**（2026-06-29）：
+- ✅ `galaxyos/desktop-shell/` 脚手架（package.json, tsconfig, esbuild, scripts/）
+- ✅ `path_resolver_desktop.py` 兼容 shim（默认 `~/.<APP>/`，OpenClaw 探测 fallback）
+- ✅ `galaxyos_sidecar.py` pyzmq REP server（ask/remember/recall/process/health/quit）
+- ✅ `src/main.ts` Electron 主进程（spawn sidecar + zmq REQ client + IPC 路由）
+- ✅ `src/preload.ts` contextBridge API（window.galaxy.*）
+- ✅ `renderer/` TokUI 风格 chat UI（dark theme + bubble + composer）
+- ✅ `scripts/dev.mjs` 一键 dev（venv + pip + esbuild + electron）
+- ✅ `scripts/build-python.sh` PyInstaller bundle
+- ✅ `desktop-shell/README.md` 开发者向文档
+
+**未完成**（首次用户跑 `npm run dev` 时）：
+- [ ] `npm install` 安装 Electron / esbuild / zeromq 等
+- [ ] 端到端测试：起 Electron → 问问题 → 看到 bubble
+- [ ] upstream 2 个独立 PR（path shim + llm_client path 化）— 等首次跑通再提
+- [ ] `electron-builder` 打包配置验证
+
+### 阶段二（2 周）—— MeMo 三阶段协议接入
+
+**W3** MeMo 适配器
+- T2.1 `galaxyos/engine/memo_adapter.py` 抽象接口
+- T2.2 `memo_onnx.py` onnxruntime 加载 + 3 阶段内部状态机
+- T2.3 sidecar 启动时后台线程加载 MeMo (~5s)
+- T2.4 `requirements-heavy.txt` 加 onnxruntime>=1.18 注释
+- T2.5 `scripts/verify_memo_license.py` 验证 Apache 2.0 / Gemma / LFM
+- T2.6 `memo_stages.py` Grounding/Entity/Answer 协议类
+- T2.7 `privileged/executive_client.py` DeepSeek API client
+
+**W4** 混合推理 + 可视化
+- T2.8 `recall()` 加 1 行 hook 调 MeMo
+- T2.9 `retrieval_hub._do_paper` → `MeMoAdapter.predict`（去 _do_paper/_do_web/_do_kg，保留 4 通道）
+- T2.10 `crag.process()` 改用 MeMo 3-stage
+- T2.11 删 `onnx_embedding.py` 的 bge ONNX 路径
+- T2.12-14 测试：`test_memo_adapter.py` / `test_memo_stages.py` / `test_hybrid_recall.py`
+- T2.15 TokUI 3-stage 可视化（子问题列表、实体收敛、证据链）
+- T2.16 `scripts/build_memo_dataset.py` 云端 5 步 synthesis
+- T2.17 阶段二验收：50 题 recall ≥ baseline 80%，P50 < 800ms
+
+### 阶段三（1 周）—— Agent-as-a-Router C-A-F 路由层
+
+**W5** C-A-F 三组件 + 主循环
+- T3.1 `router/orchestrator.py` Qwen3.5-0.8B LoRA 决策类
+- T3.2 `router/verifier.py` 多信号聚合
+- T3.3 `router/memory.py` 在线向量库
+- T3.4 `router/c_a_f_loop.py` 主循环
+- T3.5 改 `XiaoYiClawLLM.process()` 接 C-A-F
+- T3.6 启用 `titans_neural_memory` 做 RouterMemory in-place 更新
+- T3.7 启用 `cfc_inference.CfCSynapseEngine` 做 kNN 之外二阶联想
+- T3.8 `router/orchestrator_lora/train.py` Qwen3.5-0.8B LoRA 微调
+- T3.9 `metrics/cumulative_regret.py` 评估脚本
+- T3.10-11 测试：`test_acrouter.py` / `test_cumulative_regret.py`
+- T3.12 TokUI **routing debug** 可视化
+- T3.13 路由记忆导出按钮
+- T3.14 `docs/superpowers/specs/2026-06-29-galaxyos-desktop-design.md` 落 spec ✅（本文件）
+- T3.15 upstream 4-6 个 PR 整理
+- T3.16 全量回归 36+15 测试
+
+---
+
+## 4. 阶段一实现细节（v2 已落盘）
+
+### 4.1 路径解耦策略
+- **不动 upstream `path_resolver.py`**（60+ 文件 import 它）
+- 新建 `desktop-shell/python/path_resolver_desktop.py` 作为 **sys.modules-level shim**
+- 优先级：`GALAXYOS_HOME` > `OPENCLAW_HOME`（探测有效后）> `~/.galaxyos/`
+- shim 自动 install on import — sidecar 只需 `import path_resolver_desktop`
+- 60+ upstream 调用点**零修改**
+
+### 4.2 sidecar 协议
+- **pyzmq REQ/REP** at `tcp://127.0.0.1:5757`（pyzmq 已在 `requirements-core.txt`）
+- JSON envelope: `{"id": int, "method": str, "params": dict}` → `{"id": int, "result"|"error": ...}`
+- 方法：`ask / remember / recall / process / health / quit`
+- 阶段二/三会在 `process()` 内部加 MeMo 3-stage 和 C-A-F 路由；外部 RPC API 不变
+
+### 4.3 IPC contract（preload）
+- `window.galaxy.ask(question, sessionId?) → {answer, confidence}`
+- `window.galaxy.remember(content, metadata?, source?) → {memory_id}`
+- `window.galaxy.recall(query, topK?, sessionId?) → {results: [...]}`
+- `window.galaxy.process(userInput, sessionId?) → {answer, routing_debug, ...}`
+- `window.galaxy.health() → {status, version, rccam_enabled, memo_enabled, router_enabled}`
+- `window.galaxy.openExternal(url) → void`
+
+### 4.4 桌面 app 配置目录（新建）
+- 默认 `~/.<APP>/`（mac/linux）或 `%USERPROFILE%\.galaxyos\`（Windows）
+- 子目录：
+  - `workspace/` （WORKSPACE_ROOT）
+  - `workspace/data/` — vector.hnsw, dag.db
+  - `workspace/.learnings/` — synapse.jsonl, ontology.json
+  - `workspace/router_memory/` — ACRouter 20K FIFO（阶段三）
+  - `workspace/models/` — MeMo / BGE / Orchestrator 权重
+  - `workspace/heartbeat/` — 进程健康
+  - `workspace/logs/desktop/` — 桌面端日志
+
+---
+
+## 5. 关键文件改动清单
+
+### 5.1 阶段一已新增（10 文件）
+| 路径 | 用途 |
+|---|---|
+| `galaxyos/desktop-shell/package.json` | Electron 工程根 |
+| `galaxyos/desktop-shell/tsconfig.json` | TS 配置 |
+| `galaxyos/desktop-shell/esbuild.config.mjs` | main + preload 打包 |
+| `galaxyos/desktop-shell/src/main.ts` | Electron 主进程 |
+| `galaxyos/desktop-shell/src/preload.ts` | contextBridge IPC |
+| `galaxyos/desktop-shell/renderer/index.html` | TokUI 风格 chat |
+| `galaxyos/desktop-shell/renderer/style.css` | dark theme |
+| `galaxyos/desktop-shell/renderer/renderer.js` | 聊天循环 |
+| `galaxyos/desktop-shell/python/path_resolver_desktop.py` | 路径解耦 shim |
+| `galaxyos/desktop-shell/python/galaxyos_sidecar.py` | pyzmq REP server |
+| `galaxyos/desktop-shell/scripts/dev.mjs` | 一键 dev |
+| `galaxyos/desktop-shell/scripts/build-python.sh` | PyInstaller bundle |
+| `galaxyos/desktop-shell/README.md` | 开发者文档 |
+| `galaxyos/docs/superpowers/specs/2026-06-29-galaxyos-desktop-design.md` | 本 spec |
+
+### 5.2 阶段二/三计划新增/修改（~35+14 文件）
+（见 §3 与原 plan 详细列表；本 spec 不重复）
+
+---
+
+## 6. 风险与缓解（v2）
+
+| 风险 | 概率 | 影响 | 缓解 |
+|---|---|---|---|
+| MeMo 1.5B 准确率不足 | 中 | 阶段二 recall 退化 | 保留液态层 fallback；MeMo 失败降级 |
+| MeMo 模型 license 不兼容 | 中 | 阶段二无法用 | 第一周验证 license；不行换 LFM2.5-1.2B 或自蒸馏 |
+| Qwen3.5-0.8B LoRA 训练数据不足 | 中 | Orchestrator 弱 | CodeRouterBench probing set + GalaxyOS 任务聚类 |
+| BGE-large 1.3GB 太大 | 低 | 阶段三包体 | 用 bge-small-zh (92MB) 替代 |
+| RouterMemory 20K OOM | 低 | 桌面崩 | LRU + max_size=10K + JSONL 持久化 |
+| C-A-F 嵌套 MeMo 3-stage 后 latency 过高 | 中 | P99 > 2s | 简单问题走 fast-path 跳过 MeMo；缓存 Orchestrator 输出 |
+| Verifier sandbox 执行慢 | 中 | 阶段三延迟 | 优先级 self-consistency > LLM-judge > AST > sandbox（sandbox 可关） |
+| Upstream 不接受 extras_require | 中 | 失同步能力 | 改用 `requirements-{memo,router}.txt` 三个文件 |
+| Qwen3.5-0.8B LoRA 训练慢 | 低 | 阶段三延期 | 训练用云端；桌面只 load 推理 |
+| titans 启用 OOM | 中 | 桌面崩 | max_size=10K + LRU；超限降级离线 batch |
+
+---
+
+## 7. 验收标准
+
+### 阶段一
+- [x] `python -m pip install -r requirements-core.txt` 核心 import 0 错误（理论 — 待首次 `npm run dev` 验证）
+- [ ] Electron 起，TokUI bubble 流式显示（待首次运行）
+- [x] Sidecar `health()` 返回 200（架构已就位）
+- [x] 安装包设计 < 150MB（不含 Python deps）
+- [ ] Windows + macOS 起得来（待跨平台验证）
+
+### 阶段二
+- [ ] `XiaoYiClawLLM.recall()` API **零变化**
+- [ ] 50 题手工评估：MeMo 4 通道 vs 5 通道 baseline，recall@10 ≥ 80%
+- [ ] MeMo 首次加载 < 8s，推理 P50 < 800ms
+- [ ] Grounding/Entity/Answer 三阶段可独立观测
+- [ ] 桌面端增量 < 1.2GB
+
+### 阶段三
+- [ ] Orchestrator 输出 action ∈ {fast_path, liquid_only, memo_3stage}
+- [ ] Verifier 多信号聚合单调性
+- [ ] RouterMemory 20K FIFO eviction 正确
+- [ ] C-A-F 循环 1000 步无内存泄漏
+- [ ] **Cumulative regret**：ID ≤ 250 (baseline 277-387)，OOD ≤ 25 (baseline 26.7-80.1)
+- [ ] `routing_debug` 字段含完整 C-A-F trace
+- [x] `docs/superpowers/specs/2026-06-29-galaxyos-desktop-design.md` 落 spec ✅
+- [ ] 4-6 个 upstream PR 全开
+- [ ] 全量回归 36+15 测试全过
+
+---
+
+## 8. 不在本设计范围
+
+- arkpilot / yaoyao-plugin / arkgallery：完全不动
+- OpenClaw 生态演进：等 upstream 决定
+- MeMo 模型训练本身：本次只 load 推理；训练 pipeline 走独立项目
+- 多 Agent 协同：暂不接 desktop-shell
+- Mobile / HarmonyOS 端：不涉及
+- Skills 编写规范：76 个现有 skill 全部保留
+
+---
+
+## 9. 实施状态跟踪
+
+| 阶段 | 状态 | 关键产物 |
+|---|---|---|
+| 阶段一 W1 | ✅ 完成 | 脚手架 + shim + sidecar + Electron + renderer |
+| 阶段一 W2 | ⏳ 待首次运行 | `npm run dev` 端到端 + 2 upstream PR |
+| 阶段二 W3-W4 | ⏸ 待启动 | MeMo 适配器 + 3 阶段协议 + 混合推理 |
+| 阶段三 W5 | ⏸ 待启动 | C-A-F 路由环 + cumulative regret + LoRA |
+
+---
+
+## 附录：参考
+
+- **Agent-as-a-Router** (arXiv:2606.22902, P. Zhou et al., 2026-06) — 39 页 living technical report，CodeRouterBench benchmark 公开在 https://github.com/LanceZPF/agent-as-a-router
+- **MeMo: Memory as a Model** (arXiv:2605.15156, Quek et al., 2026-05) — Qwen2.5-14B Memory model + Qwen2.5-32B Executive model 训练范式
+- **GalaxyOS upstream**: https://cnb.cool/llm-memory-integrat/GalaxyOS
+- **PDF 评估原文**：`Agent-as-a-Router与MeMo技术原理分析.pdf`（本地）
+- **5 周三阶段路线图 PDF**：`httpscnb_202606291122_36897.pdf`（本地）

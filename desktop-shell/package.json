@@ -1,0 +1,50 @@
+{
+  "name": "galaxyos-desktop",
+  "version": "0.1.0-stage1",
+  "description": "GalaxyOS Desktop App — Electron shell + Python sidecar. Decouples GalaxyOS from OpenClaw and runs as a standalone desktop Agent.",
+  "main": "dist/main.js",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "build:main": "node esbuild.config.mjs",
+    "build:renderer": "node scripts/build-renderer.mjs",
+    "build:python": "bash scripts/build-python.sh",
+    "build:electron": "electron-builder",
+    "test": "node --test test/*.test.mjs",
+    "lint": "node scripts/lint.mjs"
+  },
+  "dependencies": {
+    "@jboltai/tokui": "^0.1.0",
+    "pyzmq": "^25.1.2"
+  },
+  "devDependencies": {
+    "electron": "^32.0.0",
+    "electron-builder": "^25.0.0",
+    "esbuild": "^0.24.0",
+    "typescript": "^5.5.0",
+    "vitest": "^2.0.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "build": {
+    "appId": "org.cnb.galaxyos.desktop",
+    "productName": "GalaxyOS",
+    "files": [
+      "dist/**/*",
+      "renderer/**/*",
+      "python/dist/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "python/dist/galaxyos-sidecar",
+        "to": "galaxyos-sidecar"
+      }
+    ],
+    "mac": { "target": "dmg", "category": "public.app-category.productivity" },
+    "win": { "target": "nsis" },
+    "linux": { "target": "AppImage" }
+  }
+}
