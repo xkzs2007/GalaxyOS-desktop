@@ -23,4 +23,4 @@ COPY requirements-heavy.txt /tmp/
 RUN pip install --no-cache-dir -i https://mirrors.tencent.com/pypi/simple -r /tmp/requirements-heavy.txt
 
 # 验证关键包
-RUN python -c "import numpy, scipy, sklearn, torch, pydantic, faiss, jieba, ncps; print('deps OK')"
+RUN python -c "import numpy, scipy, sklearn, torch, pydantic, faiss, jieba, ncps, pytest, pytest_asyncio; print('deps OK')"
