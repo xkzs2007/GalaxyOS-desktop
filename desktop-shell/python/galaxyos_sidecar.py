@@ -276,7 +276,14 @@ class SidecarHandlers:
         v9.2 — accepts BOTH the legacy single-slot form
         ({api_key, api_base, model, system_prompt}) and the new
         multi-slot form ({llm: {provider, base_url, api_key, model},
-        llm_pro: {...}, embedding: {...}, rerank: {...}}).
+        llm_pro: {...}, embedding: {...}, rerank: {...}, vlm: {...}}).
+
+        v9.4 — multi-slot now covers **5 slots** (vlm added), and
+        every slot is **optional**. A slot is only enabled when the
+        caller passes it in the params; absent slots keep their
+        current enabled/disabled state. Within a slot, a spec with
+        ``{"enabled": false}`` explicitly disables that slot (useful
+        for the "off" toggle in the Settings UI).
 
         If any multi-slot spec is present, routes through MultiSlotRouter
         (independent providers per slot). Otherwise falls back to the
@@ -286,18 +293,36 @@ class SidecarHandlers:
         changed: List[str] = []
         api_key_changed = False
 
-        # ── Multi-slot path (v9.2) ─────────────────────────────────
-        multi_slot_keys = {"llm", "llm_pro", "embedding", "rerank"}
+        # ── Multi-slot path (v9.2 → v9.4) ─────────────────────────
+        # v9.4: vlm joined the party; also honour per-slot `enabled`
+        # flag so the Settings UI can turn individual capabilities
+        # on/off without touching the other slots.
+        multi_slot_keys = ("llm", "llm_pro", "embedding", "rerank", "vlm")
         has_multi_slot = any(k in params for k in multi_slot_keys)
         if has_multi_slot and self._router is not None:
+            llm_slot_changed = False
             for slot in multi_slot_keys:
-                if slot in params and isinstance(params[slot], dict):
-                    self._router.set_slot(slot, params[slot])
+                if slot not in params:
+                    continue  # absent = keep current state
+                spec = params[slot]
+                if not isinstance(spec, dict):
+                    continue
+                # Explicit disable: revert to mock + flip enabled=False
+                if spec.get("enabled") is False:
+                    self._router.disable_slot(slot)
+                    changed.append(f"slot:{slot}:disabled")
+                else:
+                    self._router.set_slot(slot, spec)
                     changed.append(f"slot:{slot}")
-            # Also rebuild the Executive from the new llm slot
-            self._executive = self._build_executive()
-            if self._memo_protocol is not None:
-                self._memo_protocol.executive = self._executive
+                if slot == "llm":
+                    llm_slot_changed = True
+            # Only rebuild the Executive when the *llm* slot actually
+            # changed — touching embedding/rerank/vlm shouldn't churn
+            # the LLM client (which may have in-flight streams).
+            if llm_slot_changed:
+                self._executive = self._build_executive()
+                if self._memo_protocol is not None:
+                    self._memo_protocol.executive = self._executive
             # Forward legacy top-level system_prompt if any
             if "system_prompt" in params:
                 self._live_config["system_prompt"] = str(params["system_prompt"] or "")

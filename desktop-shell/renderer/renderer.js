@@ -422,18 +422,32 @@ function applySettings() {
   // matching color scale. Without this, dark background + TokUI default
   // (light) theme => dim/gray AI output text (UI inconsistency).
   document.documentElement.dataset.tokuiTheme = s.theme || 'dark';
-  // v9.3: build per-slot specs from the 4 new tab bodies
+  // v9.4: build per-slot specs from the 4 new tab bodies, honouring
+  // the per-slot "enabled" checkbox. LLM is enabled by default;
+  // embedding / rerank / vlm default to disabled (fall back to local
+  // implementations on the sidecar).
   const slotSpecs = {};
   for (const slot of ['llm', 'embedding', 'rerank', 'vlm']) {
+    const enabledEl = $(`setting-${slot}-enabled`);
+    const enabled = !enabledEl || enabledEl.checked;
     const provider = $(`setting-${slot}-provider`).value;
     const model = $(`setting-${slot}-model`).value;
     const apiKey = $(`setting-${slot}-key`).value;
     const baseUrl = $(`setting-${slot}-base`).value;
+    if (!enabled) {
+      // Explicitly turn this slot off — sidecar disables it regardless
+      // of any previously-saved spec.
+      slotSpecs[slot] = { enabled: false };
+      continue;
+    }
     if (provider) {
       slotSpecs[slot] = {
+        enabled: true,
         provider, model, api_key: apiKey, base_url: baseUrl,
       };
     }
+    // else: enabled checkbox on but no provider picked — leave the
+    // slot alone on the sidecar (it stays at whatever it was).
   }
   // Persist slots to localStorage so they survive reloads
   s.slots = slotSpecs;
@@ -481,6 +495,23 @@ document.querySelectorAll('.modal-tab').forEach(tab => {
 
 // ── Provider select population (v9.3) ────────────────────────────────
 
+// v9.4: toggle a slot body's interactivity based on its `enabled` checkbox.
+// Disabled slot bodies are dimmed + non-interactive in the UI; the spec
+// is still serialised (with enabled:false) so the sidecar can disable it.
+function syncSlotBodyDisabled(slot) {
+  const enabledEl = $(`setting-${slot}-enabled`);
+  const body = document.querySelector(`[data-slot-body="${slot}"]`);
+  if (!enabledEl || !body) return;
+  const on = enabledEl.checked;
+  body.setAttribute('aria-disabled', on ? 'false' : 'true');
+}
+
+// Wire up enabled-checkbox listeners once on boot.
+for (const slot of ['llm', 'embedding', 'rerank', 'vlm']) {
+  const el = $(`setting-${slot}-enabled`);
+  if (el) el.addEventListener('change', () => syncSlotBodyDisabled(slot));
+}
+
 async function populateProviderSelect(slot) {
   const sel = $(`setting-${slot}-provider`);
   if (!sel) return;
@@ -507,15 +538,30 @@ async function populateProviderSelect(slot) {
     opt.textContent = `${p.name} (${p.default_model})`;
     sel.appendChild(opt);
   }
-  // Restore last saved value
+  // Restore last saved value + enabled state (v9.4)
   try {
     const s = JSON.parse(localStorage.getItem('galaxyos.settings.v1') || '{}');
     const saved = (s.slots || {})[slot];
-    if (saved && saved.provider) {
-      sel.value = saved.provider;
-      $(`setting-${slot}-model`).value = saved.model || '';
-      $(`setting-${slot}-key`).value = saved.api_key || '';
-      $(`setting-${slot}-base`).value = saved.base_url || '';
+    if (saved) {
+      // enabled flag: explicit false → off, otherwise on if provider set
+      const enabledEl = $(`setting-${slot}-enabled`);
+      if (enabledEl) {
+        if (saved.enabled === false) {
+          enabledEl.checked = false;
+        } else if (saved.provider) {
+          enabledEl.checked = true;
+        }
+        syncSlotBodyDisabled(slot);
+      }
+      if (saved.provider) {
+        sel.value = saved.provider;
+        $(`setting-${slot}-model`).value = saved.model || '';
+        $(`setting-${slot}-key`).value = saved.api_key || '';
+        $(`setting-${slot}-base`).value = saved.base_url || '';
+      }
+    } else {
+      // No prior save — make sure UI body reflects the default checkbox state
+      syncSlotBodyDisabled(slot);
     }
   } catch { /* ignore */ }
 }

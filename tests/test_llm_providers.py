@@ -158,6 +158,104 @@ def test_router_info_reflects_state():
     assert info["embedding"]["is_mock"] is True
 
 
+# ── 4b. v9.4 — "LLM required, others optional" ───────────────────────
+
+def test_router_v94_has_5_slots():
+    """v9.4 — MultiSlotRouter now has 5 slots (vlm added)."""
+    r = MultiSlotRouter()
+    assert r.SLOTS == ("llm", "llm_pro", "embedding", "rerank", "vlm")
+    assert "vlm" in r.SLOTS
+
+
+def test_router_v94_all_slots_disabled_by_default():
+    """v9.4 — every slot starts disabled, even llm. Callers must
+    configure it explicitly (the Settings UI does this)."""
+    r = MultiSlotRouter()
+    for slot in r.SLOTS:
+        assert r.is_enabled(slot) is False, f"{slot} should start disabled"
+        assert r.get(slot).is_mock(), f"{slot} should be mock backend"
+
+
+def test_router_v94_set_slot_enables_it():
+    r = MultiSlotRouter()
+    r.set_slot("embedding", {"provider": "openai", "api_key": "sk-x",
+                             "model": "text-embedding-3-small"})
+    assert r.is_enabled("embedding") is True
+    assert not r.get("embedding").is_mock()
+    # Untouched slots remain disabled
+    assert r.is_enabled("llm") is False
+    assert r.is_enabled("vlm") is False
+
+
+def test_router_v94_disable_slot_reverts_to_mock():
+    r = MultiSlotRouter()
+    r.set_slot("embedding", {"provider": "openai", "api_key": "sk-x",
+                             "model": "text-embedding-3-small"})
+    assert r.is_enabled("embedding")
+    r.disable_slot("embedding")
+    assert r.is_enabled("embedding") is False
+    assert r.get("embedding").is_mock()
+    assert r.get("embedding").backend_name() == "mock/mock-embedding"
+
+
+def test_router_v94_set_slot_with_mock_spec_stays_disabled():
+    """If a slot is set with a mock provider and no api_key, it
+    remains disabled. This is the situation callers hit when they
+    want to *keep* a slot in its current mock state (e.g. embedding
+    has no provider picked). The slot's is_enabled() must be False
+    so the sidecar knows to fall back."""
+    r = MultiSlotRouter()
+    r.set_slot("embedding", {"provider": "mock", "model": "test"})
+    assert r.is_enabled("embedding") is False
+    assert r.get("embedding").is_mock()
+
+
+def test_router_v94_explicit_enabled_true_overrides_mock():
+    """An explicit enabled=True forces a slot enabled even if the
+    provider resolves to mock (e.g. no api_key was provided). This
+    is the path the UI uses when the user has filled in all the
+    fields and clicked Save — the slot is *configured*, even if the
+    backend defaults to mock until a real key arrives."""
+    r = MultiSlotRouter()
+    r.set_slot("embedding", {"provider": "mock", "model": "x", "enabled": True})
+    assert r.is_enabled("embedding") is True
+
+
+def test_router_v94_is_enabled_rejects_unknown():
+    r = MultiSlotRouter()
+    with pytest.raises(ValueError, match="unknown slot"):
+        r.is_enabled("not_a_slot")
+
+
+def test_router_v94_info_includes_enabled_flag():
+    r = MultiSlotRouter()
+    r.set_slot("llm", {"provider": "qwen", "api_key": "sk-q", "model": "qwen-plus"})
+    info = r.info()
+    for slot in r.SLOTS:
+        assert "enabled" in info[slot], f"info[{slot}] missing 'enabled'"
+        assert "is_mock" in info[slot]
+        assert "backend" in info[slot]
+        assert "spec" in info[slot]
+    assert info["llm"]["enabled"] is True
+    assert info["vlm"]["enabled"] is False
+    assert info["vlm"]["backend"] == "mock/mock-vlm"
+
+
+def test_router_v94_vlm_is_a_real_slot():
+    """v9.4 — vlm is now a first-class slot (was missing in v9.2)."""
+    r = MultiSlotRouter()
+    r.set_slot("vlm", {"provider": "openai", "api_key": "sk-vlm",
+                       "model": "gpt-4o"})
+    assert r.is_enabled("vlm")
+    assert "openai" in r.get("vlm").backend_name()
+
+
+def test_router_v94_disable_unknown_raises():
+    r = MultiSlotRouter()
+    with pytest.raises(ValueError, match="unknown slot"):
+        r.disable_slot("imaginary")
+
+
 # ── 5. OpenAI-compat client builds correct payload ────────────────────
 
 def test_openai_compat_payload_includes_system_in_messages():

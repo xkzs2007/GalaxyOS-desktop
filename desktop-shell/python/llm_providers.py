@@ -355,34 +355,89 @@ def build_llm_backend(spec: Dict[str, Any]) -> LLMBackend:
 
 
 class MultiSlotRouter:
-    """Manages 4 independent slots: llm / llm_pro / embedding / rerank.
+    """Manages 5 independent slots: llm / llm_pro / embedding / rerank / vlm.
 
     Each slot has its own (provider, base_url, api_key, model) spec and
     is rebuilt lazily on demand. This is the v9.2 answer to the question
     "why does my Qwen-2.5 dropdown secretly use DeepSeek?" — each slot
     is now first-class and explicit.
+
+    v9.4 — "LLM required, others optional":
+      - Every slot starts **disabled** (a mock backend sits behind it,
+        but ``is_enabled()`` returns False so callers know to fall back
+        to local implementations: BoW embedding / no-rerank / no-VLM).
+      - ``set_slot(slot, spec)`` **enables** the slot AND rebuilds the
+        backend. Pass ``enabled=False`` in the spec to explicitly
+        disable a slot (back to mock).
+      - ``disable_slot(slot)`` reverts the slot to a fresh mock and
+        flips ``is_enabled`` back to False — the proper way to "turn
+        off" embedding/rerank/vlm at runtime.
+      - ``info()`` now exposes the per-slot ``enabled`` flag so the
+        renderer's diagnostics tab can show "embedding: off (BoW)".
+
+    Slot semantics for callers:
+      - ``llm``       → required for any LLM call. If disabled, callers
+                        fall back to whatever the harness provides.
+      - ``llm_pro``   → optional secondary LLM (e.g. Claude for
+                        reasoning + Qwen for chat). Used by R-CCAM.
+      - ``embedding`` → optional. When disabled, MeMo recall and
+                        SkillGraph retrieval fall back to BoW / BM25.
+      - ``rerank``    → optional. When disabled, retrieval returns the
+                        raw top-k from embedding/BM25 without re-scoring.
+      - ``vlm``       → optional. When disabled, image attachments show
+                        a [callout v:warn] "VLM not configured" instead
+                        of being OCR'd.
     """
-    SLOTS = ("llm", "llm_pro", "embedding", "rerank")
+    SLOTS = ("llm", "llm_pro", "embedding", "rerank", "vlm")
 
     def __init__(self) -> None:
         self._slots: Dict[str, LLMBackend] = {}
         self._specs: Dict[str, Dict[str, Any]] = {}
+        self._enabled: Dict[str, bool] = {}
         for slot in self.SLOTS:
             self._slots[slot] = MockLLMClient(model=f"mock-{slot}")
             self._specs[slot] = {"provider": "mock"}
-        log.info("MultiSlotRouter initialised: %d slots", len(self.SLOTS))
+            self._enabled[slot] = False  # all disabled by default
+        log.info("MultiSlotRouter initialised: %d slots (all disabled)", len(self.SLOTS))
 
     def get(self, slot: str) -> LLMBackend:
         if slot not in self.SLOTS:
             raise ValueError(f"unknown slot {slot!r}; valid: {self.SLOTS}")
         return self._slots[slot]
 
+    def is_enabled(self, slot: str) -> bool:
+        """Return True if the slot has been explicitly enabled via set_slot
+        (or set_all) with a real (non-mock) provider. Callers should use
+        this to decide whether to use the slot or fall back."""
+        if slot not in self.SLOTS:
+            raise ValueError(f"unknown slot {slot!r}")
+        return self._enabled[slot]
+
     def set_slot(self, slot: str, spec: Dict[str, Any]) -> None:
+        """Configure a slot. The slot is automatically enabled unless
+        ``spec['enabled'] is False``. A slot configured with provider=mock
+        and no api_key is also considered disabled."""
         if slot not in self.SLOTS:
             raise ValueError(f"unknown slot {slot!r}")
         self._specs[slot] = dict(spec)
         self._slots[slot] = build_llm_backend(spec)
-        log.info("slot[%s] rebuilt: %s", slot, self._slots[slot].backend_name())
+        # enabled: explicit flag wins; otherwise enabled iff non-mock
+        explicit = spec.get("enabled")
+        if explicit is None:
+            self._enabled[slot] = not self._slots[slot].is_mock()
+        else:
+            self._enabled[slot] = bool(explicit)
+        log.info("slot[%s] rebuilt: %s (enabled=%s)",
+                 slot, self._slots[slot].backend_name(), self._enabled[slot])
+
+    def disable_slot(self, slot: str) -> None:
+        """Revert a slot to mock + disabled. Safe to call multiple times."""
+        if slot not in self.SLOTS:
+            raise ValueError(f"unknown slot {slot!r}")
+        self._specs[slot] = {"provider": "mock"}
+        self._slots[slot] = MockLLMClient(model=f"mock-{slot}")
+        self._enabled[slot] = False
+        log.info("slot[%s] disabled (mock fallback)", slot)
 
     def set_all(self, specs: Dict[str, Dict[str, Any]]) -> None:
         for slot, spec in specs.items():
@@ -396,6 +451,7 @@ class MultiSlotRouter:
             slot: {
                 "backend": self._slots[slot].backend_name(),
                 "is_mock": self._slots[slot].is_mock(),
+                "enabled": self._enabled[slot],
                 "spec": self._specs[slot],
             }
             for slot in self.SLOTS

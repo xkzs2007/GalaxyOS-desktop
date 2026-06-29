@@ -166,56 +166,84 @@
           </select>
         </div>
         <div class="modal-body" id="tab-llm" hidden>
-          <p class="hint">主对话模型。可与 Embedding / Rerank 独立配置。</p>
-          <label class="modal-label">Provider</label>
-          <select id="setting-llm-provider" class="modal-select">
-            <option value="">(loading…)</option>
-          </select>
-          <label class="modal-label">Model</label>
-          <input type="text" id="setting-llm-model" class="modal-input" placeholder="e.g. qwen-plus" />
-          <label class="modal-label">API Key</label>
-          <input type="password" id="setting-llm-key" class="modal-input" placeholder="sk-..." />
-          <label class="modal-label">Base URL (留空用默认)</label>
-          <input type="text" id="setting-llm-base" class="modal-input" placeholder="https://..." />
+          <label class="modal-row-toggle">
+            <input type="checkbox" id="setting-llm-enabled" checked />
+            <span>启用 LLM</span>
+            <span class="hint">关闭后 LLM 走 mock fallback，仅供前端 UI 调试，不会发出任何远端请求。</span>
+          </label>
+          <div class="modal-slot-body" data-slot-body="llm">
+            <p class="hint">主对话模型。可与 Embedding / Rerank 独立配置。</p>
+            <label class="modal-label">Provider</label>
+            <select id="setting-llm-provider" class="modal-select">
+              <option value="">(loading…)</option>
+            </select>
+            <label class="modal-label">Model</label>
+            <input type="text" id="setting-llm-model" class="modal-input" placeholder="e.g. qwen-plus" />
+            <label class="modal-label">API Key</label>
+            <input type="password" id="setting-llm-key" class="modal-input" placeholder="sk-..." />
+            <label class="modal-label">Base URL (留空用默认)</label>
+            <input type="text" id="setting-llm-base" class="modal-input" placeholder="https://..." />
+          </div>
         </div>
         <div class="modal-body" id="tab-embedding" hidden>
-          <p class="hint">向量检索 Embedding 模型（用于 MeMo 召回 / SkillGraph）</p>
-          <label class="modal-label">Provider</label>
-          <select id="setting-embedding-provider" class="modal-select">
-            <option value="">(loading…)</option>
-          </select>
-          <label class="modal-label">Model</label>
-          <input type="text" id="setting-embedding-model" class="modal-input" placeholder="e.g. BAAI/bge-m3" />
-          <label class="modal-label">API Key</label>
-          <input type="password" id="setting-embedding-key" class="modal-input" placeholder="sk-..." />
-          <label class="modal-label">Base URL (留空用默认)</label>
-          <input type="text" id="setting-embedding-base" class="modal-input" placeholder="https://..." />
+          <label class="modal-row-toggle">
+            <input type="checkbox" id="setting-embedding-enabled" />
+            <span>启用 Embedding</span>
+            <span class="hint">未勾选时召回 / 技能检索回退到本地 BoW 检索，无需 API key。</span>
+          </label>
+          <div class="modal-slot-body" data-slot-body="embedding">
+            <p class="hint">向量检索 Embedding 模型（用于 MeMo 召回 / SkillGraph）</p>
+            <label class="modal-label">Provider</label>
+            <select id="setting-embedding-provider" class="modal-select">
+              <option value="">(loading…)</option>
+            </select>
+            <label class="modal-label">Model</label>
+            <input type="text" id="setting-embedding-model" class="modal-input" placeholder="e.g. BAAI/bge-m3" />
+            <label class="modal-label">API Key</label>
+            <input type="password" id="setting-embedding-key" class="modal-input" placeholder="sk-..." />
+            <label class="modal-label">Base URL (留空用默认)</label>
+            <input type="text" id="setting-embedding-base" class="modal-input" placeholder="https://..." />
+          </div>
         </div>
         <div class="modal-body" id="tab-rerank" hidden>
-          <p class="hint">重排序模型（提升检索精度）</p>
-          <label class="modal-label">Provider</label>
-          <select id="setting-rerank-provider" class="modal-select">
-            <option value="">(loading…)</option>
-          </select>
-          <label class="modal-label">Model</label>
-          <input type="text" id="setting-rerank-model" class="modal-input" placeholder="e.g. BAAI/bge-reranker-v2-m3" />
-          <label class="modal-label">API Key</label>
-          <input type="password" id="setting-rerank-key" class="modal-input" placeholder="sk-..." />
-          <label class="modal-label">Base URL (留空用默认)</label>
-          <input type="text" id="setting-rerank-base" class="modal-input" placeholder="https://..." />
+          <label class="modal-row-toggle">
+            <input type="checkbox" id="setting-rerank-enabled" />
+            <span>启用 Rerank</span>
+            <span class="hint">未勾选时检索直接返回 top-k，不做二次重排序。</span>
+          </label>
+          <div class="modal-slot-body" data-slot-body="rerank">
+            <p class="hint">重排序模型（提升检索精度）</p>
+            <label class="modal-label">Provider</label>
+            <select id="setting-rerank-provider" class="modal-select">
+              <option value="">(loading…)</option>
+            </select>
+            <label class="modal-label">Model</label>
+            <input type="text" id="setting-rerank-model" class="modal-input" placeholder="e.g. BAAI/bge-reranker-v2-m3" />
+            <label class="modal-label">API Key</label>
+            <input type="password" id="setting-rerank-key" class="modal-input" placeholder="sk-..." />
+            <label class="modal-label">Base URL (留空用默认)</label>
+            <input type="text" id="setting-rerank-base" class="modal-input" placeholder="https://..." />
+          </div>
         </div>
         <div class="modal-body" id="tab-vlm" hidden>
-          <p class="hint">视觉语言模型（图片 OCR / 多模态 — 阶段二启用）</p>
-          <label class="modal-label">Provider</label>
-          <select id="setting-vlm-provider" class="modal-select">
-            <option value="">(loading…)</option>
-          </select>
-          <label class="modal-label">Model</label>
-          <input type="text" id="setting-vlm-model" class="modal-input" placeholder="e.g. deepseek-vl-7b" />
-          <label class="modal-label">API Key</label>
-          <input type="password" id="setting-vlm-key" class="modal-input" placeholder="sk-..." />
-          <label class="modal-label">Base URL (留空用默认)</label>
-          <input type="text" id="setting-vlm-base" class="modal-input" placeholder="https://..." />
+          <label class="modal-row-toggle">
+            <input type="checkbox" id="setting-vlm-enabled" />
+            <span>启用 VLM（视觉语言模型）</span>
+            <span class="hint">未勾选时图片附件会显示 "VLM 未配置" 提示，不进行 OCR。</span>
+          </label>
+          <div class="modal-slot-body" data-slot-body="vlm">
+            <p class="hint">视觉语言模型（图片 OCR / 多模态 — 阶段二启用）</p>
+            <label class="modal-label">Provider</label>
+            <select id="setting-vlm-provider" class="modal-select">
+              <option value="">(loading…)</option>
+            </select>
+            <label class="modal-label">Model</label>
+            <input type="text" id="setting-vlm-model" class="modal-input" placeholder="e.g. deepseek-vl-7b" />
+            <label class="modal-label">API Key</label>
+            <input type="password" id="setting-vlm-key" class="modal-input" placeholder="sk-..." />
+            <label class="modal-label">Base URL (留空用默认)</label>
+            <input type="text" id="setting-vlm-base" class="modal-input" placeholder="https://..." />
+          </div>
         </div>
         <div class="modal-body" id="tab-diagnostics" hidden>
           <div class="diagnostics-header">
