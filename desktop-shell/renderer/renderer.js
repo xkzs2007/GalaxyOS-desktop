@@ -1,79 +1,51 @@
 // renderer/renderer.js — Stage 1.5 renderer using @jboltai/tokui.
 //
+// Plain JavaScript so it loads directly via <script type="module">
+// without a build step. Works in:
+//   - Electron renderer (production)
+//   - Chromium / Playwright (smoke tests, demos)
+//   - Any modern browser
+//
 // Layout: 3-column ZCode/Codex-style
 //   - Left: sessions / skills / health
-//   - Center: TokUI mount (auto-renders streamed DSL via SSE)
-//   - Right: details panel (R-CCAM trace, stage 2 MeMo 3-stage, stage 3 C-A-F)
+//   - Center: TokUI mount + composer
+//   - Right: details panel (R-CCAM trace)
 //
 // Communication:
-//   - window.galaxy.streamAsk(question)     → opens SSE to /sse/ask
-//   - window.galaxy.streamProcess(input)    → opens SSE to /sse/process
-//   - window.galaxy.remember / recall / health / etc. — structured zmq calls
+//   - window.galaxy.ask(question)   → SSE /sse/ask (standalone) or zmq (Electron)
+//   - window.galaxy.process(input)  → SSE /sse/process (standalone) or zmq (Electron)
+//   - window.galaxy.health()       → zmq health check
+//   - window.galaxy.streamAsk/process → streaming variants
 //
-// The TokUI client (window.TokUI) is injected by the main process via
-// webContents.executeJavaScript once the page loads. If the package
-// isn't npm-installed yet, we use a tiny stub that shows raw DSL in
-// <pre> blocks (useful for first-launch debug).
+// TokUI: loaded from CDN (standalone) or injected by main.ts (Electron).
 
-declare const window: any;
-declare const document: any;
-const galaxy = window.galaxy;
-let TokUI: any = (window as any).TokUI;  // exposed by main.ts after dynamic import
+const galaxy = window.galaxy ?? makeStandaloneGalaxy();
+let TokUI = window.TokUI;  // initialized at runtime via waitForTokUI()
 
-const $ = (id: string) => document.getElementById(id);
+const $ = (id) => document.getElementById(id);
 const tokuiContainer = $('tokui-container');
-const input = $('input') as HTMLTextAreaElement;
-const sendBtn = $('send') as HTMLButtonElement;
+const input = $('input');
+const sendBtn = $('send');
 const connDot = $('conn-indicator');
 const connText = $('conn-text');
 const healthDetail = $('health-detail');
 const detailsBody = $('details-body');
 
 // ── State ──────────────────────────────────────────────────────────
-interface State {
-  ui: any | null;           // TokUI instance
-  mode: 'ask' | 'process';
-  sessionId: string;
-  isStreaming: boolean;
-  currentBubbleId: string | null;
-  currentController: AbortController | null;
-}
-const state: State = {
+const state = {
   ui: null,
   mode: 'ask',
   sessionId: 'default',
   isStreaming: false,
-  currentBubbleId: null,
-  currentController: null,
 };
 
-// ── TokUI bootstrap (lazy) ────────────────────────────────────────
+// ── TokUI bootstrap ─────────────────────────────────────────────
 
-async function bootTokUI() {
-  if (state.ui) return state.ui;
-  if (!TokUI || typeof TokUI.TokUI !== 'function') {
-    // Fallback: log a warning and use a minimal stub that just shows
-    // the raw DSL in <pre> blocks. Helps first-launch debugging.
-    console.warn('[renderer] TokUI not loaded; using stub renderer');
-    state.ui = makeStubRenderer();
-    return state.ui;
-  }
-  const ui = new TokUI.TokUI({ container: tokuiContainer });
-  state.ui = ui;
-  return ui;
-}
-
-/**
- * Wait briefly for main process to inject TokUI. The injection happens
- * in did-finish-load and is async, so we may need to retry a few times
- * before window.TokUI becomes available.
- */
-async function waitForTokUI(maxWaitMs: number = 2000): Promise<boolean> {
+async function waitForTokUI(maxWaitMs = 3000) {
   const start = Date.now();
   while (Date.now() - start < maxWaitMs) {
-    if (typeof (window as any).TokUI !== 'undefined' &&
-        typeof (window as any).TokUI.TokUI === 'function') {
-      TokUI = (window as any).TokUI;
+    if (window.TokUI) {
+      TokUI = window.TokUI;
       return true;
     }
     await new Promise((r) => setTimeout(r, 50));
@@ -84,110 +56,91 @@ async function waitForTokUI(maxWaitMs: number = 2000): Promise<boolean> {
 function makeStubRenderer() {
   return {
     startStream() { /* noop */ },
-    feed(_chunk: string) {
-      // Append the raw DSL to the container as a <pre> for debug visibility
+    feed(chunk) {
       const pre = document.createElement('pre');
       pre.style.cssText = 'opacity:0.5;font-size:11px;margin:4px 0;';
-      pre.textContent = _chunk;
+      pre.textContent = chunk;
       tokuiContainer.appendChild(pre);
       tokuiContainer.scrollTop = tokuiContainer.scrollHeight;
     },
     endStream() { /* noop */ },
-    render(_dsl: string) { /* noop */ },
+    render(_dsl) { /* noop */ },
   };
 }
 
-// ── Streaming call (SSE) ────────────────────────────────────────
-
-async function streamViaSse(endpoint: 'ask' | 'process', params: Record<string, string>) {
-  if (state.isStreaming) return;
-  state.isStreaming = true;
-  state.currentController = new AbortController();
-  sendBtn.disabled = true;
-
-  const ui = await bootTokUI();
-  ui.startStream();
-
-  try {
-    const url = `http://127.0.0.1:5758/sse/${endpoint}`;
-    const body = new URLSearchParams(params).toString();
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body,
-      signal: state.currentController.signal,
-    });
-    if (!res.ok || !res.body) {
-      throw new Error(`SSE ${endpoint} HTTP ${res.status}`);
-    }
-
-    const reader = res.body.getReader();
-    const decoder = new TextDecoder();
-    let buf = '';
-    let pendingFragments: string[] = [];
-
-    for (;;) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      buf += decoder.decode(value, { stream: true });
-      // SSE frames end with \n\n
-      let idx: number;
-      while ((idx = buf.indexOf('\n\n')) >= 0) {
-        const frame = buf.slice(0, idx);
-        buf = buf.slice(idx + 2);
-        const dataLines: string[] = [];
-        for (const line of frame.split('\n')) {
-          if (line.startsWith('data:')) dataLines.push(line.slice(5).trim());
-        }
-        if (dataLines.length === 0) continue;
-        const data = dataLines.join('\n');
-        if (data === '[DONE]') {
-          // Flush any pending fragments
-          for (const frag of pendingFragments) ui.feed(frag);
-          pendingFragments = [];
-          continue;
-        }
-        try {
-          const obj = JSON.parse(data);
-          if (obj.tokui) {
-            pendingFragments.push(obj.tokui);
-            // Coalesce: feed in micro-batches so very fast streams don't
-            // flood the renderer. ~16ms batches ≈ 60fps.
-            if (pendingFragments.length >= 3) {
-              for (const frag of pendingFragments) ui.feed(frag);
-              pendingFragments = [];
-              await new Promise((r) => setTimeout(r, 0));
-            }
-          }
-        } catch (e) {
-          console.warn('[renderer] SSE parse error:', e, data);
-        }
-      }
-    }
-    // Flush remainder
-    for (const frag of pendingFragments) ui.feed(frag);
-    ui.endStream();
-  } catch (e: any) {
-    if (e.name === 'AbortError') {
-      console.log('[renderer] stream aborted');
-    } else {
-      console.error('[renderer] SSE error:', e);
-      renderError(String(e.message ?? e));
-    }
-  } finally {
-    state.isStreaming = false;
-    state.currentController = null;
-    sendBtn.disabled = false;
-    input.focus();
+/**
+ * Create the TokUI client (or stub). MUST be called inside a
+ * startStream/feed/endStream pair, or feed() will warn "called
+ * before startStream()".
+ */
+async function bootTokUI() {
+  if (state.ui) return state.ui;
+  await waitForTokUI();
+  const TokUIClass = TokUI?.TokUI || TokUI?.default;
+  if (!TokUIClass || typeof TokUIClass !== 'function') {
+    console.warn('[renderer] TokUI not loaded; using stub renderer');
+    state.ui = makeStubRenderer();
+  } else {
+    state.ui = new TokUIClass({ container: tokuiContainer });
   }
+  return state.ui;
 }
 
-function renderError(msg: string) {
-  const ui = state.ui;
-  if (!ui) return;
-  // Use a simple error bubble in DSL
-  ui.feed(`[bubble role:ai model:GalaxyOS time:错误][p v:danger]${msg}[/p][/bubble]`);
-  ui.endStream();
+// ── SSE consumer (manual; sidesteps TokUI's built-in connect()
+//    which sends application/json — our sidecar uses
+//    application/x-www-form-urlencoded to be fetch-friendly from
+//    regular browsers too). ─────────────────────────────────────
+
+/**
+ * Open an SSE connection to the sidecar, feed each TokUI fragment
+ * to `ui.feed()`, and close the stream. Returns when [DONE] is
+ * received or an error occurs.
+ */
+async function consumeSseStream(ui, endpoint, params) {
+  const url = `http://127.0.0.1:5758/sse/${endpoint}`;
+  const body = new URLSearchParams(params).toString();
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body,
+  });
+  if (!res.ok || !res.body) {
+    throw new Error(`SSE ${endpoint} HTTP ${res.status}`);
+  }
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = '';
+  let fragmentCount = 0;
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+    let idx;
+    while ((idx = buf.indexOf('\n\n')) >= 0) {
+      const frame = buf.slice(0, idx);
+      buf = buf.slice(idx + 2);
+      const dataLines = [];
+      for (const line of frame.split('\n')) {
+        if (line.startsWith('data:')) dataLines.push(line.slice(5).trim());
+      }
+      if (dataLines.length === 0) continue;
+      const data = dataLines.join('\n');
+      if (data === '[DONE]') {
+        console.log(`[SSE] ${endpoint} done, fed ${fragmentCount} fragments`);
+        return;
+      }
+      try {
+        const obj = JSON.parse(data);
+        if (obj.tokui) {
+          ui.feed(obj.tokui);
+          fragmentCount++;
+        }
+      } catch (e) {
+        console.warn(`[SSE] parse error:`, e, data.slice(0, 80));
+      }
+    }
+  }
+  console.log(`[SSE] ${endpoint} stream ended (no [DONE] seen), fed ${fragmentCount} fragments`);
 }
 
 // ── Health probe ──────────────────────────────────────────────
@@ -202,7 +155,7 @@ async function healthCheck() {
     const router = h.router_enabled ? 'Router ✓' : 'Router ✗';
     connText.textContent = `已连接 · v${h.version}`;
     healthDetail.innerHTML = `${stage} · ${memo} · ${router}<br>zmq :${h.zmq_port} · sse :${h.sse_port}`;
-  } catch (e: any) {
+  } catch (e) {
     connDot.classList.remove('ok');
     connDot.classList.add('err');
     connText.textContent = `连接失败`;
@@ -212,38 +165,17 @@ async function healthCheck() {
 
 // ── UI handlers ──────────────────────────────────────────────
 
-function setMode(mode: 'ask' | 'process') {
+function setMode(mode) {
   state.mode = mode;
   document.querySelectorAll('.mode-btn').forEach((b) => {
-    b.classList.toggle('active', (b as HTMLElement).dataset.mode === mode);
+    b.classList.toggle('active', b.dataset.mode === mode);
   });
   input.placeholder = mode === 'ask'
     ? '简单提问（Enter 发送）'
     : '复杂任务（Enter 启动 R-CCAM 5 阶段推理）';
 }
 
-async function handleSend() {
-  const text = input.value.trim();
-  if (!text || state.isStreaming) return;
-  input.value = '';
-  autoResize();
-
-  // Render user bubble via DSL (always works, even without TokUI)
-  const ui = await bootTokUI();
-  ui.startStream();
-  const now = new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
-  ui.feed(`[bubble role:user][p]${escapeDsl(text)}[/bubble]`);
-  ui.endStream();
-
-  if (state.mode === 'ask') {
-    await streamViaSse('ask', { prompt: text, session_id: state.sessionId });
-  } else {
-    await streamViaSse('process', { user_input: text, session_id: state.sessionId });
-  }
-}
-
-function escapeDsl(s: string): string {
-  // DSL rule: literal [ ] must be wrapped in double quotes
+function escapeDsl(s) {
   if (s.includes('[') || s.includes(']')) {
     return '"' + s.replace(/"/g, '\\"') + '"';
   }
@@ -253,6 +185,44 @@ function escapeDsl(s: string): string {
 function autoResize() {
   input.style.height = 'auto';
   input.style.height = Math.min(input.scrollHeight, 200) + 'px';
+}
+
+async function handleSend() {
+  const text = input.value.trim();
+  if (!text || state.isStreaming) return;
+  input.value = '';
+  autoResize();
+
+  const ui = await bootTokUI();
+
+  // 1) User bubble (own stream, sync)
+  ui.startStream();
+  ui.feed(`[bubble role:user][p]${escapeDsl(text)}[/bubble]`);
+  ui.endStream();
+
+  // 2) Assistant bubble (its own stream; SSE fragments go in)
+  ui.startStream();
+  state.isStreaming = true;
+  sendBtn.disabled = true;
+  const endpoint = state.mode === 'ask' ? 'ask' : 'process';
+  const params = state.mode === 'ask'
+    ? { prompt: text, session_id: state.sessionId }
+    : { user_input: text, session_id: state.sessionId };
+  try {
+    await consumeSseStream(ui, endpoint, params);
+  } catch (e) {
+    console.error('[renderer] SSE error:', e);
+    ui.feed(`[bubble role:ai model:GalaxyOS time:错误][p v:danger]${e.message ?? e}[/p][/bubble]`);
+  } finally {
+    ui.endStream();
+    state.isStreaming = false;
+    sendBtn.disabled = false;
+    input.focus();
+  }
+}
+
+function renderError(ui, msg) {
+  ui.feed(`[bubble role:ai model:GalaxyOS time:错误][p v:danger]${msg}[/p][/bubble]`);
 }
 
 // ── Wire up events ────────────────────────────────────────────
@@ -271,44 +241,108 @@ input.addEventListener('input', () => {
 
 document.querySelectorAll('.mode-btn').forEach((b) => {
   b.addEventListener('click', () => {
-    setMode((b as HTMLElement).dataset.mode as 'ask' | 'process');
+    setMode(b.dataset.mode);
   });
 });
 
 $('new-chat-btn').addEventListener('click', () => {
-  // Clear TokUI container
   while (tokuiContainer.firstChild) tokuiContainer.removeChild(tokuiContainer.firstChild);
-  // Stage 2 will call galaxy.remember() with session reset
 });
 
 $('collapse-details').addEventListener('click', () => {
-  document.getElementById('app')!.classList.toggle('details-collapsed');
+  document.getElementById('app').classList.toggle('details-collapsed');
 });
+
+// ── Standalone-mode shim for window.galaxy.* ───────────────────
+
+/**
+ * In Electron, preload exposes window.galaxy via contextBridge with
+ * IPC + zmq → sidecar. In standalone (Playwright / plain browser),
+ * there's no preload — we instead provide a `galaxy` object that
+ * proxies the sidecar's HTTP/SSE endpoints directly. This is the
+ * only place the renderer talks to the sidecar in standalone mode.
+ */
+function makeStandaloneGalaxy() {
+  async function sseCollect(endpoint, params) {
+    const body = new URLSearchParams(params).toString();
+    const res = await fetch(`http://127.0.0.1:5758/sse/${endpoint}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body,
+    });
+    if (!res.ok || !res.body) throw new Error(`SSE ${endpoint} HTTP ${res.status}`);
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = '';
+    const out = [];
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      let idx;
+      while ((idx = buf.indexOf('\n\n')) >= 0) {
+        const frame = buf.slice(0, idx);
+        buf = buf.slice(idx + 2);
+        const dataLines = [];
+        for (const line of frame.split('\n')) {
+          if (line.startsWith('data:')) dataLines.push(line.slice(5).trim());
+        }
+        if (dataLines.length === 0) continue;
+        const data = dataLines.join('\n');
+        if (data === '[DONE]') continue;
+        try {
+          const obj = JSON.parse(data);
+          if (obj.tokui) out.push(obj.tokui);
+        } catch { /* ignore */ }
+      }
+    }
+    return out;
+  }
+  return {
+    ask: async (q) => {
+      const frags = await sseCollect('ask', { prompt: q, session_id: 'default' });
+      const mdFrag = frags.find((f) => f.includes('[md]')) || '';
+      const confFrag = frags.find((f) => f.includes('置信度')) || '0%';
+      const answer = (mdFrag.match(/\[md\]\n([\s\S]*?)\n\[\/md\]/) || [, ''])[1];
+      const confidence = parseFloat((confFrag.match(/(\d+)%/) || [, '0'])[1]) / 100;
+      return { answer, confidence, _fragments: frags };
+    },
+    process: async (u) => {
+      const frags = await sseCollect('process', { user_input: u, session_id: 'default' });
+      const mdFrag = frags.find((f) => f.includes('[md]')) || '';
+      const answer = (mdFrag.match(/\[md\]\n([\s\S]*?)\n\[\/md\]/) || [, ''])[1];
+      return { answer, _fragments: frags };
+    },
+    health: async () => {
+      const res = await fetch('http://127.0.0.1:5758/sse/health', { method: 'POST' });
+      if (!res.ok) throw new Error(`health HTTP ${res.status}`);
+      return res.json();
+    },
+  };
+}
 
 // ── Boot ──────────────────────────────────────────────────────
 
 (async () => {
-  // Wait for main process to inject TokUI (it does so via
-  // webContents.executeJavaScript after did-finish-load).
-  const tokuiReady = await waitForTokUI();
-  if (tokuiReady) {
-    console.log('[renderer] TokUI loaded');
-  } else {
-    console.warn('[renderer] TokUI did not load within 2s — using stub');
-  }
+  const tokuiReady = await waitForTokUI(3000);
+  console.log(tokuiReady ? '[renderer] TokUI loaded' : '[renderer] TokUI did not load within 3s');
   await bootTokUI();
-  // Initial welcome
-  state.ui.feed(`[bubble role:ai model:GalaxyOS time:就绪]` +
-                `[md]\n# 欢迎使用 GalaxyOS 桌面端\n\n` +
-                `本机桌面版已脱离 OpenClaw，\`XiaoYiClawLLM\` 由 Python 子进程加载。\n\n` +
-                `- **Ask 模式** 走 *ask()*，单步检索 + 答案\n` +
-                `- **Process 模式** 走 *process()*，完整 R-CCAM 五阶段 + 推理链 + 工具调用\n\n` +
-                `试试输入 *"今天我学了 R-CCAM 五阶段"*（用 Process 模式，然后切到 Ask 模式回忆）\n` +
-                `[/md]` +
-                `[msg-actions copy regenerate like dislike visible][/msg-actions]` +
-                `[/bubble]`);
+  // Initial welcome (always wrapped in startStream/endStream so we don't
+  // get "feed() called before startStream()" warnings)
+  state.ui.startStream();
+  state.ui.feed(
+    `[bubble role:ai model:GalaxyOS time:就绪]` +
+    `[md]\n# 欢迎使用 GalaxyOS 桌面端\n\n` +
+    `本机桌面版已脱离 OpenClaw，\`XiaoYiClawLLM\` 由 Python 子进程加载。\n\n` +
+    `- **Ask 模式** 走 *ask()*，单步检索 + 答案\n` +
+    `- **Process 模式** 走 *process()*，完整 R-CCAM 五阶段 + 推理链 + 工具调用\n\n` +
+    `试试输入 *"今天我学了 R-CCAM 五阶段"*（用 Process 模式，然后切到 Ask 模式回忆）\n` +
+    `[/md]` +
+    `[msg-actions copy regenerate like dislike visible][/msg-actions]` +
+    `[/bubble]`
+  );
   state.ui.endStream();
   setMode('ask');
   healthCheck();
-  setInterval(healthCheck, 30_000);
+  setInterval(healthCheck, 30000);
 })();

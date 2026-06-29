@@ -387,14 +387,24 @@ async def _http_server(handlers: SidecarHandlers) -> None:
                 pass
 
     async def _handle_sse(handlers, frame, writer, fragment_source):
-        # Send SSE headers
-        writer.write(_http_response(200, {
-            "Content-Type": "text/event-stream",
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "Access-Control-Allow-Origin": "*",
-            "X-Accel-Buffering": "no",
-        }))
+        """SSE handler.
+
+        We hand-write the response head WITHOUT Content-Length so the
+        client reads until the writer is closed (signals end-of-stream).
+        We also use ``Connection: close`` so the underlying TCP socket
+        is torn down when the stream ends — this guarantees the
+        browser's fetch() resolves promptly.
+        """
+        head = (
+            b"HTTP/1.1 200 OK\r\n"
+            b"Content-Type: text/event-stream\r\n"
+            b"Cache-Control: no-cache\r\n"
+            b"Connection: close\r\n"
+            b"Access-Control-Allow-Origin: *\r\n"
+            b"X-Accel-Buffering: no\r\n"
+            b"\r\n"
+        )
+        writer.write(head)
         await writer.drain()
 
         try:
@@ -415,6 +425,16 @@ async def _http_server(handlers: SidecarHandlers) -> None:
                 pass
         writer.write(b"event: end\ndata: [DONE]\n\n")
         await writer.drain()
+        # Half-close the write side of the TCP socket so the browser
+        # sees EOF and the fetch() promise resolves.
+        try:
+            transport = writer.transport
+            if transport and hasattr(transport, "close"):
+                # Half-close: writes done, allow read-side close.
+                if hasattr(transport, "write_eof"):
+                    await transport.write_eof()
+        except Exception:
+            pass
 
     server = await asyncio.start_server(handler, SIDECAR_HOST, HTTP_PORT)
     log.info("SSE server listening on http://%s:%d/sse/{ask,process,health}",
@@ -424,15 +444,20 @@ async def _http_server(handlers: SidecarHandlers) -> None:
 
 
 def _http_response(status: int, headers: Dict[str, str], body: bytes = b"") -> bytes:
+    """Render an HTTP/1.1 response.
+
+    Defaults to ``Connection: close`` + ``Content-Length: <body size>``.
+    Caller-supplied headers override. For streaming responses (SSE),
+    callers can pass ``Transfer-Encoding: chunked`` and a chunked
+    body, OR rely on ``Connection: close`` to signal end-of-stream.
+    """
     status_text = {200: "OK", 204: "No Content", 404: "Not Found"}.get(status, "OK")
-    out = [f"HTTP/1.1 {status} {status_text}\r\n"]
-    # Caller-supplied headers win over our defaults, so the SSE handler
-    # can override Connection: keep-alive.
     final = {
         "Connection": "close",
         "Content-Length": str(len(body)),
     }
     final.update(headers)
+    out = [f"HTTP/1.1 {status} {status_text}\r\n"]
     for k, v in final.items():
         out.append(f"{k}: {v}\r\n")
     out.append("\r\n")

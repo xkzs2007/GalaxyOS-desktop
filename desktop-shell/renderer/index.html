@@ -3,12 +3,20 @@
 <head>
   <meta charset="UTF-8" />
   <meta http-equiv="Content-Security-Policy"
-        content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' http://127.0.0.1:5758 ws://127.0.0.1:5758;" />
+        content="default-src 'self' https://unpkg.com; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://unpkg.com; style-src 'self' 'unsafe-inline' https://unpkg.com; img-src 'self' data:; connect-src 'self' http://127.0.0.1:5758 ws://127.0.0.1:5758;" />
   <title>GalaxyOS Desktop</title>
-  <!-- TokUI CSS is injected by the main process via webContents.executeJavaScript
-       if @jboltai/tokui is npm-installed; otherwise renderer.js falls back to
-       a stub. We do NOT link tokui.css here because the file may not exist
-       before npm install. -->
+  <!--
+    TokUI CSS is loaded EITHER:
+      (a) from the CDN (https://unpkg.com/@jboltai/tokui) when no
+          local node_modules is present (standalone mode — used by
+          Playwright smoke tests and first-launch)
+      (b) from a local node_modules copy when @jboltai/tokui is
+          installed (Electron production mode — main.ts injects the
+          UMD via webContents.executeJavaScript)
+    We default to (a) so the page works even without npm install.
+    The CSP allows unpkg.com via the meta tag below.
+  -->
+  <link rel="stylesheet" href="https://unpkg.com/@jboltai/tokui/dist/tokui.css" />
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
@@ -104,6 +112,10 @@
 
   </div>
 
+  <!-- Load TokUI from CDN so the page works without npm install.
+       In Electron production mode, main.ts replaces this with a local
+       UMD injection via webContents.executeJavaScript. -->
+  <script src="https://unpkg.com/@jboltai/tokui/dist/tokui.umd.js"></script>
   <script type="module" src="renderer.js"></script>
 </body>
 </html>
