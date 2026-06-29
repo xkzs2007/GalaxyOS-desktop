@@ -17,7 +17,10 @@ await build({
   target: 'node20',
   format: 'cjs',
   outfile: resolve(__dirname, 'dist/main.cjs'),
-  external: ['electron', 'fsevents'],
+  // Externalise native modules — esbuild's bundle doesn't bundle
+  // the .node addons or their manifest files, so we require()
+  // them at runtime from node_modules.
+  external: ['electron', 'fsevents', 'zeromq'],
   sourcemap: true,
   logLevel: 'info',
 });

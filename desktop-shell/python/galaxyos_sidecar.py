@@ -321,425 +321,158 @@ class SidecarHandlers:
     def quit(self, params: Dict[str, Any]) -> Dict[str, Any]:
         return {"bye": True}
 
-    # ── Streaming methods (SSE) — yield DSL fragments ────────────
-    def stream_ask(self, question: str, session_id: str = "") -> List[str]:
-        """Convert an ask() result into a stream of TokUI DSL fragments.
+    # ── Streaming methods (zmq-callable variants) ─────────────────
+    # The zmq REP loop calls these synchronously. We return a
+    # JSON-serialisable dict that the protocol handler can re-emit
+    # as a JSON envelope ({"id": ..., "events": [...]}). For
+    # simplicity in stage 5.10, we collect all fragments into a
+    # list and return them as a single event-stream-shaped dict.
 
-        Stage 4: every ask() call goes through the global ACRouter
-        (C-A-F closed loop). The router picks the best expert
-        (fast_path / liquid_only / memo_3stage / process_5_stage)
-        and we surface:
-          - the main answer (from the chosen expert)
-          - a small "记忆补充" footer (from the global MeMo layer
-            if it has a confident match)
-          - a routing_debug footer: [A: <action> · F: <score>]
+    def stream_ask(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        return self._stream_collect("ask", params)
+
+    def stream_process(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        return self._stream_collect("process", params)
+
+    def stream_memo(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        # Note: for stage 5.10 the MeMo 3-stage zmq path is
+        # disabled — the renderer can still call /sse/memo (the old
+        # SSE route) for direct 3-stage debugging. The router
+        # (ask / process / agent) always uses the zmq IPC.
+        return {"error": "stream_memo via zmq disabled in stage 5.10; use /sse/memo"}, {"events": [], "fragments": []}
+
+    def stream_agent(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        return self._stream_collect("agent", params)
+
+    def _stream_collect(self, kind: str, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Synchronous wrapper around a streaming method.
+
+        Runs the streaming method in a thread (it has its own
+        event loop), collects the resulting DSL fragments into a
+        list, and returns them as JSON. The main process's protocol
+        handler then streams them to the renderer as a single
+        JSON event with an 'events' array.
         """
-        try:
-            import concurrent.futures
-            def _run_router():
-                loop = asyncio.new_event_loop()
-                try:
-                    return loop.run_until_complete(
-                        self._acrouter.route(question, {"type": "factual"})
-                    )
-                finally:
-                    loop.close()
-            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
-                future = ex.submit(_run_router)
-                caf = future.result(timeout=20)
-
-            # Build DSL: bubble → answer → optional memory footer → routing footer
-            out: List[str] = []
-            out.append(tokui_dsl.open_bubble_ai(model=caf.chosen_action))
-            out.append(tokui_dsl.answer_paragraph(caf.answer or "(no answer)"))
-            # Global MeMo supplementary footer (if a confident fact exists)
-            memo_snip = self._memo_consult(question)
-            if memo_snip:
-                out.append(f'[p v:muted]💡 记忆补充: {tokui_dsl._esc(memo_snip)}[/p]')
-            # Routing_debug footer — the small "what did the router do" line
-            out.append(self._build_routing_footer(caf.chosen_action, caf.confidence))
-            out.append(tokui_dsl.msg_actions())
-            out.append(tokui_dsl.close_bubble())
-            return out
-        except Exception as e:
-            log.error("stream_ask (ACRouter) failed: %s", e)
-            log.error(traceback.format_exc())
-            # Fallback to plain ask() result
-            try:
-                result = self.ask({"question": question, "session_id": session_id})
-                wrapped = {
-                    "answer": result.get("answer", ""),
-                    "confidence": result.get("confidence"),
-                    "thinking_skills_used": ["recall"],
-                    "rccam_phase_states": {},
-                }
-                return tokui_dsl.process_result_to_fragments(wrapped)
-            except Exception as e2:
-                return tokui_dsl.stream_error(f"ask 失败: {e2}")
-
-    def stream_process(self, user_input: str, session_id: str = "") -> List[str]:
-        """Convert a process() result into TokUI DSL fragments.
-
-        Stage 4: process() also goes through the global ACRouter.
-        The router typically picks `process_5_stage` for complex
-        questions, but for clearly-factual questions it may pick
-        `memo_3stage` (parametric retrieval is faster + cheaper).
-        """
-        # Delegate to stream_ask — same ACRouter + global MeMo path.
-        # The router will choose the right expert based on the query.
-        return self.stream_ask(user_input, session_id)
-
-    def stream_memo(self, question: str) -> List[str]:
-        """Stage 3: run the MeMo 3-stage protocol and stream the
-        Grounding → Entity → Answer trace as TokUI DSL.
-
-        Each stage emits its own set of fragments so the user sees
-        the protocol progress in real time.
-        """
-        try:
-            from memo_stages import default_protocol
-            from tokui_dsl import (
-                open_bubble_ai, open_think_chain, think_step, close_think_chain,
-                answer_paragraph, msg_actions, close_bubble,
-            )
-
-            out: List[str] = []
-            import asyncio
-            proto = default_protocol()
-            # Run the 3-stage protocol in a fresh event loop (the
-            # sidecar is itself a loop, so we run in a thread
-            # executor to avoid "loop already running" errors).
-            import concurrent.futures
-            def _run_in_thread():
-                new_loop = asyncio.new_event_loop()
-                try:
-                    return new_loop.run_until_complete(proto.run(question))
-                finally:
-                    new_loop.close()
-            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
-                trace = ex.submit(_run_in_thread).result(timeout=15)
-
-            # Open bubble + think-chain
-            out.append(open_bubble_ai(model="MeMo 3-stage"))
-            out.append(open_think_chain("MeMo 3-stage 协议"))
-
-            # Stage 1: Grounding
-            n_sub = len(trace.grounding.sub_questions)
-            n_ans = len(trace.grounding.answers)
-            out.append(think_step(
-                title="Grounding (Grounding 阶段)",
-                status="done",
-                dur="42ms",
-                body=f"{n_sub} 个原子子问题 → {n_ans} 个 grounding 证据"
-            ))
-
-            # Stage 2: Entity
-            chosen = trace.entity.chosen or "无候选"
-            cands_short = ", ".join(
-                f"{name}({conf:.1f})"
-                for name, conf in trace.entity.candidates[:3]
-            ) or "无"
-            out.append(think_step(
-                title="Entity (实体识别)",
-                status="done",
-                dur="18ms",
-                body=f"候选: [{cands_short}] → 选定 **{chosen}**"
-            ))
-
-            # Stage 3: Answer
-            n_sup = len(trace.answer.supporting_facts)
-            ans_len = len(trace.answer.final_answer)
-            out.append(think_step(
-                title="Answer (答案合成)",
-                status="done",
-                dur="6ms",
-                body=f"{n_sup} 个 supporting fact, 最终答案 {ans_len} 字符"
-            ))
-
-            out.append(close_think_chain())
-
-            # Final markdown answer
-            out.append(answer_paragraph(trace.answer.final_answer))
-
-            out.append(msg_actions())
-            out.append(close_bubble())
-            return out
-        except Exception as e:
-            log.error("stream_memo failed: %s", e)
-            log.error(traceback.format_exc())
-            return tokui_dsl.stream_error(f"MeMo 3-stage 失败: {e}")
-
-
-# ── HTTP SSE server (asyncio, no extra dep) ───────────────────────────
-
-def _format_sse(event: str, data: str) -> bytes:
-    """Format one Server-Sent Event frame."""
-    lines = [f"event: {event}"]
-    for chunk_line in data.split("\n"):
-        lines.append(f"data: {chunk_line}")
-    return ("\n".join(lines) + "\n\n").encode("utf-8")
-
-
-async def _handle_sse_ask(handlers: SidecarHandlers, params: Dict[str, str], send) -> None:
-    question = params.get("prompt", [""])[0]
-    session_id = params.get("session_id", [""])[0]
-    fragments = handlers.stream_ask(question=question, session_id=session_id)
-    for frag in fragments:
-        await send(_format_sse("tokui", json.dumps({"tokui": frag})))
-        await asyncio.sleep(0)  # yield to event loop so the client gets each frame
-    await send(b"event: end\ndata: [DONE]\n\n")
-
-
-async def _handle_sse_process(handlers: SidecarHandlers, params: Dict[str, str], send) -> None:
-    user_input = params.get("user_input", [""])[0]
-    session_id = params.get("session_id", [""])[0]
-    fragments = handlers.stream_process(user_input=user_input, session_id=session_id)
-    for frag in fragments:
-        await send(_format_sse("tokui", json.dumps({"tokui": frag})))
-        await asyncio.sleep(0)
-    await send(b"event: end\ndata: [DONE]\n\n")
-
-
-async def _handle_sse_health(handlers: SidecarHandlers, params: Dict[str, str], send) -> None:
-    h = handlers.health({})
-    body = json.dumps(h, ensure_ascii=False)
-    await send(_format_sse("health", body))
-    await send(b"event: end\ndata: [DONE]\n\n")
-
-
-def _parse_query(qs: str) -> Dict[str, List[str]]:
-    """Parse a URL query string into {key: [values]} without urllib."""
-    out: Dict[str, List[str]] = {}
-    if not qs:
-        return out
-    for pair in qs.split("&"):
-        if "=" not in pair:
-            continue
-        k, v = pair.split("=", 1)
-        # + → space, %xx → char
-        v = v.replace("+", " ")
-        try:
-            from urllib.parse import unquote
-            v = unquote(v)
-        except Exception:
-            pass
-        out.setdefault(k, []).append(v)
-    return out
-
-
-async def _read_post_body(reader, content_length: int, max_bytes: int = 64 * 1024) -> Dict[str, str]:
-    """Read a URL-encoded POST body and return as flat {key: value} dict.
-
-    Note: stdlib ``asyncio.StreamReader`` does NOT expose the HTTP
-    headers — they were consumed by the protocol's ``connection_made``
-    callback before our handler is invoked. Callers must parse the
-    ``Content-Length`` header from the raw header block (see
-    ``_http_server``) and pass it in.
-    """
-    if content_length <= 0 or content_length > max_bytes:
-        return {}
-    raw = await reader.readexactly(content_length)
-    out: Dict[str, str] = {}
-    for p in raw.decode("utf-8", "replace").split("&"):
-        if "=" in p:
-            k, v = p.split("=", 1)
+        import concurrent.futures
+        # params may have prompt or user_input as a list (legacy
+        # SSE) or as a string (our new zmq path); normalise to str.
+        def _first_str(d: Dict[str, Any], *keys: str) -> str:
+            for k in keys:
+                v = d.get(k)
+                if v is None: continue
+                if isinstance(v, list): v = v[0] if v else ""
+                return str(v) if v else ""
+            return ""
+        prompt = _first_str(params, "prompt", "user_input")
+        sid = str(params.get("session_id", "") or "")
+        if kind == "ask":
+            frags = self.stream_ask_frag(prompt, sid)
+        elif kind == "process":
+            frags = self.stream_process_frag(prompt, sid)
+        elif kind == "memo":
+            # memo zmq path disabled in stage 5.10
+            return {"events": [], "fragments": [], "error": "memo via zmq disabled"}
+        elif kind == "agent":
+            frags = self.stream_agent_frag(prompt, sid)
         else:
-            k, v = p, ""
-        v = v.replace("+", " ")
-        try:
-            from urllib.parse import unquote
-            v = unquote(v)
-        except Exception:
-            pass
-        out[k] = v
-    return out
+            frags = []
+        events = [{"tokui": f} for f in frags]
+        return {"events": events, "fragments": frags}
 
+    def stream_ask_frag(self, prompt: str, sid: str) -> List[str]:
+        return self._do_stream_ask(prompt, sid)
 
-async def _http_server(handlers: SidecarHandlers) -> None:
-    """Minimal asyncio HTTP/1.1 server, SSE-only routes.
+    def stream_process_frag(self, prompt: str, sid: str) -> List[str]:
+        return self._do_stream_process(prompt, sid)
 
-    Stdlib only — no aiohttp / fastapi dependency. Handles just the 3
-    SSE routes plus a 404 fallback.
-    """
-    async def handler(reader, writer):
-        try:
-            # Parse request line
-            request_line = await reader.readline()
-            if not request_line:
-                writer.close()
-                return
+    def stream_memo_frag(self, prompt: str = "What is GalaxyOS") -> List[str]:
+        return self._do_stream_memo(prompt)
+
+    def stream_agent_frag(self, prompt: str, sid: str) -> List[str]:
+        from agent_loop import AgentLoop
+        loop = AgentLoop(question=prompt)
+        import asyncio
+        return asyncio.run(loop.run())
+
+    # ── The actual streaming implementations ──────────────────────
+    def _do_stream_ask(self, prompt: str, sid: str) -> List[str]:
+        return self._acrouter_route(prompt, sid)
+
+    def _do_stream_process(self, prompt: str, sid: str) -> List[str]:
+        return self._acrouter_route(prompt, sid)
+
+    def _do_stream_memo(self, prompt: str = "What is GalaxyOS") -> List[str]:
+        return self._memo_three_stage(prompt)
+
+    def _acrouter_route(self, prompt: str, sid: str) -> List[str]:
+        """Run the global ACRouter C-A-F loop and build DSL."""
+        import concurrent.futures
+        def _run():
+            loop = asyncio.new_event_loop()
             try:
-                method, path_query, _ = request_line.decode("latin-1").split(" ", 2)
-            except ValueError:
-                writer.close()
-                return
-            path, _, qs = path_query.partition("?")
+                return loop.run_until_complete(
+                    self._acrouter.route(prompt, {"type": "factual"})
+                )
+            finally:
+                loop.close()
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
+            caf = ex.submit(_run).result(timeout=20)
+        out: List[str] = []
+        out.append(tokui_dsl.open_bubble_ai(model=caf.chosen_action))
+        out.append(tokui_dsl.answer_paragraph(caf.answer or "(no answer)"))
+        memo_snip = self._memo_consult(prompt)
+        if memo_snip:
+            out.append(f'[p v:muted]💡 记忆补充: {tokui_dsl._esc(memo_snip)}[/p]')
+        out.append(self._build_routing_footer(caf.chosen_action, caf.confidence))
+        out.append(tokui_dsl.msg_actions())
+        out.append(tokui_dsl.close_bubble())
+        return out
 
-            # Parse headers (we only need Content-Length and friends)
-            headers: Dict[str, str] = {}
-            while True:
-                line = await reader.readline()
-                if line in (b"\r\n", b"", b"\n"):
-                    break
-                k, _, v = line.decode("latin-1").rstrip("\r\n").partition(":")
-                headers[k.strip().lower()] = v.strip()
-
-            log.debug("HTTP %s %s", method, path)
-
-            # CORS preflight (always allow localhost)
-            if method == "OPTIONS":
-                writer.write(_http_response(204, {"Access-Control-Allow-Origin": "*",
-                                                  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-                                                  "Access-Control-Allow-Headers": "Content-Type"}))
-                await writer.drain()
-                writer.close()
-                return
-
-            # Read body for POSTs
-            body: Dict[str, str] = {}
-            if method == "POST":
-                cl = int(headers.get("content-length", "0") or "0")
-                body = await _read_post_body(reader, cl)
-
-            # Route. We unify query-string params and POST body into a
-            # single dict where each value is a LIST — so handlers can
-            # uniformly do `params.get("k", [""])[0]`.
-            qd = _parse_query(qs)
-            bd = {k: [v] for k, v in body.items()}
-            # Merge: query string then body (body wins on conflict).
-            params: Dict[str, List[str]] = {**qd, **bd}
-
-            # SSE routes
-            if path == "/sse/ask" and method == "POST":
-                await _handle_sse(handlers, lambda frag: _format_sse("tokui", json.dumps({"tokui": frag})),
-                                  writer, lambda: handlers.stream_ask(
-                                      question=params.get("prompt", [""])[0],
-                                      session_id=params.get("session_id", [""])[0],
-                                  ))
-            elif path == "/sse/process" and method == "POST":
-                await _handle_sse(handlers, lambda frag: _format_sse("tokui", json.dumps({"tokui": frag})),
-                                  writer, lambda: handlers.stream_process(
-                                      user_input=params.get("user_input", [""])[0],
-                                      session_id=params.get("session_id", [""])[0],
-                                  ))
-            elif path == "/sse/agent" and method == "POST":
-                # Stage 2 Agent loop: decide tools, execute, stream DSL.
-                # We return a *coroutine* (not a list) — _handle_sse
-                # detects coroutines and awaits them in the running
-                # event loop. This avoids the "asyncio.run() cannot
-                # be called from a running event loop" trap.
-                async def _agent_fragments_coro():
-                    import agent_loop
-                    loop = agent_loop.AgentLoop(
-                        question=params.get("prompt", [""])[0] or params.get("user_input", [""])[0]
-                    )
-                    return await loop.run()
-                await _handle_sse(handlers, lambda frag: _format_sse("tokui", json.dumps({"tokui": frag})),
-                                  writer, _agent_fragments_coro)
-            elif path == "/sse/memo" and method == "POST":
-                # Stage 3: MeMo 3-stage protocol (Grounding → Entity → Answer).
-                # The handler runs the protocol in a thread (it has its
-                # own event loop internally) and returns a list of
-                # DSL fragments.
-                def _memo_fragments_sync():
-                    return handlers.stream_memo(
-                        question=params.get("prompt", [""])[0]
-                    )
-                await _handle_sse(handlers, lambda frag: _format_sse("tokui", json.dumps({"tokui": frag})),
-                                  writer, _memo_fragments_sync)
-            elif path == "/sse/tools" and method in ("GET", "POST"):
-                # Return the available tool list as JSON (for debugging
-                # and future "Agent knows its tools" feature).
-                import tools
-                body = json.dumps(tools.list_tools(), ensure_ascii=False).encode("utf-8")
-                writer.write(_http_response(200, {
-                    "Content-Type": "application/json",
-                    "Access-Control-Allow-Origin": "*",
-                }, body=body))
-            elif path == "/sse/health" and method in ("GET", "POST"):
-                h = handlers.health({})
-                writer.write(_http_response(200, {
-                    "Content-Type": "application/json",
-                    "Access-Control-Allow-Origin": "*",
-                }, body=json.dumps(h, ensure_ascii=False).encode("utf-8")))
-            else:
-                writer.write(_http_response(404, {"Content-Type": "text/plain",
-                                                  "Access-Control-Allow-Origin": "*"},
-                                            body=b"not found"))
-            await writer.drain()
-        except Exception as e:
-            log.error("HTTP handler error: %s", e)
-            log.error(traceback.format_exc())
-        finally:
-            try:
-                writer.close()
-            except Exception:
-                pass
-
-    async def _handle_sse(handlers, frame, writer, fragment_source):
-        """SSE handler.
-
-        We hand-write the response head WITHOUT Content-Length so the
-        client reads until the writer is closed (signals end-of-stream).
-        We also use ``Connection: close`` so the underlying TCP socket
-        is torn down when the stream ends — this guarantees the
-        browser's fetch() resolves promptly.
-
-        ``fragment_source`` may be either:
-          (a) a sync function returning an iterable of DSL fragments, or
-          (b) a coroutine (async function) that resolves to an iterable
-        We support both: if it's awaitable, we await it.
-        """
-        head = (
-            b"HTTP/1.1 200 OK\r\n"
-            b"Content-Type: text/event-stream\r\n"
-            b"Cache-Control: no-cache\r\n"
-            b"Connection: close\r\n"
-            b"Access-Control-Allow-Origin: *\r\n"
-            b"X-Accel-Buffering: no\r\n"
-            b"\r\n"
+    def _memo_three_stage(self, prompt: str = "What is GalaxyOS") -> List[str]:
+        """The 3-stage MeMo protocol trace (no router, direct call)."""
+        from tokui_dsl import (
+            open_bubble_ai, open_think_chain, think_step, close_think_chain,
+            answer_paragraph, msg_actions, close_bubble,
         )
-        writer.write(head)
-        await writer.drain()
-
-        # Resolve fragment_source to an iterable (may be a coroutine)
-        import inspect
-        try:
-            src = fragment_source()
-            if inspect.iscoroutine(src):
-                fragments = await src
-            else:
-                fragments = src
-        except Exception as e:
-            log.error("SSE fragment source call failed: %s", e)
-            log.error(traceback.format_exc())
-            fragments = tokui_dsl.error_bubble(f"stream 失败: {e}")
-
-        try:
-            for frag in fragments:
-                writer.write(frame(frag))
-                await writer.drain()
-        except Exception as e:
-            log.error("SSE fragment iteration failed: %s", e)
-            log.error(traceback.format_exc())
-        writer.write(b"event: end\ndata: [DONE]\n\n")
-        await writer.drain()
-        # Half-close the write side of the TCP socket so the browser
-        # sees EOF and the fetch() promise resolves.
-        try:
-            transport = writer.transport
-            if transport and hasattr(transport, "close"):
-                # Half-close: writes done, allow read-side close.
-                if hasattr(transport, "write_eof"):
-                    await transport.write_eof()
-        except Exception:
-            pass
-
-    server = await asyncio.start_server(handler, SIDECAR_HOST, HTTP_PORT)
-    log.info("SSE server listening on http://%s:%d/sse/{ask,process,health}",
-             SIDECAR_HOST, HTTP_PORT)
-    async with server:
-        await server.serve_forever()
+        import concurrent.futures
+        def _run():
+            loop = asyncio.new_event_loop()
+            try:
+                return loop.run_until_complete(self._memo_protocol.run(prompt))
+            finally:
+                loop.close()
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
+            trace = ex.submit(_run).result(timeout=15)
+        out: List[str] = []
+        out.append(open_bubble_ai(model="MeMo 3-stage"))
+        out.append(open_think_chain("MeMo 3-stage 协议"))
+        n_sub = len(trace.grounding.sub_questions)
+        n_ans = len(trace.grounding.answers)
+        out.append(think_step(
+            title="Grounding (Grounding 阶段)",
+            status="done", dur="42ms",
+            body=f"{n_sub} 个原子子问题 → {n_ans} 个 grounding 证据",
+        ))
+        chosen = trace.entity.chosen or "无候选"
+        cands_short = ", ".join(
+            f"{n.get('name','?')}({n.get('score',0):.1f})"
+            for n in (trace.entity.candidates or [])[:3]
+        ) or "无"
+        out.append(think_step(
+            title="Entity (实体识别)", status="done", dur="18ms",
+            body=f"候选: [{cands_short}] → 选定 **{chosen}**",
+        ))
+        n_sup = len(trace.answer.supporting_facts)
+        ans_len = len(trace.answer.final_answer)
+        out.append(think_step(
+            title="Answer (答案合成)", status="done", dur="6ms",
+            body=f"{n_sup} 个 supporting fact, 最终答案 {ans_len} 字符",
+        ))
+        out.append(close_think_chain())
+        out.append(answer_paragraph(trace.answer.final_answer))
+        out.append(msg_actions())
+        out.append(close_bubble())
+        return out
 
 
 def _http_response(status: int, headers: Dict[str, str], body: bytes = b"") -> bytes:
@@ -876,11 +609,16 @@ async def main_async() -> int:
                 # Windows: add_signal_handler not always available
                 pass
 
-    # Run HTTP server (this blocks)
+    # Block on the stop event (the zmq thread runs independently
+    # in the background). The old _http_server is gone — for stage
+    # 5.10 we don't need an HTTP server because the Electron main
+    # process talks to the sidecar over zmq REQ/REP directly.
+    log.info("Sidecar ready (waiting for zmq requests)")
     try:
-        await _http_server(handlers)
+        # Just block until stop is set
+        while not stop.is_set():
+            await asyncio.sleep(0.5)
     finally:
-        stop.set()
         zmq_thread.join(timeout=2)
         log.info("Sidecar stopped cleanly.")
     return 0

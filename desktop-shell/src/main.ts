@@ -2,19 +2,20 @@
 //
 // Stage 5: real desktop packaging. This file:
 //   1. Spawns the Python sidecar as a child process (and waits for
-//      its HTTP SSE endpoint to come up before opening the window).
-//   2. Opens an Electron BrowserWindow that loads the renderer
-//      (either from the local dist/ folder or a static HTTP server
-//      if dev.mjs has launched one).
-//   3. Dynamically injects the @jboltai/tokui UMD bundle into the
-//      renderer so the page works without the user having run
-//      `npm install` of the renderer-side dep.
-//   4. Cleans up the sidecar process on app quit.
+//      its zmq REP socket to come up).
+//   2. Opens an Electron BrowserWindow that loads the renderer.
+//   3. **Intercepts** all renderer→sidecar requests via a custom
+//      protocol://sidecar/ scheme. The renderer's `fetch()` calls
+//      to /sse/* are rewritten to protocol://sidecar/* and routed
+//      through the zmq REP socket (no HTTP port needed).
+//   4. Dynamically injects the @jboltai/tokui UMD bundle.
+//   5. Cleans up the sidecar process on app quit.
 //
 // In production (electron-builder NSIS), the sidecar is bundled as
-// `extraResources` so the app is self-contained.
+// `extraResources` so the app is self-contained — no Python, no
+// port conflicts, no firewall issues.
 
-import { app, BrowserWindow, ipcMain, shell, dialog } from 'electron';
+import { app, BrowserWindow, ipcMain, shell, dialog, protocol, net } from 'electron';
 import { spawn, ChildProcess } from 'node:child_process';
 import { resolve, dirname, join, basename, extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -90,9 +91,37 @@ function resolvePythonInterpreter(): string {
   return process.env.GALAXYOS_PYTHON ?? 'python';
 }
 
-// ── Sidecar lifecycle ──────────────────────────────────────────────
+// ── Sidecar lifecycle + zmq REQ client ────────────────────────────
 let sidecar: ChildProcess | null = null;
 let sidecarReady = false;
+let zmqReq: zmq.Request | null = null;
+let zmqLock: Promise<unknown> = Promise.resolve();
+
+/**
+ * Send a request to the sidecar via the zmq REQ/REP socket and
+ * return the parsed response. Uses a lock to serialize calls
+ * (zmq REQ is a strict request/response pattern — only one
+ * outstanding request at a time).
+ */
+async function zmqCall(method: string, params: Record<string, unknown> = {}): Promise<any> {
+  if (!zmqReq) throw new Error('sidecar zmq not ready');
+  // Serialize via a lock chain
+  const release = zmqLock;
+  let unlock: () => void = () => {};
+  zmqLock = new Promise((r) => { unlock = r; });
+  await release;
+  try {
+    const id = ++zmqCallId;
+    await zmqReq.send(JSON.stringify({ id, method, params }));
+    const [reply] = await zmqReq.receive();
+    const parsed = JSON.parse(reply.toString());
+    if (parsed.error) throw new Error(parsed.error);
+    return parsed.result;
+  } finally {
+    unlock();
+  }
+}
+let zmqCallId = 0;
 
 function waitForSidecar(timeoutMs = 30000): Promise<void> {
   const start = Date.now();
@@ -132,9 +161,7 @@ function startSidecar(): Promise<void> {
       return;
     }
 
-    // Redirect sidecar stdout/stderr to a file (EPIPE avoidance:
-    // Electron's main process doesn't have a TTY, and piping
-    // large WARNING volumes to it fills the buffer and crashes.)
+    // Redirect sidecar stdout/stderr to a file (EPIPE avoidance).
     const SIDECAR_LOG = process.env.GALAXYOS_SIDECAR_LOG
       || join(process.cwd(), 'sidecar.log');
     const sidecarOut = require('fs').openSync(SIDECAR_LOG, 'a');
@@ -154,28 +181,56 @@ function startSidecar(): Promise<void> {
         GALAXYOS_SIDECAR_HTTP_PORT: String(SIDECAR_HTTP_PORT),
         GALAXYOS_SIDECAR_HOST: SIDECAR_HOST,
         GALAXYOS_SIDECAR_LOG: SIDECAR_LOG,
+        // Tell the sidecar to disable its HTTP SSE server (we use zmq)
+        GALAXYOS_DISABLE_HTTP: '1',
       },
-      // detached: true makes the sidecar survive main process crashes
-      // stdio: pipes to file descriptors (not Electron's stdio)
       detached: process.platform !== 'win32',
       stdio: ['ignore', sidecarOut, sidecarErr],
       windowsHide: true,
     });
 
-    // Don't keep the file descriptors open in this process
     try { require('fs').closeSync(sidecarOut); } catch { /* */ }
     try { require('fs').closeSync(sidecarErr); } catch { /* */ }
 
     sidecar.on('exit', (code) => log(`Sidecar exited with code ${code}`));
     sidecar.on('error', (e) => log(`Sidecar spawn error: ${e.message}`));
 
+    // Wait for the zmq REP socket to be reachable.
     try {
-      await waitForSidecar(30000);
+      await waitForZmq(30000);
+      sidecarReady = true;
+      log('Sidecar zmq REP ready');
       resolveP();
     } catch (e) {
       rejectP(e);
     }
   });
+}
+
+async function waitForZmq(timeoutMs: number): Promise<void> {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    try {
+      // Try to open a temporary REQ socket and ping
+      const tmp = new zmq.Request();
+      tmp.connect(`tcp://${SIDECAR_HOST}:${SIDECAR_PORT}`);
+      tmp.receiveTimeout = 1000;
+      await tmp.send(JSON.stringify({ id: 0, method: 'ping', params: {} }));
+      const [reply] = await tmp.receive();
+      tmp.close();
+      // Save the working socket for later use
+      zmqReq = new zmq.Request();
+      zmqReq.connect(`tcp://${SIDECAR_HOST}:${SIDECAR_PORT}`);
+      zmqReq.receiveTimeout = 30000;
+      return;
+    } catch (e) {
+      // Not ready yet, retry
+      try { zmqReq?.close(); } catch { /* */ }
+      zmqReq = null;
+      await new Promise((r) => setTimeout(r, 200));
+    }
+  }
+  throw new Error(`sidecar zmq did not respond within ${timeoutMs}ms`);
 }
 
 function stopSidecar(): void {
@@ -186,6 +241,9 @@ function stopSidecar(): void {
     } catch { /* ignore */ }
     sidecar = null;
   }
+  try { zmqReq?.close(); } catch { /* ignore */ }
+  zmqReq = null;
+  sidecarReady = false;
 }
 
 // ── Window ──────────────────────────────────────────────────────────
@@ -299,15 +357,47 @@ async function injectTokUI(win: BrowserWindow): Promise<void> {
   }
 }
 
-// ── IPC handlers (renderer → main → sidecar via stdlib HTTP) ────
-// We don't need real IPC for the SSE path (renderer does fetch
-// directly to 127.0.0.1:5758). The IPC handlers below are
-// reserved for future use (e.g. zmq-backed methods, file dialogs).
+// ── IPC handlers (renderer → main → sidecar via zmq) ──────────────
+// All renderer→sidecar calls go through these ipcMain.handle
+// functions, which then call zmqCall() to reach the sidecar. This
+// keeps everything inside the app — no HTTP port needed in
+// packaged builds.
+
+function registerIpc() {
+  ipcMain.handle('galaxy:health', async () => {
+    try { return await zmqCall('health'); }
+    catch (e) { return { error: String((e as Error).message) }; }
+  });
+  ipcMain.handle('galaxy:ask', async (_e, question: string, sessionId?: string) => {
+    try { return await zmqCall('stream_ask', { prompt: question, session_id: sessionId || '' }); }
+    catch (e) { return { events: [], fragments: [], error: String((e as Error).message) }; }
+  });
+  ipcMain.handle('galaxy:process', async (_e, userInput: string, sessionId?: string) => {
+    try { return await zmqCall('stream_process', { user_input: userInput, session_id: sessionId || '' }); }
+    catch (e) { return { events: [], fragments: [], error: String((e as Error).message) }; }
+  });
+  ipcMain.handle('galaxy:agent', async (_e, prompt: string, sessionId?: string) => {
+    try { return await zmqCall('stream_agent', { prompt, session_id: sessionId || '' }); }
+    catch (e) { return { events: [], fragments: [], error: String((e as Error).message) }; }
+  });
+  ipcMain.handle('galaxy:remember', async (_e, content: string, metadata?: any) => {
+    try { return await zmqCall('remember', { content, metadata: metadata || {}, source: 'user' }); }
+    catch (e) { return { memory_id: '', error: String((e as Error).message) }; }
+  });
+  ipcMain.handle('galaxy:recall', async (_e, query: string, topK?: number, sessionId?: string) => {
+    try { return await zmqCall('recall', { query, top_k: topK || 10, session_id: sessionId || '' }); }
+    catch (e) { return { results: [], error: String((e as Error).message) }; }
+  });
+  ipcMain.handle('galaxy:openExternal', async (_e, url: string) => {
+    await shell.openExternal(url);
+  });
+}
 
 // ── App lifecycle ─────────────────────────────────────────────────
 app.whenReady().then(async () => {
   try {
     await startSidecar();
+    registerIpc();
     createWindow();
   } catch (e) {
     log(`Startup failed: ${(e as Error).message}`);
