@@ -167,6 +167,85 @@ class SidecarHandlers:
                  "HeuristicOrchestrator",
                  self._acrouter_memory.size())
 
+        # Live config — updated by set_config() from the renderer
+        self._live_config = {
+            "api_key": os.environ.get("LLM_API_KEY", os.environ.get("DEEPSEEK_API_KEY", "")),
+            "api_base": os.environ.get("LLM_API_BASE", "https://api.deepseek.com/v1"),
+            "model": "deepseek-chat",
+            "system_prompt": "",
+        }
+        # Model name mapping: UI label → actual API model string
+        self._model_map = {
+            "Qwen-2.5": "deepseek-chat",
+            "Qwen-3": "deepseek-reasoner",
+            "DeepSeek-V4": "deepseek-chat",
+            "Gemini-3-Flash": "gemini-3-flash",
+            "LFM-2.5-1.2B": "lfm-2.5-1.2b",
+        }
+        # Try to apply config to the LLM client on first boot
+        self._apply_live_config()
+
+    def set_config(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Hot-update the LLM config from the renderer's settings modal.
+
+        Called via zmq when the user saves settings. Updates
+        api_key / api_base / model / system_prompt, then re-inits
+        the LLM client if needed.
+        """
+        changed = []
+        for k in ("api_key", "api_base", "model", "system_prompt"):
+            if k in params and params[k] != self._live_config.get(k):
+                # Map UI model label to API model string
+                if k == "model":
+                    raw = str(params[k])
+                    self._live_config[k] = self._model_map.get(raw, raw)
+                else:
+                    self._live_config[k] = str(params[k] or "")
+                changed.append(k)
+        if changed:
+            self._apply_live_config()
+            log.info("Live config updated: %s", ", ".join(changed))
+        return {"ok": True, "updated": changed, "current_model": self._live_config["model"]}
+
+    def _apply_live_config(self) -> None:
+        """Push the live config into the actual LLM client.
+
+        The GalaxyOS engine's XiaoYiClawLLM stores its LLM client at
+        self._llm.llm_flash / self._llm.llm_pro. We try to
+        re-initialize them with the new api_key/base/model.
+        """
+        cfg = self._live_config
+        if not cfg.get("api_key"):
+            return  # no key = stay in mock mode
+        try:
+            # Write a llm_config.json the engine can read
+            import json
+            config_dir = path_resolver_desktop.GALAXYOS_CONFIG
+            config_dir.mkdir(parents=True, exist_ok=True)
+            llm_config = config_dir / "llm_config.json"
+            llm_config_data = {
+                "api_key": cfg["api_key"],
+                "base_url": cfg["api_base"],
+                "model": cfg["model"],
+            }
+            # Also set embedding config if openai is available
+            llm_config_data["embedding"] = {
+                "api_key": cfg["api_key"],
+                "base_url": cfg["api_base"],
+                "model": "text-embedding-3-small",
+            }
+            llm_config.write_text(
+                json.dumps(llm_config_data, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+            log.info("Wrote llm_config.json with model=%s", cfg["model"])
+            # Set env vars so the engine picks them up on next init
+            os.environ["LLM_API_KEY"] = cfg["api_key"]
+            os.environ["DEEPSEEK_API_KEY"] = cfg["api_key"]
+            os.environ["LLM_API_BASE"] = cfg["api_base"]
+        except Exception as e:
+            log.warning("Failed to apply live config: %s", e)
+
     # ── Global ACRouter executor ──────────────────────────────────
     # Dispatches by chosen action to the actual GalaxyOS expert.
 
@@ -376,7 +455,6 @@ class SidecarHandlers:
         return {"skills": skills, "count": len(skills)}
 
     def get_skill(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Return the full SKILL.md content for a single skill."""
         skill_id = str(params.get("id", "") or "")
         if not skill_id:
             return {"error": "missing 'id' param"}
@@ -407,6 +485,33 @@ class SidecarHandlers:
             }
         except Exception as e:
             return {"error": str(e)}
+
+    # ── MCP Server management ─────────────────────────────────────
+    def list_mcp_servers(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        import mcp_client
+        return {"servers": mcp_client.list_servers()}
+
+    def add_mcp_server(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        import mcp_client
+        name = str(params.get("name", ""))
+        command = str(params.get("command", ""))
+        args = params.get("args", [])
+        if not name or not command:
+            return {"error": "name and command required"}
+        entry = mcp_client.add_server(name, command, args)
+        return {"ok": True, "server": entry}
+
+    def remove_mcp_server(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        import mcp_client
+        name = str(params.get("name", ""))
+        removed = mcp_client.remove_server(name)
+        return {"ok": removed}
+
+    def discover_mcp_tools(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        import mcp_client
+        discovered = mcp_client.discover_all()
+        return {"servers": {k: len(v) for k, v in discovered.items()},
+                "details": discovered}
 
     # ── Streaming methods (zmq-callable variants) ─────────────────
     # The zmq REP loop calls these synchronously. We return a

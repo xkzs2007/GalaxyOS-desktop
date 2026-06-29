@@ -57,6 +57,7 @@ html, body {
   gap: 12px;
   overflow-y: auto;
 }
+.sidebar.hidden { display: none; }
 
 .sidebar-header {
   display: flex; align-items: center; gap: 8px;

@@ -145,6 +145,21 @@ def decide_tool_chain(question: str) -> List[Dict[str, Any]]:
             "rationale": f"用户搜索: pattern={pattern!r} path={path!r}",
         }]
 
+    # ── apply_diff ──────────────────────────────────────────
+    if any(k in lower for k in ("diff ", "patch ", "modify ", "replace ", "改 ", "替换")):
+        # Pattern: diff path old→new or modify path "old" to "new"
+        path = _extract_path(q)
+        if path:
+            # Try to extract old→new
+            arrow_m = re.search(r'["\']?(.+?)["\']?\s*(?:→|->|to|改为|换成)\s*["\']?(.+?)["\']?\s*$', q, re.DOTALL)
+            if arrow_m:
+                return [{
+                    "name": "apply_diff",
+                    "params": {"path": path, "old": arrow_m.group(1).strip(),
+                               "new": arrow_m.group(2).strip()},
+                    "rationale": f"用户请求修改文件 {path!r}",
+                }]
+
     return []
 
 
@@ -247,6 +262,16 @@ class AgentLoop:
             elif name == "write_file" and result.get("ok"):
                 out.append(
                     f'[p v:muted]→ 写入 {result.get("path")} ({result.get("wrote_bytes")} bytes)[/p]'
+                )
+            elif name == "apply_diff" and result.get("ok"):
+                diff_text = result.get("diff", "")
+                out.append(
+                    f'[sandbox title:diff {params.get("path", "")} lang:diff]'
+                    f'{tokui_dsl._esc(diff_text[:3000])}'
+                    f'[/sandbox]'
+                )
+                out.append(
+                    f'[p v:muted]→ 修改 {params.get("path", "")} ({result.get("before_size", "?")}→{result.get("after_size", "?")} bytes)[/p]'
                 )
             elif name == "grep" and result.get("ok") and result.get("matches"):
                 matches = result["matches"]

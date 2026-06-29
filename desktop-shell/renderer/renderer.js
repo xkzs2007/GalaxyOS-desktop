@@ -386,6 +386,17 @@ function applySettings() {
   };
   saveSettings(s);
   closeSettings();
+  // Send to sidecar via IPC — this hot-updates the LLM config
+  if (galaxy.updateSettings) {
+    galaxy.updateSettings({
+      api_key: s.apiKey,
+      api_base: s.apiBase,
+    }).then(r => {
+      console.log('[settings] sidecar response:', r);
+    }).catch(e => {
+      console.warn('[settings] sidecar update failed:', e);
+    });
+  }
   console.log('[settings] saved', Object.keys(s).join(', '));
 }
 const settingsBtn = $('settings-btn');
@@ -470,12 +481,87 @@ function makeStandaloneGalaxy() {
   };
 }
 
+// ── Keyboard shortcuts (ZCode/Codex parity) ────────────────────
+document.addEventListener('keydown', (e) => {
+  const ctrl = e.ctrlKey || e.metaKey;
+  // Ctrl+N → new session
+  if (ctrl && e.key === 'n') {
+    e.preventDefault();
+    if (window.Sessions) window.Sessions.new();
+    return;
+  }
+  // Ctrl+, → settings
+  if (ctrl && e.key === ',') {
+    e.preventDefault();
+    openSettings();
+    return;
+  }
+  // Ctrl+B → toggle sidebar
+  if (ctrl && e.key === 'b') {
+    e.preventDefault();
+    document.querySelector('.sidebar').classList.toggle('hidden');
+    return;
+  }
+  // Ctrl+K → clear chat
+  if (ctrl && e.key === 'k') {
+    e.preventDefault();
+    while (tokuiContainer.firstChild) tokuiContainer.removeChild(tokuiContainer.firstChild);
+    return;
+  }
+  // Esc → stop streaming or close modal
+  if (e.key === 'Escape') {
+    if (state.currentController) {
+      state.currentController.abort();
+      console.log('[kbd] stream aborted');
+    }
+    const modal = $('settings-modal');
+    if (modal && !modal.hidden) closeSettings();
+    return;
+  }
+});
+
+// ── TokUI msg-action handlers (copy / regenerate / like / dislike) ─
+function registerTokUIHandlers() {
+  if (!TokUI || typeof TokUI.registerHandler !== 'function') return;
+  try {
+    TokUI.registerHandler('copy', (ctx) => {
+      const text = ctx?.element?.innerText || '';
+      navigator.clipboard.writeText(text).then(() => {
+        console.log('[msg-action] copied to clipboard');
+      });
+    });
+    TokUI.registerHandler('regenerate', (ctx) => {
+      // Re-send the last user message
+      const bubbles = tokuiContainer.querySelectorAll('[class*="bubble"]');
+      const lastUser = Array.from(bubbles).reverse().find(b =>
+        b.className.includes('user'));
+      if (lastUser) {
+        const text = lastUser.innerText.trim();
+        if (text) {
+          input.value = text;
+          handleSend();
+        }
+      }
+    });
+    TokUI.registerHandler('like', (ctx) => {
+      console.log('[msg-action] liked');
+    });
+    TokUI.registerHandler('dislike', (ctx) => {
+      console.log('[msg-action] disliked');
+    });
+    console.log('[renderer] TokUI msg-action handlers registered');
+  } catch (e) {
+    console.warn('[renderer] TokUI handler registration failed:', e);
+  }
+}
+
 // ── Boot ──────────────────────────────────────────────────────
 
 (async () => {
   const tokuiReady = await waitForTokUI(3000);
   console.log(tokuiReady ? '[renderer] TokUI loaded' : '[renderer] TokUI did not load within 3s');
   await bootTokUI();
+  registerTokUIHandlers();
   // Initialise session manager (renders sidebar, restores active session)
   if (window.Sessions) window.Sessions.init();
   if (window.ModelPicker) window.ModelPicker.init();
