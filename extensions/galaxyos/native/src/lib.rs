@@ -6,7 +6,6 @@
 
 use base64::Engine;
 use image::{DynamicImage, ImageFormat};
-use pyo3::prelude::*;
 use std::collections::HashMap;
 
 // ═══════════════════════════════════════════════════════════
@@ -126,72 +125,78 @@ pub fn vector_batch_cosine_core(query: &[f32], candidates: &[Vec<f32>]) -> Vec<f
 }
 
 // ═══════════════════════════════════════════════════════════
-// PyO3 Python 绑定
+// PyO3 Python 绑定（仅在启用 `python` feature 时编译）
 // ═══════════════════════════════════════════════════════════
 
-/// 图像缩放（Python 接口）
-#[pyfunction]
-fn resize(data: Vec<u8>, width: u32, height: u32, keep_ratio: Option<bool>, fmt: Option<&str>) -> PyResult<HashMap<String, pyo3::PyObject>> {
-    Python::with_gil(|py| {
-        let b64 = resize_core(&data, width, height, keep_ratio.unwrap_or(true), fmt.unwrap_or("jpeg"))
-            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e))?;
-        let mut result = HashMap::new();
-        result.insert("data_b64".into(), b64.0.into_pyobject(py).unwrap().into());
-        result.insert("size".into(), {
-            let list = pyo3::types::PyList::new(
-                py,
-                &[b64.1[0].into_pyobject(py).unwrap(), b64.1[1].into_pyobject(py).unwrap()],
-            ).unwrap();
-            list.into()
-        });
-        Ok(result)
-    })
-}
+#[cfg(feature = "python")]
+mod python_bindings {
+    use super::*;
+    use pyo3::prelude::*;
 
-/// 图像增强（Python 接口）
-#[pyfunction]
-fn enhance(data: Vec<u8>, brightness: Option<f32>, contrast: Option<f32>, sharpness: Option<f32>, fmt: Option<&str>) -> PyResult<String> {
-    enhance_core(&data, brightness.unwrap_or(1.0), contrast.unwrap_or(1.0), sharpness.unwrap_or(1.0), fmt.unwrap_or("jpeg"))
-        .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e))
-}
+    /// 图像缩放（Python 接口）
+    #[pyfunction]
+    fn resize(data: Vec<u8>, width: u32, height: u32, keep_ratio: Option<bool>, fmt: Option<&str>) -> PyResult<HashMap<String, pyo3::PyObject>> {
+        Python::with_gil(|py| {
+            let b64 = resize_core(&data, width, height, keep_ratio.unwrap_or(true), fmt.unwrap_or("jpeg"))
+                .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e))?;
+            let mut result = HashMap::new();
+            result.insert("data_b64".into(), b64.0.into_pyobject(py).unwrap().into());
+            result.insert("size".into(), {
+                let list = pyo3::types::PyList::new(
+                    py,
+                    &[b64.1[0].into_pyobject(py).unwrap(), b64.1[1].into_pyobject(py).unwrap()],
+                ).unwrap();
+                list.into()
+            });
+            Ok(result)
+        })
+    }
 
-/// OCR 预处理（Python 接口）
-#[pyfunction]
-fn ocr_preprocess(data: Vec<u8>, fmt: Option<&str>) -> PyResult<String> {
-    ocr_preprocess_core(&data, fmt.unwrap_or("png"))
-        .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e))
-}
+    /// 图像增强（Python 接口）
+    #[pyfunction]
+    fn enhance(data: Vec<u8>, brightness: Option<f32>, contrast: Option<f32>, sharpness: Option<f32>, fmt: Option<&str>) -> PyResult<String> {
+        enhance_core(&data, brightness.unwrap_or(1.0), contrast.unwrap_or(1.0), sharpness.unwrap_or(1.0), fmt.unwrap_or("jpeg"))
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e))
+    }
 
-/// 向量点积（Python 接口）
-#[pyfunction]
-fn vector_dot(a: Vec<f32>, b: Vec<f32>) -> PyResult<f32> {
-    vector_dot_core(&a, &b)
-        .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e))
-}
+    /// OCR 预处理（Python 接口）
+    #[pyfunction]
+    fn ocr_preprocess(data: Vec<u8>, fmt: Option<&str>) -> PyResult<String> {
+        ocr_preprocess_core(&data, fmt.unwrap_or("png"))
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e))
+    }
 
-/// 向量余弦相似度（Python 接口）
-#[pyfunction]
-fn vector_cosine(a: Vec<f32>, b: Vec<f32>) -> PyResult<f32> {
-    vector_cosine_core(&a, &b)
-        .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e))
-}
+    /// 向量点积（Python 接口）
+    #[pyfunction]
+    fn vector_dot(a: Vec<f32>, b: Vec<f32>) -> PyResult<f32> {
+        vector_dot_core(&a, &b)
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e))
+    }
 
-/// 批量向量余弦相似度（Python 接口）
-#[pyfunction]
-fn vector_batch_cosine(query: Vec<f32>, candidates: Vec<Vec<f32>>) -> Vec<f32> {
-    vector_batch_cosine_core(&query, &candidates)
-}
+    /// 向量余弦相似度（Python 接口）
+    #[pyfunction]
+    fn vector_cosine(a: Vec<f32>, b: Vec<f32>) -> PyResult<f32> {
+        vector_cosine_core(&a, &b)
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e))
+    }
 
-/// Python 模块定义
-#[pymodule]
-fn galaxyos_native(m: &Bound<'_, PyModule>) -> PyResult<()> {
-    m.add_function(wrap_pyfunction!(resize, m)?)?;
-    m.add_function(wrap_pyfunction!(enhance, m)?)?;
-    m.add_function(wrap_pyfunction!(ocr_preprocess, m)?)?;
-    m.add_function(wrap_pyfunction!(vector_dot, m)?)?;
-    m.add_function(wrap_pyfunction!(vector_cosine, m)?)?;
-    m.add_function(wrap_pyfunction!(vector_batch_cosine, m)?)?;
-    m.add("__version__", "0.1.0")?;
-    m.add("__doc__", "GalaxyOS native extension — PIL replacement + SIMD vector compute")?;
-    Ok(())
+    /// 批量向量余弦相似度（Python 接口）
+    #[pyfunction]
+    fn vector_batch_cosine(query: Vec<f32>, candidates: Vec<Vec<f32>>) -> Vec<f32> {
+        vector_batch_cosine_core(&query, &candidates)
+    }
+
+    /// Python 模块定义
+    #[pymodule]
+    pub fn galaxyos_native(m: &Bound<'_, PyModule>) -> PyResult<()> {
+        m.add_function(wrap_pyfunction!(resize, m)?)?;
+        m.add_function(wrap_pyfunction!(enhance, m)?)?;
+        m.add_function(wrap_pyfunction!(ocr_preprocess, m)?)?;
+        m.add_function(wrap_pyfunction!(vector_dot, m)?)?;
+        m.add_function(wrap_pyfunction!(vector_cosine, m)?)?;
+        m.add_function(wrap_pyfunction!(vector_batch_cosine, m)?)?;
+        m.add("__version__", "0.1.0")?;
+        m.add("__doc__", "GalaxyOS native extension — PIL replacement + SIMD vector compute")?;
+        Ok(())
+    }
 }

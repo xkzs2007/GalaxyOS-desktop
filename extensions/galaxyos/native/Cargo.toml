@@ -17,9 +17,21 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 base64 = "0.22"
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp", "gif"] }
-pyo3 = { version = "0.23", features = ["extension-module"] }
 ort = { version = "2.0.0-rc.12", default-features = false, features = ["download-binaries", "ndarray", "std", "copy-dylibs", "tls-rustls"] }
 ndarray = "0.17.2"
+
+# PyO3 is optional — only needed for the Python extension (cdylib).
+# Binary targets (galaxyos-native, lfm_server) do NOT use PyO3.
+# Without this, `extension-module` (which suppresses linking libpython)
+# would be inherited by binaries, causing undefined-reference errors
+# during cross-compilation (e.g. aarch64-unknown-linux-gnu).
+pyo3 = { version = "0.23", features = ["extension-module"], optional = true }
+
+[features]
+default = ["python"]
+# Enables PyO3 Python bindings (cdylib). Disable with --no-default-features
+# when building only the standalone binaries.
+python = ["dep:pyo3"]
 
 [profile.release]
 opt-level = 3

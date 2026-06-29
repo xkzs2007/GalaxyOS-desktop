@@ -135,7 +135,8 @@ $:
         - name: cargo-build
           script: |
             cd extensions/galaxyos/native
-            cargo build --release 2>&1
+            # Build standalone binaries without the `python` feature (no libpython needed).
+            cargo build --release --no-default-features --bins 2>&1
             mkdir -p /tmp/artifacts/linux-x64
             cp target/release/galaxyos-native /tmp/artifacts/linux-x64/ 2>/dev/null || true
             cp target/release/lfm_server /tmp/artifacts/linux-x64/ 2>/dev/null || true
@@ -149,7 +150,6 @@ $:
     - name: build-linux-arm64
       label:
         type: RELEASE
-      allowFailure: true
       docker:
         image: rust:latest
       stages:
@@ -159,12 +159,13 @@ $:
             apt-get update -qq && apt-get install -y -qq gcc-aarch64-linux-gnu python3-dev
         - name: cargo-build
           script: |
-            PY_VER=$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')
             export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc
-            export PYO3_CROSS_PYTHON_VERSION="$PY_VER"
-            export PYO3_CROSS_LIB_DIR="/usr/lib/python${PY_VER}"
             cd extensions/galaxyos/native
-            cargo build --release --target aarch64-unknown-linux-gnu 2>&1
+            # Build binaries WITHOUT the `python` feature so they don't link libpython.
+            # The `extension-module` feature suppresses libpython linking which is
+            # correct for cdylib (loaded by Python at runtime) but breaks standalone
+            # binaries during cross-compilation where no ARM64 libpython is available.
+            cargo build --release --target aarch64-unknown-linux-gnu --no-default-features --bins 2>&1
             mkdir -p /tmp/artifacts/linux-arm64
             cp target/aarch64-unknown-linux-gnu/release/galaxyos-native /tmp/artifacts/linux-arm64/ 2>/dev/null || true
             cp target/aarch64-unknown-linux-gnu/release/lfm_server /tmp/artifacts/linux-arm64/ 2>/dev/null || true
