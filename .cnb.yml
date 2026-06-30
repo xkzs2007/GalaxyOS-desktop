@@ -146,7 +146,7 @@ $:
         type: RELEASE
       # CNB arm64 runner（腾讯云国内 arm64 机器充足，不像 GH 排队 30 分钟+）
       runner:
-        tags: cnb:arch:arm64
+        tags: cnb:arch:arm64:v8
       docker:
         image: python:3.12
       stages:
