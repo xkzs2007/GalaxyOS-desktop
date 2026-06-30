@@ -27,6 +27,18 @@ on:
 permissions:
   contents: write
 
+# Auto-cancel previous release runs when a new tag is pushed.
+# Without this, every `git push --tags` after `git tag -d` leaves
+# the previous run queued, and the 3 queued Release Desktop runs
+# end up fighting for runner slots — the user sees "Actions stuck
+# in queued" forever.
+#
+# group: release-{branch-or-tag} so manual main-branch runs don't
+# kill tag-triggered releases (or vice versa).
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     name: Build ${{ matrix.label }}
@@ -155,6 +167,19 @@ jobs:
       - name: Install npm deps (desktop-shell)
         working-directory: desktop-shell
         run: npm install --no-audit --no-fund
+
+      - name: Stage app icon (build/icon.png)
+        # electron-builder expects build/icon.png (per package.json
+        # `directories.buildResources: "build"` + `*.icon: "build/icon.png"`).
+        # The file is NOT in git — .gitignore excludes `build/`. We
+        # copy it from renderer/icon.png (which IS tracked, 512x512
+        # RGBA, the source of truth for the app icon).
+        working-directory: desktop-shell
+        shell: bash
+        run: |
+          mkdir -p build
+          cp renderer/icon.png build/icon.png
+          ls -la build/icon.png
 
       - name: Build Electron main + preload (esbuild)
         working-directory: desktop-shell
