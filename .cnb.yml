@@ -131,40 +131,96 @@ main:
           script: python -m pytest tests/test_llm_providers.py tests/test_sidecar_set_config.py tests/test_harness_sidecar_bridge.py -v --tb=short -p no:warnings
 
 
-# ── Tag 推送：v9.4 PyInstaller 打包桌面端 ──
-# 之前的 Rust 编译（extensions/galaxyos/native → lfm_server / galaxyos-native）
-# 是 v8.6 OpenClaw 时代产物，v9.0 起 desktop-shell 改成纯 Python + Electron。
-# 桌面端打包用 PyInstaller（见 desktop-shell/scripts/），需要 PyInstaller 镜像。
+# ── Tag 推送：桌面端打包 ──
+#
+# 分工策略（v0.1.0 起）：
+#   - Windows x64 + Linux x64 → GitHub Actions（GH 有免费 windows/ubuntu x64 runner）
+#   - Linux arm64             → CNB（GH arm64 runner 排队太久，CNB arm64 充足）
+#
+# CNB tag_push 跑 arm64 PyInstaller sidecar + electron-builder AppImage，
+# 产出上传到 CNB 制品库（可通过 CNB Release 页面下载）。
 $:
   tag_push:
-    # 桌面端 sidecar PyInstaller 打包
-    - name: build-desktop-sidecar
+    - name: build-desktop-linux-arm64
       label:
         type: RELEASE
+      # CNB arm64 runner（腾讯云国内 arm64 机器充足，不像 GH 排队 30 分钟+）
+      runner:
+        tags: cnb:arch:arm64
       docker:
         image: python:3.12
       stages:
-        - name: install-deps
+        - name: install-system-deps
           script: |
+            # electron-builder AppImage 需要 libfuse2 + fakeroot
+            apt-get update -qq
+            apt-get install -y -qq --no-install-recommends \
+              fakeroot rpm libfuse2 \
+              libnss3 libatk-bridge2.0-0 libgtk-3-0 libasound2 \
+              python3-dev build-essential
+            # Node 20 for electron-builder
+            curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+            apt-get install -y -qq nodejs
+
+        - name: install-python-deps
+          script: |
+            # 用 desktop-shell 一样的 curated dep list（不装 torch/transformers 等重型包）
             pip install --no-cache-dir -i https://mirrors.tencent.com/pypi/simple \
-              -r requirements-core.txt pyinstaller
-        - name: pyinstaller-sidecar
+              pyinstaller==6.6.0 \
+              pyinstaller-hooks-contrib==2024.6 \
+              numpy scipy pydantic orjson httpx requests \
+              pyzmq pillow polars duckdb \
+              jieba tiktoken ncps openai psutil aiohttp scikit-learn \
+              uvloop tokenizers
+
+        - name: bundle-sidecar
+          script: |
+            cd desktop-shell/python
+            pyinstaller --clean --noconfirm galaxyos-sidecar.spec
+            ls -la dist/
+            # 重命名带架构后缀
+            mv dist/galaxyos-sidecar dist/galaxyos-sidecar-linux-arm64
+            chmod +x dist/galaxyos-sidecar-linux-arm64
+            # 复制回 electron-builder 期望的位置
+            cp dist/galaxyos-sidecar-linux-arm64 dist/galaxyos-sidecar
+            ls -la dist/
+
+        - name: build-electron-appimage
           script: |
             cd desktop-shell
-            pyinstaller \
-              --onefile \
-              --name galaxyos-sidecar \
-              --add-data "python/tokui_dsl.py:python" \
-              --add-data "python/llm_providers.py:python" \
-              --hidden-import=llm_providers \
-              --hidden-import=galaxyos_sidecar \
-              --hidden-import=tokui_dsl \
-              python/galaxyos_sidecar.py 2>&1 | tail -20
-            mkdir -p /tmp/artifacts/desktop
-            cp dist/galaxyos-sidecar /tmp/artifacts/desktop/ 2>/dev/null || true
-            ls -la /tmp/artifacts/desktop/
-        - name: package
+            # 准备 build/icon.png + build/icon.ico（build/ 是 gitignored）
+            mkdir -p build
+            cp renderer/icon.png build/icon.png
+            python -c "
+            from PIL import Image
+            im = Image.open('renderer/icon.png').convert('RGBA')
+            im.save('build/icon.ico', format='ICO',
+                    sizes=[(16,16),(32,32),(48,48),(64,64),(128,128),(256,256)])
+            "
+            # 装 npm deps
+            npm install --no-audit --no-fund
+            # esbuild main + preload
+            npx esbuild src/main.ts \
+              --bundle --platform=node --target=node20 --format=cjs \
+              --outfile=dist/main.cjs \
+              --external:electron --external:fsevents --external:zeromq \
+              --sourcemap
+            npx esbuild src/preload.ts \
+              --bundle --platform=node --target=node20 --format=cjs \
+              --outfile=dist/preload.cjs \
+              --external:electron --sourcemap
+            test -f dist/main.cjs || { echo "ERROR: dist/main.cjs missing"; exit 1; }
+            # electron-builder 出 AppImage（arm64）
+            npx electron-builder --linux AppImage --arm64 --publish never 2>&1 | tail -30
+            ls -la release/
+
+        - name: package-artifacts
           script: |
+            mkdir -p /tmp/artifacts/desktop-arm64
+            cp desktop-shell/release/*.AppImage /tmp/artifacts/desktop-arm64/ 2>/dev/null || true
+            cp desktop-shell/python/dist/galaxyos-sidecar-linux-arm64 /tmp/artifacts/desktop-arm64/ 2>/dev/null || true
+            ls -la /tmp/artifacts/desktop-arm64/
             cd /tmp/artifacts
-            tar czf galaxyos-desktop-${CNB_BRANCH}.tar.gz desktop/
-            echo "Packaged: galaxyos-desktop-${CNB_BRANCH}.tar.gz"
+            tar czf galaxyos-desktop-linux-arm64-${CNB_BRANCH}.tar.gz desktop-arm64/
+            echo "Packaged: galaxyos-desktop-linux-arm64-${CNB_BRANCH}.tar.gz"
+
