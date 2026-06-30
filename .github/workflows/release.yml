@@ -44,21 +44,26 @@ jobs:
             label: windows-x64
             arch: x64
             artifact: galaxyos-windows-x64
-            electron_target: nsis
+            # electron-builder CLI for windows:
+            electron_builder_args: --win nsis --x64
             sidecar_bin: galaxyos-sidecar.exe
             sidecar_renamed: galaxyos-sidecar-windows-x64.exe
           - os: ubuntu-22.04
             label: linux-x64
             arch: x64
             artifact: galaxyos-linux-x64
-            electron_target: AppImage
+            # electron-builder CLI for linux x64. The bare `--linux
+            # AppImage` form is required (the shorthand `--AppImage`
+            # is rejected with "Unknown argument" on
+            # electron-builder 25).
+            electron_builder_args: --linux AppImage --x64
             sidecar_bin: galaxyos-sidecar
             sidecar_renamed: galaxyos-sidecar-linux-x64
           - os: ubuntu-22.04-arm64
             label: linux-arm64
             arch: arm64
             artifact: galaxyos-linux-arm64
-            electron_target: AppImage
+            electron_builder_args: --linux AppImage --arm64
             sidecar_bin: galaxyos-sidecar
             sidecar_renamed: galaxyos-sidecar-linux-arm64
 
@@ -181,7 +186,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
         run: |
-          npx electron-builder --${{ matrix.electron_target }} --${{ matrix.arch }} --publish never 2>&1 | tail -50
+          npx electron-builder ${{ matrix.electron_builder_args }} --publish never 2>&1 | tail -50
 
       - name: List release output
         working-directory: desktop-shell
