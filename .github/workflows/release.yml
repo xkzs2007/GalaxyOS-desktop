@@ -8,8 +8,14 @@ name: Release Desktop
 #
 # Matrix:
 #   - windows-latest        →  GalaxyOS Setup *.exe (NSIS)        (Windows x64)
-#   - ubuntu-22.04          →  GalaxyOS-*.AppImage                (Linux x86_64)
-#   - ubuntu-22.04-arm64    →  GalaxyOS-*.AppImage                (Linux aarch64)
+#   - ubuntu-24.04          →  GalaxyOS-*.AppImage                (Linux x86_64)
+#
+# (Linux arm64 is built on cnb.cool — see .cnb.yml tag_push.)
+#
+# Ubuntu 24.04 (not 22.04) is required because ort-sys downloads a
+# prebuilt ONNX Runtime binary that needs glibc 2.38+ symbols
+# (__isoc23_strtoll etc.). ubuntu-22.04 has glibc 2.35 → linker
+# failure.
 #
 # Each matrix leg produces TWO artifacts:
 #   1. The Electron installer  (the .exe / .dmg / .AppImage users download)
@@ -66,7 +72,7 @@ jobs:
             electron_builder_args: --win nsis --x64
             sidecar_bin: galaxyos-sidecar.exe
             sidecar_renamed: galaxyos-sidecar-windows-x64.exe
-          - os: ubuntu-22.04
+          - os: ubuntu-24.04
             label: linux-x64
             arch: x64
             artifact: galaxyos-linux-x64
@@ -74,6 +80,14 @@ jobs:
             # AppImage` form is required (the shorthand `--AppImage`
             # is rejected with "Unknown argument" on
             # electron-builder 25).
+            #
+            # Ubuntu 24.04 (not 22.04) is required because the
+            # `ort-sys` crate downloads a prebuilt ONNX Runtime
+            # binary that references glibc 2.38+ symbols
+            # (__isoc23_strtoll / __isoc23_strtoull / __isoc23_strtol).
+            # ubuntu-22.04 has glibc 2.35 → linker fails with
+            # "undefined symbol: __isoc23_strtoll". ubuntu-24.04 has
+            # glibc 2.39 → links cleanly.
             electron_builder_args: --linux AppImage --x64
             sidecar_bin: galaxyos-sidecar
             sidecar_renamed: galaxyos-sidecar-linux-x64
@@ -104,7 +118,15 @@ jobs:
         shell: bash
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq --no-install-recommends fakeroot rpm libfuse2 libnss3 libatk-bridge2.0-0 libgtk-3-0 libasound2 python3-dev build-essential
+          # Ubuntu 24.04 renamed some packages vs 22.04:
+          #   libasound2 → libasound2t64
+          # Install both with || true so this works on either runner.
+          sudo apt-get install -y -qq --no-install-recommends \
+            fakeroot rpm libfuse2 \
+            libnss3 libatk-bridge2.0-0 libgtk-3-0 \
+            python3-dev build-essential
+          sudo apt-get install -y -qq --no-install-recommends libasound2 || \
+            sudo apt-get install -y -qq --no-install-recommends libasound2t64
 
       - name: Set up Rust toolchain (for lfm_server native build)
         # lfm_server.rs is a Rust binary that ships alongside the
