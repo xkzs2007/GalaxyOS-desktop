@@ -636,7 +636,15 @@ function registerIpc() {
     try { return await zmqCall('claw_verify', { claim }); }
     catch (e) { return { error: String((e as Error).message) }; }
   });
-  ipcMain.handle('galaxy:recall', async (_e, query: string, topK?: number) => {
+  // NOTE: 'galaxy:recall' is already registered above (line ~607) calling
+  // the sidecar's `recall` method. The previous block here tried to
+  // register a SECOND 'galaxy:recall' that called `claw_recall`, which
+  // threw "Attempted to register a second handler for 'galaxy:recall'"
+  // at app startup, killing the whole app even though the sidecar was
+  // already running. Renamed to galaxy:clawRecall so the OpenClaw
+  // worker-pool recall is still callable from the renderer under a
+  // distinct name.
+  ipcMain.handle('galaxy:clawRecall', async (_e, query: string, topK?: number) => {
     try { return await zmqCall('claw_recall', { query, top_k: topK || 5 }); }
     catch (e) { return { results: [], error: String((e as Error).message) }; }
   });
@@ -696,6 +704,13 @@ app.whenReady().then(async () => {
   } catch (e) {
     const err = e as Error;
     log(`Startup failed: ${err.message}`);
+    // If startSidecar succeeded but registerIpc/createWindow threw
+    // (e.g. "Attempted to register a second handler for 'galaxy:recall'"
+    // from duplicate ipcMain.handle), the sidecar process is still
+    // running. We MUST stop it now — otherwise the next launch finds
+    // port 5757 still bound ("Address in use") and the sidecar's
+    // second zmq REP bind throws, masking the real error.
+    stopSidecar();
     // Build a useful error message. The previous version always
     // told users to "install Python", which is WRONG for packaged
     // builds — the sidecar is a self-contained PyInstaller binary.

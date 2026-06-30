@@ -18,7 +18,10 @@ export type GalaxyApi = {
   heartbeat(): Promise<{ ok: boolean; ts_ms: number; uptime_s: number }>;
   stats(): Promise<Record<string, unknown>>;
   verify(claim: string): Promise<{ claim: string; confidence: number; verdict: string; evidence_count: number; top_evidence: string[] }>;
-  recall(query: string, topK?: number): Promise<{ query: string; count: number; results: unknown[] }>;
+  // clawRecall: OpenClaw worker-pool recall (calls claw_recall method
+  // on the sidecar, which routes to claw_worker). Distinct from the
+  // in-process recall() above.
+  clawRecall(query: string, topK?: number): Promise<{ query: string; count: number; results: unknown[] }>;
   saveMemory(content: string, metadata?: object): Promise<{ memory_id: string; ok: boolean }>;
   emitEvent(type: string, payload?: any): Promise<{ ok: boolean; received: string }>;
   graphSearch(query: string, topK?: number): Promise<{ count: number; results: any[] }>;
@@ -77,7 +80,10 @@ const api: GalaxyApi = {
   heartbeat: () => ipcRenderer.invoke('galaxy:heartbeat') as any,
   stats: () => ipcRenderer.invoke('galaxy:stats') as any,
   verify: (claim) => ipcRenderer.invoke('galaxy:verify', claim) as any,
-  recall: (q, k) => ipcRenderer.invoke('galaxy:recall', q, k) as any,
+  // clawRecall replaces the duplicate 'recall' that caused
+  // "Attempted to register a second handler for 'galaxy:recall'" —
+  // see main.ts galaxy:clawRecall handler for context.
+  clawRecall: (q, k) => ipcRenderer.invoke('galaxy:clawRecall', q, k) as any,
   saveMemory: (c, m) => ipcRenderer.invoke('galaxy:saveMemory', c, m) as any,
   emitEvent: (t, p) => ipcRenderer.invoke('galaxy:emitEvent', t, p) as any,
   graphSearch: (q, k) => ipcRenderer.invoke('galaxy:graphSearch', q, k) as any,
