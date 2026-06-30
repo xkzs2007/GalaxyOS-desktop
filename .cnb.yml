@@ -227,10 +227,33 @@ $:
             apt-get install -y -qq --no-install-recommends \
               fakeroot rpm libfuse2 \
               libnss3 libatk-bridge2.0-0 libgtk-3-0 libasound2 \
-              python3-dev build-essential
+              python3-dev build-essential \
+              # Rust toolchain deps: curl 下载 rustup，gcc 链接 native code
+              curl ca-certificates
             # Node 20 for electron-builder
             curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
             apt-get install -y -qq nodejs
+            # Rust stable toolchain（arm64-unknown-linux-gnu target 默认就是
+            # 当前架构 aarch64，无需额外加 --target）
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --profile minimal
+            source "$HOME/.cargo/env"
+            rustc --version
+            cargo --version
+
+        - name: build-lfm-server
+          script: |
+            # 编 lfm_server Rust binary（arm64-unknown-linux-gnu，跟当前
+            # runner 架构一致，无需 --target）。--no-default-features 跳过
+            # PyO3 cdylib（desktop 端不需要 Python 扩展，只要 standalone binary）。
+            source "$HOME/.cargo/env"
+            cd extensions/galaxyos/native
+            cargo build --release --bin lfm_server --no-default-features
+            test -f target/release/lfm_server || { echo "ERROR: lfm_server not built"; exit 1; }
+            ls -lh target/release/lfm_server
+            # electron-builder 的 extraResources filter 期望文件路径是
+            # extensions/galaxyos/native/target/release/lfm_server
+            # （见 desktop-shell/package.json build.extraResources）。
+            # 所以留在原地即可，不需要复制。
 
         - name: install-python-deps
           script: |
@@ -289,6 +312,9 @@ $:
             mkdir -p /tmp/artifacts/desktop-arm64
             cp desktop-shell/release/*.AppImage /tmp/artifacts/desktop-arm64/ 2>/dev/null || true
             cp desktop-shell/python/dist/galaxyos-sidecar-linux-arm64 /tmp/artifacts/desktop-arm64/ 2>/dev/null || true
+            # 也打包 lfm_server binary（用户可单独下载部署到无 ONNX 模型
+            # 的旧 AppImage 安装目录，作为热更新）
+            cp extensions/galaxyos/native/target/release/lfm_server /tmp/artifacts/desktop-arm64/lfm_server-linux-arm64 2>/dev/null || true
             ls -la /tmp/artifacts/desktop-arm64/
             cd /tmp/artifacts
             tar czf galaxyos-desktop-linux-arm64-${CNB_BRANCH}.tar.gz desktop-arm64/

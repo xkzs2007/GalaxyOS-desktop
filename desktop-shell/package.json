@@ -54,7 +54,8 @@
         "from": "python/dist",
         "to": ".",
         "filter": [
-          "galaxyos-sidecar*"
+          "galaxyos-sidecar",
+          "galaxyos-sidecar.exe"
         ]
       },
       {
