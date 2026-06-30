@@ -163,13 +163,15 @@ main:
     # sync-to-github stage fails at runtime; other stages (tests,
     # arm64 build) keep running normally.
     - name: sync-to-github
-      image: tencentcom/git-sync
-      settings:
-        target_url: git@github.com:xkzs2007/GalaxyOS-desktop.git
-        auth_type: ssh
-        ssh_key: ${GH_SSH_KEY}
-        push_tags: true
-        sync_mode: push
+      stages:
+        - name: sync
+          image: tencentcom/git-sync
+          settings:
+            target_url: git@github.com:xkzs2007/GalaxyOS-desktop.git
+            auth_type: ssh
+            ssh_key: ${GH_SSH_KEY}
+            push_tags: true
+            sync_mode: push
 
   pull_request:
     - name: pr-test
@@ -228,8 +230,7 @@ $:
               fakeroot rpm libfuse2 \
               libnss3 libatk-bridge2.0-0 libgtk-3-0 libasound2 \
               python3-dev build-essential \
-              # Rust toolchain deps: curl 下载 rustup，gcc 链接 native code
-              curl ca-certificates
+              curl ca-certificates  # Rust toolchain deps: curl 下载 rustup，gcc 链接 native code
             # Node 20 for electron-builder
             curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
             apt-get install -y -qq nodejs
