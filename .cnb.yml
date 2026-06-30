@@ -196,7 +196,7 @@ main:
             auth_type: ssh
             ssh_key: ${GH_SSH_KEY}
             push_tags: true
-            sync_mode: push)
+            sync_mode: push
 
   pull_request:
     - name: pr-test
