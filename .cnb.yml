@@ -13,24 +13,33 @@
 #     (cnb 自己的 arm64 AppImage 见 $:tag_push)
 # ════════════════════════════════════════════════════════════════
 
-# Optional: import GH_PAT from a private "key" repo so the
-# sync-to-github stage can authenticate.
+# Optional: import the GH deploy key from a private cnb "key"
+# repo so the sync-to-github stage can authenticate via SSH.
 #   Setup steps (one-time):
 #     1. Create a private cnb repo, e.g. TIAMO.xianyao/git-keys
-#     2. In that repo, add a file `github.env` containing:
-#            GH_PAT=ghp_xxxxxxxxxxxxxxxxxxxx
-#        (the classic PAT or fine-grained token with `repo` /
-#         Contents:Read&Write scope on xkzs2007/GalaxyOS-desktop)
-#     3. Uncomment the imports block below and update the URL
+#     2. In that repo, add a file `github_deploy_key.env`
+#        containing the FULL private key contents (multiline):
+#            GH_SSH_KEY="-----BEGIN OPENSSH PRIVATE KEY-----
+#            b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZW
+#            QyNTUxOQAAACASIYDQAXNdkfEVERGT6qrIobj4cFmF8jHFRB8V0gAVQAAAJiVjJ3tZZ
+#            ... (full key, including the trailing
+#            -----END OPENSSH PRIVATE KEY----- line)
+#            "
+#        Quote with "..." because the value contains newlines
+#        and equals signs that .env parsing would otherwise mangle.
+#     3. Uncomment the imports: block below and update the URL
 #        to point at your key repo's .env file.
 #     4. Push this .cnb.yml — the sync-to-github stage will pick
-#        up GH_PAT automatically and start mirroring to GH.
-#   Without the import (or if GH_PAT is unset), sync-to-github
-#   will fail at runtime with "could not read Password for
-#   'https://github.com'"; other stages (tests, arm64 build)
-#   keep running normally.
+#        up GH_SSH_KEY automatically and start mirroring to GH.
+#   Without the import (or if GH_SSH_KEY is unset), sync-to-github
+#   fails at runtime; other stages (tests, arm64 build) keep
+#   running normally.
+#
+# The PUBLIC key (which you need to add to GitHub as a deploy
+# key, with "Allow write access" enabled) is in the chat thread.
+# DO NOT paste the private key into GitHub — only the public key.
 #imports:
-#  - https://cnb.cool/TIAMO.xianyao/git-keys/-/blob/main/github.env
+#  - https://cnb.cool/TIAMO.xianyao/git-keys/-/blob/main/github_deploy_key.env
 
 
 # ── main 分支：完整测试 ──
@@ -127,43 +136,38 @@ main:
     # Sync cnb → GitHub (gh mirror).
     # When a push lands on cnb's main branch (or a tag is pushed
     # and triggers `tag_push` below), this stage re-pushes the
-    # same refs to https://github.com/xkzs2007/GalaxyOS-desktop
+    # same refs to git@github.com:xkzs2007/GalaxyOS-desktop.git
     # so GH Actions (.github/workflows/release.yml) can run the
     # Windows NSIS + Linux x64 AppImage builds that cnb runners
     # can't produce.
     #
-    # Required setup (one-time, on cnb.cool):
-    #   1. Create a GitHub PAT (Settings → Developer settings →
-    #      Personal access tokens → Fine-grained, scope=Contents:
-    #      Read & Write on xkzs2007/GalaxyOS-desktop, or classic
-    #      PAT with `repo` scope).
-    #   2. On cnb, create a private "key" repo (e.g.
-    #      TIAMO.xianyao/git-keys) and add a file `github.env`:
-    #          GH_PAT=ghp_xxxxxxxxxxxxxxxxxxxx
-    #   3. Uncomment the `imports:` block at the top of this
-    #      file and point it at the key repo (path/to/your
-    #      .env shown below).
-    #   4. After that, every push to cnb main will auto-mirror
-    #      to GitHub within seconds, and `git push origin
-    #      <tag>` will mirror the tag too. GH Actions picks
-    #      up the tag, runs Windows + Linux x64 builds, and
-    #      publishes the v0.1.x release.
+    # Auth: SSH deploy key. Less privileged than a PAT — a deploy
+    # key is scoped to a single repo and can be revoked from the
+    # repo's settings page without rotating anything else.
     #
-    # Why we re-push tags here instead of letting GH Actions
-    # do it via its own sync-to-cnb job: the GH → cnb direction
-    # is the inverse of what we want. The cnb → GH direction
-    # (this stage) is the correct one.
+    # Required setup (one-time):
+    #   1. Generate an SSH key pair on a trusted host (already
+    #      done — public key is in the chat). Use ed25519 (modern,
+    #      256-bit, much shorter than RSA).
+    #   2. On GitHub, go to the repo's Settings → Deploy keys →
+    #      Add deploy key. Paste the PUBLIC key, give it a title
+    #      like "cnb sync bot", and CHECK "Allow write access".
+    #   3. On cnb, store the PRIVATE key in a key repo (or the
+    #      repo's runtime env). The private key is referenced as
+    #      ${GH_SSH_KEY} below.
+    #   4. Uncomment the imports: block at the top of this file
+    #      and update the URL to point at the file holding
+    #      GH_SSH_KEY=<full private key content, multiline>.
     #
-    # PAT is referenced as ${GH_PAT} (CNB env interpolation
-    # syntax). cnb injects the value from the imported env
-    # file or the repo's runtime environment — never inline.
+    # Without the import (or if GH_SSH_KEY is unset), the
+    # sync-to-github stage fails at runtime; other stages (tests,
+    # arm64 build) keep running normally.
     - name: sync-to-github
       image: tencentcom/git-sync
       settings:
-        target_url: https://github.com/xkzs2007/GalaxyOS-desktop.git
-        auth_type: https
-        username: xkzs2007
-        password: ${GH_PAT}
+        target_url: git@github.com:xkzs2007/GalaxyOS-desktop.git
+        auth_type: ssh
+        ssh_key: ${GH_SSH_KEY}
         push_tags: true
         sync_mode: push
 
