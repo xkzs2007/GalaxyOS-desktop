@@ -303,3 +303,33 @@ jobs:
             artifacts/**/*.AppImage
             artifacts/**/*.zip
             artifacts/**/latest*.yml
+
+  sync-to-cnb:
+    name: Mirror code + tags to cnb.cool
+    # Push the merged main branch + all tags back to the upstream
+    # cnb.cool fork (TIAMO.xianyao/galaxyos-desktop). This keeps the
+    # two remotes in sync without us having to remember `git push
+    # origin main --tags` after every release.
+    #
+    # Only runs on tag push (not workflow_dispatch from main) — we
+    # don't want to push back to cnb on every test build.
+    needs: release
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (full history + tags)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Push main + tags to cnb.cool
+        run: |
+          # CNB_TOKEN secret: personal access token from cnb.cool
+          # (Settings → Access Tokens → repo scope). Stored as a GH
+          # Actions secret in this repo's Settings → Secrets.
+          git remote add cnb "https://x-access-token:${{ secrets.CNB_TOKEN }}@cnb.cool/TIAMO.xianyao/galaxyos-desktop.git"
+          echo "Pushing main..."
+          git push cnb main --force-with-lease
+          echo "Pushing all tags..."
+          git push cnb --tags --force-with-lease
+          echo "✓ Synced to cnb.cool"
