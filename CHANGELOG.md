@@ -1,5 +1,22 @@
 # Changelog
 
+## Desktop [v0.1.3] — 2026-06-30
+
+### Fixed
+- **设置弹窗 select/textarea 文字居中 bug**（`desktop-shell/renderer/style.css`）
+  - 显式 `text-align: left` + `text-indent: 0` + `font-family: inherit` 修复 Chromium UA 默认 padding
+  - `-webkit-appearance: none` 统一 select 渲染，自定义 CSS 三角箭头避免视觉压字
+
+### Changed
+- **全站设计 token 化**（参考 EUI-NEO 设计语言）
+  - 抽出命名 token：`--s4/8/12/16/20/24` / `--r-sm/md/lg/xl` / `--shadow-card/panel/popup` / `--t-fast/base/slow`
+  - 抽出 `--backdrop` + `--backdrop-blur`（EUI-NEO dialog 弹层半透明 + blur）
+  - 补全 `:root[data-tokui-theme="light"]` light 主题（之前是空头支票）
+  - 重做 settings 弹窗：backdrop blur + 弹层 shadow + tab indicator 动画 + form 焦点 ring
+  - 重做 install wizard 弹窗
+  - 诊断面板 `stat-group` / `skill-neighbors` 卡片化
+  - 移除所有硬编码 `rgba(0,0,0,0.x)` / `border-radius: 6px` 散落值
+
 ## [v9.4.1] — 2026-06-30
 
 ### Fixed

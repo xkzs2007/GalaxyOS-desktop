@@ -1,6 +1,6 @@
 {
   "name": "galaxyos-desktop",
-  "version": "0.1.0-stage1",
+  "version": "0.1.3",
   "description": "GalaxyOS Desktop App — Electron shell + Python sidecar. Decouples GalaxyOS from OpenClaw and runs as a standalone desktop Agent.",
   "main": "dist/main.cjs",
   "private": true,
