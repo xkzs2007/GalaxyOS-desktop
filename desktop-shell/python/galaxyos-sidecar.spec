@@ -149,6 +149,37 @@ assert os.path.isfile(os.path.join(_galaxyos_pkg, '__init__.py')), (
 datas += [
     (_galaxyos_pkg, 'galaxyos'),
 ]
+# Bundle `scripts/` (install_wizard.py + sibling scripts) so the
+# desktop sidecar can spawn install_wizard as a subprocess for the
+# "下载模型" UI button. install_wizard's path resolver detects the
+# frozen layout (parent dir == 'scripts') and picks ~/.galaxyos as
+# _OPENCLAW_HOME automatically — see scripts/install_wizard.py
+# top-of-file _auto_detect_openclaw_home().
+_scripts_dir = os.path.abspath(os.path.join(_spec_dir, '..', '..', 'scripts'))
+assert os.path.isfile(os.path.join(_scripts_dir, 'install_wizard.py')), (
+    f"scripts/install_wizard.py not found at {_scripts_dir}. "
+    f"The desktop sidecar's /sse/install_wizard endpoint depends "
+    f"on this file being present in the bundle."
+)
+datas += [
+    (_scripts_dir, 'scripts'),
+]
+# Bundle `extensions/galaxyos/` so the desktop sidecar can spawn
+# the LFM ONNX server (Rust binary built separately + shipped as
+# extraResource by electron-builder) AND the Python worker pool
+# (claw_worker.py). The native/ subdir is bundled for source
+# reference + future in-process PyO3 use; the scripts/ subdir
+# contains claw_worker.py + galaxyos_native.py which the sidecar
+# imports at runtime.
+_ext_galaxyos_dir = os.path.abspath(os.path.join(_spec_dir, '..', '..', 'extensions', 'galaxyos'))
+assert os.path.isdir(_ext_galaxyos_dir), (
+    f"extensions/galaxyos/ not found at {_ext_galaxyos_dir}. "
+    f"The desktop sidecar's LFM server + claw_worker integration "
+    f"depends on this directory being present in the bundle."
+)
+datas += [
+    (_ext_galaxyos_dir, 'extensions/galaxyos'),
+]
 # Pull in any package_data for sibling modules (skills, jieba
 # dicts, etc.). Safe to call even if the module isn't installed as
 # a package — `collect_data_files` returns [] in that case.

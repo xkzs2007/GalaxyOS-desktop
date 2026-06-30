@@ -1481,6 +1481,158 @@ def _ensure_dirs() -> None:
         d.mkdir(parents=True, exist_ok=True)
 
 
+# ── LFM server + claw_worker subprocess management ────────────────────
+# In the desktop app, the sidecar (this process) is the parent for
+# two helper processes:
+#   1. lfm_server (Rust binary) — runs LFM2.5-1.2B ONNX inference
+#      over a local IPC socket (UDS on Unix, TCP on Windows).
+#   2. claw_worker (Python) — runs JSON-RPC for memory / recall /
+#      DAG operations over its own IPC socket.
+# Both are optional: if the binaries / scripts are missing or fail
+# to start, the sidecar keeps running with degraded functionality
+# (MeMo uses Mock backend, memory ops fall back to in-process).
+_lfm_process: Optional[Any] = None  # subprocess.Popen
+_worker_process: Optional[Any] = None
+
+
+def _resolve_bundled_path(*parts: str) -> Optional[str]:
+    """Resolve a path inside the PyInstaller bundle (_MEIPASS).
+
+    Returns None in dev mode (path doesn't exist) or if the file is
+    missing from the bundle. Never raises.
+    """
+    if not getattr(sys, "frozen", False):
+        # Dev mode: look relative to this file
+        base = _THIS_DIR
+    else:
+        base = Path(sys._MEIPASS)  # type: ignore[attr-defined]
+    candidate = base.joinpath(*parts)
+    return str(candidate) if candidate.exists() else None
+
+
+def _spawn_lfm_server() -> None:
+    """Spawn lfm_server binary (Rust) as a child process.
+
+    The binary is shipped by electron-builder as an extraResource
+    (not bundled by PyInstaller — Rust target needs native build
+    per platform). At runtime it lives at:
+      <app>/resources/lfm_server[.exe]
+    and we discover it via the LFM_SERVER_BIN env var set by
+    main.ts, or fall back to a sensible default.
+    """
+    global _lfm_process
+    import subprocess as _sp
+
+    exe_suffix = ".exe" if sys.platform.startswith("win") else ""
+    bin_path = (
+        os.environ.get("LFM_SERVER_BIN")
+        or _resolve_bundled_path("lfm_server" + exe_suffix)
+        or _resolve_bundled_path("extensions", "galaxyos", "native",
+                                  "target", "release", "lfm_server" + exe_suffix)
+    )
+    if not bin_path or not os.path.isfile(bin_path):
+        log.warning("lfm_server binary not found — LFM2.5 ONNX inference "
+                    "disabled (MeMo will use Mock backend)")
+        return
+
+    # Model dir: <WORKSPACE>/models/LFM2.5-1.2B-ONNX
+    model_dir = str(path_resolver_desktop.MODELS_DIR / "LFM2.5-1.2B-ONNX")
+    if not os.path.isdir(model_dir):
+        log.warning("LFM model dir not found: %s — run install_wizard "
+                    "--download-lfm-onnx first", model_dir)
+        return
+
+    # IPC path (Unix UDS; Windows ignores, lfm_server binds TCP auto)
+    ipc_path = str(path_resolver_desktop.OPENCLAW_HOME / "lfm.sock")
+
+    env = os.environ.copy()
+    env["GALAXYOS_LFM_MODEL_DIR"] = model_dir
+    env["GALAXYOS_LFM_UDS_PATH"] = ipc_path
+
+    try:
+        _lfm_process = _sp.Popen(
+            [bin_path],
+            stdout=_sp.PIPE,
+            stderr=_sp.PIPE,
+            text=True,
+            env=env,
+        )
+        log.info("lfm_server spawned (pid=%d, model=%s, ipc=%s)",
+                 _lfm_process.pid, model_dir, ipc_path)
+    except Exception as e:
+        log.warning("Failed to spawn lfm_server: %s — continuing with "
+                    "Mock backend", e)
+        _lfm_process = None
+
+
+def _spawn_claw_worker() -> None:
+    """Spawn claw_worker.py as a child process (Python subprocess).
+
+    claw_worker.py is bundled at _MEIPASS/extensions/galaxyos/scripts/
+    claw_worker.py. We spawn it with the bundled Python interpreter
+    (sys.executable in frozen mode = this sidecar binary, but
+    claw_worker is a pure-Python script and we run it via the
+    bundled python executable's -m mode).
+
+    In dev mode we use the system python3.
+    """
+    global _worker_process
+    import subprocess as _sp
+
+    worker_script = (
+        _resolve_bundled_path("extensions", "galaxyos", "scripts", "claw_worker.py")
+        or _resolve_bundled_path("..", "extensions", "galaxyos", "scripts", "claw_worker.py")
+    )
+    if not worker_script or not os.path.isfile(worker_script):
+        log.warning("claw_worker.py not found — memory/recall ops will "
+                    "run in-process (slower)")
+        return
+
+    env = os.environ.copy()
+    # Pass the desktop home so claw_worker uses ~/.galaxyos, not ~/.openclaw
+    env["GALAXYOS_HOME"] = str(path_resolver_desktop.OPENCLAW_HOME)
+    env["OPENCLAW_WORKSPACE"] = str(path_resolver_desktop.WORKSPACE_ROOT)
+    env["GALAXYOS_REPO"] = str(path_resolver_desktop._GALAXYOS_REPO)
+
+    # In frozen mode, use the bundled python interpreter (sys.executable
+    # IS the sidecar binary, which can be invoked with -c or script path
+    # thanks to PyInstaller's bootloader). In dev mode use sys.executable.
+    python_exe = sys.executable
+
+    try:
+        _worker_process = _sp.Popen(
+            [python_exe, worker_script],
+            stdout=_sp.PIPE,
+            stderr=_sp.PIPE,
+            text=True,
+            env=env,
+        )
+        log.info("claw_worker spawned (pid=%d, script=%s)",
+                 _worker_process.pid, worker_script)
+    except Exception as e:
+        log.warning("Failed to spawn claw_worker: %s — memory ops will "
+                    "run in-process", e)
+        _worker_process = None
+
+
+def _shutdown_subprocesses() -> None:
+    """Terminate lfm_server + claw_worker cleanly."""
+    for name, proc in (("lfm_server", _lfm_process),
+                       ("claw_worker", _worker_process)):
+        if proc is None or proc.poll() is not None:
+            continue
+        try:
+            log.info("Stopping %s (pid=%d)...", name, proc.pid)
+            proc.terminate()
+            proc.wait(timeout=5)
+            log.info("%s stopped.", name)
+        except Exception:
+            try:
+                proc.kill()
+            except Exception:
+                pass
+
+
 async def main_async() -> int:
     log.info("=== GalaxyOS Desktop Sidecar (stage 1.5: TokUI SSE) ===")
     log.info("HOME     : %s", path_resolver_desktop.OPENCLAW_HOME)
@@ -1497,6 +1649,15 @@ async def main_async() -> int:
     except ImportError as e:
         log.error("Cannot start sidecar: %s", e)
         return 2
+
+    # Stage 5.10: spawn helper subprocesses for LFM inference + worker pool.
+    # Both are best-effort: if they fail to start, the sidecar keeps running
+    # with degraded functionality. We spawn them AFTER SidecarHandlers
+    # completes its (slow) engine init so the binary load doesn't compete
+    # with engine import for CPU/memory.
+    log.info("Spawning helper subprocesses (lfm_server + claw_worker)...")
+    _spawn_lfm_server()
+    _spawn_claw_worker()
 
     # Run zmq on a background thread
     stop = asyncio.Event()
@@ -1529,6 +1690,7 @@ async def main_async() -> int:
             await asyncio.sleep(0.5)
     finally:
         zmq_thread.join(timeout=2)
+        _shutdown_subprocesses()
         log.info("Sidecar stopped cleanly.")
     return 0
 
