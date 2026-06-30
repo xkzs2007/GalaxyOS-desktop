@@ -1,0 +1,233 @@
+/* renderer/src/styles/components.css — buttons, inputs, lists, modals.
+ *
+ * Every component class lives here. Tokens (colors, spaces) come from
+ * tokens.css; layout from layout.css. This file is component-only.
+ */
+
+/* ── Buttons ───────────────────────────────────────────────── */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s8);
+  height: 32px;
+  padding: 0 var(--s12);
+  border: 1px solid var(--field-border);
+  border-radius: var(--r-md);
+  background: var(--field-bg);
+  color: var(--field-fg);
+  font: inherit;
+  font-size: var(--fs-sm);
+  cursor: pointer;
+  transition: background var(--t-fast), border-color var(--t-fast);
+  user-select: none;
+}
+.btn:hover { background: var(--field-hover); border-color: var(--accent); }
+.btn:active { transform: translateY(0.5px); }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn.primary {
+  background: var(--accent);
+  color: oklch(100% 0 0);
+  border-color: var(--accent);
+}
+.btn.primary:hover { background: var(--accent-strong); }
+.btn.ghost { background: transparent; border-color: transparent; }
+.btn.ghost:hover { background: var(--field-hover); }
+.btn.danger { color: var(--danger); }
+.btn.danger:hover { background: oklch(64% 0.20 25 / 0.10); border-color: var(--danger); }
+
+/* ── Input ─────────────────────────────────────────────────── */
+.input {
+  width: 100%;
+  height: 36px;
+  padding: 0 var(--s12);
+  background: var(--field-bg);
+  border: 1px solid var(--field-border);
+  border-radius: var(--r-md);
+  color: var(--field-fg);
+  font: inherit;
+  outline: none;
+  transition: border-color var(--t-fast), box-shadow var(--t-fast);
+}
+.input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.input::placeholder { color: var(--fg-muted); }
+
+textarea.input { height: auto; min-height: 36px; resize: none; padding: var(--s8) var(--s12); }
+
+/* ── Sidebar lists (sessions / skills) ────────────────────── */
+.session-list, .skill-list {
+  list-style: none;
+  margin: 0;
+  padding: 0 var(--s8);
+}
+.session-item, .skill-pill {
+  display: flex;
+  align-items: center;
+  gap: var(--s8);
+  padding: var(--s8) var(--s12);
+  border-radius: var(--r-md);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+  user-select: none;
+  transition: background var(--t-fast);
+}
+.session-item:hover, .skill-pill:hover { background: var(--field-hover); }
+.session-item.active {
+  background: var(--accent-soft);
+  color: var(--page-fg);
+}
+.session-item .dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--fg-faint);
+  flex-shrink: 0;
+}
+.session-item.active .dot { background: var(--accent); }
+.session-item .title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.session-item .time { font-size: var(--fs-xs); color: var(--fg-muted); }
+.session-item .session-del {
+  opacity: 0; transition: opacity var(--t-fast);
+  color: var(--fg-muted); cursor: pointer; padding: 0 var(--s4);
+}
+.session-item:hover .session-del { opacity: 1; }
+.session-item .session-del:hover { color: var(--danger); }
+
+.skill-pill {
+  font-size: var(--fs-xs);
+  background: var(--field-bg);
+  border: 1px solid var(--field-border);
+}
+
+/* ── Connection status dot ─────────────────────────────────── */
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--fg-faint); flex-shrink: 0; }
+.dot.ok   { background: var(--success); box-shadow: 0 0 6px var(--success); }
+.dot.err  { background: var(--danger);  box-shadow: 0 0 6px var(--danger); }
+
+/* ── Modal / panel ─────────────────────────────────────────── */
+.modal {
+  background: var(--popup-bg);
+  color: var(--popup-fg);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-popup);
+  border: 1px solid var(--field-border);
+  overflow: hidden;
+  min-width: 480px;
+  max-width: 80vw;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+}
+.modal-header {
+  display: flex;
+  align-items: center;
+  padding: var(--s16) var(--s20);
+  border-bottom: 1px solid var(--field-border);
+  font-size: var(--fs-lg);
+  font-weight: 600;
+}
+.modal-body { flex: 1 1 auto; overflow-y: auto; padding: var(--s20); }
+.modal-footer {
+  display: flex; gap: var(--s8); justify-content: flex-end;
+  padding: var(--s12) var(--s20);
+  border-top: 1px solid var(--field-border);
+}
+
+/* ── Toast (minimal, 3s auto-dismiss) ──────────────────────── */
+.toast {
+  position: fixed;
+  bottom: var(--s24);
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--popup-bg);
+  color: var(--popup-fg);
+  border: 1px solid var(--field-border);
+  border-radius: var(--r-md);
+  padding: var(--s12) var(--s16);
+  box-shadow: var(--shadow-popup);
+  font-size: var(--fs-sm);
+  z-index: 200;
+  animation: toast-in var(--t-base) var(--ease-out);
+}
+@keyframes toast-in {
+  from { opacity: 0; transform: translate(-50%, 8px); }
+  to   { opacity: 1; transform: translate(-50%, 0); }
+}
+
+/* ── Skill detail body ─────────────────────────────────────── */
+.skill-detail h3 { margin: 0 0 var(--s8); font-size: var(--fs-lg); }
+.skill-detail .hint { color: var(--fg-muted); font-size: var(--fs-sm); margin: 0 0 var(--s8); }
+.skill-detail pre.skill-body {
+  background: var(--field-bg);
+  border: 1px solid var(--field-border);
+  border-radius: var(--r-md);
+  padding: var(--s12);
+  font-family: var(--ff-mono);
+  font-size: var(--fs-xs);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 400px;
+  overflow-y: auto;
+}
+.skill-neighbors { margin-top: var(--s12); }
+.skill-neighbors h4 { font-size: var(--fs-sm); margin: 0 0 var(--s8); color: var(--fg-dim); }
+.neighbor-pill {
+  display: inline-block;
+  padding: var(--s4) var(--s8);
+  margin: var(--s4) var(--s4) 0 0;
+  background: var(--field-bg);
+  border: 1px solid var(--field-border);
+  border-radius: var(--r-pill);
+  font-size: var(--fs-xs);
+  cursor: pointer;
+}
+.neighbor-pill:hover { border-color: var(--accent); }
+.neighbor-rel { color: var(--fg-muted); margin-left: var(--s4); }
+
+/* ── Streaming indicator (3 dots, 0.6s pulse) ──────────────── */
+.streaming-indicator {
+  position: absolute;
+  bottom: calc(var(--composer-h) + var(--s8));
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 4px;
+  padding: var(--s4) var(--s12);
+  background: var(--popup-bg);
+  border: 1px solid var(--field-border);
+  border-radius: var(--r-pill);
+  box-shadow: var(--shadow-panel);
+  z-index: 10;
+}
+.streaming-indicator .dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  opacity: 0.4;
+  animation: streaming-pulse 1.2s ease-in-out infinite;
+}
+.streaming-indicator .dot:nth-child(2) { animation-delay: 0.2s; }
+.streaming-indicator .dot:nth-child(3) { animation-delay: 0.4s; }
+@keyframes streaming-pulse {
+  0%, 60%, 100% { opacity: 0.3; transform: scale(0.85); }
+  30%           { opacity: 1;   transform: scale(1);   }
+}
+
+/* ── Welcome / first-run hint ──────────────────────────────── */
+.welcome-hint {
+  text-align: center;
+  padding: var(--s32) var(--s16);
+  color: var(--fg-muted);
+  font-size: var(--fs-sm);
+}
+.welcome-hint kbd {
+  display: inline-block;
+  padding: 2px 6px;
+  background: var(--field-bg);
+  border: 1px solid var(--field-border);
+  border-radius: var(--r-sm);
+  font-family: var(--ff-mono);
+  font-size: var(--fs-xs);
+  margin: 0 2px;
+}

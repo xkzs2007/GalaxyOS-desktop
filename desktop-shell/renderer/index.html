@@ -18,6 +18,10 @@
   -->
   <link rel="stylesheet" href="https://unpkg.com/@jboltai/tokui/dist/tokui.css" />
   <link rel="stylesheet" href="style.css" />
+  <!-- New design system (tokens/layout/components) is loaded by
+       src/main.js at boot, AFTER style.css. style.css provides the
+       legacy 3-column grid + TokUI host styles that the new
+       components.css complements (not replaces) for now. -->
 </head>
 <body>
   <div id="app">
@@ -310,10 +314,10 @@
 
   <!-- Load TokUI from CDN so the page works without npm install.
        In Electron production mode, main.ts replaces this with a local
-       UMD injection via webContents.executeJavaScript. -->
+       UMD injection via webContents.executeJavaScript.
+       The new modular renderer (src/main.js) wires everything together
+       from individual ESM modules. -->
   <script src="https://unpkg.com/@jboltai/tokui/dist/tokui.umd.js"></script>
-  <script type="module" src="renderer.js"></script>
-  <script src="sessions.js"></script>
-  <script src="model_picker.js"></script>
+  <script type="module" src="src/main.js"></script>
 </body>
 </html>
