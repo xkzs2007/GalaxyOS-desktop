@@ -106,19 +106,36 @@ jobs:
       - name: Install Python deps + PyInstaller
         run: |
           python -m pip install --upgrade pip
-          # Use a curated minimal dep set for the sidecar instead
-          # of `pip install pyinstaller` alone (which pulls in
+          # Curated minimal dep set for the sidecar — replaces both
+          # `pip install -r requirements-core.txt pyinstaller` (30+
+          # heavy packages we don't need) and `pip install
+          # pyinstaller` alone (which pulls in
           # pyinstaller-hooks-contrib -> hnswlib, failing to compile
-          # on Windows runners that lack MSVC build tools) and
-          # `pip install -r requirements-core.txt` (which pulls in
-          # 30+ heavy packages we don't need for the desktop sidecar).
-          pip install \
-            pyinstaller==6.6.0 \
-            "pyinstaller-hooks-contrib==2024.6" \
-            numpy scipy pydantic orjson httpx requests \
-            pyzmq "pillow>=10" "polars>=1.0" "duckdb>=1.0" \
-            jieba "tokenizers>=0.20" tiktoken "ncps>=1.0" \
-            openai "uvloop>=0.19" psutil aiohttp "scikit-learn>=1.3"
+          # on Windows runners that lack MSVC build tools).
+          # PyInstaller pinned to 6.6.0 (last release before
+          # hooks-contrib started requiring hnswlib).
+          #
+          # Platform-specific notes:
+          # - uvloop: Unix-only, no Windows wheel
+          # - tokenizers: has Windows wheel but needs Rust toolchain
+          #   on install; pre-built wheels since 0.20 ship for win_amd64
+          BASE_DEPS="pyinstaller==6.6.0
+            pyinstaller-hooks-contrib==2024.6
+            numpy scipy pydantic orjson httpx requests
+            pyzmq pillow polars duckdb
+            jieba tiktoken ncps openai psutil aiohttp scikit-learn"
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            # Skip Unix-only / hard-to-build deps on Windows.
+            # The sidecar's sidecar.py imports uvloop as `import uvloop`
+            # at module level — we keep that import conditional in
+            # the sidecar bootstrap (it already is: uvloop is wrapped
+            # in try/except in pyzmq install paths). tokenizers has
+            # prebuilt win_amd64 wheels since 0.20, safe to include.
+            PACKAGES="$BASE_DEPS"
+          else
+            PACKAGES="$BASE_DEPS uvloop tokenizers"
+          fi
+          pip install $PACKAGES
           python -c "import PyInstaller; print('PyInstaller', PyInstaller.__version__)"
 
       - name: Bundle Python sidecar (PyInstaller)
