@@ -10,3 +10,8 @@ models/**/logs/*.log
 # Python 缓存
 __pycache__/
 **/__pycache__/
+
+# 凭据 / secrets
+.github_token
+*.pem
+*.key
