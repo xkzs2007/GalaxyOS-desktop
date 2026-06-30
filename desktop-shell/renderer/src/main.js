@@ -18,6 +18,7 @@ import { initSidebar, renderSidebar } from './components/sidebar.js';
 import { initComposer, renderComposer, onComposerSend, setMode } from './components/composer.js';
 import { initDetails } from './components/details.js';
 import { renderWelcome } from './components/welcome.js';
+import { initInstallWizard, openWizard } from './components/install-wizard.js';
 import { sessionStore, sessionApi } from './state/session.js';
 
 function installKeyboardShortcuts() {
@@ -73,6 +74,11 @@ registerHandler('onWelcomePick', (data) => {
   initSidebar();
   initComposer();
   initDetails();
+  initInstallWizard();
+  // Expose openWizard() globally so sidebar [btn clk:onOpenWizard] can
+  // call it via window.TokUI handler dispatch (TokUI click handlers
+  // look up functions on window by name).
+  window.openWizard = openWizard;
 
   // 4. Wire regenerate (msg-action → composer)
   window.addEventListener('composer:regenerate', (e) => {

@@ -62,6 +62,7 @@ function renderSidebar() {
     ui.feed(`[card tt:"状态"]${renderConnection()}[/card]`);
     ui.feed(`[toolbar pos:bottom align:right]`);
     ui.feed(`  [btn tx:"+ 新对话" v:primary sm clk:onNewChat]`);
+    ui.feed(`  [btn tx:"📥 下载模型" sm clk:onOpenWizard]`);
     ui.feed(`[/toolbar]`);
     ui.endStream();
   });
@@ -69,6 +70,12 @@ function renderSidebar() {
 
 // ── Event handlers ────────────────────────────────────────────
 registerHandler('onNewChat', () => sessionApi.newSession());
+
+registerHandler('onOpenWizard', () => {
+  // openWizard is exposed on window by main.js after initInstallWizard()
+  if (typeof window.openWizard === 'function') window.openWizard();
+  else console.warn('[sidebar] window.openWizard not ready');
+});
 
 registerHandler('onConvSwitch', (data) => {
   const id = typeof data === 'string' ? data : data?.value ?? data?.id;
