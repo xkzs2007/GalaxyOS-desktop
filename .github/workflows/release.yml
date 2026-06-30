@@ -260,6 +260,12 @@ jobs:
 
       - name: List release output
         working-directory: desktop-shell
+        # Force bash on Windows. The default PowerShell on
+        # windows-latest doesn't recognise `ls -laR` (it treats
+        # `-laR` as a single parameter name and fails with
+        # "A parameter cannot be found that matches parameter
+        # name 'laR'").
+        shell: bash
         run: |
           echo "--- release/ ---"
           ls -laR release/ 2>&1 | head -50
