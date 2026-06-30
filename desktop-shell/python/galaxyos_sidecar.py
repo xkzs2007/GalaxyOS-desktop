@@ -101,6 +101,28 @@ else:
     # already places _MEIPASS at the front of sys.path, so the
     # bundled galaxyos/ package is importable without any work
     # from us.
+    #
+    # HOWEVER: galaxyos/engine/*.py contains many legacy OpenClaw-
+    # style BARE imports (e.g. `from unified_vector_store import
+    # ...` instead of `from galaxyos.engine.unified_vector_store
+    # import ...`). In dev mode the bootstrap above adds
+    # `<repo>/galaxyos/engine/` to sys.path so those bare names
+    # resolve; in a frozen build we have to do the same with the
+    # bundled copy at `_MEIPASS/galaxyos/engine/`. Without this
+    # the engine still loads (xiaoyi_claw_api.py wraps every
+    # bare-import in try/except), but it logs ~15 WARNINGs about
+    # missing modules and silently degrades to Mock backends for
+    # the vector store / DAG context manager / memory bridge /
+    # kora behaviour / deepseek-ocr / etc. — which is the
+    # difference between a working app and an empty shell.
+    _meipass = getattr(sys, "_MEIPASS", None)
+    if _meipass:
+        for sub in ("galaxyos", "galaxyos/engine",
+                    "galaxyos/privileged", "galaxyos/shared",
+                    "galaxyos/orchestration", "galaxyos/harness"):
+            _d = os.path.join(_meipass, sub)
+            if os.path.isdir(_d) and _d not in sys.path:
+                sys.path.insert(0, _d)
     _repo_env = os.environ.get("GALAXYOS_REPO")
     if _repo_env and _repo_env not in sys.path:
         sys.path.insert(0, _repo_env)

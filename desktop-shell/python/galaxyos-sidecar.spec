@@ -41,15 +41,61 @@ sibling_modules = [
 ]
 
 # ── GalaxyOS engine submodules (transitive imports) ────────────────────
+# `collect_submodules` follows `__init__.py` imports to discover every
+# submodule of a package. We do this for each top-level GalaxyOS
+# subpackage so PyInstaller's static analysis finds them all.
 hiddenimports = list(sibling_modules)
 hiddenimports += collect_submodules('galaxyos.engine')
 hiddenimports += collect_submodules('galaxyos.privileged')
 hiddenimports += collect_submodules('galaxyos.shared')
 hiddenimports += collect_submodules('galaxyos.orchestration')
-# Engine uses some bare imports of upstream OpenClaw-era modules
-# (e.g. `from unified_vector_store import ...`). The desktop shim
-# re-roots them via `path_resolver_desktop`, so we don't need to
-# collect the legacy `path_resolver` itself — only the shim.
+hiddenimports += collect_submodules('galaxyos.harness')
+# Python 3.13 + PyInstaller 6.x frozen builds have a known issue
+# where the bundled interpreter loses access to the host's
+# libsqlite3 (or to a frozen copy of it). The fix is to declare
+# `sqlite3` (and its C extension `_sqlite3`) explicitly. Without
+# this, the sidecar crashes at first import that touches the DB
+# layer (unified_coordinator / kora_behavior / dag_context_manager)
+# with `No module named 'sqlite3'`. We add both the pure-Python
+# wrapper and the C extension; collect_submodules handles the
+# submodules like sqlite3.dbapi2.
+hiddenimports += ['sqlite3', '_sqlite3']
+# PyPI runtime deps the sidecar's Python code imports lazily (inside
+# functions / via importlib). PyInstaller's static analysis misses
+# these, so we declare them explicitly — `collect_submodules` then
+# pulls in every subpackage, defending against runtime-only imports
+# deep inside the dep tree (e.g. requests.adapters, openai._compat,
+# tiktoken_ext). These calls are no-ops if the package isn't
+# installed (returns []), so they're safe to leave even if a dep is
+# dropped from the install list later.
+for _pip_dep in (
+    'requests', 'httpx', 'aiohttp', 'openai',
+    'tiktoken', 'tiktoken_ext', 'ncps', 'jieba',
+    'pydantic', 'pydantic_core', 'orjson',
+    'psutil', 'pyzmq', 'zmq',
+    'polars', 'duckdb',
+    'numpy', 'scipy', 'sklearn',
+    'PIL',  # pillow
+):
+    try:
+        hiddenimports += collect_submodules(_pip_dep)
+    except Exception:
+        # Dep not installed in this build env — PyInstaller's
+        # hooks may still discover the public surface, or the
+        # dep is optional and the engine degrades gracefully.
+        pass
+# GalaxyOS engine has many legacy OpenClaw-style BARE imports inside
+# galaxyos/engine/ (e.g. `from hallucination_guard import ...` instead
+# of `from galaxyos.engine.hallucination_guard`). They expect the
+# engine directory to be on sys.path so those bare names resolve to
+# the *same* py files that ship as `galaxyos.engine.*`. PyInstaller
+# already puts `_MEIPASS/galaxyos/` and `_MEIPASS/galaxyos/engine/`
+# on sys.path via the `datas` entry below, so a frozen module doing
+# `from hallucination_guard import ...` will resolve to
+# `_MEIPASS/galaxyos/engine/hallucination_guard.py` — which is
+# exactly the same file as `galaxyos.engine.hallucination_guard`.
+# That's the whole reason `datas` must contain the WHOLE galaxyos/
+# tree (not just the metadata files).
 
 # ── Datas ───────────────────────────────────────────────────────────────
 # Two types:
@@ -124,9 +170,29 @@ for sub in ('galaxyos', 'galaxyos.engine', 'galaxyos.privileged',
         pass
 
 # ── Analysis ────────────────────────────────────────────────────────────
+# IMPORTANT: `pathex` deliberately does NOT include `'../../'`
+# (the repo root) or `'../../galaxyos/engine'` / `'../../galaxyos/privileged'`.
+# PyInstaller's static analysis, given those source paths, would
+# treat the matching `*.py` files as *source-tree* modules and add
+# them to the analysis TOC as bare names (`xiaoyi_memory`,
+# `hallucination_guard`, etc.). But `datas` (above) ALSO copies the
+# WHOLE `galaxyos/` tree into `_MEIPASS/galaxyos/`, which is the
+# PACKAGED form (`galaxyos.engine.xiaoyi_memory`). At runtime the
+# import system sees two entries that resolve to the *same physical
+# file* and Python refuses with:
+#     ImportError: cannot load module more than once per process
+# (technically emitted by `_bootstrap._gcd_import` on the second
+# `ModuleSpec` registration of the same loader path). This was the
+# v0.1.1 root cause: sidecar started, loaded XiaoYiClawLLM cleanly,
+# then crashed the moment it tried to import the next module via a
+# bare `from <name> import ...` statement inside galaxyos/engine/.
+# The `hiddenimports` list above already enumerates every engine
+# submodule, so the static analyser doesn't need the source tree
+# to discover them — it just needs the entry point and hidden
+# imports.
 a = Analysis(
     ['galaxyos_sidecar.py'],
-    pathex=['.', '../../', '../../galaxyos/engine', '../../galaxyos/privileged'],
+    pathex=['.'],
     binaries=[],
     datas=datas,
     hiddenimports=hiddenimports,
