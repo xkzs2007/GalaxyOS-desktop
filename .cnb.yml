@@ -133,70 +133,11 @@ main:
             [ "$FOUND" -ne 0 ] && echo "FOUND secrets" && exit 1
             echo "OK: no hardcoded secrets"
 
-    # Sync cnb → GitHub (gh mirror).
-    # When a push lands on cnb's main branch (or a tag is pushed
-    # and triggers `tag_push` below), this stage re-pushes the
-    # same refs to git@github.com:xkzs2007/GalaxyOS-desktop.git
-    # so GH Actions (.github/workflows/release.yml) can run the
-    # Windows NSIS + Linux x64 AppImage builds that cnb runners
-    # can't produce.
-    #
-    # Auth: SSH deploy key. Less privileged than a PAT — a deploy
-    # key is scoped to a single repo and can be revoked from the
-    # repo's settings page without rotating anything else.
-    #
-    # Required setup (one-time):
-    #   1. Generate an SSH key pair on a trusted host (already
-    #      done — public key is in the chat). Use ed25519 (modern,
-    #      256-bit, much shorter than RSA).
-    #   2. On GitHub, go to the repo's Settings → Deploy keys →
-    #      Add deploy key. Paste the PUBLIC key, give it a title
-    #      like "cnb sync bot", and CHECK "Allow write access".
-    #   3. On cnb, store the PRIVATE key in a key repo (or the
-    #      repo's runtime env). The private key is referenced as
-    #      ${GH_SSH_KEY} below.
-    #   4. Uncomment the imports: block at the top of this file
-    #      and update the URL to point at the file holding
-    #      GH_SSH_KEY=<full private key content, multiline>.
-    #
-    # Without the import (or if GH_SSH_KEY is unset), the
-    # sync-to-github stage fails at runtime; other stages (tests,
-    # arm64 build) keep running normally.
-    - name: sync-to-github
-      # DISABLED when GH_SSH_KEY is unset: this stage uses SSH deploy
-      # key auth (GH_SSH_KEY env), which requires a private cnb key
-      # repo + the imports: block at the top of this file. We never
-      # set that up, so previously every main.push run failed here
-      # with "SSH key not provided".
-      #
-      # main → GH sync is handled by GH Actions instead — see
-      # .github/workflows/release.yml "sync-to-cnb" job which pushes
-      # the REVERSE direction (GH → cnb) using CNB_TOKEN. Since GH
-      # is the source of truth for release tags (tag_push triggers
-      # GH Actions for windows-x64 + linux-x64 builds), the
-      # cnb → GH direction is not needed.
-      #
-      # To re-enable (if you want cnb to push to GH on every main.push):
-      #   1. Generate ed25519 SSH keypair
-      #   2. Add public key to GitHub repo Settings → Deploy keys (write)
-      #   3. Create private cnb repo TIAMO.xianyao/git-keys with file
-      #      github_deploy_key.env containing:
-      #        GH_SSH_KEY="<full private key contents>"
-      #   4. Uncomment the imports: block at top of this file
-      #   5. Remove the `if:` line below so the stage always runs
-      # Run only if GH_SSH_KEY env var is non-empty — skip silently
-      # otherwise. Without this, the stage fails the whole pipeline.
-      if: |
-        [ -n "$GH_SSH_KEY" ]
-      stages:
-        - name: sync
-          image: tencentcom/git-sync
-          settings:
-            target_url: git@github.com:xkzs2007/GalaxyOS-desktop.git
-            auth_type: ssh
-            ssh_key: ${GH_SSH_KEY}
-            push_tags: true
-            sync_mode: push
+    # (Removed: sync-to-github stage — it used SSH deploy key auth via
+    # ${GH_SSH_KEY} which we never set up. cnb → GH sync is unnecessary
+    # because GH Actions does the reverse direction (.github/workflows/
+    # release.yml sync-to-cnb job). Re-add the job here only if you set
+    # up the deploy key — see git history for the removed block.)
 
   pull_request:
     - name: pr-test
