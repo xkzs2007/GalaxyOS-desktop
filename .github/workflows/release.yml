@@ -7,9 +7,7 @@ name: Release Desktop
 #   - workflow_dispatch →  manual trigger (build only, no release upload)
 #
 # Matrix:
-#   - windows-latest        →  GalaxyOS Setup *.exe (NSIS)        (zip of win-unpacked)
-#   - macos-14 (arm64)      →  GalaxyOS-*.dmg                     (macOS Apple Silicon)
-#   - macos-13 (x64)        →  GalaxyOS-*.dmg                     (macOS Intel)
+#   - windows-latest        →  GalaxyOS Setup *.exe (NSIS)        (Windows x64)
 #   - ubuntu-22.04          →  GalaxyOS-*.AppImage                (Linux x86_64)
 #   - ubuntu-22.04-arm64    →  GalaxyOS-*.AppImage                (Linux aarch64)
 #
@@ -37,6 +35,11 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # 3-platform matrix: Windows (NSIS installer) + Linux
+          # x64 (AppImage) + Linux arm64 (AppImage).
+          # macOS removed — we don't ship to Apple users, and the
+          # GH macos-14 runner is 7 GB RAM which is too tight for
+          # electron-builder's dmg step.
           - os: windows-latest
             label: windows-x64
             arch: x64
@@ -44,20 +47,6 @@ jobs:
             electron_target: nsis
             sidecar_bin: galaxyos-sidecar.exe
             sidecar_renamed: galaxyos-sidecar-windows-x64.exe
-          - os: macos-14
-            label: macos-arm64
-            arch: arm64
-            artifact: galaxyos-macos-arm64
-            electron_target: dmg
-            sidecar_bin: galaxyos-sidecar
-            sidecar_renamed: galaxyos-sidecar-macos-arm64
-          - os: macos-13
-            label: macos-x64
-            arch: x64
-            artifact: galaxyos-macos-x64
-            electron_target: dmg
-            sidecar_bin: galaxyos-sidecar
-            sidecar_renamed: galaxyos-sidecar-macos-x64
           - os: ubuntu-22.04
             label: linux-x64
             arch: x64
