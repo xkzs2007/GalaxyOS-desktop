@@ -8,7 +8,30 @@
 #   - 删 node-check (extensions/galaxyos/index.js) — v8.6 Node 插件残留
 #   - 删 $:tag_push 的 Rust 编译 (extensions/galaxyos/native) — v8.6 原生扩展残留
 #   - 加 desktop-shell smoke stage — 验证 v9.4 桌面端能 import
+#   - 加 sync-to-github stage (main.push) — cnb → GH 镜像，
+#     让 GH Actions 跑 Windows NSIS / Linux x64 AppImage build
+#     (cnb 自己的 arm64 AppImage 见 $:tag_push)
 # ════════════════════════════════════════════════════════════════
+
+# Optional: import GH_PAT from a private "key" repo so the
+# sync-to-github stage can authenticate.
+#   Setup steps (one-time):
+#     1. Create a private cnb repo, e.g. TIAMO.xianyao/git-keys
+#     2. In that repo, add a file `github.env` containing:
+#            GH_PAT=ghp_xxxxxxxxxxxxxxxxxxxx
+#        (the classic PAT or fine-grained token with `repo` /
+#         Contents:Read&Write scope on xkzs2007/GalaxyOS-desktop)
+#     3. Uncomment the imports block below and update the URL
+#        to point at your key repo's .env file.
+#     4. Push this .cnb.yml — the sync-to-github stage will pick
+#        up GH_PAT automatically and start mirroring to GH.
+#   Without the import (or if GH_PAT is unset), sync-to-github
+#   will fail at runtime with "could not read Password for
+#   'https://github.com'"; other stages (tests, arm64 build)
+#   keep running normally.
+#imports:
+#  - https://cnb.cool/TIAMO.xianyao/git-keys/-/blob/main/github.env
+
 
 # ── main 分支：完整测试 ──
 main:
@@ -100,6 +123,49 @@ main:
             grep -rPn '(ghp_|gho_|cnb_)[a-zA-Z0-9]{20,}' services/ extensions/ galaxyos/ scripts/ tests/ desktop-shell/ 2>/dev/null && FOUND=1
             [ "$FOUND" -ne 0 ] && echo "FOUND secrets" && exit 1
             echo "OK: no hardcoded secrets"
+
+    # Sync cnb → GitHub (gh mirror).
+    # When a push lands on cnb's main branch (or a tag is pushed
+    # and triggers `tag_push` below), this stage re-pushes the
+    # same refs to https://github.com/xkzs2007/GalaxyOS-desktop
+    # so GH Actions (.github/workflows/release.yml) can run the
+    # Windows NSIS + Linux x64 AppImage builds that cnb runners
+    # can't produce.
+    #
+    # Required setup (one-time, on cnb.cool):
+    #   1. Create a GitHub PAT (Settings → Developer settings →
+    #      Personal access tokens → Fine-grained, scope=Contents:
+    #      Read & Write on xkzs2007/GalaxyOS-desktop, or classic
+    #      PAT with `repo` scope).
+    #   2. On cnb, create a private "key" repo (e.g.
+    #      TIAMO.xianyao/git-keys) and add a file `github.env`:
+    #          GH_PAT=ghp_xxxxxxxxxxxxxxxxxxxx
+    #   3. Uncomment the `imports:` block at the top of this
+    #      file and point it at the key repo (path/to/your
+    #      .env shown below).
+    #   4. After that, every push to cnb main will auto-mirror
+    #      to GitHub within seconds, and `git push origin
+    #      <tag>` will mirror the tag too. GH Actions picks
+    #      up the tag, runs Windows + Linux x64 builds, and
+    #      publishes the v0.1.x release.
+    #
+    # Why we re-push tags here instead of letting GH Actions
+    # do it via its own sync-to-cnb job: the GH → cnb direction
+    # is the inverse of what we want. The cnb → GH direction
+    # (this stage) is the correct one.
+    #
+    # PAT is referenced as ${GH_PAT} (CNB env interpolation
+    # syntax). cnb injects the value from the imported env
+    # file or the repo's runtime environment — never inline.
+    - name: sync-to-github
+      image: tencentcom/git-sync
+      settings:
+        target_url: https://github.com/xkzs2007/GalaxyOS-desktop.git
+        auth_type: https
+        username: xkzs2007
+        password: ${GH_PAT}
+        push_tags: true
+        sync_mode: push
 
   pull_request:
     - name: pr-test
