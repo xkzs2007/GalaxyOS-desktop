@@ -7,8 +7,26 @@ on:
     branches: [main, master]
   workflow_dispatch:
 
+# v9.4-adapted test workflow.
+#
+# Differences from the legacy cnb-era version (still in git history):
+#   - `pip install -r requirements-core.txt` instead of full
+#     requirements.txt (skips torch/transformers/faiss/etc. — 7GB
+#     GH runners can't fit them).
+#   - Only runs the v9.x test files (test_llm_providers,
+#     test_sidecar_set_config, test_harness_sidecar_bridge) plus a
+#     compile check. The legacy 12-test ignore list in .cnb.yml
+#     references tests that import heavy ML deps and are not
+#     exercised by the desktop-shell pipeline.
+#   - Drops `node-check` (extensions/galaxyos/ was removed in v9.0;
+#     pnpm install of a non-existent dir is the failure that broke
+#     PR #2).
+#   - Drops `rust-check` (extensions/galaxyos/native/ was removed
+#     in v9.0; v9 desktop-shell is pure Python + Electron).
+#   - Skips Codecov — not configured for this fork.
 jobs:
   test:
+    name: pytest ${{ matrix.python-version }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -24,19 +42,24 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
           cache: pip
+          cache-dependency-path: requirements-core.txt
 
-      - name: Install system deps (for hnswlib compilation)
+      - name: Install system deps (for hnswlib compilation if pulled in)
         run: sudo apt-get update -qq && sudo apt-get install -y -qq python3-dev build-essential
 
-      - name: Install dependencies
+      - name: Install Python dependencies (core only)
         run: |
-          pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install pytest pytest-cov
+          python -m pip install --upgrade pip
+          # requirements-core.txt is the lightweight set used by CI
+          # (numpy/scipy/httpx/pydantic/etc.). Heavy ML deps
+          # (torch/transformers/faiss) live in requirements-heavy.txt
+          # and are NOT installed in GH CI.
+          pip install -r requirements-core.txt
+          pip install pytest pytest-cov pytest-asyncio
 
-      - name: Verify imports
+      - name: Verify core imports
         run: |
-          python -c "import numpy, scipy, sklearn, torch, pydantic, faiss, jieba, ncps"
+          python -c "import numpy, scipy, sklearn, pydantic, httpx, jieba, ncps, pytest, pytest_asyncio"
           echo "✅ All core deps loaded"
 
       - name: Compile check (all .py files)
@@ -45,7 +68,7 @@ jobs:
           import py_compile, os, sys
           problems = []
           for root, dirs, files in os.walk('.'):
-              dirs[:] = [d for d in dirs if d not in ('node_modules', '.git', '__pycache__', 'target', 'prebuilt', '.pnpm-store')]
+              dirs[:] = [d for d in dirs if d not in ('node_modules', '.git', '__pycache__', 'target', 'prebuilt', 'release', 'dist', 'build')]
               for f in files:
                   if f.endswith('.py'):
                       path = os.path.join(root, f)
@@ -60,92 +83,49 @@ jobs:
           print(f'✅ All Python files compile on {sys.version}')
           "
 
-      - name: Run tests
+      - name: Run v9.x test suite
         run: |
-          python -m pytest tests/ -v --tb=short \
-            --cov=services \
-            --cov-report=term-missing \
-            --cov-report=xml \
-            -p no:warnings
+          # v9.0–v9.4 test files only — the legacy 12 tests in
+          # .cnb.yml --ignore list pull in heavy ML deps and are
+          # out of scope for the desktop pipeline.
+          python -m pytest \
+            tests/test_llm_providers.py \
+            tests/test_sidecar_set_config.py \
+            tests/test_harness_sidecar_bridge.py \
+            -v --tb=short -p no:warnings
 
-      - name: Upload coverage to Codecov (optional)
-        if: matrix.python-version == '3.12'
-        uses: codecov/codecov-action@v5
-        with:
-          files: ./coverage.xml
-          flags: unittests
-        continue-on-error: true
-
-  node-check:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-
-      - name: Install pnpm
-        run: npm install -g pnpm
-
-      - name: Install deps
-        run: cd extensions/galaxyos && pnpm install
-
-      - name: Syntax check index.js
+      - name: Run desktop-shell import smoke test
         run: |
-          node -e "
-          const fs = require('fs');
-          const code = fs.readFileSync('extensions/galaxyos/index.js', 'utf-8');
-          try {
-            new Function(code);
-            console.log('✅ index.js syntax OK');
-          } catch(e) {
-            console.error('❌ index.js syntax error:', e.message);
-            process.exit(1);
-          }
+          # Validates the v9.4 desktop-shell contract: 5-slot
+          # MultiSlotRouter default-disabled, provider catalogue
+          # size, and the sidecar handlers importable. This is the
+          # same check as the .cnb.yml "desktop-shell-import-check"
+          # stage.
+          cd desktop-shell
+          python -c "
+          import sys; sys.path.insert(0, 'python')
+          from llm_providers import (
+              LLMBackend, OpenAICompatClient, AnthropicClient,
+              MockLLMClient, MultiSlotRouter, build_llm_backend,
+              MAINSTREAM_PROVIDERS,
+          )
+          from galaxyos_sidecar import SidecarHandlers
+          from tokui_dsl import (
+              open_bubble_ai, close_bubble, answer_paragraph,
+              progress_bar, upd, callout, plan_step, tool_result,
+          )
+          assert len(MAINSTREAM_PROVIDERS) >= 10, f'provider catalogue too small: {len(MAINSTREAM_PROVIDERS)}'
+          r = MultiSlotRouter()
+          assert r.SLOTS == ('llm', 'llm_pro', 'embedding', 'rerank', 'vlm'), 'v9.4 5-slot contract broken'
+          for slot in r.SLOTS:
+              assert r.is_enabled(slot) is False, f'{slot} should start disabled'
+          print(f'OK: desktop-shell imports + 5-slot router ({len(r.SLOTS)} slots)')
           "
 
-      - name: Check policy coverage
+      - name: Run harness import smoke test
         run: |
-          COUNT=$(grep -c 'policy: { channels:' extensions/galaxyos/index.js || echo 0)
-          echo "Policy declarations: $COUNT"
-          if [ "$COUNT" -lt 15 ]; then
-            echo "❌ Expected at least 15 policy declarations, found $COUNT"
-            exit 1
-          fi
-          echo "✅ Policy coverage OK"
-
-      - name: Check hook registrations
-        run: |
-          for hook in gateway_start gateway_stop before_tool_call after_tool_call before_compaction after_compaction before_agent_reply agent_end before_prompt_build; do
-            if ! grep -q "api.on(\"$hook\"" extensions/galaxyos/index.js; then
-              echo "❌ Missing hook: $hook"
-              exit 1
-            fi
-          done
-          echo "✅ All 9 hooks registered"
-
-  rust-check:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cargo mirror (rsproxy)
-        run: |
-          mkdir -p extensions/galaxyos/native/.cargo
-          cat > extensions/galaxyos/native/.cargo/config.toml << 'EOF'
-          [source.crates-io]
-          replace-with = "rsproxy"
-          [source.rsproxy]
-          registry = "https://rsproxy.cn/crates.io-index"
-          EOF
-
-      - name: Cargo check (Linux x86_64)
-        run: cd extensions/galaxyos/native && cargo check --release 2>&1 || echo "⚠️ cargo check failed (deps may need network)"
-        continue-on-error: true
+          python -c "
+          from galaxyos.harness import create_galaxy_agent
+          from galaxyos.harness.sidecar_bridge import build_sidecar_backend, build_provider_backend
+          print('OK: harness + sidecar_bridge importable')
+          "

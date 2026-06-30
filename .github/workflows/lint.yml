@@ -7,8 +7,14 @@ on:
     branches: [main, master]
   workflow_dispatch:
 
+# v9.4-adapted lint workflow.
+#
+# Drops `mypy` against `extensions/galaxyos/scripts/` (that dir
+# was removed in v9.0). Keeps ruff + a per-Python-version compile
+# check.
 jobs:
   ruff:
+    name: ruff
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -17,10 +23,12 @@ jobs:
       - name: Run Ruff
         uses: astral-sh/ruff-action@v3
         with:
-          args: check --select=E,F,W --ignore=E501,E402 --exclude=node_modules,target,prebuilt
+          args: check --select=E,F,W --ignore=E501,E402 --exclude=node_modules,target,prebuilt,release,dist,build
 
-  mypy:
+  mypy-core:
+    name: mypy (services + engine, best-effort)
     runs-on: ubuntu-latest
+    continue-on-error: false
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -29,19 +37,29 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-core.txt
 
-      - name: Install deps
+      - name: Install deps (core only)
         run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-core.txt
           pip install mypy
-          pip install -r requirements.txt
 
       - name: Run mypy
-        run: mypy services/ galaxyos/engine/ extensions/galaxyos/scripts/ --ignore-missing-imports --no-error-summary
-        continue-on-error: true  # mypy 渐进式：先不拦，但报告问题
+        # Best-effort: legacy code has many untyped signatures; we
+        # surface them but don't fail the build (matches
+        # .cnb.yml `lint` job's `--ignore-missing-imports` setting).
+        run: |
+          mypy services/ galaxyos/engine/ \
+            --ignore-missing-imports --no-error-summary --follow-imports=silent
+        continue-on-error: true
 
   python-compat:
+    name: python-compat ${{ matrix.python-version }}
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         python-version: ["3.11", "3.12"]
     steps:
@@ -59,7 +77,7 @@ jobs:
           import py_compile, os, sys
           problems = []
           for root, dirs, files in os.walk('.'):
-              dirs[:] = [d for d in dirs if d not in ('node_modules', '.git', '__pycache__', 'target', 'prebuilt', '.pnpm-store')]
+              dirs[:] = [d for d in dirs if d not in ('node_modules', '.git', '__pycache__', 'target', 'prebuilt', 'release', 'dist', 'build')]
               for f in files:
                   if f.endswith('.py'):
                       path = os.path.join(root, f)
