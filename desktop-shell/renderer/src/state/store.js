@@ -1,9 +1,9 @@
-// renderer/src/state/store.js — minimal pub-sub store (no deps).
+// renderer/src/store.js — minimal pub-sub store (no deps).
 //
-// Replaces the singleton `state = {...}` in old renderer.js. Each
-// store has `get()`, `set(partial)`, and `subscribe(fn)`. Subscribers
-// are called with the full new state after every set. Returns an
-// unsubscribe function.
+// Centralised state primitive shared by sidebar / composer / details /
+// welcome. Each store exposes `get()`, `set(partial)`, and
+// `subscribe(fn)`. Subscribers are called with the full new state
+// after every set. `subscribe()` returns an unsubscribe function.
 //
 // Usage:
 //   const sessionStore = createStore({ activeId: null, items: [] });

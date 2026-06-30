@@ -2,7 +2,7 @@
 
 > **ZCode/Codex 级别的独立桌面 AI Agent** — 脱离 OpenClaw，直接运行 GalaxyOS 引擎
 >
-> Stage 7 · 22 commits · TokUI + MeMo + ACRouter + MCP + 76 Skills
+> v0.1.4 · TokUI-first · ESM 模块化 · 19 IPC channel · 76 Skills · 4 LLM 模式
 
 ## 截图
 
@@ -22,22 +22,23 @@
 
 | 功能 | 状态 | 说明 |
 |---|---|---|
-| **3 栏 ZCode 布局** | ✅ | sidebar / center chat / details panel |
+| **3 栏 ZCode 布局** | ✅ | sidebar / center chat / details panel（TokUI 挂载点） |
 | **TokUI 流式 AI 气泡** | ✅ | think-chain / tool-call / terminal / sandbox / msg-actions |
+| **TokUI 原生 UI** | ✅ | [conversations][card][dot][tabs][chat-input][welcome][feature] 全部就位 |
 | **4 模式** | ✅ | Ask（自动路由）/ Process（R-CCAM）/ Agent（工具调用）/ MeMo*（调试） |
 | **多会话管理** | ✅ | 新建 / 切换 / 重命名 / 删除 / localStorage 持久化 |
-| **Model picker** | ✅ | 5 模型 · topbar dropdown · localStorage 持久化 |
-| **模型设置生效** | ✅ | API Key / Base URL 热更新 → sidecar 写 llm_config.json |
-| **76 Skills** | ✅ | 搜索框 · 点击查看详情 · 从原项目 skills/ 动态加载 |
-| **Settings 面板** | ✅ | API Key / Base URL / Workspace / Theme |
+| **模型设置** | ✅ | API Key / Base URL / Provider / 5-slot 独立启用 → sidecar 热更新 |
+| **76 Skills** | ✅ | 列表 + 详情 + 邻居图谱（SkillGraph） |
 | **Agent 工具调用** | ✅ | shell_run / read_file / write_file / list_dir / grep / apply_diff |
 | **Diff view** | ✅ | Agent 模式 `diff path "old"→"new"` → `[sandbox lang:diff]` |
 | **MCP Server 配置** | ✅ | mcp_client.py · 读 ~/.galaxyos/mcp.json · 发现 tools/list · 合并到注册表 |
 | **MeMo 3-stage** | ✅ | Grounding → Entity → Answer · 全局背景层 · parametric 记忆 |
-| **ACRouter C-A-F** | ✅ | Context → Action → Feedback → Memorize · 全局路由 · routing_debug footer |
+| **ACRouter C-A-F** | ✅ | Context → Action → Feedback → Memorize · 全局路由 |
 | **键盘快捷键** | ✅ | Ctrl+N / Ctrl+, / Ctrl+B / Ctrl+K / Esc |
-| **msg-action 按钮** | ✅ | copy / regenerate / like / dislike |
-| **zmq IPC bridge** | ✅ | renderer → main → sidecar via zmq REQ/REP |
+| **msg-action 按钮** | ✅ | copy / regenerate / like / dislike / verify / recall / save |
+| **ESM 模块化** | ✅ | renderer 13 个模块 + 4 个 pub-sub store |
+| **API schema** | ✅ | `galaxy:schema` IPC channel 暴露 19 channels + 14 types 完整契约 |
+| **zmq IPC bridge** | ✅ | renderer → main → sidecar via zmq REQ/REP + PUB/SUB |
 | **PyInstaller 打包** | ✅ | galaxyos-sidecar.exe (17MB) |
 | **electron-builder** | ✅ | GalaxyOS.exe (186MB standalone) |
 | **应用图标** | ✅ | 512x512 GalaxyOS brand icon |
@@ -132,22 +133,42 @@ Sidecar 启动时自动发现 MCP 工具并合并到 Agent 工具注册表。
 
 ```
 desktop-shell/
-├── package.json              # Electron + esbuild + electron-builder
+├── package.json              # Electron 32 + esbuild + electron-builder
 ├── esbuild.config.mjs        # bundles main.ts + preload.ts → dist/
+├── tsconfig.json             # TypeScript config (main / preload only)
 ├── galaxyos-sidecar.spec     # PyInstaller config
 ├── src/
-│   ├── main.ts               # Electron main: spawn sidecar, zmq REQ, IPC
-│   └── preload.ts            # contextBridge → window.galaxy.*
+│   ├── main.ts               # Electron main: spawn sidecar, zmq REQ/REP,
+│   │                         # zmq PUB→SUB progress events, 19 IPC channels
+│   └── preload.ts            # contextBridge → window.galaxy.* (typed API)
 ├── renderer/
-│   ├── index.html            # 3 栏 ZCode 布局 + settings modal
-│   ├── renderer.js           # SSE consumer + TokUI + shortcuts + handlers
-│   ├── sessions.js           # 多会话管理
-│   ├── model_picker.js       # Model switcher dropdown
-│   └── style.css             # Dark theme
+│   ├── index.html            # 3 栏挂载点 (#sidebar-host / #tokui-container
+│   │                         #   / #composer-host / #details-host) +
+│   │                         #   iw-modal (install wizard)
+│   └── src/                  # ESM 模块（按职责切分）
+│       ├── main.js           # 入口：bootTokUI + 装配 components/stores
+│       ├── tokui/            # TokUI 适配层
+│       │   ├── runtime.js    #   UMD lazy-load + stub fallback
+│       │   ├── feed.js       #   startStream/feed/endStream 高阶 API
+│       │   └── handlers.js   #   msg-action 回调（copy/regen/like/...）
+│       ├── components/       # UI 组件（用 TokUI DSL 渲染）
+│       │   ├── sidebar.js    #   左栏 [conversations][card][dot]
+│       │   ├── composer.js   #   输入栏 [tabs][chat-input]
+│       │   ├── details.js    #   右栏 [card][md][tag]
+│       │   └── welcome.js    #   首屏 [welcome][feature]
+│       ├── state/            # pub-sub 状态（4 个 store）
+│       │   ├── store.js      #   30 行最小 store 原语
+│       │   ├── session.js    #   多会话 CRUD + localStorage
+│       │   ├── connection.js #   sidecar health 探针
+│       │   ├── skills.js     #   技能列表缓存
+│       │   └── settings.js   #   用户设置 + theme
+│       └── ipc/
+│           └── client.js     # window.galaxy 桥接（Electron + 独立 SSE）
 ├── python/
-│   ├── galaxyos_sidecar.py   # zmq REP server + all RPC methods
+│   ├── galaxyos_sidecar.py   # zmq REP server + 30+ RPC methods
 │   ├── path_resolver_desktop.py  # OpenClaw 解耦 shim
-│   ├── tokui_dsl.py          # process() → TokUI DSL fragments
+│   ├── tokui_dsl.py          # 21 个 DSL builder（process() → TokUI 流）
+│   ├── llm_providers.py      # 11 个 provider + 5-slot MultiSlotRouter
 │   ├── tools.py              # 6 工具 (shell/read/write/list/grep/diff)
 │   ├── agent_loop.py         # Heuristic Agent tool dispatcher
 │   ├── memo_adapter.py       # MeMo Memory model (Mock + ONNX stub)
@@ -156,14 +177,31 @@ desktop-shell/
 │   ├── ac_router.py          # Agent-as-a-Router C-A-F loop
 │   ├── cumulative_regret.py  # Evaluation metric
 │   ├── mcp_client.py         # MCP server discovery + tool merge
-│   └── tests/
-│       └── test_cumulative_regret.py
+│   ├── skill_graph.py        # SkillGraph v8.4.1 集成
+│   ├── galaxy_agent.py       # create_galaxy_agent() 工厂入口
+│   └── tests/                # 6 个 Python 测试文件
 ├── scripts/
 │   ├── dev.mjs               # one-shot dev launcher
 │   ├── build-python.sh       # PyInstaller wrapper
 │   └── playwright_smoke.py   # visual E2E test
 ├── build/icon.png            # 512×512 app icon
 └── README.md                 # this file
+```
+
+## 渲染器模块图
+
+```
+main.js
+ ├─ tokui/runtime.js          (bootTokUI / setTheme / registerHandler)
+ │   └─ window.TokUI (UMD, lazy load + 3s stub fallback)
+ ├─ tokui/feed.js             (startStream/feed/endStream)
+ ├─ tokui/handlers.js         (msg-action → galaxy.*)
+ ├─ state/store.js × 4        (session / skills / connection / settings)
+ ├─ components/sidebar.js     ([conversations][card][dot][toolbar])
+ ├─ components/composer.js    ([tabs][chat-input])
+ ├─ components/details.js     ([card][md][tag])
+ ├─ components/welcome.js     ([welcome][feature])
+ └─ ipc/client.js → window.galaxy → IPC → main.ts → zmq → sidecar
 ```
 
 ## 设计文档

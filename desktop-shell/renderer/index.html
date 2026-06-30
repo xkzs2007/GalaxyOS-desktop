@@ -1,269 +1,65 @@
 <!DOCTYPE html>
+<!--
+  GalaxyOS Desktop — renderer entry (D 阶段：TokUI-first).
+
+  Layout: 3 栏 ZCode 风格 sidebar / main / details
+    ┌──────────┬──────────────────────────┬──────────────┐
+    │ sidebar  │  tokui-container (流式)  │  details     │
+    │  -host   │  composer-host (输入)    │  -host       │
+    └──────────┴──────────────────────────┴──────────────┘
+
+  所有 UI 渲染都通过 src/main.js → bootTokUI() → TokUI 组件完成。
+  本文件只提供挂载点（#sidebar-host / #tokui-container / #composer-host /
+  #details-host）和最小可见的 install-wizard 弹窗（#iw-modal，启动模型
+  下载时由 IPC 触发显示）。
+
+  TokUI 加载策略：
+    - 默认从 unpkg CDN 加载（开发 / smoke test / 用户没跑 npm install 时）
+    - Electron 模式下 main.ts 会在 did-finish-load 后通过
+      webContents.executeJavaScript 注入本地 UMD（覆盖 window.TokUI），
+      使生产环境完全离线可用。
+    - CSP 在 meta 里允许 https://unpkg.com 拉 UMD + CSS。
+
+  D 阶段改动：
+    - 删所有手写 sidebar / composer / settings modal fallback（之前 hidden
+      兜底）。如果 TokUI 加载失败，runtime.js 的 makeStubRenderer 会渲染
+      简单文本回退，不再依赖手写 HTML。
+    - iw-modal 保留（install wizard 是 zmq REP/PUB 直驱，TokUI 接管前
+      是可见的 UI 部件）。
+-->
 <html lang="zh-CN" data-tokui-theme="dark">
 <head>
   <meta charset="UTF-8" />
   <meta http-equiv="Content-Security-Policy"
         content="default-src 'self' https://unpkg.com; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://unpkg.com; style-src 'self' 'unsafe-inline' https://unpkg.com; img-src 'self' data:; connect-src 'self' http://127.0.0.1:5758 ws://127.0.0.1:5758;" />
   <title>GalaxyOS Desktop</title>
-  <!--
-    TokUI CSS is loaded EITHER:
-      (a) from the CDN (https://unpkg.com/@jboltai/tokui) when no
-          local node_modules is present (standalone mode — used by
-          Playwright smoke tests and first-launch)
-      (b) from a local node_modules copy when @jboltai/tokui is
-          installed (Electron production mode — main.ts injects the
-          UMD via webContents.executeJavaScript)
-    We default to (a) so the page works even without npm install.
-    The CSP allows unpkg.com via the meta tag below.
-  -->
   <link rel="stylesheet" href="https://unpkg.com/@jboltai/tokui/dist/tokui.css" />
-  <!-- C 阶段：删 4 个手写 CSS (style.css + src/styles/*) -->
-  <!-- <link rel="stylesheet" href="style.css" /> -->
-  <!-- <link rel="stylesheet" href="src/styles/tokens.css" /> -->
-  <!-- <link rel="stylesheet" href="src/styles/layout.css" /> -->
-  <!-- <link rel="stylesheet" href="src/styles/components.css" /> -->
-  <!-- TokUI 主题 + 4 套内置 (default/dark/modern/modern-dark) 自动生效 -->
 </head>
 <body>
   <div id="app">
 
-    <!-- LEFT SIDEBAR — sessions + skills + status (C 阶段：TokUI 渲染到 #sidebar-host) -->
+    <!-- LEFT — sidebar mount point (TokUI [conversations][card][dot]) -->
     <aside class="sidebar">
-      <!-- 旧手写 sidebar UI 已被 [conversations][card][dot] 组件取代
-           sidebar.js 把内容渲染到下面的 #sidebar-host -->
-      <div id="sidebar-host" style="padding: 12px; min-height: 100%; box-sizing: border-box;"></div>
-      <!-- 旧按钮保留作为兜底（如果 TokUI 加载失败） -->
-      <div class="sidebar-header" hidden>
-        <span class="logo">●</span>
-        <span class="brand">GalaxyOS</span>
-        <span class="version" id="version-tag">stage 2.0</span>
-      </div>
-
-      <button class="new-chat-btn" id="new-chat-btn">
-        <span class="icon">+</span>
-        <span>新对话</span>
-      </button>
-
-      <div class="sessions-section">
-        <div class="section-label">会话</div>
-        <ul class="sessions-list" id="sessions-list">
-          <!-- populated by sessions.js -->
-        </ul>
-      </div>
-
-      <div class="skills-section">
-        <div class="section-label">已加载技能 <span class="skill-count" id="skill-count"></span></div>
-        <input type="text" id="skill-search" class="skill-search" placeholder="搜索技能…" autocomplete="off" />
-        <ul class="skills-list" id="skills-list">
-        </ul>
-      </div>
-
-      <div class="settings-section">
-        <button class="settings-btn" id="settings-btn">⚙ 设置</button>
-        <button class="settings-btn" id="download-model-btn" title="下载 LFM2.5-1.2B ONNX 模型 (~1.2GB)">📥 下载模型</button>
-      </div>
-
-      <div class="sidebar-footer">
-        <div class="conn-row">
-          <span id="conn-indicator" class="dot"></span>
-          <span id="conn-text">连接中…</span>
-        </div>
-        <div class="conn-row sub" id="health-detail"></div>
-      </div>
+      <div id="sidebar-host"></div>
     </aside>
 
-    <!-- CENTER — main chat (TokUI mounts here) -->
+    <!-- CENTER — main chat + composer (TokUI mount points) -->
     <main class="main">
-      <header class="topbar">
-        <div class="crumbs">
-          <span class="crumb">GalaxyOS</span>
-          <span class="sep">/</span>
-          <span class="crumb" id="active-session-name">默认会话</span>
-        </div>
-        <div class="topbar-actions">
-          <button class="model-picker" id="model-picker" title="切换模型">
-            <span class="model-dot"></span>
-            <span class="model-name" id="model-name">Qwen-2.5</span>
-            <span class="model-chevron">▾</span>
-          </button>
-          <span class="stage-badge" id="stage-badge">stage 2.1 · TokUI</span>
-        </div>
-      </header>
-
-      <div id="tokui-container" class="tokui-container">
-        <!-- TokUI mount point. The client renders streamed DSL here. -->
-      </div>
-
-      <!-- Composer (C 阶段：TokUI [chat-input] 渲染到 #composer-host) -->
-      <div id="composer-host" style="padding: 12px; border-top: 1px solid var(--tokui-border, #2a2f3a);"></div>
-      <!-- 旧 model-picker + 手写 composer 已被 [tabs][chat-input] 取代 -->
-      <footer class="composer" hidden>
-        <div class="composer-mode">
-          <button class="mode-btn active" data-mode="ask">Ask</button>
-          <button class="mode-btn" data-mode="process">Process</button>
-          <button class="mode-btn" data-mode="agent" title="Agent — can run shell, read/write files, search">Agent</button>
-          <button class="mode-btn" data-mode="plan" title="Plan — 先出计划，确认后再执行">Plan</button>
-          <button class="mode-btn" data-mode="memo" title="MeMo 调试模式">MeMo*</button>
-        </div>
-        <div class="composer-input-wrap">
-          <div id="attachment-preview" class="attachment-preview"></div>
-          <textarea id="input" rows="1" autocomplete="off"
-                    placeholder="问点什么…（Enter 发送，Shift+Enter 换行）"></textarea>
-        </div>
-        <button id="attach-btn" class="attach-btn" title="上传文件">📎</button>
-        <input type="file" id="file-input" hidden multiple />
-        <button id="send" class="send-btn" disabled>
-          <span>发送</span>
-        </button>
-      </footer>
+      <div id="tokui-container" class="tokui-container"></div>
+      <div id="composer-host"></div>
     </main>
 
-    <!-- Settings modal -->
-    <div class="modal-overlay" id="settings-modal" hidden>
-      <div class="modal">
-        <div class="modal-header">
-          <span>设置</span>
-          <button class="modal-close" id="settings-close">✕</button>
-        </div>
-        <div class="modal-tabs">
-          <button class="modal-tab active" data-tab="general">通用</button>
-          <button class="modal-tab" data-tab="llm">LLM</button>
-          <button class="modal-tab" data-tab="embedding">Embedding</button>
-          <button class="modal-tab" data-tab="rerank">Rerank</button>
-          <button class="modal-tab" data-tab="vlm">VLM</button>
-          <button class="modal-tab" data-tab="diagnostics">诊断</button>
-        </div>
-        <div class="modal-body" id="tab-general">
-          <label class="modal-label">LLM API Key</label>
-          <input type="password" id="setting-api-key" class="modal-input" placeholder="sk-..." />
-          <label class="modal-label">LLM API Base URL</label>
-          <input type="text" id="setting-api-base" class="modal-input" placeholder="https://api.deepseek.com/v1" />
-          <label class="modal-label">Workspace 路径</label>
-          <input type="text" id="setting-workspace" class="modal-input" placeholder="~/.galaxyos/workspace" />
-          <label class="modal-label">System Prompt（系统提示词）</label>
-          <textarea id="setting-system-prompt" class="modal-input" rows="3" placeholder="你是一个专业的编程助手…" style="resize:vertical;font-family:inherit;"></textarea>
-          <label class="modal-label">主题</label>
-          <select id="setting-theme" class="modal-select">
-            <option value="dark">Dark</option>
-            <option value="light">Light</option>
-          </select>
-        </div>
-        <div class="modal-body" id="tab-llm" hidden>
-          <label class="modal-row-toggle">
-            <input type="checkbox" id="setting-llm-enabled" checked />
-            <span>启用 LLM</span>
-            <span class="hint">关闭后 LLM 走 mock fallback，仅供前端 UI 调试，不会发出任何远端请求。</span>
-          </label>
-          <div class="modal-slot-body" data-slot-body="llm">
-            <p class="hint">主对话模型。可与 Embedding / Rerank 独立配置。</p>
-            <label class="modal-label">Provider</label>
-            <select id="setting-llm-provider" class="modal-select">
-              <option value="">(loading…)</option>
-            </select>
-            <label class="modal-label">Model</label>
-            <input type="text" id="setting-llm-model" class="modal-input" placeholder="e.g. qwen-plus" />
-            <label class="modal-label">API Key</label>
-            <input type="password" id="setting-llm-key" class="modal-input" placeholder="sk-..." />
-            <label class="modal-label">Base URL (留空用默认)</label>
-            <input type="text" id="setting-llm-base" class="modal-input" placeholder="https://..." />
-          </div>
-        </div>
-        <div class="modal-body" id="tab-embedding" hidden>
-          <label class="modal-row-toggle">
-            <input type="checkbox" id="setting-embedding-enabled" />
-            <span>启用 Embedding</span>
-            <span class="hint">未勾选时召回 / 技能检索回退到本地 BoW 检索，无需 API key。</span>
-          </label>
-          <div class="modal-slot-body" data-slot-body="embedding">
-            <p class="hint">向量检索 Embedding 模型（用于 MeMo 召回 / SkillGraph）</p>
-            <label class="modal-label">Provider</label>
-            <select id="setting-embedding-provider" class="modal-select">
-              <option value="">(loading…)</option>
-            </select>
-            <label class="modal-label">Model</label>
-            <input type="text" id="setting-embedding-model" class="modal-input" placeholder="e.g. BAAI/bge-m3" />
-            <label class="modal-label">API Key</label>
-            <input type="password" id="setting-embedding-key" class="modal-input" placeholder="sk-..." />
-            <label class="modal-label">Base URL (留空用默认)</label>
-            <input type="text" id="setting-embedding-base" class="modal-input" placeholder="https://..." />
-          </div>
-        </div>
-        <div class="modal-body" id="tab-rerank" hidden>
-          <label class="modal-row-toggle">
-            <input type="checkbox" id="setting-rerank-enabled" />
-            <span>启用 Rerank</span>
-            <span class="hint">未勾选时检索直接返回 top-k，不做二次重排序。</span>
-          </label>
-          <div class="modal-slot-body" data-slot-body="rerank">
-            <p class="hint">重排序模型（提升检索精度）</p>
-            <label class="modal-label">Provider</label>
-            <select id="setting-rerank-provider" class="modal-select">
-              <option value="">(loading…)</option>
-            </select>
-            <label class="modal-label">Model</label>
-            <input type="text" id="setting-rerank-model" class="modal-input" placeholder="e.g. BAAI/bge-reranker-v2-m3" />
-            <label class="modal-label">API Key</label>
-            <input type="password" id="setting-rerank-key" class="modal-input" placeholder="sk-..." />
-            <label class="modal-label">Base URL (留空用默认)</label>
-            <input type="text" id="setting-rerank-base" class="modal-input" placeholder="https://..." />
-          </div>
-        </div>
-        <div class="modal-body" id="tab-vlm" hidden>
-          <label class="modal-row-toggle">
-            <input type="checkbox" id="setting-vlm-enabled" />
-            <span>启用 VLM（视觉语言模型）</span>
-            <span class="hint">未勾选时图片附件会显示 "VLM 未配置" 提示，不进行 OCR。</span>
-          </label>
-          <div class="modal-slot-body" data-slot-body="vlm">
-            <p class="hint">视觉语言模型（图片 OCR / 多模态 — 阶段二启用）</p>
-            <label class="modal-label">Provider</label>
-            <select id="setting-vlm-provider" class="modal-select">
-              <option value="">(loading…)</option>
-            </select>
-            <label class="modal-label">Model</label>
-            <input type="text" id="setting-vlm-model" class="modal-input" placeholder="e.g. deepseek-vl-7b" />
-            <label class="modal-label">API Key</label>
-            <input type="password" id="setting-vlm-key" class="modal-input" placeholder="sk-..." />
-            <label class="modal-label">Base URL (留空用默认)</label>
-            <input type="text" id="setting-vlm-base" class="modal-input" placeholder="https://..." />
-          </div>
-        </div>
-        <div class="modal-body" id="tab-diagnostics" hidden>
-          <div class="diagnostics-header">
-            <span>运行时状态</span>
-            <button class="diagnostics-refresh" id="diagnostics-refresh">↻ 刷新</button>
-          </div>
-          <div class="diagnostics-content" id="diagnostics-content">
-            <p class="hint">点击「刷新」以获取最新状态。</p>
-          </div>
-        </div>
-        <div class="modal-footer">
-          <button class="modal-btn" id="settings-save">保存</button>
-        </div>
-      </div>
-    </div>
-
-    <!-- RIGHT — details panel (R-CCAM trace, MeMo stages, ACRouter) -->
+    <!-- RIGHT — details mount point (TokUI [card][md][tag]) -->
     <aside class="details" id="details-panel">
-      <div class="details-header">
-        <span class="section-label">执行详情</span>
-        <button class="collapse-btn" id="collapse-details" title="折叠">›</button>
-      </div>
-      <!-- C 阶段：TokUI [card][md][source] 渲染到 #details-host -->
-      <div id="details-host" style="padding: 12px;"></div>
-      <div class="details-body" id="details-body" hidden>
-        <div class="empty-state">
-          <p>选择一条消息，查看 R-CCAM 推理过程与召回记忆。</p>
-          <p class="hint">（阶段二将展示 MeMo 三阶段；阶段三将展示 Agent-as-a-Router 路由。）</p>
-        </div>
-      </div>
+      <div id="details-host"></div>
     </aside>
 
   </div>
 
-  <!-- Install wizard progress modal — hidden by default, shown when
-       user clicks "下载模型". Streams progress lines from the sidecar
-       via PUB/SUB → webContents.send → ipcRenderer.on('iw:progress'). -->
+  <!-- Install wizard modal — shown when user clicks "下载模型".
+       Streams progress lines from the sidecar via zmq PUB → webContents.send
+       → ipcRenderer.on('iw:progress'). D 阶段保留手写（TokUI 接管前是
+       唯一可见的安装流）。 -->
   <div id="iw-modal" class="iw-modal hidden" role="dialog" aria-labelledby="iw-title">
     <div class="iw-modal-content">
       <div class="iw-header">
@@ -292,11 +88,8 @@
     </div>
   </div>
 
-  <!-- Load TokUI from CDN so the page works without npm install.
-       In Electron production mode, main.ts replaces this with a local
-       UMD injection via webContents.executeJavaScript.
-       The new modular renderer (src/main.js) wires everything together
-       from individual ESM modules. -->
+  <!-- TokUI UMD. The page also works if the script fails to load — main.js
+       falls back to makeStubRenderer() (text-only renderer) after 3s. -->
   <script src="https://unpkg.com/@jboltai/tokui/dist/tokui.umd.js"></script>
   <script type="module" src="src/main.js"></script>
 </body>
