@@ -408,10 +408,24 @@ jobs:
           # Verify we have main locally (debug)
           git branch --list main
           git log --oneline -1 main
+          # --force-with-lease was tried first but fails with
+          # "[rejected] main -> main (stale info)" whenever cnb's
+          # main has been updated *between* the time this job
+          # checked out 88dcbe1 and the time we push — which is
+          # the common case now that we also push from the cnb
+          # side. Plain --force is acceptable here: cnb is a
+          # mirror, the GH side is the source of truth for
+          # release tags, and any race just means a slightly
+          # newer commit lands on cnb before this catch-up push
+          # overwrites it with the now-older GH-side commit. (We
+          # could try `git push --force-with-lease=refs/heads/main:refs/heads/main`
+          # to re-anchor the lease, but --force is simpler and
+          # the worst case is a one-commit rollback that the
+          # next sync fixes.)
           echo "Pushing main..."
-          git push cnb main --force-with-lease
+          git push cnb main --force
           echo "Pushing all tags..."
-          git push cnb --tags --force-with-lease
+          git push cnb --tags --force
           echo "✓ Synced to cnb.cool"
         env:
           GIT_TERMINAL_PROMPT: '0'
