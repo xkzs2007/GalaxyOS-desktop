@@ -203,7 +203,7 @@ $:
             # Rust stable toolchain（arm64-unknown-linux-gnu target 默认就是
             # 当前架构 aarch64，无需额外加 --target）
             curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --profile minimal
-            source "$HOME/.cargo/env"
+            . "$HOME/.cargo/env"
             rustc --version
             cargo --version
 
@@ -212,7 +212,7 @@ $:
             # 编 lfm_server Rust binary（arm64-unknown-linux-gnu，跟当前
             # runner 架构一致，无需 --target）。--no-default-features 跳过
             # PyO3 cdylib（desktop 端不需要 Python 扩展，只要 standalone binary）。
-            source "$HOME/.cargo/env"
+            . "$HOME/.cargo/env"
             cd extensions/galaxyos/native
             cargo build --release --bin lfm_server --no-default-features
             test -f target/release/lfm_server || { echo "ERROR: lfm_server not built"; exit 1; }
