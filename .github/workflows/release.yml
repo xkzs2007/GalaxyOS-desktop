@@ -267,10 +267,22 @@ jobs:
         # name 'laR'").
         shell: bash
         run: |
-          echo "--- release/ ---"
-          ls -laR release/ 2>&1 | head -50
+          echo "--- release/ (top level only) ---"
+          # Avoid `ls -laR` — it recurses into locales/ (50+ .pak
+          # files) and the pipe to `head -50` causes SIGPIPE under
+          # `set -o pipefail`, failing the step with exit code 2
+          # even though electron-builder already produced the
+          # AppImage / .exe successfully.
+          ls -la release/ 2>&1
+          echo ""
+          echo "--- release/linux-unpacked/ (top level) ---"
+          ls -la release/linux-unpacked/ 2>&1 | head -30 || true
+          echo ""
+          echo "--- release/win-unpacked/ (top level, if present) ---"
+          ls -la release/win-unpacked/ 2>&1 | head -30 || true
+          echo ""
           echo "--- sidecar dist/ ---"
-          ls -la python/dist/
+          ls -la python/dist/ 2>&1 || true
 
       - name: Upload sidecar binary
         uses: actions/upload-artifact@v4
