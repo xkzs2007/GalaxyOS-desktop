@@ -158,7 +158,19 @@ jobs:
 
       - name: Build Electron main + preload (esbuild)
         working-directory: desktop-shell
-        run: npx esbuild esbuild.config.mjs
+        # IMPORTANT: `npx esbuild esbuild.config.mjs` would treat
+        # the config as the entry point and compile IT instead of
+        # running the build() calls inside it. Run the config as a
+        # Node script so the `await build({...})` blocks actually
+        # execute and produce dist/main.cjs + dist/preload.cjs.
+        # Without this, electron-builder fails later with
+        # "Application entry file 'dist/main.cjs' does not exist".
+        shell: bash
+        run: |
+          node esbuild.config.mjs
+          test -f dist/main.cjs || { echo "ERROR: dist/main.cjs not produced"; exit 1; }
+          test -f dist/preload.cjs || { echo "ERROR: dist/preload.cjs not produced"; exit 1; }
+          ls -la dist/
 
       - name: Stage PyInstaller sidecar for electron-builder
         working-directory: desktop-shell

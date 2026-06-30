@@ -50,8 +50,8 @@
     ],
     "extraResources": [
       {
-        "from": "python/dist/galaxyos-sidecar.exe",
-        "to": "galaxyos-sidecar.exe",
+        "from": "python/dist",
+        "to": ".",
         "filter": [
           "galaxyos-sidecar*"
         ]
