@@ -1,45 +1,24 @@
 // renderer/src/main.js — entry point. Wires every module together.
 //
-// Module map:
-//   ipc/client        → window.galaxy (IPC bridge to sidecar)
-//   state/{session,connection,skills,settings}
-//                      → pub-sub stores, replace the singleton state
-//   tokui/runtime     → TokUI wrapper (with stub fallback)
-//   tokui/feed        → high-level DSL feed helpers
-//   tokui/handlers    → msg-action callbacks (copy/regen/like/verify/...)
-//   components/{sidebar,composer,details}
-//                      → DOM rendering + event wiring
-//   components/command-palette, settings-modal (TODO)
+// C 阶段：删掉 122 行手写逻辑，改为 ~40 行 TokUI-first boot 流程。
 //
-// This file is the ONLY one that knows the boot order.
+// 模块图（架构在 A 阶段确立，未变）：
+//   ipc/client        → window.galaxy (IPC bridge to sidecar)
+//   state/*           → pub-sub stores (4 个)
+//   tokui/runtime     → TokUI 适配层（UMD lazy load）
+//   tokui/feed        → 高阶 DSL feed helper
+//   tokui/handlers    → msg-action 回调
+//   components/sidebar / composer / details / welcome
+//                      → 用 TokUI DSL 渲染
 
-import { bootTokUI } from './tokui/runtime.js';
+import { bootTokUI, getInstance, registerHandler } from './tokui/runtime.js';
 import { registerMsgActionHandlers } from './tokui/handlers.js';
-import { startAssistantStream, feed, endAssistantStream } from './tokui/feed.js';
-import { initSidebar } from './components/sidebar.js';
-import { initComposer } from './components/composer.js';
+import { startAssistantStream, feed, endAssistantStream, isStreaming } from './tokui/feed.js';
+import { initSidebar, renderSidebar } from './components/sidebar.js';
+import { initComposer, renderComposer, onComposerSend, setMode } from './components/composer.js';
 import { initDetails } from './components/details.js';
-import { sessionApi } from './state/session.js';
-
-async function emitWelcomeIfEmpty() {
-  const container = document.getElementById('tokui-container');
-  if (!container || container.innerHTML.trim()) return;
-  const ui = await bootTokUI(container);
-  await startAssistantStream();
-  feed(
-    `[bubble role:ai model:GalaxyOS time:就绪]` +
-    `[md]\n# 欢迎使用 GalaxyOS 桌面端\n\n` +
-    `本机桌面版已脱离 OpenClaw，\`XiaoYiClawLLM\` 由 Python 子进程加载。\n\n` +
-    `- **Ask 模式** 走 *ask()*，单步检索 + 答案\n` +
-    `- **Process 模式** 走 *process()*，完整 R-CCAM 五阶段 + 推理链 + 工具调用\n` +
-    `- **Agent 模式** 走 */sse/agent*，能跑 shell / 读文件 / 写文件 / 搜索 / 列目录\n\n` +
-    `试试输入 *"今天我学了 R-CCAM 五阶段"*（用 Process 模式），或 *!ls -la*（用 Agent 模式）。\n` +
-    `[/md]` +
-    `[msg-actions copy regenerate like dislike visible][/msg-actions]` +
-    `[/bubble]`
-  );
-  endAssistantStream();
-}
+import { renderWelcome } from './components/welcome.js';
+import { sessionStore, sessionApi } from './state/session.js';
 
 function installKeyboardShortcuts() {
   document.addEventListener('keydown', (e) => {
@@ -52,71 +31,61 @@ function installKeyboardShortcuts() {
       if (c) while (c.firstChild) c.removeChild(c.firstChild);
       return;
     }
+    if (ctrl && e.key === ',') {
+      e.preventDefault();
+      // Theme picker dialog — defer to settings page (future)
+      cycleTheme();
+      return;
+    }
     if (e.key === 'Escape') {
-      const modal = document.getElementById('settings-modal');
-      if (modal && !modal.hidden) modal.hidden = true;
+      if (isStreaming()) {
+        // 简单兜底：结束当前流
+        endAssistantStream();
+      }
     }
   });
 }
 
-function installContextMenu() {
-  const menu = document.createElement('div');
-  menu.className = 'context-menu';
-  menu.hidden = true;
-  document.body.appendChild(menu);
-
-  function show(x, y, items) {
-    menu.innerHTML = '';
-    for (const item of items) {
-      const el = document.createElement('div');
-      el.className = 'ctx-item' + (item.danger ? ' danger' : '');
-      el.textContent = item.label;
-      el.addEventListener('click', () => { menu.hidden = true; item.action(); });
-      menu.appendChild(el);
-    }
-    menu.style.left = x + 'px';
-    menu.style.top = y + 'px';
-    menu.hidden = false;
-  }
-
-  document.addEventListener('click', () => { menu.hidden = true; });
-  document.addEventListener('contextmenu', (e) => {
-    const bubble = e.target.closest('[class*="bubble"]');
-    if (!bubble) return;
-    e.preventDefault();
-    const text = bubble.innerText || '';
-    show(e.clientX, e.clientY, [
-      { label: '📋 复制', action: () => navigator.clipboard.writeText(text) },
-      { label: '❌ 删除', danger: true, action: () => bubble.remove() },
-    ]);
-  });
+const THEMES = ['modern-dark', 'modern', 'dark', 'default'];
+function cycleTheme() {
+  const cur = (window.TokUI?.getTheme?.() ?? 'modern-dark');
+  const idx = THEMES.indexOf(cur);
+  const next = THEMES[(idx + 1) % THEMES.length];
+  window.TokUI?.setTheme?.(next);
+  console.log('[main] theme →', next);
 }
+
+// ── Welcome feature click → set composer mode + fill placeholder ──
+registerHandler('onWelcomePick', (data) => {
+  const value = typeof data === 'string' ? data : data?.value ?? data?.id;
+  if (value) setMode(value);
+});
 
 (async () => {
-  loadStyles();
-  const container = document.getElementById('tokui-container');
-  await bootTokUI(container);
+  // 1. Boot TokUI
+  const ui = await bootTokUI('#tokui-container');
+  window._tokuiInstance = ui;  // for composer.js to access
+
+  // 2. Register all event handlers
   registerMsgActionHandlers();
+
+  // 3. Init stores + components
   initSidebar();
   initComposer();
   initDetails();
-  installKeyboardShortcuts();
-  installContextMenu();
-  await emitWelcomeIfEmpty();
-  console.log('[main] GalaxyOS renderer ready');
-})();
 
-/**
- * Load the design-system CSS files in order: tokens → layout → components.
- * We do this dynamically so the legacy `style.css` doesn't shadow us,
- * and so a future build step can bundle these into a single file.
- */
-function loadStyles() {
-  const files = ['tokens.css', 'layout.css', 'components.css'];
-  for (const f of files) {
-    const link = document.createElement('link');
-    link.rel = 'stylesheet';
-    link.href = `src/styles/${f}`;
-    document.head.appendChild(link);
-  }
-}
+  // 4. Wire regenerate (msg-action → composer)
+  window.addEventListener('composer:regenerate', (e) => {
+    onComposerSend(e.detail.text);
+  });
+
+  // 5. Render initial UI
+  renderSidebar();
+  renderComposer();
+  renderWelcome();
+
+  // 6. Install keyboard shortcuts
+  installKeyboardShortcuts();
+
+  console.log('[main] GalaxyOS renderer ready (TokUI C-stage)');
+})();

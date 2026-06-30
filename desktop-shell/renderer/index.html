@@ -17,18 +17,23 @@
     The CSP allows unpkg.com via the meta tag below.
   -->
   <link rel="stylesheet" href="https://unpkg.com/@jboltai/tokui/dist/tokui.css" />
-  <link rel="stylesheet" href="style.css" />
-  <!-- New design system (tokens/layout/components) is loaded by
-       src/main.js at boot, AFTER style.css. style.css provides the
-       legacy 3-column grid + TokUI host styles that the new
-       components.css complements (not replaces) for now. -->
+  <!-- C 阶段：删 4 个手写 CSS (style.css + src/styles/*) -->
+  <!-- <link rel="stylesheet" href="style.css" /> -->
+  <!-- <link rel="stylesheet" href="src/styles/tokens.css" /> -->
+  <!-- <link rel="stylesheet" href="src/styles/layout.css" /> -->
+  <!-- <link rel="stylesheet" href="src/styles/components.css" /> -->
+  <!-- TokUI 主题 + 4 套内置 (default/dark/modern/modern-dark) 自动生效 -->
 </head>
 <body>
   <div id="app">
 
-    <!-- LEFT SIDEBAR — sessions + actions (ZCode/Codex pattern) -->
+    <!-- LEFT SIDEBAR — sessions + skills + status (C 阶段：TokUI 渲染到 #sidebar-host) -->
     <aside class="sidebar">
-      <div class="sidebar-header">
+      <!-- 旧手写 sidebar UI 已被 [conversations][card][dot] 组件取代
+           sidebar.js 把内容渲染到下面的 #sidebar-host -->
+      <div id="sidebar-host" style="padding: 12px; min-height: 100%; box-sizing: border-box;"></div>
+      <!-- 旧按钮保留作为兜底（如果 TokUI 加载失败） -->
+      <div class="sidebar-header" hidden>
         <span class="logo">●</span>
         <span class="brand">GalaxyOS</span>
         <span class="version" id="version-tag">stage 2.0</span>
@@ -89,37 +94,10 @@
         <!-- TokUI mount point. The client renders streamed DSL here. -->
       </div>
 
-      <!-- Model picker dropdown (hidden by default) -->
-      <div class="model-picker-menu" id="model-picker-menu" hidden>
-        <div class="menu-title">选择模型</div>
-        <button class="model-option" data-model="Qwen-2.5">
-          <span class="model-dot"></span>
-          <span class="model-label">Qwen-2.5</span>
-          <span class="model-desc">默认 — 通用快</span>
-        </button>
-        <button class="model-option" data-model="Qwen-3">
-          <span class="model-dot"></span>
-          <span class="model-label">Qwen-3</span>
-          <span class="model-desc">更强推理</span>
-        </button>
-        <button class="model-option" data-model="DeepSeek-V4">
-          <span class="model-dot"></span>
-          <span class="model-label">DeepSeek-V4</span>
-          <span class="model-desc">代码友好</span>
-        </button>
-        <button class="model-option" data-model="Gemini-3-Flash">
-          <span class="model-dot"></span>
-          <span class="model-label">Gemini-3-Flash</span>
-          <span class="model-desc">长上下文</span>
-        </button>
-        <button class="model-option" data-model="LFM-2.5-1.2B">
-          <span class="model-dot"></span>
-          <span class="model-label">LFM-2.5-1.2B</span>
-          <span class="model-desc">本地快（阶段三）</span>
-        </button>
-      </div>
-
-      <footer class="composer">
+      <!-- Composer (C 阶段：TokUI [chat-input] 渲染到 #composer-host) -->
+      <div id="composer-host" style="padding: 12px; border-top: 1px solid var(--tokui-border, #2a2f3a);"></div>
+      <!-- 旧 model-picker + 手写 composer 已被 [tabs][chat-input] 取代 -->
+      <footer class="composer" hidden>
         <div class="composer-mode">
           <button class="mode-btn active" data-mode="ask">Ask</button>
           <button class="mode-btn" data-mode="process">Process</button>
@@ -271,7 +249,9 @@
         <span class="section-label">执行详情</span>
         <button class="collapse-btn" id="collapse-details" title="折叠">›</button>
       </div>
-      <div class="details-body" id="details-body">
+      <!-- C 阶段：TokUI [card][md][source] 渲染到 #details-host -->
+      <div id="details-host" style="padding: 12px;"></div>
+      <div class="details-body" id="details-body" hidden>
         <div class="empty-state">
           <p>选择一条消息，查看 R-CCAM 推理过程与召回记忆。</p>
           <p class="hint">（阶段二将展示 MeMo 三阶段；阶段三将展示 Agent-as-a-Router 路由。）</p>

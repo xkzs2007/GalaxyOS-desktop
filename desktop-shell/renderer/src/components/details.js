@@ -1,64 +1,75 @@
 // renderer/src/components/details.js — right panel (skill detail / R-CCAM trace).
 //
-// Listens for the 'skill:open' CustomEvent dispatched by sidebar.js
-// when the user clicks a skill pill. Fetches the skill body + graph
-// neighbors, renders to the right panel.
+// C 阶段：用 [card][md][source] 替换手写 innerHTML 拼接。
+// TokUI 组件自带：
+//   - 卡片容器（[card tt:... ]）
+//   - Markdown 渲染（[md]...[/md]）
+//   - 引用来源（[source n: tt: sn: u:]）
+//   - 技能图邻居（[tag] 列表）
 
 import { galaxy } from '../ipc/client.js';
+import { bootTokUI } from '../tokui/runtime.js';
 
-const $ = (id) => document.getElementById(id);
-
-function escapeHtml(s) {
-  const d = document.createElement('div');
-  d.textContent = String(s ?? '');
-  return d.innerHTML;
-}
-
-async function showSkillDetail(skillId) {
+function renderSkillDetail(skillId) {
   if (!galaxy.skill) return;
-  const detailsBody = $('details-body');
-  if (!detailsBody) return;
-  try {
-    const detail = await galaxy.skill(skillId);
+  const host = document.getElementById('details-host');
+  if (!host) return;
+  bootTokUI().then(async (ui) => {
+    if (!ui) return;
+    let detail;
+    try {
+      detail = await galaxy.skill(skillId);
+    } catch (e) {
+      host.innerHTML = '';
+      ui.startStream(host);
+      ui.feed(`[card tt:"错误"][p v:danger]${e.message ?? e}[/p][/card]`);
+      ui.endStream();
+      return;
+    }
     const body = detail.body || '(no content)';
+    const md = body.slice(0, 2000);
 
-    let neighborsHtml = '';
+    // Fetch graph neighbors
+    let neighbors = [];
     if (galaxy.skillNeighbors) {
       try {
         const nb = await galaxy.skillNeighbors(skillId);
-        if (nb.successors && nb.successors.length > 0) {
-          neighborsHtml = '<div class="skill-neighbors"><h4>相关技能 (SkillGraph)</h4>';
-          for (const s of nb.successors.slice(0, 8)) {
-            neighborsHtml += `<div class="neighbor-pill" data-skill="${escapeHtml(s.name)}">${escapeHtml(s.name)} <span class="neighbor-rel">${escapeHtml(s.relation)}</span></div>`;
-          }
-          neighborsHtml += '</div>';
-        }
+        neighbors = (nb.successors ?? []).slice(0, 8);
       } catch (e) { /* ignore */ }
     }
 
-    detailsBody.innerHTML = `
-      <div class="skill-detail">
-        <h3>${escapeHtml(detail.name || skillId)}</h3>
-        <p class="hint">${escapeHtml(detail.description || '')}</p>
-        ${detail.version ? `<p class="hint">v${escapeHtml(detail.version)}</p>` : ''}
-        ${neighborsHtml}
-        <pre class="skill-body">${escapeHtml(body.slice(0, 2000))}</pre>
-      </div>`;
+    host.innerHTML = '';
+    ui.startStream(host);
+    ui.feed(`[card tt:"${escapeDsl(detail.name || skillId)}" v:highlight]`);
+    if (detail.description) {
+      ui.feed(`[p v:muted]${escapeDsl(detail.description)}[/p]`);
+    }
+    if (detail.version) {
+      ui.feed(`[tag]v${escapeDsl(detail.version)}[/tag]`);
+    }
+    ui.feed(`[md]\n${md}\n[/md]`);
+    if (neighbors.length) {
+      ui.feed(`[p v:muted]相关技能：[/p]`);
+      ui.feed(`[row]`);
+      for (const n of neighbors) {
+        ui.feed(`[tag clk:onSkillOpen act:${escapeDsl(n.name)}]${escapeDsl(n.name)}[/tag]`);
+      }
+      ui.feed(`[/row]`);
+    }
+    ui.feed(`[/card]`);
+    ui.endStream();
+  });
+}
 
-    detailsBody.querySelectorAll('.neighbor-pill').forEach((p) => {
-      p.addEventListener('click', () => showSkillDetail(p.dataset.skill));
-    });
-  } catch (e) {
-    console.warn('[details] skill detail failed:', e);
+function escapeDsl(s) {
+  if (s.includes('[') || s.includes(']') || s.includes('"')) {
+    return '"' + String(s ?? '').replace(/"/g, '\\"') + '"';
   }
+  return s;
 }
 
 export function initDetails() {
   window.addEventListener('skill:open', (e) => {
-    showSkillDetail(e.detail.id);
-  });
-
-  $('collapse-details')?.addEventListener('click', () => {
-    document.getElementById('app')?.classList.toggle('details-collapsed');
+    renderSkillDetail(e.detail.id);
   });
 }

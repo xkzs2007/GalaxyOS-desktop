@@ -1,18 +1,19 @@
 // renderer/src/tokui/handlers.js — TokUI msg-action handlers.
 //
-// Maps TokUI event names (copy, regenerate, like, dislike, verify,
-// recall, save) to renderer-side callbacks. Registered once at boot.
+// C 阶段：适配真实 TokUI 事件总线。
+// TokUI 通过 window.TokUI.registerHandler 注册回调，DSL 里的 clk:xxx
+// 触发对应 handler。handler 接收 (data, evt, formEl) — data 是事件负载。
 //
-// This file MUST NOT import from components/* (circular dep risk).
-// When a handler needs to trigger composer logic, it dispatches a
-// CustomEvent on window; the relevant component listens.
+// 我们保留 7 个原 handler：copy / regenerate / like / dislike /
+// verify / recall / save，对应 GalaxyOS 现有 msg-action 按钮。
 
 import { registerHandler } from './runtime.js';
 import { galaxy } from '../ipc/client.js';
 import { sessionApi } from '../state/session.js';
 
-function getBubbleText(ctx) {
-  return ctx?.element?.innerText ?? '';
+function getBubbleText(evt) {
+  // evt.element is the closest bubble DOM node
+  return evt?.element?.innerText ?? evt?.innerText ?? '';
 }
 
 function appendNote(bubble, text, color) {
@@ -24,52 +25,49 @@ function appendNote(bubble, text, color) {
 }
 
 export function registerMsgActionHandlers() {
-  registerHandler('copy', (ctx) => {
-    navigator.clipboard.writeText(getBubbleText(ctx)).catch(() => {});
+  registerHandler('copy', (data, evt) => {
+    const text = getBubbleText(evt) ?? data?.text ?? '';
+    navigator.clipboard.writeText(text).catch(() => {});
   });
 
   registerHandler('regenerate', () => {
-    // Re-send the last user message in the active session.
-    const s = sessionApi.getActive();
-    if (s?.title) {
-      // Walk back through the rendered HTML; simpler: read last user bubble.
-      const bubbles = document.querySelectorAll('#tokui-container [class*="bubble"]');
-      const lastUser = Array.from(bubbles).reverse().find((b) => b.className.includes('user'));
-      const text = lastUser?.innerText?.trim();
-      if (text) {
-        // Dispatch a custom event instead of importing composer directly
-        window.dispatchEvent(new CustomEvent('composer:regenerate', { detail: { text } }));
-      }
+    // Re-send the last user message
+    const bubbles = document.querySelectorAll('#tokui-container [class*="bubble"]');
+    const lastUser = Array.from(bubbles).reverse().find((b) => b.className.includes('user'));
+    const text = lastUser?.innerText?.trim();
+    if (text) {
+      // Dispatch custom event for composer to handle
+      window.dispatchEvent(new CustomEvent('composer:regenerate', { detail: { text } }));
     }
   });
 
-  registerHandler('like', (ctx) => {
+  registerHandler('like', (data, evt) => {
     if (galaxy.emitEvent) {
-      galaxy.emitEvent('msg_action_like', { text: getBubbleText(ctx).slice(0, 200) });
+      galaxy.emitEvent('msg_action_like', { text: (getBubbleText(evt) ?? '').slice(0, 200) });
     }
   });
 
-  registerHandler('dislike', (ctx) => {
+  registerHandler('dislike', (data, evt) => {
     if (galaxy.emitEvent) {
-      galaxy.emitEvent('msg_action_dislike', { text: getBubbleText(ctx).slice(0, 200) });
+      galaxy.emitEvent('msg_action_dislike', { text: (getBubbleText(evt) ?? '').slice(0, 200) });
     }
   });
 
-  registerHandler('verify', async (ctx) => {
+  registerHandler('verify', async (data, evt) => {
     if (!galaxy.verify) return;
-    const text = getBubbleText(ctx);
+    const text = getBubbleText(evt);
     try {
       const r = await galaxy.verify(text);
       const color = r.verdict === 'verified' ? '#10b981'
                   : r.verdict === 'partial'  ? '#f59e0b'
                   :                              '#ef4444';
-      appendNote(ctx?.element, `🔍 ${r.verdict} (${(r.confidence*100).toFixed(0)}%) — ${r.evidence_count} 证据`, color);
+      appendNote(evt?.element, `🔍 ${r.verdict} (${(r.confidence*100).toFixed(0)}%) — ${r.evidence_count} 证据`, color);
     } catch (e) { console.warn('[verify] failed:', e); }
   });
 
-  registerHandler('recall', async (ctx) => {
+  registerHandler('recall', async (data, evt) => {
     if (!galaxy.recall) return;
-    const text = getBubbleText(ctx).slice(0, 100);
+    const text = (getBubbleText(evt) ?? '').slice(0, 100);
     try {
       const r = await galaxy.recall(text, 3);
       const box = document.createElement('div');
@@ -78,16 +76,16 @@ export function registerMsgActionHandlers() {
         `<div style="margin-top:4px;opacity:0.85">${i+1}. ${(m.content || m.text || JSON.stringify(m)).slice(0, 80)}…</div>`
       ).join('');
       box.innerHTML = `<b>📚 检索到 ${r.count ?? 0} 条相关记忆</b><br>${items}`;
-      ctx?.element?.appendChild(box);
+      evt?.element?.appendChild(box);
     } catch (e) { console.warn('[recall] failed:', e); }
   });
 
-  registerHandler('save', async (ctx) => {
+  registerHandler('save', async (data, evt) => {
     if (!galaxy.saveMemory) return;
-    const text = getBubbleText(ctx);
+    const text = getBubbleText(evt);
     try {
       const r = await galaxy.saveMemory(text, { source: 'msg_action_save' });
-      appendNote(ctx?.element, `💾 已保存到长期记忆 (${r.memory_id?.slice(0, 8) || ''}…)`, '#10b981');
+      appendNote(evt?.element, `💾 已保存到长期记忆 (${r.memory_id?.slice(0, 8) || ''}…)`, '#10b981');
     } catch (e) { console.warn('[save] failed:', e); }
   });
 }

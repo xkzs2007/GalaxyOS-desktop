@@ -1,26 +1,25 @@
-// renderer/src/components/composer.js — input box + send button + mode tabs.
+// renderer/src/components/composer.js — composer surface.
 //
-// The composer is the "ask the agent" surface. It owns:
-//   - the textarea (#input)
-//   - the send button (#send)
-//   - the mode tabs (.mode-btn)
-//   - the auto-resize logic
-//   - the actual send pipeline (which delegates to feed.js for TokUI)
+// C 阶段：用 [chat-input ph: clk:onSend] 替换手写 textarea + send button。
+// TokUI 的 chat-input 组件自带：
+//   - 自适应高度（auto attribute）
+//   - 发送按钮（clk handler 触发）
+//   - 占位符（ph attribute）
+//   - 禁用态（dis attribute）
 //
-// Mode → sidecar method mapping is centralised here so callers don't
-// have to remember it.
+// Mode tabs（ask/process/agent/memo/plan）保留为 [tabs] 组件的 DSL 切换，
+// 但当前阶段先用 [toolbar pos:bottom] 占位 —— 下一迭代可换为 [tabs]。
 
-import { galaxy } from '../ipc/client.js';
 import {
-  emitUserMessage, startAssistantStream, feed, endAssistantStream,
+  startAssistantStream, feed, endAssistantStream,
   feedError, isStreaming,
 } from '../tokui/feed.js';
+import { galaxy } from '../ipc/client.js';
 import { sessionStore } from '../state/session.js';
-
-const $ = (id) => document.getElementById(id);
+import { registerHandler } from '../tokui/runtime.js';
 
 const state = {
-  mode: 'ask',          // 'ask' | 'process' | 'agent' | 'memo' | 'plan'
+  mode: 'ask',
   sessionId: 'default',
 };
 
@@ -32,132 +31,106 @@ const MODE_TO_METHOD = {
   plan:    { method: 'plan',    paramKey: 'prompt' },
 };
 
-function placeholders() {
-  return {
-    ask:     '简单提问（自动路由：MeMo / process / fast_path）',
-    process: '复杂任务（自动路由：走 R-CCAM 五阶段）',
-    agent:   'Agent 任务：!cmd / read file / grep / list / write path=content',
-    memo:    'MeMo 调试：直调 3-stage 协议（Grounding → Entity → Answer）',
-    plan:    'Plan 模式：描述任务，Agent 先出计划再执行',
-  };
+const MODE_LABELS = {
+  ask: 'Ask',
+  process: 'Process',
+  agent: 'Agent',
+  memo: 'MeMo',
+  plan: 'Plan',
+};
+
+/** Mode tabs 渲染（用 TokUI [tabs][tab] 组件） */
+function renderModeTabs() {
+  const modes = Object.keys(MODE_TO_METHOD);
+  const tabs = modes.map((m, i) =>
+    `[tab value:${m} ${state.mode === m ? 'active' : ''}]${MODE_LABELS[m]}[/tab]`
+  ).join('\n  ');
+  return `[tabs tt:"模式" clk:onModeTab]\n  ${tabs}\n[/tabs]`;
 }
 
+/** Mode 切换 handler — 切换后重渲染 tabs */
 function setMode(mode) {
   state.mode = mode;
-  document.querySelectorAll('.mode-btn').forEach((b) => {
-    b.classList.toggle('active', b.dataset.mode === mode);
-  });
-  const input = $('input');
-  if (input) input.placeholder = placeholders()[mode] ?? '';
+  const tabsHost = document.getElementById('mode-tabs-host');
+  if (tabsHost) {
+    // TokUI render 替换内容
+    const { getInstance } = window;
+    const ui = window._tokuiInstance;
+    if (ui) {
+      tabsHost.innerHTML = '';
+      ui.startStream(tabsHost);
+      ui.feed(renderModeTabs());
+      ui.endStream();
+    }
+  }
 }
 
-function autoResize() {
-  const input = $('input');
-  if (!input) return;
-  input.style.height = 'auto';
-  input.style.height = Math.min(input.scrollHeight, 200) + 'px';
+/** Render the composer area: mode tabs + chat-input */
+export function renderComposer() {
+  const host = document.getElementById('composer-host');
+  if (!host) return;
+  const { getInstance } = window;
+  const ui = window._tokuiInstance;
+  if (!ui) return;
+  host.innerHTML = '';
+  ui.startStream(host);
+  ui.feed(renderModeTabs());
+  ui.feed(`[chat-input ph:"输入消息，按 Enter 发送" clk:onComposerSend auto rows:2 max:2000][/chat-input]`);
+  ui.endStream();
 }
 
-function setBusy(busy) {
-  const send = $('send');
-  if (send) send.disabled = busy;
-}
-
-async function consumeStream(method, paramKey, text) {
-  const params = { [paramKey]: text, session_id: state.sessionId };
+/** Real send handler — triggered by TokUI's chat-input clk:onComposerSend */
+async function onComposerSend(text) {
+  if (!text?.trim() || isStreaming()) return;
   await startAssistantStream();
-  showStreamingIndicator();
+  // 1. User bubble
+  feed(`[bubble role:user][p]${escapeDsl(text)}[/bubble]`);
+  // 2. Assistant bubble — streamed fragments
+  const m = MODE_TO_METHOD[state.mode] ?? MODE_TO_METHOD.ask;
   try {
-    const res = await galaxy[method](text, state.sessionId);
+    const res = await galaxy[m.method](text, state.sessionId);
     const frags = res?.events ?? res?.fragments ?? res?._fragments ?? [];
-    // Progressive feed: yield to the browser between fragments so the
-    // user sees the bubble grow in real time. When sidecar IPC is
-    // upgraded to true streaming (one event per fragment), this loop
-    // already does the right thing — `await yieldToBrowser()` is a
-    // no-op cost on each iteration.
     for (const dsl of frags) {
       feed(dsl);
       await yieldToBrowser();
     }
   } catch (e) {
     console.error('[composer] error:', e);
-    feed(`[p v:danger]${e.message ?? e}[/p]`);
+    feed(`[p v:danger]${escapeDsl(e.message ?? String(e))}[/p]`);
   } finally {
-    hideStreamingIndicator();
     endAssistantStream();
   }
 }
 
-/** Yield to the browser so it can paint. 0ms is enough — the browser
- *  reclaims control on its next idle slot. ~16ms cost is acceptable
- *  for a visible streaming effect; we cap to 30ms max so very long
- *  fragment lists don't slow the response. */
+function escapeDsl(s) {
+  if (s.includes('[') || s.includes(']')) {
+    return '"' + String(s).replace(/"/g, '\\"') + '"';
+  }
+  return s;
+}
+
 function yieldToBrowser() {
   return new Promise((r) => setTimeout(r, 0));
 }
 
-let _indicator = null;
-function showStreamingIndicator() {
-  if (_indicator) return;
-  const composer = document.querySelector('.composer');
-  if (!composer) return;
-  _indicator = document.createElement('div');
-  _indicator.className = 'streaming-indicator';
-  _indicator.innerHTML = '<span class="dot"></span><span class="dot"></span><span class="dot"></span>';
-  composer.appendChild(_indicator);
-}
-function hideStreamingIndicator() {
-  if (_indicator) { _indicator.remove(); _indicator = null; }
-}
+// ── Wire handlers (queueable, registered before/after bootTokUI) ──
+registerHandler('onComposerSend', (data) => {
+  // TokUI chat-input hands the value as the first arg
+  const text = typeof data === 'string' ? data : data?.value ?? data?.text ?? '';
+  onComposerSend(text);
+});
 
-export async function handleSend() {
-  const input = $('input');
-  const text = input?.value.trim();
-  if (!text || isStreaming()) return;
-  if (input) { input.value = ''; autoResize(); }
-  setBusy(true);
+registerHandler('onModeTab', (data) => {
+  const value = typeof data === 'string' ? data : data?.value ?? data?.tab;
+  if (value && MODE_TO_METHOD[value]) setMode(value);
+});
 
-  await emitUserMessage(text);
-
-  const m = MODE_TO_METHOD[state.mode] ?? MODE_TO_METHOD.ask;
-  try {
-    await consumeStream(m.method, m.paramKey, text);
-  } catch (e) {
-    await feedError(e.message ?? String(e));
-  } finally {
-    setBusy(false);
-    input?.focus();
-  }
-}
+// Export internals for main.js to wire
+export { onComposerSend, setMode };
 
 export function initComposer() {
-  const send = $('send');
-  const input = $('input');
-  if (send) send.addEventListener('click', handleSend);
-  if (input) {
-    input.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' && !e.shiftKey) {
-        e.preventDefault();
-        handleSend();
-      }
-    });
-    input.addEventListener('input', () => {
-      setBusy(!input.value.trim() || isStreaming());
-      autoResize();
-    });
-  }
-
-  // Listen for the 'regenerate' action triggered by tokui/handlers.js
-  window.addEventListener('composer:regenerate', (e) => {
-    if (input) { input.value = e.detail.text; handleSend(); }
-  });
-
-  document.querySelectorAll('.mode-btn').forEach((b) => {
-    b.addEventListener('click', () => setMode(b.dataset.mode));
-  });
-
-  setMode('ask');
-
-  // Keep the sessionId in sync with the active session.
+  // Keep sessionId in sync with the active session.
   sessionStore.subscribe((s) => { state.sessionId = s.activeId ?? 'default'; });
+  // After TokUI boots, render the composer into the host div.
+  // main.js will call renderComposer() after boot.
 }
