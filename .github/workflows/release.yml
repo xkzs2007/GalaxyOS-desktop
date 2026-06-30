@@ -47,11 +47,17 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # 3-platform matrix: Windows (NSIS installer) + Linux
-          # x64 (AppImage) + Linux arm64 (AppImage).
-          # macOS removed — we don't ship to Apple users, and the
-          # GH macos-14 runner is 7 GB RAM which is too tight for
-          # electron-builder's dmg step.
+          # 2-platform matrix: Windows (NSIS installer) + Linux
+          # x64 (AppImage).
+          # macOS removed — GH macos runners are 7 GB RAM, too tight
+          # for electron-builder's dmg step.
+          # Linux arm64 removed — ubuntu-22.04-arm64 runner has
+          # extremely limited free-tier quota on GitHub (queue times
+          # of 30+ minutes are common). 90% of desktop users are on
+          # x64; arm64 Linux users can build from source or use the
+          # x64 AppImage via qemu/box86.
+          # If you need arm64 later, re-add the matrix leg and either
+          # use a self-hosted arm64 runner or wait out the queue.
           - os: windows-latest
             label: windows-x64
             arch: x64
@@ -71,13 +77,6 @@ jobs:
             electron_builder_args: --linux AppImage --x64
             sidecar_bin: galaxyos-sidecar
             sidecar_renamed: galaxyos-sidecar-linux-x64
-          - os: ubuntu-22.04-arm64
-            label: linux-arm64
-            arch: arm64
-            artifact: galaxyos-linux-arm64
-            electron_builder_args: --linux AppImage --arm64
-            sidecar_bin: galaxyos-sidecar
-            sidecar_renamed: galaxyos-sidecar-linux-arm64
 
     steps:
       - name: Checkout
