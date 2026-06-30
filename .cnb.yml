@@ -163,6 +163,31 @@ main:
     # sync-to-github stage fails at runtime; other stages (tests,
     # arm64 build) keep running normally.
     - name: sync-to-github
+      # DISABLED when GH_SSH_KEY is unset: this stage uses SSH deploy
+      # key auth (GH_SSH_KEY env), which requires a private cnb key
+      # repo + the imports: block at the top of this file. We never
+      # set that up, so previously every main.push run failed here
+      # with "SSH key not provided".
+      #
+      # main → GH sync is handled by GH Actions instead — see
+      # .github/workflows/release.yml "sync-to-cnb" job which pushes
+      # the REVERSE direction (GH → cnb) using CNB_TOKEN. Since GH
+      # is the source of truth for release tags (tag_push triggers
+      # GH Actions for windows-x64 + linux-x64 builds), the
+      # cnb → GH direction is not needed.
+      #
+      # To re-enable (if you want cnb to push to GH on every main.push):
+      #   1. Generate ed25519 SSH keypair
+      #   2. Add public key to GitHub repo Settings → Deploy keys (write)
+      #   3. Create private cnb repo TIAMO.xianyao/git-keys with file
+      #      github_deploy_key.env containing:
+      #        GH_SSH_KEY="<full private key contents>"
+      #   4. Uncomment the imports: block at top of this file
+      #   5. Remove the `if:` line below so the stage always runs
+      # Run only if GH_SSH_KEY env var is non-empty — skip silently
+      # otherwise. Without this, the stage fails the whole pipeline.
+      if: |
+        [ -n "$GH_SSH_KEY" ]
       stages:
         - name: sync
           image: tencentcom/git-sync
@@ -171,7 +196,7 @@ main:
             auth_type: ssh
             ssh_key: ${GH_SSH_KEY}
             push_tags: true
-            sync_mode: push
+            sync_mode: push)
 
   pull_request:
     - name: pr-test
