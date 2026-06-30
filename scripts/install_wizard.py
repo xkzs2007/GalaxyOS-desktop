@@ -83,15 +83,66 @@ def heading(title):
 # ── 路径定义 — 自动检测部署布局 ──
 # install_wizard.py 位于 extensions/galaxyos/scripts/
 # 插件根 = 上两层 → extensions/galaxyos/
+#
+# 支持三种部署布局（按检测顺序）：
+#   1. 传统 OpenClaw 插件布局（生产）：
+#      ~/.openclaw/extensions/galaxyos/scripts/install_wizard.py
+#      _OPENCLAW_HOME = ~/.openclaw
+#      _EXT_DIR       = ~/.openclaw/extensions/galaxyos
+#   2. 开发仓库布局（git clone）：
+#      <repo>/scripts/install_wizard.py
+#      _OPENCLAW_HOME = $OPENCLAW_HOME or ~/.galaxyos (desktop 默认)
+#      _EXT_DIR       = <repo>（脚本仓库根）
+#   3. PyInstaller frozen 桌面端布局：
+#      _MEIPASS/scripts/install_wizard.py
+#      _OPENCLAW_HOME = $OPENCLAW_HOME or $GALAXYOS_HOME or ~/.galaxyos
+#      _EXT_DIR       = _MEIPASS（bundle 根）
+#      WORKSPACE      = $OPENCLAW_WORKSPACE or _OPENCLAW_HOME/workspace
+#
+# 在 2/3 布局下，install_wizard 不再要求 OpenClaw 插件目录存在，
+# 只用作"下模型 / 配 LLM / 系统体检"的轻量工具，配合桌面 sidecar。
+
 _THIS_FILE = Path(__file__).resolve()
-if _THIS_FILE.parent.parent.name == "galaxyos" and _THIS_FILE.parent.name == "scripts":
-    _EXT_DIR = _THIS_FILE.parent.parent  # extensions/galaxyos/
-    _OPENCLAW_HOME = _EXT_DIR.parent.parent  # ~/.openclaw/
+_FROZEN = getattr(sys, "frozen", False)
+
+# 优先级：显式 env > 自动检测
+#  - GALAXYOS_HOME：桌面端用户主目录（path_resolver_desktop 同名 env）
+#  - OPENCLAW_HOME：兼容老 OpenClaw 用户
+def _auto_detect_openclaw_home() -> Path:
+    """三段式自动检测 _OPENCLAW_HOME。"""
+    # (1) 传统 OpenClaw 插件布局
+    if _THIS_FILE.parent.parent.name == "galaxyos" and _THIS_FILE.parent.name == "scripts":
+        return _THIS_FILE.parent.parent.parent.parent  # ~/.openclaw/
+    # (2) 显式 env（GALAXYOS_HOME 优先，桌面端语义）
+    for env in ("GALAXYOS_HOME", "OPENCLAW_HOME", "GALAXYOS_OPENCLAW_HOME"):
+        v = os.environ.get(env)
+        if v:
+            p = Path(v).expanduser()
+            if p.exists() and p.is_dir():
+                return p
+    # (3) PyInstaller frozen 模式 → 桌面端默认 ~/.galaxyos
+    if _FROZEN:
+        return Path.home() / ".galaxyos"
+    # (4) 开发仓库布局 → 桌面端默认 ~/.galaxyos（让 dev 测试走桌面布局）
+    return Path.home() / ".galaxyos"
+
+
+_OPENCLAW_HOME = _auto_detect_openclaw_home()
+
+# _EXT_DIR 的语义在三种布局下不同：
+#   - OpenClaw 插件布局：~/.openclaw/extensions/galaxyos/（插件根）
+#   - 开发仓库布局：<repo>（git 仓库根，scripts/ 的父目录）
+#   - frozen 桌面端：_MEIPASS（bundle 根，scripts/ 的父目录）
+# 检测逻辑：如果 install_wizard.py 的父目录就叫 'scripts'，则
+# _EXT_DIR = 父目录的父目录；否则 fallback 到 _OPENCLAW_HOME/extensions/galaxyos
+if _THIS_FILE.parent.name == "scripts":
+    _EXT_DIR = _THIS_FILE.parent.parent
 else:
-    _OPENCLAW_HOME = Path(os.environ.get("OPENCLAW_HOME", str(Path.home() / ".openclaw")))
     _EXT_DIR = _OPENCLAW_HOME / "extensions" / "galaxyos"
 
 # 所有核心路径从插件根派生，不依赖旧 galaxyos/engine/ 布局
+# 在桌面端 frozen 模式下这些目录可能不存在（bundle 里只有 scripts/
+# 和 galaxyos/），所有读取都做了 .exists() 防御。
 galaxy_scripts = _EXT_DIR / "scripts"
 galaxy_engine = _EXT_DIR / "scripts"  # engine 已合一到 scripts/
 galaxy_privileged = _EXT_DIR / "scripts"  # privileged 已合一到 scripts/
