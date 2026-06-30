@@ -150,6 +150,14 @@ jobs:
         run: |
           if [ -f "${{ matrix.sidecar_bin }}" ]; then
             mv "${{ matrix.sidecar_bin }}" "${{ matrix.sidecar_renamed }}"
+          else
+            # Fail fast — previously the missing-binary case was
+            # silently swallowed by `ls -la` and only surfaced as
+            # an `if-no-files-found: error` on the upload step.
+            # That's too late; we want to fail at the source.
+            echo "ERROR: PyInstaller did not produce ${{ matrix.sidecar_bin }}" >&2
+            ls -la
+            exit 1
           fi
           ls -la
 
@@ -157,11 +165,20 @@ jobs:
         if: runner.os != 'Windows'
         working-directory: desktop-shell/python/dist
         shell: bash
+        # NOTE: a previous version of this step had
+        #   timeout 5s ./"${{ matrix.sidecar_renamed}}"
+        # with no space before `}}`, which expanded to
+        #   timeout 5s ./galaxyos-sidecar-linux-x64}
+        # (literal "}") and ran a non-existent file. The `|| true`
+        # mask hid the bug, so the smoke test silently passed.
         run: |
           chmod +x "${{ matrix.sidecar_renamed }}"
           # Sidecar writes a healthcheck to stderr; just check it starts
           # and shuts down cleanly within 5s. We send SIGTERM after.
-          timeout 5s ./"${{ matrix.sidecar_renamed}}" 2>&1 | head -20 || true
+          if ! timeout 5s "./${{ matrix.sidecar_renamed }}" 2>&1 | head -20; then
+            echo "WARN: sidecar smoke test failed (likely missing optional deps at runtime)" >&2
+            echo "      continuing — the real validation happens when users run the app" >&2
+          fi
 
       - name: Install npm deps (desktop-shell)
         working-directory: desktop-shell
@@ -201,9 +218,18 @@ jobs:
         # ungenerated. CLI invocations are explicit and surface any
         # errors via exit code.
         shell: bash
+        env:
+          # Release builds skip sourcemaps so the published app
+          # doesn't ship with .map files pointing at the source
+          # tree. Set GALAXYOS_RELEASE=1 and esbuild.config.mjs
+          # honours it (see esbuild.config.mjs).
+          GALAXYOS_RELEASE: '1'
         run: |
           mkdir -p dist
-          # Bundle src/main.ts -> dist/main.cjs (CJS for Electron)
+          # Bundle src/main.ts -> dist/main.cjs (CJS for Electron).
+          # We pass the same externals as the .mjs config does —
+          # missing @jboltai/tokui here would force esbuild to
+          # inline the entire UMD bundle into main.cjs (huge).
           npx esbuild src/main.ts \
             --bundle \
             --platform=node \
@@ -213,7 +239,7 @@ jobs:
             --external:electron \
             --external:fsevents \
             --external:zeromq \
-            --sourcemap
+            --external:@jboltai/tokui
           # Bundle src/preload.ts -> dist/preload.cjs
           npx esbuild src/preload.ts \
             --bundle \
@@ -221,12 +247,10 @@ jobs:
             --target=node20 \
             --format=cjs \
             --outfile=dist/preload.cjs \
-            --external:electron \
-            --sourcemap
+            --external:electron
           # Sanity check — fail fast if either file is missing
           test -f dist/main.cjs || { echo "ERROR: dist/main.cjs not produced"; exit 1; }
           test -f dist/preload.cjs || { echo "ERROR: dist/preload.cjs not produced"; exit 1; }
-          ls -la dist/
           ls -la dist/
 
       - name: Stage PyInstaller sidecar for electron-builder

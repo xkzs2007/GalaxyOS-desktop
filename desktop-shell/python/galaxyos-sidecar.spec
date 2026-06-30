@@ -58,27 +58,69 @@ hiddenimports += collect_submodules('galaxyos.orchestration')
 #   2. The whole `galaxyos/` package directory bundled as
 #      `galaxyos/` inside the archive, so `from galaxyos.engine...`
 #      resolves at runtime inside the frozen app.
-datas = []
-# GalaxyOS engine package (sits at ../../galaxyos relative to spec).
-# Two entries cover the layout used in this repo:
-#   desktop-shell/python/galaxyos-sidecar.spec
-#   desktop-shell/python/   ← spec CWD
-#   galaxyos/               ← target dir, two levels up
 #
-# `datas` entries use the platform-correct separator automatically
-# (`: ` on POSIX, `;` on Windows) because the spec is parsed as
-# Python source.
+# CRITICAL: `datas` must be declared ONCE. A previous version of
+# this spec had `datas = []` twice and the second overwrote the
+# first — causing the `galaxyos/` package to be silently dropped
+# from the bundle and `ModuleNotFoundError: galaxyos` at runtime.
 datas = []
+# GalaxyOS engine package. Layout (verified against this repo):
+#   <repo>/desktop-shell/python/galaxyos-sidecar.spec   ← this spec
+#   <repo>/desktop-shell/python/                        ← spec CWD
+#   <repo>/galaxyos/                                    ← the Python package itself
+#                                                          (has __init__.py at the root,
+#                                                           plus engine/ privileged/ etc.
+#                                                           as subpackages)
+#
+# PyInstaller `datas` tuple is `(source, dest)`:
+#   - source: a file or directory on the build host
+#   - dest:   the relative path inside `_MEIPASS`
+#
+# We want the entire `galaxyos/` Python package (with all its
+# subpackages and any package_data) to land at `_MEIPASS/galaxyos/`
+# so that at runtime `import galaxyos.engine.xxx` resolves
+# naturally — `sys.path` already contains _MEIPASS at the front
+# in PyInstaller onefile mode.
+import os
+_spec_dir = os.path.abspath(os.path.dirname(SPEC))  # noqa: F821
+# _galaxyos_pkg = <repo>/galaxyos  (the Python package itself,
+# containing __init__.py at the top level)
+_galaxyos_pkg = os.path.abspath(os.path.join(_spec_dir, '..', '..', 'galaxyos'))
+# Sanity: the source path must actually exist. If the spec was run
+# from a weird CWD, the abs-path computation still gives the right
+# result; if galaxyos/ has been moved, fail loudly here instead of
+# silently producing a bundle that crashes at runtime.
+assert os.path.isfile(os.path.join(_galaxyos_pkg, '__init__.py')), (
+    f"galaxyos package not found at {_galaxyos_pkg} "
+    f"(no __init__.py). spec_dir={_spec_dir}. "
+    f"This usually means the spec is being run from the wrong CWD "
+    f"or the repo layout has changed."
+)
+# Bundle the entire `galaxyos/` package (and any subpackages)
+# under `_MEIPASS/galaxyos/`. PyInstaller recursively copies the
+# tree; at runtime `import galaxyos.engine.xxx` resolves to
+# `_MEIPASS/galaxyos/engine/xxx.py`.
 datas += [
-    ('../../galaxyos', 'galaxyos'),
+    (_galaxyos_pkg, 'galaxyos'),
 ]
-# Pull in any package_data for sibling modules (safe even if empty).
+# Pull in any package_data for sibling modules (skills, jieba
+# dicts, etc.). Safe to call even if the module isn't installed as
+# a package — `collect_data_files` returns [] in that case.
 for mod in sibling_modules:
     try:
         datas += collect_data_files(mod)
     except Exception:
         # Module not installed as a package; PyInstaller still picks
         # up the .py file via hiddenimports.
+        pass
+# Belt-and-suspenders: also collect_data_files for the galaxyos
+# package itself, in case any subpackage has a MANIFEST.in that
+# copies extra data (skills, prompts, schema files).
+for sub in ('galaxyos', 'galaxyos.engine', 'galaxyos.privileged',
+            'galaxyos.shared', 'galaxyos.orchestration', 'galaxyos.harness'):
+    try:
+        datas += collect_data_files(sub)
+    except Exception:
         pass
 
 # ── Analysis ────────────────────────────────────────────────────────────

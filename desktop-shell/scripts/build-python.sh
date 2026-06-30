@@ -43,7 +43,7 @@ if [ -z "$PY" ]; then
     exit 2
 fi
 
-echo "[build-python] Python: $PY ($($PY --version 2>&1))"
+echo "[build-python] Python: $PY ($("$PY" --version 2>&1))"
 echo "[build-python] Repo:   $REPO_ROOT"
 echo "[build-python] CWD:    $PYTHON_DIR"
 

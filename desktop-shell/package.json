@@ -43,10 +43,10 @@
       "buildResources": "build"
     },
     "publish": null,
+    "asar": true,
     "files": [
       "dist/**/*",
       "renderer/**/*",
-      "node_modules/**/*",
       "package.json"
     ],
     "extraResources": [
@@ -55,13 +55,6 @@
         "to": ".",
         "filter": [
           "galaxyos-sidecar*"
-        ]
-      },
-      {
-        "from": "python",
-        "to": "python",
-        "filter": [
-          "*.py"
         ]
       }
     ],

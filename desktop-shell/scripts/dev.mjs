@@ -25,17 +25,34 @@ function log(msg) { console.log(`[dev] ${msg}`); }
 function ensureVenv() {
   if (existsSync(VENV_PY)) return;
   log(`Creating venv at ${VENV}...`);
-  const r = spawnSync('python', ['-m', 'venv', VENV], { stdio: 'inherit' });
-  if (r.status !== 0) throw new Error('venv creation failed');
+  // Try several python names so this works on Windows (where
+  // `python` is the MS Store stub and the user-installed one is
+  // usually `py -3` or `python3`).
+  const candidates = process.platform === 'win32'
+    ? ['py', 'python', 'python3', 'python3.12', 'python3.11']
+    : ['python3.12', 'python3.11', 'python3', 'python'];
+  let lastErr;
+  for (const cand of candidates) {
+    const r = spawnSync(cand, ['-m', 'venv', VENV], { stdio: 'inherit' });
+    if (r.status === 0) return;
+    lastErr = r.error || new Error(`exit ${r.status}`);
+  }
+  throw new Error(`venv creation failed with all candidates: ${lastErr}`);
 }
 
 function installDeps() {
   log('Installing requirements-core.txt...');
-  const r = spawnSync(VENV_PY, ['-m', 'pip', 'install', '-q', '-r',
+  let r = spawnSync(VENV_PY, ['-m', 'pip', 'install', '-q', '-r',
     resolve(REPO_ROOT, 'requirements-core.txt')], { stdio: 'inherit' });
-  if (r.status !== 0) throw new Error('pip install failed');
+  if (r.status !== 0) throw new Error('pip install requirements-core failed');
   log('Installing pyzmq into venv...');
-  spawnSync(VENV_PY, ['-m', 'pip', 'install', '-q', 'pyzmq'], { stdio: 'inherit' });
+  r = spawnSync(VENV_PY, ['-m', 'pip', 'install', '-q', 'pyzmq'], { stdio: 'inherit' });
+  // CRITICAL: pyzmq is required for the Electron main process to
+  // talk to the Python sidecar. A previous version of this script
+  // didn't check r.status, so a failed install was silently
+  // swallowed and the user got a confusing "sidecar zmq did not
+  // respond" error 30s later in the packaged app.
+  if (r.status !== 0) throw new Error('pip install pyzmq failed (sidecar IPC needs it)');
 }
 
 function bundle() {
@@ -47,8 +64,25 @@ function bundle() {
 
 function launchElectron() {
   log('Launching Electron...');
-  const electronBin = resolve(APP_ROOT, 'node_modules', '.bin',
-    process.platform === 'win32' ? 'electron.cmd' : 'electron');
+  if (process.platform === 'win32') {
+    // On Windows the electron binary is electron.cmd — Node's
+    // `spawn` cannot execute a .cmd directly without `shell: true`
+    // (or it gets ENOENT). Using `npx electron` is the most
+    // portable option: npx wraps the .cmd transparently.
+    const child = spawn('npx', ['electron', '.'], {
+      cwd: APP_ROOT,
+      stdio: 'inherit',
+      shell: process.platform === 'win32',
+      env: {
+        ...process.env,
+        GALAXYOS_PYTHON: VENV_PY,
+        GALAXYOS_SIDECAR_LOG: 'DEBUG',
+      },
+    });
+    child.on('exit', (code) => process.exit(code ?? 0));
+    return;
+  }
+  const electronBin = resolve(APP_ROOT, 'node_modules', '.bin', 'electron');
   const child = spawn(electronBin, ['.'], {
     cwd: APP_ROOT,
     stdio: 'inherit',

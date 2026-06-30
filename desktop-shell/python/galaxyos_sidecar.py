@@ -70,22 +70,43 @@ if not _FROZEN:
     _ENGINE_DIR = _REPO_ROOT / "galaxyos" / "engine"
     _PRIVILEGED_DIR = _REPO_ROOT / "galaxyos" / "privileged"
     _GALAXYOS_PKG = _REPO_ROOT / "galaxyos"
+    # Use the stdlib logger once it's configured below, but for this
+    # early-bootstrap section use print() so the message appears
+    # even if the sidecar's logging hasn't been set up yet.
+    _print = lambda *a: print("[sidecar bootstrap]", *a, file=sys.stderr)
     for d in (_ENGINE_DIR, _PRIVILEGED_DIR, _GALAXYOS_PKG, _REPO_ROOT):
-        if d.exists() and str(d) not in sys.path:
-            sys.path.insert(0, str(d))
+        if d.exists():
+            if str(d) not in sys.path:
+                sys.path.insert(0, str(d))
+        else:
+            # Previously this was a silent skip — if galaxyos/ has
+            # been moved/renamed, the user would get a confusing
+            # "ModuleNotFoundError" 200ms later without any clue
+            # what went wrong. Now we at least surface a warning.
+            _print(f"  WARN: expected path missing: {d}")
+    if not _REPO_ROOT.exists():
+        _print(f"  WARN: repo root missing: {_REPO_ROOT}  "
+               f"(sidecar at {_THIS_DIR})")
     # Honor explicit override
     _repo_env = os.environ.get("GALAXYOS_REPO")
-    if _repo_env and _repo_env not in sys.path:
-        sys.path.insert(0, _repo_env)
+    if _repo_env:
+        if _repo_env not in sys.path:
+            sys.path.insert(0, _repo_env)
     if str(_THIS_DIR) not in sys.path:
         sys.path.insert(0, str(_THIS_DIR))
 else:
     # In a frozen build, GALAXYOS_REPO still wins (e.g. when the
     # operator wants the sidecar to use an on-disk data dir at
-    # /opt/galaxyos instead of the bundled one).
+    # /opt/galaxyos instead of the bundled one). PyInstaller
+    # already places _MEIPASS at the front of sys.path, so the
+    # bundled galaxyos/ package is importable without any work
+    # from us.
     _repo_env = os.environ.get("GALAXYOS_REPO")
     if _repo_env and _repo_env not in sys.path:
         sys.path.insert(0, _repo_env)
+    print(f"[sidecar bootstrap] frozen sidecar, _MEIPASS={sys._MEIPASS!r}, "
+          f"has galaxyos pkg={os.path.isdir(os.path.join(sys._MEIPASS, 'galaxyos')) if hasattr(sys, '_MEIPASS') else 'N/A'}",
+          file=sys.stderr)
 
 import path_resolver_desktop  # noqa: F401  (auto-installs into sys.modules)
 import tokui_dsl  # DSL builders for SSE streaming
@@ -158,7 +179,21 @@ def _load_engine():
         return XiaoYiClawLLM
     except ImportError as e:
         log.error("Failed to import GalaxyOS engine: %s", e)
-        log.error("sys.path head: %s", sys.path[:3])
+        # When frozen (PyInstaller onefile), `sys._MEIPASS` is the
+        # bundle root that contains `galaxyos/`, `path_resolver_desktop.py`,
+        # etc. Logging it makes it obvious whether the engine files
+        # are even in the bundle — a missing _MEIPASS / missing
+        # galaxyos/ subdir is a PyInstaller spec bug, not a runtime
+        # config issue.
+        log.error("Frozen: %s  _MEIPASS=%s", getattr(sys, 'frozen', False),
+                  getattr(sys, '_MEIPASS', '(unset)'))
+        log.error("sys.path head: %s", sys.path[:5])
+        log.error("CWD: %s", os.getcwd())
+        # Also dump which path entries actually exist — silent
+        # missing paths are the #1 cause of "works in dev, fails
+        # when packaged".
+        for p in sys.path[:8]:
+            log.error("  sys.path: %s  exists=%s", p, os.path.isdir(p))
         raise
 
 

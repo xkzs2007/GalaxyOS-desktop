@@ -25,8 +25,27 @@ import * as zmq from 'zeromq';
 
 // ── Logging (file + stdout) — declared FIRST, before any path
 //   resolution, so we can debug path issues during startup. ────────
+//
+// LOG_FILE location matters a lot:
+//   - Dev (npm run dev / electron .): userData (per-OS standard
+//     location) is fine and survives multiple runs.
+//   - Packaged: writing to process.cwd() or APP_ROOT often fails
+//     on Windows (Program Files is not writable) and is unclear
+//     on Linux AppImage (cwd is the launcher's dir, not the
+//     mount). We use `app.getPath('userData')` which is the
+//     per-app standard data dir on every platform.
+//
+// `app` is imported at the top of the file but its API requires
+// `app.whenReady()` for some methods; getPath('userData') is
+// actually safe to call synchronously at import time.
 const LOG_FILE = process.env.GALAXYOS_LOG_FILE
-  || join(process.cwd(), 'electron.log');
+  || (() => {
+    try {
+      return join(app.getPath('userData'), 'electron.log');
+    } catch {
+      return join(process.cwd(), 'electron.log');
+    }
+  })();
 function log(msg: string): void {
   const line = `[main ${new Date().toISOString()}] ${msg}\n`;
   try { appendFileSync(LOG_FILE, line); } catch { /* ignore */ }
@@ -49,14 +68,41 @@ try {
 }
 log(`=== GalaxyOS Electron main started, cwd=${process.cwd()}, argv=${JSON.stringify(process.argv.slice(1))} ===`);
 
-// In a bundled CJS context, import.meta.url is empty AND __dirname
-// may not be set when referenced at module top-level (esbuild
-// hoists consts in declaration order, but TS-compiled code can
-// reference symbols before their const is declared). The safest
-// reliable approach is to use process.cwd() — when electron.exe is
-// launched with `.` as the arg, cwd is the desktop-shell dir.
-
-const APP_ROOT = process.cwd();  // desktop-shell/ (when launched with `.`)
+// APP_ROOT resolution.
+// Three cases (in order of preference):
+//   1. `app.getAppPath()` — works for both `electron .` (dev) and
+//      packaged builds.  Returns:
+//        - dev:        the directory containing package.json
+//        - packaged:   <resources>/app/  (electron-builder default)
+//   2. `process.resourcesPath` for sidecar lookups (only meaningful
+//      in packaged builds; equals APP_ROOT's grandparent in AppImage
+//      but `<install_root>/resources/` on Windows NSIS).
+//   3. `process.cwd()` as a last-resort fallback (only reliable if
+//      the user launched the binary with `.` as the CWD).
+//
+// We DO NOT use `process.cwd()` as the primary source because:
+//   - On Windows NSIS installs to "C:\Program Files\GalaxyOS\", the
+//     Start Menu shortcut does not chdir into the install dir —
+//     `process.cwd()` is whatever the shell was in (often
+//     `C:\Windows\System32`).
+//   - On Linux AppImage, `process.cwd()` is the directory the user
+//     launched the AppImage from, NOT the mount point.
+//
+// `app.getAppPath()` is the canonical, Electron-recommended way.
+// In packaged builds, electron-builder puts the app under
+// `<resources>/app/` (often inside `app.asar`); in dev it returns
+// the directory containing package.json. We additionally fall back
+// to `__dirname/..` because esbuild bundles main.ts into
+// `dist/main.cjs` — `__dirname` in that bundle is the `dist/`
+// folder of the source tree, whose parent is `desktop-shell/`.
+const _APP_ROOT_FROM_GET = (() => {
+  try { return app.getAppPath(); } catch { return ''; }
+})();
+const _APP_ROOT_FROM_DIR = (() => {
+  // esbuild CJS bundle: __dirname = <desktop-shell>/dist
+  try { return resolve(__dirname, '..'); } catch { return ''; }
+})();
+const APP_ROOT = _APP_ROOT_FROM_GET || _APP_ROOT_FROM_DIR || process.cwd();
 const PYTHON_DIR = resolve(APP_ROOT, 'python');
 const SIDECAR_SCRIPT = resolve(PYTHON_DIR, 'galaxyos_sidecar.py');
 const RENDERER_HTML = resolve(APP_ROOT, 'renderer', 'index.html');
@@ -67,27 +113,56 @@ const SIDECAR_PORT = Number(process.env.GALAXYOS_SIDECAR_PORT ?? 5757);
 const SIDECAR_HTTP_PORT = Number(process.env.GALAXYOS_SIDECAR_HTTP_PORT ?? 5758);
 const SIDECAR_HOST = process.env.GALAXYOS_SIDECAR_HOST ?? '127.0.0.1';
 
-// Where to bundle the Python sidecar for packaged builds
-const RESOURCES_DIR = process.resourcesPath
-  ? join(process.resourcesPath)
+// Where to bundle the Python sidecar for packaged builds.
+// electron-builder config (package.json) puts the PyInstaller binary
+// into `process.resourcesPath/` via `extraResources.to: "."`, so the
+// layout is:
+//   Windows NSIS:  C:\Program Files\GalaxyOS\resources\galaxyos-sidecar.exe
+//   Linux AppImage: <mount>/resources/galaxyos-sidecar
+//   macOS (future): GalaxyOS.app/Contents/Resources/galaxyos-sidecar
+const RESOURCES_DIR = app.isPackaged && process.resourcesPath
+  ? process.resourcesPath
   : APP_ROOT;
 const PACKAGED_SIDECAR = join(RESOURCES_DIR, 'galaxyos-sidecar');
 const PACKAGED_PYTHON_DIR = join(RESOURCES_DIR, 'python');
 
+// Log the resolved paths so users can debug "where is it looking"
+// issues from the electron.log / sidecar.log files.
+log(`APP_ROOT              = ${APP_ROOT}`);
+log(`PYTHON_DIR            = ${PYTHON_DIR}`);
+log(`RENDERER_HTML         = ${RENDERER_HTML}  (exists=${existsSync(RENDERER_HTML)})`);
+log(`TOKUI_DIST_JS         = ${TOKUI_DIST_JS}  (exists=${existsSync(TOKUI_DIST_JS)})`);
+log(`TOKUI_DIST_CSS        = ${TOKUI_DIST_CSS}  (exists=${existsSync(TOKUI_DIST_CSS)})`);
+log(`app.isPackaged        = ${app.isPackaged}`);
+log(`process.resourcesPath = ${process.resourcesPath ?? '(unset)'}`);
+log(`RESOURCES_DIR         = ${RESOURCES_DIR}`);
+log(`PACKAGED_SIDECAR      = ${PACKAGED_SIDECAR}  (exists=${existsSync(PACKAGED_SIDECAR)})`);
+
 function resolveSidecarPath(): string {
-  if (process.env.NODE_ENV === 'development' || !app.isPackaged) {
+  if (!app.isPackaged) {
+    // Dev mode: run the .py source directly with the system Python.
     return SIDECAR_SCRIPT;
   }
-  // In a packaged build, look for the bundled executable
-  if (process.platform === 'win32') return PACKAGED_SIDECAR + '.exe';
-  return PACKAGED_SIDECAR;
+  // Packaged: use the PyInstaller-bundled executable. On Windows
+  // electron-builder leaves the file name with the .exe suffix; on
+  // POSIX it's bare. Append `.exe` only on win32.
+  const base = process.platform === 'win32'
+    ? PACKAGED_SIDECAR + '.exe'
+    : PACKAGED_SIDECAR;
+  if (existsSync(base)) return base;
+  // Fallback: maybe a `.exe` was bundled on Linux too (some
+  // build configs do that) — try the other variant.
+  return process.platform === 'win32' ? PACKAGED_SIDECAR : PACKAGED_SIDECAR + '.exe';
 }
 
 function resolvePythonInterpreter(): string {
   if (!app.isPackaged) {
     return process.env.GALAXYOS_PYTHON ?? 'python';
   }
-  // In packaged builds we'd ship a Python embeddable
+  // In packaged builds the sidecar is a standalone PyInstaller
+  // binary, so the Python interpreter is unused. Return a dummy
+  // value (spawn() never invokes it because isPackagedExe picks
+  // the binary directly).
   return process.env.GALAXYOS_PYTHON ?? 'python';
 }
 
@@ -157,48 +232,103 @@ function startSidecar(): Promise<void> {
     const py = resolvePythonInterpreter();
     const script = resolveSidecarPath();
     if (!existsSync(script)) {
-      rejectP(new Error(`sidecar script not found: ${script}`));
+      // Don't pretend the user needs to install Python — they're
+      // running a packaged app, the sidecar binary is supposed to
+      // be bundled. Tell them EXACTLY which path we expected and
+      // where the log went, so they can file a useful bug.
+      rejectP(new Error(
+        `GalaxyOS sidecar binary not found.\n` +
+        `  Expected: ${script}\n` +
+        `  APP_ROOT: ${APP_ROOT}\n` +
+        `  isPackaged: ${app.isPackaged}\n` +
+        `  process.resourcesPath: ${process.resourcesPath ?? '(unset)'}\n` +
+        (app.isPackaged
+          ? `  This is a packaging bug — the .exe / AppImage is missing the bundled Python sidecar.\n` +
+            `  Please report it with the contents of:\n` +
+            `    ${LOG_FILE}\n`
+          : `  In dev mode, the sidecar source is at desktop-shell/python/galaxyos_sidecar.py.\n` +
+            `  If you removed or moved it, restore the source tree.\n`)
+      ));
       return;
     }
 
-    // In a packaged build, the sidecar is a standalone .exe —
-    // run it directly, not through python.
-    const isPackagedExe = app.isPackaged && (script.endsWith('.exe') || script.endsWith('galaxyos-sidecar'));
+    // In a packaged build, the sidecar is a standalone PyInstaller
+    // .exe — run it directly, not through a Python interpreter.
+    // isPackagedExe is true when:
+    //   - we're in a packaged build, AND
+    //   - the resolved path is the bundled binary (ends with the
+    //     platform-specific name, never the .py source).
+    const isPackagedExe = app.isPackaged && !script.endsWith('.py');
     const cmd = isPackagedExe ? script : py;
     const args = isPackagedExe ? [] : [script];
 
     // Redirect sidecar stdout/stderr to a file (EPIPE avoidance).
+    // The log file lives in the per-user userData dir (NOT in
+    // Program Files, which is not user-writable on Windows).
+    // Users can find both logs at the same path when filing bugs.
     const SIDECAR_LOG = process.env.GALAXYOS_SIDECAR_LOG
-      || join(process.cwd(), 'sidecar.log');
-    const sidecarOut = require('fs').openSync(SIDECAR_LOG, 'a');
-    const sidecarErr = require('fs').openSync(SIDECAR_LOG, 'a');
+      || (() => {
+        try {
+          return join(app.getPath('userData'), 'sidecar.log');
+        } catch {
+          return join(RESOURCES_DIR, 'sidecar.log');
+        }
+      })();
+    let sidecarOut: number | null = null;
+    let sidecarErr: number | null = null;
+    try {
+      // Ensure the log file's parent dir exists (AppImage / Program
+      // Files installs may not have a writable cwd at first).
+      const logDir = dirname(SIDECAR_LOG);
+      if (!existsSync(logDir)) {
+        try { mkdirSync(logDir, { recursive: true }); } catch { /* best effort */ }
+      }
+      sidecarOut = require('fs').openSync(SIDECAR_LOG, 'a');
+      sidecarErr = require('fs').openSync(SIDECAR_LOG, 'a');
+    } catch (e) {
+      // If we can't open the log, fall back to inherited stdio so
+      // the user at least sees something in the terminal.
+      log(`Failed to open sidecar log file ${SIDECAR_LOG}: ${(e as Error).message}`);
+    }
 
     log(`Starting sidecar: ${cmd} ${args.join(' ')}`);
     log(`Sidecar stdout/stderr → ${SIDECAR_LOG}`);
+    log(`isPackagedExe=${isPackagedExe}  py=${py}  script=${script}`);
 
-    sidecar = spawn(cmd, args, {
-      env: {
-        ...process.env,
-        PYTHONPATH:
-          (process.env.PYTHONPATH ? process.env.PYTHONPATH + ';' : '')
-          + (existsSync(PACKAGED_PYTHON_DIR) ? PACKAGED_PYTHON_DIR + ';' : '')
-          + PYTHON_DIR,
-        GALAXYOS_SIDECAR_PORT: String(SIDECAR_PORT),
-        GALAXYOS_SIDECAR_HTTP_PORT: String(SIDECAR_HTTP_PORT),
-        GALAXYOS_SIDECAR_HOST: SIDECAR_HOST,
-        GALAXYOS_SIDECAR_LOG: SIDECAR_LOG,
-        GALAXYOS_DISABLE_HTTP: '1',
-      },
-      detached: process.platform !== 'win32',
-      stdio: ['ignore', sidecarOut, sidecarErr],
-      windowsHide: true,
+    try {
+      sidecar = spawn(cmd, args, {
+        env: {
+          ...process.env,
+          PYTHONPATH:
+            (process.env.PYTHONPATH ? process.env.PYTHONPATH + ';' : '')
+            + (existsSync(PACKAGED_PYTHON_DIR) ? PACKAGED_PYTHON_DIR + ';' : '')
+            + PYTHON_DIR,
+          GALAXYOS_SIDECAR_PORT: String(SIDECAR_PORT),
+          GALAXYOS_SIDECAR_HTTP_PORT: String(SIDECAR_HTTP_PORT),
+          GALAXYOS_SIDECAR_HOST: SIDECAR_HOST,
+          GALAXYOS_SIDECAR_LOG: SIDECAR_LOG,
+          GALAXYOS_DISABLE_HTTP: '1',
+        },
+        detached: process.platform !== 'win32',
+        stdio: sidecarOut !== null && sidecarErr !== null
+          ? ['ignore', sidecarOut, sidecarErr]
+          : 'inherit',
+        windowsHide: true,
+      });
+    } catch (e) {
+      rejectP(new Error(`Failed to spawn sidecar at ${cmd}: ${(e as Error).message}`));
+      return;
+    } finally {
+      if (sidecarOut !== null) { try { require('fs').closeSync(sidecarOut); } catch { /* */ } }
+      if (sidecarErr !== null) { try { require('fs').closeSync(sidecarErr); } catch { /* */ } }
+    }
+
+    sidecar.on('exit', (code, signal) => {
+      log(`Sidecar exited with code=${code} signal=${signal}`);
     });
-
-    try { require('fs').closeSync(sidecarOut); } catch { /* */ }
-    try { require('fs').closeSync(sidecarErr); } catch { /* */ }
-
-    sidecar.on('exit', (code) => log(`Sidecar exited with code ${code}`));
-    sidecar.on('error', (e) => log(`Sidecar spawn error: ${e.message}`));
+    sidecar.on('error', (e) => {
+      log(`Sidecar spawn error: ${e.message}`);
+    });
 
     try {
       await waitForZmq(30000);
@@ -206,7 +336,15 @@ function startSidecar(): Promise<void> {
       log('Sidecar zmq REP ready');
       resolveP();
     } catch (e) {
-      rejectP(e);
+      rejectP(new Error(
+        `Sidecar did not become ready within 30s.\n` +
+        `  Binary:  ${cmd}\n` +
+        `  Logs:    ${SIDECAR_LOG}\n` +
+        `  Cause:   ${(e as Error).message}\n` +
+        `  This usually means the sidecar crashed on startup (missing\n` +
+        `  dependency, blocked by antivirus, or a packaging issue).\n` +
+        `  Check the log file above for the Python traceback.`
+      ));
     }
   });
 }
@@ -455,9 +593,47 @@ app.whenReady().then(async () => {
     registerIpc();
     createWindow();
   } catch (e) {
-    log(`Startup failed: ${(e as Error).message}`);
-    dialog.showErrorBox('GalaxyOS failed to start',
-      'Could not start the Python sidecar. Please ensure Python 3.11+ is installed and run:\n\n  pip install -r requirements-core.txt pyzmq\n\n' + (e as Error).message);
+    const err = e as Error;
+    log(`Startup failed: ${err.message}`);
+    // Build a useful error message. The previous version always
+    // told users to "install Python", which is WRONG for packaged
+    // builds — the sidecar is a self-contained PyInstaller binary.
+    // We now branch on dev vs packaged so the suggestion matches
+    // the actual situation.
+    const isPackaged = app.isPackaged;
+    const platform = process.platform;
+    let userDataDir = '';
+    try { userDataDir = app.getPath('userData'); } catch { /* */ }
+    let sidecarLog = '';
+    try { sidecarLog = join(app.getPath('userData'), 'sidecar.log'); }
+    catch { sidecarLog = join(RESOURCES_DIR, 'sidecar.log'); }
+    const hint = isPackaged
+      ? `This is a PACKAGED build (${platform}). The sidecar is a self-contained\n` +
+        `binary bundled with the app — no Python install is needed.\n` +
+        `This usually means the bundle is incomplete or the sidecar crashed\n` +
+        `on startup (antivirus block, missing OS runtime, or packaging bug).\n\n` +
+        `Please share the following files when reporting a bug:\n` +
+        `  - ${LOG_FILE}\n` +
+        `  - ${sidecarLog}\n\n` +
+        `To run from source instead:\n` +
+        `  git clone https://cnb.cool/TIAMO.xianyao/galaxyos-desktop\n` +
+        `  cd galaxyos-desktop/desktop-shell\n` +
+        `  npm install\n` +
+        `  npm run dev\n`
+      : `This is a DEV build. The sidecar is a Python script that needs:\n` +
+        `  - Python 3.11+ on PATH (or set GALAXYOS_PYTHON)\n` +
+        `  - pip install -r ../requirements-core.txt pyzmq openai\n\n` +
+        `Or run the dev launcher: npm run dev\n`;
+    dialog.showErrorBox(
+      'GalaxyOS failed to start',
+      `Could not start the Python sidecar.\n\n` +
+      `Platform: ${platform}  (packaged=${isPackaged})\n` +
+      `Renderer: ${RENDERER_HTML}\n` +
+      `Sidecar:  ${resolveSidecarPath()}\n` +
+      `Resources: ${RESOURCES_DIR}\n\n` +
+      `${hint}\n` +
+      `Underlying error:\n  ${err.message}`,
+    );
     app.quit();
   }
 });
