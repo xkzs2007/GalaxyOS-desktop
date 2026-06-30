@@ -96,46 +96,40 @@ jobs:
 
       - name: Install Linux runtime libs (for AppImage + PyInstaller)
         if: runner.os == 'Linux'
+        shell: bash
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq --no-install-recommends \
-            fakeroot rpm libfuse2 \
-            libnss3 libatk-bridge2.0-0 libgtk-3-0 libasound2 \
-            python3-dev build-essential
+          sudo apt-get install -y -qq --no-install-recommends fakeroot rpm libfuse2 libnss3 libatk-bridge2.0-0 libgtk-3-0 libasound2 python3-dev build-essential
 
       - name: Install Python deps + PyInstaller
+        # IMPORTANT: force bash on Windows. The windows-latest runner
+        # defaults to PowerShell, which doesn't support `\` line
+        # continuation — this is what was making the previous
+        # multi-line `pip install \` blocks fail with
+        # "Unexpected token '\' in expression or statement".
+        shell: bash
         run: |
+          set -e
           python -m pip install --upgrade pip
-          # Curated minimal dep set for the sidecar — replaces both
-          # `pip install -r requirements-core.txt pyinstaller` (30+
-          # heavy packages we don't need) and `pip install
-          # pyinstaller` alone (which pulls in
-          # pyinstaller-hooks-contrib -> hnswlib, failing to compile
-          # on Windows runners that lack MSVC build tools).
-          # PyInstaller pinned to 6.6.0 (last release before
-          # hooks-contrib started requiring hnswlib).
-          #
-          # Platform-specific notes:
-          # - uvloop: Unix-only, no Windows wheel
-          # - tokenizers: has Windows wheel but needs Rust toolchain
-          #   on install; pre-built wheels since 0.20 ship for win_amd64
-          BASE_DEPS="pyinstaller==6.6.0
-            pyinstaller-hooks-contrib==2024.6
-            numpy scipy pydantic orjson httpx requests
-            pyzmq pillow polars duckdb
-            jieba tiktoken ncps openai psutil aiohttp scikit-learn"
+          # Minimal curated dep set for the desktop sidecar. The
+          # sidecar's spec declares every import the binary needs;
+          # this list is the closure of those imports' direct deps.
+          # Pinned PyInstaller 6.6.0 to avoid the
+          # hooks-contrib -> hnswlib chain that fails to compile on
+          # Windows runners (no MSVC).
+          # Skip uvloop on Windows (Unix-only, no Windows wheel).
+          # Include tokenizers everywhere — prebuilt win_amd64
+          # wheels since 0.20.
           if [ "$RUNNER_OS" = "Windows" ]; then
-            # Skip Unix-only / hard-to-build deps on Windows.
-            # The sidecar's sidecar.py imports uvloop as `import uvloop`
-            # at module level — we keep that import conditional in
-            # the sidecar bootstrap (it already is: uvloop is wrapped
-            # in try/except in pyzmq install paths). tokenizers has
-            # prebuilt win_amd64 wheels since 0.20, safe to include.
-            PACKAGES="$BASE_DEPS"
+            PACKAGES="pyinstaller==6.6.0 pyinstaller-hooks-contrib==2024.6 numpy scipy pydantic orjson httpx requests pyzmq pillow polars duckdb jieba tiktoken ncps openai psutil aiohttp scikit-learn"
           else
-            PACKAGES="$BASE_DEPS uvloop tokenizers"
+            PACKAGES="pyinstaller==6.6.0 pyinstaller-hooks-contrib==2024.6 numpy scipy pydantic orjson httpx requests pyzmq pillow polars duckdb jieba tiktoken ncps openai psutil aiohttp scikit-learn uvloop tokenizers"
           fi
-          pip install $PACKAGES
+          echo "=== Installing packages on $RUNNER_OS ==="
+          echo "$PACKAGES"
+          # Use a single-line pip install to avoid any shell parsing
+          # ambiguity across bash / PowerShell / sh.
+          python -m pip install -v $PACKAGES
           python -c "import PyInstaller; print('PyInstaller', PyInstaller.__version__)"
 
       - name: Bundle Python sidecar (PyInstaller)
@@ -190,14 +184,15 @@ jobs:
 
       - name: Build Electron installer
         working-directory: desktop-shell
+        # Force bash on Windows. windows-latest defaults to
+        # PowerShell, which would choke on the `\` line
+        # continuation we used to use below.
+        shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
         run: |
-          npx electron-builder \
-            --${{ matrix.electron_target }} \
-            --${{ matrix.arch }} \
-            --publish never 2>&1 | tail -50
+          npx electron-builder --${{ matrix.electron_target }} --${{ matrix.arch }} --publish never 2>&1 | tail -50
 
       - name: List release output
         working-directory: desktop-shell
