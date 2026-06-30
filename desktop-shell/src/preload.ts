@@ -23,8 +23,47 @@ export type GalaxyApi = {
   emitEvent(type: string, payload?: any): Promise<{ ok: boolean; received: string }>;
   graphSearch(query: string, topK?: number): Promise<{ count: number; results: any[] }>;
   skillNeighbors(name: string): Promise<{ name: string; successors: any[]; predecessors: any[] }>;
+  /**
+   * Run install_wizard.py with given CLI args (e.g.
+   * ['--download-lfm-onnx', '--download-lfm-onnx-quant', 'q4']).
+   * onProgress is called for each line of stdout/stderr the wizard
+   * emits (forwarded from the sidecar's zmq PUB stream). Returns
+   * the final { ok, exit_code, stdout, stderr, duration_s } when
+   * the wizard exits.
+   */
+  installWizard(
+    args: string[],
+    onProgress?: (event: IwProgressEvent) => void,
+    timeout?: number,
+  ): Promise<IwResult>;
+  onInstallWizardProgress(callback: (event: IwProgressEvent) => void): () => void;
   openExternal(url: string): Promise<void>;
 };
+
+/** Progress event for install_wizard (forwarded from sidecar PUB). */
+export interface IwProgressEvent {
+  event: 'started' | 'pid' | 'line' | 'done';
+  args?: string[];
+  pid?: number;
+  stream?: 'stdout' | 'stderr';
+  line?: string;
+  elapsed_s?: number;
+  ok?: boolean;
+  exit_code?: number;
+  duration_s?: number;
+  error?: string;
+}
+
+/** Final result of install_wizard (returned via zmq REP). */
+export interface IwResult {
+  ok: boolean;
+  exit_code: number;
+  stdout: string;
+  stderr: string;
+  duration_s: number;
+  args: string[];
+  error?: string;
+}
 
 const api: GalaxyApi = {
   ask: (q, sid) => ipcRenderer.invoke('galaxy:ask', q, sid) as any,
@@ -43,6 +82,27 @@ const api: GalaxyApi = {
   emitEvent: (t, p) => ipcRenderer.invoke('galaxy:emitEvent', t, p) as any,
   graphSearch: (q, k) => ipcRenderer.invoke('galaxy:graphSearch', q, k) as any,
   skillNeighbors: (n) => ipcRenderer.invoke('galaxy:skillNeighbors', n) as any,
+  installWizard: (args, onProgress, timeout) => {
+    // If onProgress callback is provided, subscribe to iw:progress
+    // events for the duration of this call and unsubscribe when the
+    // promise resolves/rejects.
+    let unsubscribe: (() => void) | null = null;
+    if (onProgress) {
+      const handler = (_e: unknown, payload: IwProgressEvent) => onProgress(payload);
+      ipcRenderer.on('iw:progress', handler);
+      unsubscribe = () => ipcRenderer.removeListener('iw:progress', handler);
+    }
+    const p = ipcRenderer.invoke('galaxy:installWizard', args, timeout) as Promise<IwResult>;
+    p.finally(() => {
+      if (unsubscribe) unsubscribe();
+    });
+    return p;
+  },
+  onInstallWizardProgress: (cb) => {
+    const handler = (_e: unknown, payload: IwProgressEvent) => cb(payload);
+    ipcRenderer.on('iw:progress', handler);
+    return () => ipcRenderer.removeListener('iw:progress', handler);
+  },
   openExternal: (u) => ipcRenderer.invoke('galaxy:openExternal', u) as any,
 };
 

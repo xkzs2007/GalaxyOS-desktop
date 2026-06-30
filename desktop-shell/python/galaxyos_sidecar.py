@@ -137,6 +137,10 @@ import tokui_dsl  # DSL builders for SSE streaming
 SIDECAR_HOST = os.environ.get("GALAXYOS_SIDECAR_HOST", "127.0.0.1")
 ZMQ_PORT = int(os.environ.get("GALAXYOS_SIDECAR_PORT", "5757"))
 HTTP_PORT = int(os.environ.get("GALAXYOS_SIDECAR_HTTP_PORT", "5758"))
+# PUB/SUB port for streaming progress events (install_wizard download
+# progress, future long-running ops). main.ts subscribes to this and
+# forwards events to the renderer via webContents.send().
+ZMQ_PUB_PORT = int(os.environ.get("GALAXYOS_SIDECAR_PUB_PORT", "5759"))
 LOG_LEVEL = os.environ.get("GALAXYOS_SIDECAR_LOG", "INFO")
 START_TIME = time.time()
 
@@ -670,18 +674,28 @@ class SidecarHandlers:
         return result
 
     def install_wizard(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Run install_wizard.py as a subprocess and return the result.
+        """Run install_wizard.py as a subprocess and return the final result.
 
         This is the backend for the desktop UI's "下载模型" button.
         The renderer sends a zmq REQ with method=install_wizard and
         params={"args": ["--download-lfm-onnx", "--download-lfm-onnx-quant", "q4"]};
-        we spawn install_wizard.py synchronously, capture its stdout/
-        stderr, and return the final result once it exits.
+        we spawn install_wizard.py with Popen, stream its stdout/stderr
+        line-by-line to the zmq PUB socket (port 5759) for live progress
+        in the UI, and return the final summary via zmq REP once the
+        subprocess exits.
 
         Long downloads (LFM2.5-1.2B-ONNX is ~1.2 GB) will block this
-        call for several minutes — that's OK because zmq REP is on a
-        dedicated background thread (see _run_zmq). The renderer's UI
-        should show a spinner / "downloading..." state while waiting.
+        zmq REP call for several minutes — that's OK because zmq REP
+        is on a dedicated background thread (see _run_zmq). The
+        renderer's UI shows live progress via the PUB stream + a
+        spinner on the REP call.
+
+        Progress event format (published to PUB socket, topic="iw"):
+            {"topic": "iw", "event": "line", "stream": "stdout"|"stderr",
+             "line": "...", "elapsed_s": 12.34}
+            {"topic": "iw", "event": "done", "ok": true, "exit_code": 0,
+             "duration_s": 59.9, "args": [...]}
+            {"topic": "iw", "event": "started", "args": [...], "pid": 12345}
 
         Args (in params):
             args: list[str] — CLI args to pass to install_wizard.py.
@@ -692,7 +706,7 @@ class SidecarHandlers:
                     ["--check"]
             timeout: float — max seconds to wait (default 1800 = 30 min)
 
-        Returns:
+        Returns (via zmq REP):
             {"ok": bool, "exit_code": int, "stdout": str, "stderr": str,
              "duration_s": float, "args": [...]}
         """
@@ -733,21 +747,109 @@ class SidecarHandlers:
         log.info("install_wizard: spawning %s %s %s",
                  python_exe, wizard_path, " ".join(args))
         t0 = time.time()
+
+        # Publish "started" event so the UI can show a spinner.
+        _publish_event("iw", {
+            "event": "started",
+            "args": args,
+            "pid": None,  # filled in after Popen
+        })
+
         try:
-            proc = _sp.run(
+            proc = _sp.Popen(
                 [python_exe, wizard_path] + args,
-                capture_output=True,
+                stdout=_sp.PIPE,
+                stderr=_sp.PIPE,
                 text=True,
-                timeout=timeout,
+                bufsize=1,  # line-buffered
                 env=env,
             )
+            # Update "started" event with pid (best-effort; PUB has no
+            # REQ/REP so we just publish a second event with the pid).
+            _publish_event("iw", {"event": "pid", "pid": proc.pid})
+
+            stdout_lines: List[str] = []
+            stderr_lines: List[str] = []
+            # Read stdout + stderr concurrently using threads to avoid
+            # one pipe filling up and blocking the other. Each line is
+            # published to the PUB socket for live UI progress.
+            import threading as _th
+
+            def _pump(stream, lines_list: List[str], stream_name: str) -> None:
+                try:
+                    for line in iter(stream.readline, ''):
+                        lines_list.append(line)
+                        _publish_event("iw", {
+                            "event": "line",
+                            "stream": stream_name,
+                            "line": line.rstrip('\r\n'),
+                            "elapsed_s": round(time.time() - t0, 2),
+                        })
+                except Exception as _e:
+                    log.warning("install_wizard: %s pump failed: %s",
+                                stream_name, _e)
+                finally:
+                    try:
+                        stream.close()
+                    except Exception:
+                        pass
+
+            out_thread = _th.Thread(target=_pump,
+                                    args=(proc.stdout, stdout_lines, "stdout"),
+                                    name="iw-stdout", daemon=True)
+            err_thread = _th.Thread(target=_pump,
+                                    args=(proc.stderr, stderr_lines, "stderr"),
+                                    name="iw-stderr", daemon=True)
+            out_thread.start()
+            err_thread.start()
+
+            # Wait for process to exit (with timeout)
+            try:
+                proc.wait(timeout=timeout)
+            except _sp.TimeoutExpired:
+                proc.kill()
+                proc.wait(timeout=5)
+                duration = time.time() - t0
+                _publish_event("iw", {
+                    "event": "done",
+                    "ok": False,
+                    "exit_code": -2,
+                    "duration_s": round(duration, 2),
+                    "args": args,
+                    "error": f"timed out after {timeout}s",
+                })
+                return {
+                    "ok": False,
+                    "exit_code": -2,
+                    "stdout": "",
+                    "stderr": f"install_wizard timed out after {timeout}s",
+                    "duration_s": round(duration, 2),
+                    "args": args,
+                }
+
+            # Drain pump threads (give them 2s to flush remaining lines)
+            out_thread.join(timeout=2)
+            err_thread.join(timeout=2)
+
             duration = time.time() - t0
             ok = proc.returncode == 0
             log.info("install_wizard: exit=%d duration=%.1fs ok=%s",
                      proc.returncode, duration, ok)
+
+            stdout = "".join(stdout_lines)
+            stderr = "".join(stderr_lines)
             # Truncate huge outputs (download logs can be 100KB+)
-            stdout = proc.stdout[-50000:] if len(proc.stdout) > 50000 else proc.stdout
-            stderr = proc.stderr[-50000:] if len(proc.stderr) > 50000 else proc.stderr
+            stdout = stdout[-50000:] if len(stdout) > 50000 else stdout
+            stderr = stderr[-50000:] if len(stderr) > 50000 else stderr
+
+            _publish_event("iw", {
+                "event": "done",
+                "ok": ok,
+                "exit_code": proc.returncode,
+                "duration_s": round(duration, 2),
+                "args": args,
+            })
+
             return {
                 "ok": ok,
                 "exit_code": proc.returncode,
@@ -756,20 +858,17 @@ class SidecarHandlers:
                 "duration_s": round(duration, 2),
                 "args": args,
             }
-        except _sp.TimeoutExpired:
-            duration = time.time() - t0
-            log.warning("install_wizard: timed out after %.1fs", duration)
-            return {
-                "ok": False,
-                "exit_code": -2,
-                "stdout": "",
-                "stderr": f"install_wizard timed out after {timeout}s",
-                "duration_s": round(duration, 2),
-                "args": args,
-            }
         except Exception as e:
             duration = time.time() - t0
             log.error("install_wizard: spawn failed: %s", e)
+            _publish_event("iw", {
+                "event": "done",
+                "ok": False,
+                "exit_code": -3,
+                "duration_s": round(duration, 2),
+                "args": args,
+                "error": f"{type(e).__name__}: {e}",
+            })
             return {
                 "ok": False,
                 "exit_code": -3,
@@ -1516,6 +1615,72 @@ def _http_response(status: int, headers: Dict[str, str], body: bytes = b"") -> b
 
 
 # ── zmq REP server (unchanged from stage 1) ──────────────────────────
+
+# ── zmq PUB socket (for streaming progress events) ───────────────────
+# Used by install_wizard to push live download progress to main.ts,
+# which forwards to the renderer via webContents.send('iw:progress').
+# Lazily initialised on first _publish_event() call so we don't open
+# the port if the user never triggers a long-running op.
+_zmq_pub_socket = None
+_zmq_pub_lock = None  # threading.Lock, created lazily
+
+
+def _get_pub_socket():
+    """Lazy-init the zmq PUB socket (thread-safe)."""
+    global _zmq_pub_socket, _zmq_pub_lock
+    if _zmq_pub_socket is not None:
+        return _zmq_pub_socket
+    import threading as _th
+    import zmq as _zmq
+    if _zmq_pub_lock is None:
+        _zmq_pub_lock = _th.Lock()
+    with _zmq_pub_lock:
+        if _zmq_pub_socket is None:
+            ctx = _zmq.Context.instance()
+            sock = ctx.socket(_zmq.PUB)
+            sock.setsockopt(_zmq.LINGER, 0)
+            # PUB sockets drop messages if no subscribers are connected,
+            # which is the desired behaviour for progress events (no
+            # point buffering 1000 progress lines if no one's listening).
+            bind_addr = f"tcp://{SIDECAR_HOST}:{ZMQ_PUB_PORT}"
+            sock.bind(bind_addr)
+            log.info("zmq PUB listening on %s (topic-prefix='iw:')",
+                     bind_addr)
+            _zmq_pub_socket = sock
+    return _zmq_pub_socket
+
+
+def _publish_event(topic: str, payload: Dict[str, Any]) -> None:
+    """Publish a JSON event to the zmq PUB socket.
+
+    Topic is used as the zmq multipart topic prefix so subscribers can
+    filter with setsockopt(zmq.SUBSCRIBE, b'topic:'). The payload is
+    JSON-serialised and sent as the second frame.
+
+    Best-effort: if the PUB socket isn't initialised or the send
+    fails, the call silently drops the event (progress events are
+    informational, not critical — the final result is always returned
+    via zmq REP).
+    """
+    try:
+        sock = _get_pub_socket()
+        msg = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        # zmq PUB with multipart: topic frame + body frame. Subscribers
+        # use setsockopt(SUBSCRIBE, b'iw:') to filter on the topic.
+        sock.send_multipart([f"{topic}:".encode("utf-8"), msg], flags=_zmq_noblock_flag())
+    except Exception as _e:
+        # Don't let a PUB failure break the actual install_wizard run
+        log.debug("PUB publish failed (non-critical): %s", _e)
+
+
+def _zmq_noblock_flag():
+    """Return zmq.DONTWAIT flag if zmq is importable, else 0."""
+    try:
+        import zmq as _zmq
+        return _zmq.DONTWAIT
+    except ImportError:
+        return 0
+
 
 def _run_zmq(handlers: SidecarHandlers, stop: asyncio.Event) -> None:
     """Run the zmq REP loop on a background thread.

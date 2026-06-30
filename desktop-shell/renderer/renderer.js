@@ -938,3 +938,152 @@ document.addEventListener('contextmenu', (e) => {
   healthCheck();
   setInterval(healthCheck, 30000);
 })();
+
+// ── Install wizard modal (LFM model download) ─────────────────────
+// Bound to the #download-model-btn in the sidebar; opens a modal
+// with preset download options + live progress streaming from the
+// sidecar's zmq PUB socket.
+
+const iwModal = document.getElementById('iw-modal');
+const iwLog = document.getElementById('iw-log');
+const iwStartBtn = document.getElementById('iw-start');
+const iwCloseBtn = document.getElementById('iw-close');
+const iwPreset = document.getElementById('iw-preset');
+const iwStatusLine = document.getElementById('iw-status-line');
+const iwProgressFill = document.getElementById('iw-progress-fill');
+const iwElapsed = document.getElementById('iw-elapsed');
+const iwStage = document.getElementById('iw-stage');
+const downloadModelBtn = document.getElementById('download-model-btn');
+
+const IW_PRESETS = {
+  'lfm-onnx-q4':     ['--download-lfm-onnx', '--download-lfm-onnx-quant', 'q4'],
+  'lfm-onnx-fp16':   ['--download-lfm-onnx', '--download-lfm-onnx-quant', 'fp16'],
+  'lfm-safetensors': ['--download-lfm'],
+  'embedding':       ['--download-embedding'],
+  'check':           ['--check'],
+};
+
+function iwOpen() {
+  iwModal.classList.remove('hidden');
+  iwLog.innerHTML = '';
+  iwProgressFill.style.width = '0%';
+  iwStatusLine.textContent = '点击 "开始下载" 启动';
+  iwStage.textContent = 'idle';
+  iwElapsed.textContent = '0.0s';
+  iwStartBtn.disabled = false;
+}
+
+function iwClose() {
+  // Don't allow closing mid-run (let user cancel via the button instead)
+  if (iwStartBtn.disabled) {
+    iwStatusLine.textContent = '正在运行，无法关闭（请等待完成）';
+    return;
+  }
+  iwModal.classList.add('hidden');
+}
+
+function iwAppendLine(text, stream) {
+  const div = document.createElement('div');
+  div.className = `iw-log-line iw-log-line-${stream || 'stdout'}`;
+  div.textContent = text;
+  iwLog.appendChild(div);
+  iwLog.scrollTop = iwLog.scrollHeight;
+}
+
+function iwSetProgress(pct, statusText, stage) {
+  iwProgressFill.style.width = `${Math.max(0, Math.min(100, pct))}%`;
+  if (statusText) iwStatusLine.textContent = statusText;
+  if (stage) iwStage.textContent = stage;
+}
+
+async function iwStart() {
+  const preset = iwPreset.value;
+  const args = IW_PRESETS[preset] || ['--check'];
+  if (!galaxy.installWizard) {
+    iwAppendLine('❌ 当前 renderer 不支持 installWizard API（需要 Electron 模式）', 'stderr');
+    return;
+  }
+  iwStartBtn.disabled = true;
+  iwLog.innerHTML = '';
+  iwProgressFill.style.width = '5%';
+  iwStatusLine.textContent = `启动: install_wizard ${args.join(' ')}`;
+  iwStage.textContent = 'starting';
+
+  const t0 = Date.now();
+  // Tick elapsed time
+  const tick = setInterval(() => {
+    iwElapsed.textContent = `${((Date.now() - t0) / 1000).toFixed(1)}s`;
+  }, 200);
+
+  try {
+    const result = await galaxy.installWizard(args, (event) => {
+      // Progress event handler — called for each PUB event
+      if (event.event === 'started') {
+        iwSetProgress(10, '子进程已启动', 'running');
+      } else if (event.event === 'pid') {
+        iwStage.textContent = `pid=${event.pid}`;
+      } else if (event.event === 'line') {
+        iwAppendLine(event.line || '', event.stream);
+        // Heuristic progress: install_wizard prints "XX%" during downloads
+        const pctMatch = (event.line || '').match(/(\d+)%/);
+        if (pctMatch) {
+          const pct = parseInt(pctMatch[1], 10);
+          // Map 0-100% file download to 10-95% overall (leave 5% for setup
+          // + 5% for cleanup)
+          iwProgressFill.style.width = `${10 + (pct * 0.85)}%`;
+        }
+      } else if (event.event === 'done') {
+        const ok = event.ok;
+        iwSetProgress(
+          100,
+          ok ? '✅ 完成' : '❌ 失败',
+          ok ? 'done' : 'failed',
+        );
+        iwAppendLine(
+          ok
+            ? `✅ 完成 (exit=${event.exit_code}, ${event.duration_s}s)`
+            : `❌ 失败 (exit=${event.exit_code}, ${event.duration_s}s)${event.error ? ': ' + event.error : ''}`,
+          ok ? 'done' : 'stderr',
+        );
+      }
+    }, 1800);  // 30 min timeout
+
+    // Final result from zmq REP (after process exited)
+    clearInterval(tick);
+    iwElapsed.textContent = `${result.duration_s}s`;
+    if (result.ok) {
+      iwSetProgress(100, `✅ 成功 (${result.duration_s}s)`, 'done');
+      if (!iwLog.children.length) {
+        // No progress events received (PUB socket issue?) — show stdout
+        iwAppendLine('--- stdout ---', 'stdout');
+        iwAppendLine(result.stdout || '(empty)', 'stdout');
+      }
+    } else {
+      iwSetProgress(100, `❌ 失败 (exit=${result.exit_code})`, 'failed');
+      iwAppendLine('--- stderr ---', 'stderr');
+      iwAppendLine(result.stderr || '(empty)', 'stderr');
+    }
+  } catch (e) {
+    clearInterval(tick);
+    iwSetProgress(100, `❌ 异常: ${e.message || e}`, 'failed');
+    iwAppendLine(`❌ ${e.stack || e}`, 'stderr');
+  } finally {
+    iwStartBtn.disabled = false;
+  }
+}
+
+if (downloadModelBtn) {
+  downloadModelBtn.addEventListener('click', iwOpen);
+}
+if (iwCloseBtn) {
+  iwCloseBtn.addEventListener('click', iwClose);
+}
+if (iwStartBtn) {
+  iwStartBtn.addEventListener('click', iwStart);
+}
+// Close on ESC (only when not running)
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && !iwModal.classList.contains('hidden')) {
+    iwClose();
+  }
+});

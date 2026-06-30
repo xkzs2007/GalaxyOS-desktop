@@ -111,6 +111,7 @@ const TOKUI_DIST_CSS = resolve(APP_ROOT, 'node_modules', '@jboltai', 'tokui', 'd
 
 const SIDECAR_PORT = Number(process.env.GALAXYOS_SIDECAR_PORT ?? 5757);
 const SIDECAR_HTTP_PORT = Number(process.env.GALAXYOS_SIDECAR_HTTP_PORT ?? 5758);
+const SIDECAR_PUB_PORT = Number(process.env.GALAXYOS_SIDECAR_PUB_PORT ?? 5759);
 const SIDECAR_HOST = process.env.GALAXYOS_SIDECAR_HOST ?? '127.0.0.1';
 
 // Where to bundle the Python sidecar for packaged builds.
@@ -396,11 +397,71 @@ function stopSidecar(): void {
   }
   try { zmqReq?.close(); } catch { /* ignore */ }
   zmqReq = null;
+  stopPubSubscriber();
   sidecarReady = false;
 }
 
+// ── zmq PUB/SUB subscriber (streaming progress events) ─────────────
+// Subscribes to the sidecar's PUB socket on port ZMQ_PUB_PORT
+// (default 5759) and forwards matching events to the renderer via
+// webContents.send(). Used by install_wizard to push live download
+// progress to the UI without blocking the zmq REP request/response
+// channel.
+let zmqSub: zmq.Subscriber | null = null;
+let mainWindowRef: BrowserWindow | null = null;
+
+function startPubSubscriber(win: BrowserWindow): void {
+  if (zmqSub) return;  // already running
+  mainWindowRef = win;
+  try {
+    zmqSub = new zmq.Subscriber();
+    zmqSub.connect(`tcp://${SIDECAR_HOST}:${SIDECAR_PUB_PORT}`);
+    // Subscribe to all topics (empty prefix = receive everything).
+    // We filter by topic prefix in the message handler.
+    zmqSub.subscribe();
+    log(`zmq SUB connected to tcp://${SIDECAR_HOST}:${SIDECAR_PUB_PORT} (all topics)`);
+
+    // Pump loop: read multipart [topic, body] and forward to renderer.
+    // Runs in the background; never rejects (errors are logged + the
+    // loop continues so transient zmq hiccups don't kill progress).
+    (async () => {
+      while (zmqSub) {
+        try {
+          const [topic, body] = await zmqSub.receive();
+          const topicStr = topic.toString();
+          const payload = JSON.parse(body.toString());
+          // Forward to renderer. The renderer's preload exposes
+          // ipcRenderer.on('iw:progress', ...) for install_wizard
+          // events (topic 'iw:').
+          if (topicStr.startsWith('iw:')) {
+            mainWindowRef?.webContents.send('iw:progress', payload);
+          }
+          // Future topics (e.g. 'memo:', 'agent:') can be added here.
+        } catch (e) {
+          // EAGAIN / closed socket — break out if socket is gone
+          if (!zmqSub) break;
+          // Otherwise log + continue (transient)
+          log(`zmq SUB receive error (non-fatal): ${(e as Error).message}`);
+        }
+      }
+    })();
+  } catch (e) {
+    log(`Failed to start zmq SUB: ${(e as Error).message} — progress events disabled`);
+    zmqSub = null;
+  }
+}
+
+function stopPubSubscriber(): void {
+  if (zmqSub) {
+    try { zmqSub.close(); } catch { /* */ }
+    zmqSub = null;
+    log('zmq SUB closed');
+  }
+  mainWindowRef = null;
+}
+
 // ── Window ──────────────────────────────────────────────────────────
-function createWindow(): void {
+function createWindow(): BrowserWindow {
   const win = new BrowserWindow({
     width: 1280,
     height: 820,
@@ -508,6 +569,12 @@ async function injectTokUI(win: BrowserWindow): Promise<void> {
   } else {
     log(`TokUI UMD not found at ${TOKUI_DIST_JS}; renderer will use stub`);
   }
+
+  // Start the zmq PUB/SUB subscriber so streaming progress events
+  // (install_wizard download progress, etc.) flow into the renderer.
+  startPubSubscriber(win);
+
+  return win;
 }
 
 // ── IPC handlers (renderer → main → sidecar via zmq) ──────────────
@@ -589,6 +656,29 @@ function registerIpc() {
   ipcMain.handle('galaxy:skillNeighbors', async (_e, name: string) => {
     try { return await zmqCall('get_skill_neighbors', { name }); }
     catch (e) { return { error: String((e as Error).message) }; }
+  });
+  // Install wizard: run install_wizard.py with given args, stream
+  // progress via 'iw:progress' events to renderer (handled by
+  // startPubSubscriber), return final result when done.
+  // Long downloads block the zmq REP thread for several minutes —
+  // that's fine because the REP server is on a background thread
+  // and the PUB stream keeps the UI updated with live progress.
+  ipcMain.handle('galaxy:installWizard', async (_e, args: string[], _timeout?: number) => {
+    try {
+      return await zmqCall('install_wizard', {
+        args: args || [],
+        timeout: _timeout || 1800,
+      });
+    } catch (e) {
+      return {
+        ok: false,
+        exit_code: -3,
+        stdout: '',
+        stderr: `main.ts zmqCall failed: ${(e as Error).message}`,
+        duration_s: 0,
+        args: args || [],
+      };
+    }
   });
 }
 

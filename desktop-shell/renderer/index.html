@@ -51,6 +51,7 @@
 
       <div class="settings-section">
         <button class="settings-btn" id="settings-btn">⚙ 设置</button>
+        <button class="settings-btn" id="download-model-btn" title="下载 LFM2.5-1.2B ONNX 模型 (~1.2GB)">📥 下载模型</button>
       </div>
 
       <div class="sidebar-footer">
@@ -274,6 +275,37 @@
       </div>
     </aside>
 
+  </div>
+
+  <!-- Install wizard progress modal — hidden by default, shown when
+       user clicks "下载模型". Streams progress lines from the sidecar
+       via PUB/SUB → webContents.send → ipcRenderer.on('iw:progress'). -->
+  <div id="iw-modal" class="iw-modal hidden" role="dialog" aria-labelledby="iw-title">
+    <div class="iw-modal-content">
+      <div class="iw-header">
+        <span id="iw-title">📥 下载 LFM2.5-1.2B 模型</span>
+        <button id="iw-close" class="iw-close" aria-label="关闭">×</button>
+      </div>
+      <div class="iw-status">
+        <div id="iw-status-line" class="iw-status-line">准备中…</div>
+        <div class="iw-progress-bar"><div id="iw-progress-fill" class="iw-progress-fill"></div></div>
+        <div class="iw-meta">
+          <span id="iw-elapsed">0.0s</span>
+          <span id="iw-stage">starting</span>
+        </div>
+      </div>
+      <pre id="iw-log" class="iw-log" aria-live="polite"></pre>
+      <div class="iw-actions">
+        <select id="iw-preset" class="iw-preset">
+          <option value="lfm-onnx-q4">LFM2.5-1.2B ONNX Q4 (~1.2GB, 推荐)</option>
+          <option value="lfm-onnx-fp16">LFM2.5-1.2B ONNX FP16 (~2.4GB)</option>
+          <option value="lfm-safetensors">LFM2.5-1.2B safetensors (~2.2GB)</option>
+          <option value="embedding">BGE-small-zh ONNX (~96MB)</option>
+          <option value="check">仅系统体检 (--check)</option>
+        </select>
+        <button id="iw-start" class="iw-start">开始下载</button>
+      </div>
+    </div>
   </div>
 
   <!-- Load TokUI from CDN so the page works without npm install.
