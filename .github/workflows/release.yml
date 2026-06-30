@@ -158,18 +158,38 @@ jobs:
 
       - name: Build Electron main + preload (esbuild)
         working-directory: desktop-shell
-        # IMPORTANT: `npx esbuild esbuild.config.mjs` would treat
-        # the config as the entry point and compile IT instead of
-        # running the build() calls inside it. Run the config as a
-        # Node script so the `await build({...})` blocks actually
-        # execute and produce dist/main.cjs + dist/preload.cjs.
-        # Without this, electron-builder fails later with
-        # "Application entry file 'dist/main.cjs' does not exist".
+        # Use the esbuild CLI directly (not `node esbuild.config.mjs`).
+        # The .mjs config uses top-level await which silently fails
+        # on some Node versions when imported, leaving dist/main.cjs
+        # ungenerated. CLI invocations are explicit and surface any
+        # errors via exit code.
         shell: bash
         run: |
-          node esbuild.config.mjs
+          mkdir -p dist
+          # Bundle src/main.ts -> dist/main.cjs (CJS for Electron)
+          npx esbuild src/main.ts \
+            --bundle \
+            --platform=node \
+            --target=node20 \
+            --format=cjs \
+            --outfile=dist/main.cjs \
+            --external:electron \
+            --external:fsevents \
+            --external:zeromq \
+            --sourcemap
+          # Bundle src/preload.ts -> dist/preload.cjs
+          npx esbuild src/preload.ts \
+            --bundle \
+            --platform=node \
+            --target=node20 \
+            --format=cjs \
+            --outfile=dist/preload.cjs \
+            --external:electron \
+            --sourcemap
+          # Sanity check — fail fast if either file is missing
           test -f dist/main.cjs || { echo "ERROR: dist/main.cjs not produced"; exit 1; }
           test -f dist/preload.cjs || { echo "ERROR: dist/preload.cjs not produced"; exit 1; }
+          ls -la dist/
           ls -la dist/
 
       - name: Stage PyInstaller sidecar for electron-builder
