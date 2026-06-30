@@ -87,8 +87,12 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: npm
-          cache-dependency-path: desktop-shell/package-lock.json
+          # No npm cache: this repo has no package-lock.json
+          # (desktop-shell/package.json is checked in but the lock
+          # file isn't). actions/setup-node@v4 fails the step when
+          # cache-dependency-path points at a missing file, so we
+          # skip the cache layer entirely. The downside is ~10s
+          # extra install time per run; the upside is no surprises.
 
       - name: Install Linux runtime libs (for AppImage + PyInstaller)
         if: runner.os == 'Linux'
