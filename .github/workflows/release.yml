@@ -168,18 +168,31 @@ jobs:
         working-directory: desktop-shell
         run: npm install --no-audit --no-fund
 
-      - name: Stage app icon (build/icon.png)
-        # electron-builder expects build/icon.png (per package.json
-        # `directories.buildResources: "build"` + `*.icon: "build/icon.png"`).
-        # The file is NOT in git — .gitignore excludes `build/`. We
-        # copy it from renderer/icon.png (which IS tracked, 512x512
-        # RGBA, the source of truth for the app icon).
+      - name: Stage app icon (build/icon.png + build/icon.ico)
+        # electron-builder expects build/icon.png for the Electron
+        # app icon, and build/icon.ico for the NSIS installer icon
+        # (NSIS does NOT accept PNG — it requires Windows .ico
+        # format). The .ico is generated from the canonical
+        # renderer/icon.png (512x512 RGBA, git-tracked) using PIL.
+        #
+        # Both files live under build/ which is gitignored, so we
+        # regenerate them on every CI run.
         working-directory: desktop-shell
         shell: bash
         run: |
           mkdir -p build
           cp renderer/icon.png build/icon.png
-          ls -la build/icon.png
+          # Generate multi-size .ico from the PNG.
+          # PIL is available because step "Install Python deps" ran
+          # earlier and installed pillow.
+          python -c "
+          from PIL import Image
+          im = Image.open('renderer/icon.png').convert('RGBA')
+          im.save('build/icon.ico', format='ICO',
+                  sizes=[(16,16),(32,32),(48,48),(64,64),(128,128),(256,256)])
+          print('build/icon.ico generated')
+          "
+          ls -la build/
 
       - name: Build Electron main + preload (esbuild)
         working-directory: desktop-shell
