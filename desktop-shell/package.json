@@ -42,6 +42,7 @@
       "output": "release",
       "buildResources": "build"
     },
+    "publish": null,
     "files": [
       "dist/**/*",
       "renderer/**/*",
