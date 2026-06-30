@@ -180,6 +180,18 @@ assert os.path.isdir(_ext_galaxyos_dir), (
 datas += [
     (_ext_galaxyos_dir, 'extensions/galaxyos'),
 ]
+# Bundle repo-root skills/ (76 SKILL.md files) so the sidecar can
+# scan them at runtime. PyInstaller's static analysis doesn't follow
+# directory scans like `Path('skills').glob('**/SKILL.md')`, so
+# we declare it explicitly. Without this, frozen builds crash on
+# startup with FileNotFoundError: skills/.
+# Use isdir guard so CI without a `skills/` (rare) doesn't fail.
+_skills_dir = os.path.abspath(os.path.join(_spec_dir, '..', '..', 'skills'))
+if os.path.isdir(_skills_dir):
+    datas += [(_skills_dir, 'skills')]
+else:
+    print(f"[galaxyos-sidecar.spec] WARN: skills/ not found at {_skills_dir}; "
+          f"skipping. Sidecar will boot with zero skills.")
 # Pull in any package_data for sibling modules (skills, jieba
 # dicts, etc.). Safe to call even if the module isn't installed as
 # a package — `collect_data_files` returns [] in that case.

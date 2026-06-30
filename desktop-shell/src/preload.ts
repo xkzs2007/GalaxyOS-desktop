@@ -41,7 +41,19 @@ export type GalaxyApi = {
   ): Promise<IwResult>;
   onInstallWizardProgress(callback: (event: IwProgressEvent) => void): () => void;
   openExternal(url: string): Promise<void>;
+  /** API schema introspection — returns the JSON contract of all
+   *  IPC channels. Fetch once at startup for runtime validation. */
+  schema(): Promise<ApiSchema>;
 };
+
+/** API schema (returned by `schema()`). */
+export interface ApiSchema {
+  version: string;
+  generated_at: string;
+  transport: 'ipc';
+  channels: Array<{ name: string; args: string[]; returns: string }>;
+  types: Record<string, Record<string, string>>;
+}
 
 /** Progress event for install_wizard (forwarded from sidecar PUB). */
 export interface IwProgressEvent {
@@ -110,6 +122,7 @@ const api: GalaxyApi = {
     return () => ipcRenderer.removeListener('iw:progress', handler);
   },
   openExternal: (u) => ipcRenderer.invoke('galaxy:openExternal', u) as any,
+  schema: () => ipcRenderer.invoke('galaxy:schema') as Promise<ApiSchema>,
 };
 
 contextBridge.exposeInMainWorld('galaxy', api);

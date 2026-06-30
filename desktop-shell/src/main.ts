@@ -102,10 +102,27 @@ const _APP_ROOT_FROM_DIR = (() => {
   // esbuild CJS bundle: __dirname = <desktop-shell>/dist
   try { return resolve(__dirname, '..'); } catch { return ''; }
 })();
-const APP_ROOT = _APP_ROOT_FROM_GET || _APP_ROOT_FROM_DIR || process.cwd();
+// In packaged builds, process.cwd() is unreliable (NSIS Start Menu
+// shortcut cwd = C:\Windows\System32; Linux AppImage cwd = launcher's
+// dir, not the mount). Only fall back to cwd in DEV — packaged builds
+// must derive APP_ROOT from getAppPath() / __dirname/.. or fail loudly.
+const APP_ROOT = _APP_ROOT_FROM_GET
+              || _APP_ROOT_FROM_DIR
+              || (app.isPackaged ? '' : process.cwd());
+if (!APP_ROOT) {
+  throw new Error(
+    `Cannot resolve APP_ROOT in packaged build. ` +
+    `getAppPath()=${_APP_ROOT_FROM_GET} __dirname-based=${_APP_ROOT_FROM_DIR}`
+  );
+}
 const PYTHON_DIR = resolve(APP_ROOT, 'python');
 const SIDECAR_SCRIPT = resolve(PYTHON_DIR, 'galaxyos_sidecar.py');
 const RENDERER_HTML = resolve(APP_ROOT, 'renderer', 'index.html');
+// TokUI paths. In packaged builds the file lives at APP_ROOT/node_modules/@jboltai/tokui/dist/
+// (we explicitly add it to build.files + asarUnpack in package.json).
+// In dev mode it lives at the same path after `npm install`; we fall
+// back to ./renderer/vendor/tokui.umd.js if neither exists (production
+// installs without devDependencies will hit this fallback).
 const TOKUI_DIST_JS = resolve(APP_ROOT, 'node_modules', '@jboltai', 'tokui', 'dist', 'tokui.umd.js');
 const TOKUI_DIST_CSS = resolve(APP_ROOT, 'node_modules', '@jboltai', 'tokui', 'dist', 'tokui.css');
 
@@ -144,16 +161,38 @@ function resolveSidecarPath(): string {
     // Dev mode: run the .py source directly with the system Python.
     return SIDECAR_SCRIPT;
   }
-  // Packaged: use the PyInstaller-bundled executable. On Windows
-  // electron-builder leaves the file name with the .exe suffix; on
-  // POSIX it's bare. Append `.exe` only on win32.
-  const base = process.platform === 'win32'
-    ? PACKAGED_SIDECAR + '.exe'
-    : PACKAGED_SIDECAR;
-  if (existsSync(base)) return base;
-  // Fallback: maybe a `.exe` was bundled on Linux too (some
-  // build configs do that) — try the other variant.
-  return process.platform === 'win32' ? PACKAGED_SIDECAR : PACKAGED_SIDECAR + '.exe';
+  // Packaged: use the PyInstaller-bundled executable. We enumerate
+  // candidate locations explicitly rather than relying on implicit
+  // fallbacks — this catches both Windows (.exe suffix) and POSIX
+  // (no suffix) layouts, and supports a `python/` subdir under
+  // resources/ if extraResources is configured that way in the
+  // future.
+  const isWin = process.platform === 'win32';
+  const candidates = isWin
+    ? [
+        join(RESOURCES_DIR, 'galaxyos-sidecar.exe'),
+        join(RESOURCES_DIR, 'python', 'galaxyos-sidecar.exe'),
+      ]
+    : [
+        join(RESOURCES_DIR, 'galaxyos-sidecar'),
+        join(RESOURCES_DIR, 'python', 'galaxyos-sidecar'),
+      ];
+  for (const p of candidates) {
+    if (existsSync(p)) {
+      log(`sidecar resolved: ${p}`);
+      return p;
+    }
+  }
+  throw new Error(
+    `GalaxyOS sidecar binary not found.\n` +
+    `  Looked in: ${candidates.join(', ')}\n` +
+    `  RESOURCES_DIR: ${RESOURCES_DIR}\n` +
+    `  isPackaged: ${app.isPackaged}\n` +
+    `  process.resourcesPath: ${process.resourcesPath ?? '(unset)'}\n` +
+    `  APP_ROOT: ${APP_ROOT}\n` +
+    `  This is a packaging bug — the .exe / AppImage is missing the bundled Python sidecar.\n` +
+    `  Please report it with the contents of: ${LOG_FILE}\n`
+  );
 }
 
 function resolvePythonInterpreter(): string {
@@ -688,6 +727,62 @@ function registerIpc() {
       };
     }
   });
+
+  // ── API schema (introspection for the renderer / future codegen) ────
+  // Returns a JSON description of every IPC channel this app exposes.
+  // The renderer can fetch this once at startup to:
+  //   1. runtime-validate args/returns (zod / valibot on the renderer)
+  //   2. auto-generate TypeScript types (offline build step)
+  //   3. show a "what RPCs are available" debug panel
+  //
+  // Keep this list in sync with the ipcMain.handle() calls above.
+  // The schema is intentionally hand-maintained — it's small (15 channels)
+  // and explicit beats generated for this size.
+  const API_SCHEMA = {
+    version: '1.0',
+    generated_at: new Date().toISOString(),
+    transport: 'ipc',
+    channels: [
+      { name: 'galaxy:health',           args: [],                              returns: 'HealthReport' },
+      { name: 'galaxy:ask',              args: ['question: string', 'sessionId?: string'],                  returns: 'StreamResult' },
+      { name: 'galaxy:process',          args: ['userInput: string', 'sessionId?: string'],                 returns: 'StreamResult' },
+      { name: 'galaxy:agent',            args: ['prompt: string', 'sessionId?: string'],                    returns: 'StreamResult' },
+      { name: 'galaxy:remember',         args: ['content: string', 'metadata?: object', 'source?: string'], returns: 'RememberResult' },
+      { name: 'galaxy:recall',           args: ['query: string', 'topK?: number', 'sessionId?: string'],   returns: 'RecallResult' },
+      { name: 'galaxy:skills',           args: [],                              returns: 'SkillsList' },
+      { name: 'galaxy:skill',            args: ['skillId: string'],              returns: 'SkillDetail' },
+      { name: 'galaxy:updateSettings',   args: ['settings: Record<string,string>'], returns: 'UpdateSettingsResult' },
+      { name: 'galaxy:heartbeat',        args: [],                              returns: 'Heartbeat' },
+      { name: 'galaxy:stats',            args: [],                              returns: 'Stats' },
+      { name: 'galaxy:verify',           args: ['claim: string'],               returns: 'VerifyResult' },
+      { name: 'galaxy:clawRecall',       args: ['query: string', 'topK?: number'], returns: 'RecallResult' },
+      { name: 'galaxy:saveMemory',       args: ['content: string', 'metadata?: object'], returns: 'SaveMemoryResult' },
+      { name: 'galaxy:emitEvent',        args: ['type: string', 'payload?: any'], returns: 'EmitEventResult' },
+      { name: 'galaxy:graphSearch',      args: ['query: string', 'topK?: number'], returns: 'GraphSearchResult' },
+      { name: 'galaxy:skillNeighbors',   args: ['name: string'],                returns: 'SkillNeighbors' },
+      { name: 'galaxy:installWizard',    args: ['args: string[]', 'timeout?: number'], returns: 'IwResult' },
+      { name: 'galaxy:openExternal',     args: ['url: string'],                 returns: 'void' },
+    ],
+    types: {
+      HealthReport:        { zmq_port: 'number', sse_port: 'number', stage: 'string', memo: 'string', router: 'string', skills: 'number' },
+      StreamResult:        { events: 'string[]', fragments: 'string[]', error: 'string?' },
+      RememberResult:      { memory_id: 'string' },
+      RecallResult:        { results: 'any[]', error: 'string?' },
+      SkillsList:          { skills: 'Skill[]', count: 'number' },
+      SkillDetail:         { id: 'string', name: 'string', description: 'string', body: 'string' },
+      Skill:               { id: 'string', name: 'string', description: 'string' },
+      UpdateSettingsResult:{ ok: 'boolean', updated: 'string[]' },
+      Heartbeat:           { ok: 'boolean', ts_ms: 'number', uptime_s: 'number' },
+      Stats:               { /* open */ },
+      VerifyResult:        { claim: 'string', confidence: 'number', verdict: 'string', evidence_count: 'number', top_evidence: 'string[]' },
+      SaveMemoryResult:    { memory_id: 'string', ok: 'boolean' },
+      EmitEventResult:     { ok: 'boolean', received: 'string' },
+      GraphSearchResult:   { count: 'number', results: 'any[]' },
+      SkillNeighbors:      { name: 'string', successors: 'any[]', predecessors: 'any[]' },
+      IwResult:            { ok: 'boolean', exit_code: 'number', stdout: 'string', stderr: 'string', duration_s: 'number', args: 'string[]', error: 'string?' },
+    },
+  };
+  ipcMain.handle('galaxy:schema', async () => API_SCHEMA);
 }
 
 // Disable GPU hardware acceleration so PrintWindow / BitBlt can
