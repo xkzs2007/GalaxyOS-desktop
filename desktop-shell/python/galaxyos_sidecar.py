@@ -52,23 +52,40 @@ from typing import Any, Dict, List, Optional
 
 # ── Bootstrap: install path_resolver shim BEFORE any GalaxyOS import ───
 _THIS_DIR = Path(__file__).resolve().parent
-# Sidecar is at desktop-shell/python/, so the repo root is two levels up.
-_REPO_ROOT = _THIS_DIR.parent.parent
-# Order matters: engine + privileged dirs must be on path BEFORE
-# the engine's bare imports (e.g. `from unified_vector_store import ...`)
-# resolve. We insert them at the FRONT so they take priority.
-_ENGINE_DIR = _REPO_ROOT / "galaxyos" / "engine"
-_PRIVILEGED_DIR = _REPO_ROOT / "galaxyos" / "privileged"
-_GALAXYOS_PKG = _REPO_ROOT / "galaxyos"
-for d in (_ENGINE_DIR, _PRIVILEGED_DIR, _GALAXYOS_PKG, _REPO_ROOT):
-    if d.exists() and str(d) not in sys.path:
-        sys.path.insert(0, str(d))
-# Honor explicit override
-_repo_env = os.environ.get("GALAXYOS_REPO")
-if _repo_env and _repo_env not in sys.path:
-    sys.path.insert(0, _repo_env)
-if str(_THIS_DIR) not in sys.path:
-    sys.path.insert(0, str(_THIS_DIR))
+
+# Detect PyInstaller --onefile / --onedir freeze. Inside a frozen
+# build, `__file__` points into `sys._MEIPASS` (a temp extraction
+# dir) and the `../../` math below would yield a non-existent path.
+# PyInstaller also bundles the whole `galaxyos/` package via the
+# spec's `datas` entry, so `from galaxyos.engine...` resolves
+# through the import system without us touching sys.path.
+_FROZEN = getattr(sys, "frozen", False)
+
+if not _FROZEN:
+    # Sidecar is at desktop-shell/python/, so the repo root is two levels up.
+    _REPO_ROOT = _THIS_DIR.parent.parent
+    # Order matters: engine + privileged dirs must be on path BEFORE
+    # the engine's bare imports (e.g. `from unified_vector_store import ...`)
+    # resolve. We insert them at the FRONT so they take priority.
+    _ENGINE_DIR = _REPO_ROOT / "galaxyos" / "engine"
+    _PRIVILEGED_DIR = _REPO_ROOT / "galaxyos" / "privileged"
+    _GALAXYOS_PKG = _REPO_ROOT / "galaxyos"
+    for d in (_ENGINE_DIR, _PRIVILEGED_DIR, _GALAXYOS_PKG, _REPO_ROOT):
+        if d.exists() and str(d) not in sys.path:
+            sys.path.insert(0, str(d))
+    # Honor explicit override
+    _repo_env = os.environ.get("GALAXYOS_REPO")
+    if _repo_env and _repo_env not in sys.path:
+        sys.path.insert(0, _repo_env)
+    if str(_THIS_DIR) not in sys.path:
+        sys.path.insert(0, str(_THIS_DIR))
+else:
+    # In a frozen build, GALAXYOS_REPO still wins (e.g. when the
+    # operator wants the sidecar to use an on-disk data dir at
+    # /opt/galaxyos instead of the bundled one).
+    _repo_env = os.environ.get("GALAXYOS_REPO")
+    if _repo_env and _repo_env not in sys.path:
+        sys.path.insert(0, _repo_env)
 
 import path_resolver_desktop  # noqa: F401  (auto-installs into sys.modules)
 import tokui_dsl  # DSL builders for SSE streaming
@@ -86,6 +103,43 @@ logging.basicConfig(
     stream=sys.stderr,
 )
 log = logging.getLogger("galaxyos-sidecar")
+
+# In a frozen (PyInstaller) build we deliberately strip heavy ML deps
+# (torch / transformers / onnxruntime) to keep the binary under 200 MB.
+# The engine catches the resulting ImportError in its try/except blocks
+# and falls back to lighter in-process implementations. Those fallbacks
+# are expected and not actionable, so suppress just the ImportError
+# noise from the engine's lazy-loader try/except blocks. We do this
+# with a logging.Filter rather than mutating logger levels, because
+# the basicConfig level governs the root and `setLevel` on a child
+# logger does NOT bypass the root's effective level when root is
+# more permissive (e.g. INFO) than the child (DEBUG).
+if getattr(sys, "frozen", False):
+    class _SuppressFrozenImportNoise(logging.Filter):
+        """Drop WARNING records that are purely about missing optional
+        heavy-ML modules (torch / transformers / onnxruntime) inside
+        a frozen build. Keep all other WARNINGs untouched.
+        """
+        _QUIET = (
+            "No module named 'torch'",
+            "No module named 'transformers'",
+            "No module named 'onnxruntime'",
+            "No module named 'faiss'",
+            "No module named 'hnswlib'",
+        )
+
+        def filter(self, record: logging.LogRecord) -> bool:  # noqa: D401
+            try:
+                msg = record.getMessage()
+            except Exception:
+                return True
+            if record.levelno != logging.WARNING:
+                return True
+            return not any(q in msg for q in self._QUIET)
+
+    _filt = _SuppressFrozenImportNoise()
+    for h in logging.getLogger().handlers:
+        h.addFilter(_filt)
 
 
 # ── GalaxyOS import (deferred so the shim lands first) ─────────────────

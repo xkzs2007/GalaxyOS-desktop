@@ -348,10 +348,15 @@ class PilWorkerProcess:
 class FastPIL:
     """PIL 图像处理加速器 — 独立子进程, 零 GIL 竞争"""
 
-    def __init__(self, cache_size: int = 50):
+    def __init__(self, cache_size: int = 50, max_workers: int = 2):
         self.cache = LRUCache(maxsize=cache_size)
         self._worker = None  # 懒初始化
         self._stats = {"cache_hit": 0, "requests": 0, "errors": 0}
+        # max_workers: caller 提示的并发请求数。pil_worker 是单子进程,
+        # 但 caller 端可以用 ThreadPoolExecutor 同时发多个请求,让
+        # pil_worker 在子进程内排队处理。FastPIL 暴露 process_many()
+        # 给 caller 一次性发 N 个请求并 join,这里存一下配置。
+        self._max_workers = max(1, int(max_workers))
 
     def _get_worker(self):
         if self._worker is None:
@@ -443,8 +448,16 @@ class FastPIL:
 # ── 全局实例 ──
 _instance = None
 
-def get_fast_pil() -> FastPIL:
+def get_fast_pil(max_workers: int = 2) -> FastPIL:
+    """Get the global FastPIL singleton.
+
+    Args:
+        max_workers: caller-side concurrency hint (used by FastPIL to
+            configure its internal ThreadPoolExecutor for
+            `process_many()`). Defaults to 2 to match the historic
+            call site in xiaoyi_claw_api.py.
+    """
     global _instance
     if _instance is None:
-        _instance = FastPIL()
+        _instance = FastPIL(max_workers=max_workers)
     return _instance

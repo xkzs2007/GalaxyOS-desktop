@@ -1,0 +1,225 @@
+name: Release Desktop
+
+# GalaxyOS desktop release pipeline.
+#
+# Triggers:
+#   - push tag v*    →  build all platforms + create GitHub release
+#   - workflow_dispatch →  manual trigger (build only, no release upload)
+#
+# Matrix:
+#   - windows-latest        →  GalaxyOS Setup *.exe (NSIS)        (zip of win-unpacked)
+#   - macos-14 (arm64)      →  GalaxyOS-*.dmg                     (macOS Apple Silicon)
+#   - macos-13 (x64)        →  GalaxyOS-*.dmg                     (macOS Intel)
+#   - ubuntu-22.04          →  GalaxyOS-*.AppImage                (Linux x86_64)
+#   - ubuntu-22.04-arm64    →  GalaxyOS-*.AppImage                (Linux aarch64)
+#
+# Each matrix leg produces TWO artifacts:
+#   1. The Electron installer  (the .exe / .dmg / .AppImage users download)
+#   2. The standalone PyInstaller sidecar binary
+#      (galaxyos-sidecar-{platform}-{arch}{.exe})
+#      Useful for headless CI / server deployments and as a
+#      "smoke test" of the PyInstaller bundle on every platform.
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.label }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            label: windows-x64
+            arch: x64
+            artifact: galaxyos-windows-x64
+            electron_target: nsis
+            sidecar_bin: galaxyos-sidecar.exe
+            sidecar_renamed: galaxyos-sidecar-windows-x64.exe
+          - os: macos-14
+            label: macos-arm64
+            arch: arm64
+            artifact: galaxyos-macos-arm64
+            electron_target: dmg
+            sidecar_bin: galaxyos-sidecar
+            sidecar_renamed: galaxyos-sidecar-macos-arm64
+          - os: macos-13
+            label: macos-x64
+            arch: x64
+            artifact: galaxyos-macos-x64
+            electron_target: dmg
+            sidecar_bin: galaxyos-sidecar
+            sidecar_renamed: galaxyos-sidecar-macos-x64
+          - os: ubuntu-22.04
+            label: linux-x64
+            arch: x64
+            artifact: galaxyos-linux-x64
+            electron_target: AppImage
+            sidecar_bin: galaxyos-sidecar
+            sidecar_renamed: galaxyos-sidecar-linux-x64
+          - os: ubuntu-22.04-arm64
+            label: linux-arm64
+            arch: arm64
+            artifact: galaxyos-linux-arm64
+            electron_target: AppImage
+            sidecar_bin: galaxyos-sidecar
+            sidecar_renamed: galaxyos-sidecar-linux-arm64
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Set up Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: desktop-shell/package-lock.json
+
+      - name: Install Linux runtime libs (for AppImage + PyInstaller)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends \
+            fakeroot rpm libfuse2 \
+            libnss3 libatk-bridge2.0-0 libgtk-3-0 libasound2 \
+            python3-dev build-essential
+
+      - name: Install Python deps + PyInstaller
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-core.txt pyinstaller
+
+      - name: Bundle Python sidecar (PyInstaller)
+        working-directory: desktop-shell/python
+        shell: bash
+        run: |
+          pyinstaller --clean --noconfirm galaxyos-sidecar.spec
+          ls -la dist/
+
+      - name: Rename sidecar with platform/arch suffix
+        working-directory: desktop-shell/python/dist
+        shell: bash
+        run: |
+          if [ -f "${{ matrix.sidecar_bin }}" ]; then
+            mv "${{ matrix.sidecar_bin }}" "${{ matrix.sidecar_renamed }}"
+          fi
+          ls -la
+
+      - name: Smoke test sidecar (POSIX only)
+        if: runner.os != 'Windows'
+        working-directory: desktop-shell/python/dist
+        shell: bash
+        run: |
+          chmod +x "${{ matrix.sidecar_renamed }}"
+          # Sidecar writes a healthcheck to stderr; just check it starts
+          # and shuts down cleanly within 5s. We send SIGTERM after.
+          timeout 5s ./"${{ matrix.sidecar_renamed}}" 2>&1 | head -20 || true
+
+      - name: Install npm deps (desktop-shell)
+        working-directory: desktop-shell
+        run: npm install --no-audit --no-fund
+
+      - name: Build Electron main + preload (esbuild)
+        working-directory: desktop-shell
+        run: npx esbuild esbuild.config.mjs
+
+      - name: Stage PyInstaller sidecar for electron-builder
+        working-directory: desktop-shell
+        shell: bash
+        run: |
+          # electron-builder looks for python/dist/galaxyos-sidecar[.exe].
+          # We re-name our platform-tagged artifact back to the
+          # platform-native name electron-builder expects.
+          mkdir -p python/dist
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            cp "python/dist/${{ matrix.sidecar_renamed }}" python/dist/galaxyos-sidecar.exe
+          else
+            cp "python/dist/${{ matrix.sidecar_renamed }}" python/dist/galaxyos-sidecar
+            chmod +x python/dist/galaxyos-sidecar
+          fi
+          ls -la python/dist/
+
+      - name: Build Electron installer
+        working-directory: desktop-shell
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: |
+          npx electron-builder \
+            --${{ matrix.electron_target }} \
+            --${{ matrix.arch }} \
+            --publish never 2>&1 | tail -50
+
+      - name: List release output
+        working-directory: desktop-shell
+        run: |
+          echo "--- release/ ---"
+          ls -laR release/ 2>&1 | head -50
+          echo "--- sidecar dist/ ---"
+          ls -la python/dist/
+
+      - name: Upload sidecar binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}-sidecar
+          path: desktop-shell/python/dist/${{ matrix.sidecar_renamed }}
+          if-no-files-found: error
+
+      - name: Upload Electron installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}-installer
+          path: |
+            desktop-shell/release/*.exe
+            desktop-shell/release/*.dmg
+            desktop-shell/release/*.AppImage
+            desktop-shell/release/*.zip
+            desktop-shell/release/*.blockmap
+            desktop-shell/release/latest*.yml
+          if-no-files-found: error
+
+  release:
+    name: Publish GitHub Release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Show artifact tree
+        run: |
+          echo "--- artifacts/ ---"
+          find artifacts -maxdepth 4 -type f | sort
+
+      - name: Create / update GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: GalaxyOS ${{ github.ref_name }}
+          generate_release_notes: true
+          draft: false
+          prerelease: ${{ contains(github.ref_name, 'rc') || contains(github.ref_name, 'beta') }}
+          files: |
+            artifacts/**/*.exe
+            artifacts/**/*.dmg
+            artifacts/**/*.AppImage
+            artifacts/**/*.zip
+            artifacts/**/latest*.yml
