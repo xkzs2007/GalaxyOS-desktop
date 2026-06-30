@@ -308,6 +308,17 @@ function startSidecar(): Promise<void> {
           GALAXYOS_SIDECAR_HOST: SIDECAR_HOST,
           GALAXYOS_SIDECAR_LOG: SIDECAR_LOG,
           GALAXYOS_DISABLE_HTTP: '1',
+          // LFM_SERVER_BIN: tell sidecar where the Rust lfm_server
+          // binary lives. electron-builder puts it at
+          // <resources>/lfm_server[.exe] (see package.json
+          // build.extraResources). In dev mode we don't set this
+          // (sidecar falls back to scanning the cargo target/
+          // release/ directory or skips lfm_server entirely).
+          ...(app.isPackaged ? {
+            LFM_SERVER_BIN: process.platform === 'win32'
+              ? join(RESOURCES_DIR, 'lfm_server.exe')
+              : join(RESOURCES_DIR, 'lfm_server'),
+          } : {}),
         },
         detached: process.platform !== 'win32',
         stdio: sidecarOut !== null && sidecarErr !== null

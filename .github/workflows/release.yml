@@ -106,6 +106,42 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq --no-install-recommends fakeroot rpm libfuse2 libnss3 libatk-bridge2.0-0 libgtk-3-0 libasound2 python3-dev build-essential
 
+      - name: Set up Rust toolchain (for lfm_server native build)
+        # lfm_server.rs is a Rust binary that ships alongside the
+        # Python sidecar — it runs LFM2.5-1.2B ONNX inference over a
+        # local IPC socket (UDS on Unix, TCP on Windows). We build it
+        # here so electron-builder can pick up the binary as an
+        # extraResource (see package.json build.extraResources).
+        # Uses dtolnay/rust-toolchain for fast, cache-friendly setup.
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ runner.os == 'Windows' && 'x86_64-pc-windows-msvc' || 'x86_64-unknown-linux-gnu' }}
+
+      - name: Cache Rust build (cargo)
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: extensions/galaxyos/native
+
+      - name: Build lfm_server binary (Rust, release)
+        shell: bash
+        run: |
+          set -e
+          cd extensions/galaxyos/native
+          # Build the lfm_server binary (standalone, no PyO3) in
+          # release mode. --no-default-features skips the python
+          # feature (PyO3 cdylib) which we don't ship — only the
+          # standalone binary is needed at runtime.
+          cargo build --release --bin lfm_server --no-default-features
+          # Verify the binary exists (the .exe suffix on Windows is
+          # added by cargo automatically; on Linux it's bare).
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            test -f target/release/lfm_server.exe
+            ls -lh target/release/lfm_server.exe
+          else
+            test -f target/release/lfm_server
+            ls -lh target/release/lfm_server
+          fi
+
       - name: Install Python deps + PyInstaller
         # IMPORTANT: force bash on Windows. The windows-latest runner
         # defaults to PowerShell, which doesn't support `\` line

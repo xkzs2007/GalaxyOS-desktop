@@ -669,6 +669,116 @@ class SidecarHandlers:
             result["router"] = self._router.info()
         return result
 
+    def install_wizard(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Run install_wizard.py as a subprocess and return the result.
+
+        This is the backend for the desktop UI's "下载模型" button.
+        The renderer sends a zmq REQ with method=install_wizard and
+        params={"args": ["--download-lfm-onnx", "--download-lfm-onnx-quant", "q4"]};
+        we spawn install_wizard.py synchronously, capture its stdout/
+        stderr, and return the final result once it exits.
+
+        Long downloads (LFM2.5-1.2B-ONNX is ~1.2 GB) will block this
+        call for several minutes — that's OK because zmq REP is on a
+        dedicated background thread (see _run_zmq). The renderer's UI
+        should show a spinner / "downloading..." state while waiting.
+
+        Args (in params):
+            args: list[str] — CLI args to pass to install_wizard.py.
+                  Common values:
+                    ["--download-lfm-onnx", "--download-lfm-onnx-quant", "q4"]
+                    ["--download-lfm"]
+                    ["--download-embedding"]
+                    ["--check"]
+            timeout: float — max seconds to wait (default 1800 = 30 min)
+
+        Returns:
+            {"ok": bool, "exit_code": int, "stdout": str, "stderr": str,
+             "duration_s": float, "args": [...]}
+        """
+        import subprocess as _sp
+        args = list(params.get("args") or [])
+        timeout = float(params.get("timeout") or 1800)
+
+        # Resolve install_wizard.py path:
+        #   frozen: _MEIPASS/scripts/install_wizard.py
+        #   dev:    <repo>/scripts/install_wizard.py
+        if getattr(sys, "frozen", False):
+            wizard_path = os.path.join(sys._MEIPASS, "scripts", "install_wizard.py")  # type: ignore[attr-defined]
+        else:
+            wizard_path = str(_THIS_DIR.parent.parent / "scripts" / "install_wizard.py")
+        if not os.path.isfile(wizard_path):
+            return {
+                "ok": False,
+                "exit_code": -1,
+                "stdout": "",
+                "stderr": f"install_wizard.py not found at {wizard_path}",
+                "duration_s": 0.0,
+                "args": args,
+            }
+
+        # Python interpreter: in frozen mode, sys.executable IS the
+        # sidecar binary (PyInstaller bootloader lets us run scripts
+        # via `<sidecar.exe> script.py args...`). In dev mode use
+        # sys.executable directly.
+        python_exe = sys.executable
+
+        # Build env: pass desktop home so install_wizard writes to
+        # ~/.galaxyos/ rather than ~/.openclaw/.
+        env = os.environ.copy()
+        env["GALAXYOS_HOME"] = str(path_resolver_desktop.OPENCLAW_HOME)
+        env["OPENCLAW_WORKSPACE"] = str(path_resolver_desktop.WORKSPACE_ROOT)
+        env["GALAXYOS_REPO"] = str(path_resolver_desktop._GALAXYOS_REPO)
+
+        log.info("install_wizard: spawning %s %s %s",
+                 python_exe, wizard_path, " ".join(args))
+        t0 = time.time()
+        try:
+            proc = _sp.run(
+                [python_exe, wizard_path] + args,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                env=env,
+            )
+            duration = time.time() - t0
+            ok = proc.returncode == 0
+            log.info("install_wizard: exit=%d duration=%.1fs ok=%s",
+                     proc.returncode, duration, ok)
+            # Truncate huge outputs (download logs can be 100KB+)
+            stdout = proc.stdout[-50000:] if len(proc.stdout) > 50000 else proc.stdout
+            stderr = proc.stderr[-50000:] if len(proc.stderr) > 50000 else proc.stderr
+            return {
+                "ok": ok,
+                "exit_code": proc.returncode,
+                "stdout": stdout,
+                "stderr": stderr,
+                "duration_s": round(duration, 2),
+                "args": args,
+            }
+        except _sp.TimeoutExpired:
+            duration = time.time() - t0
+            log.warning("install_wizard: timed out after %.1fs", duration)
+            return {
+                "ok": False,
+                "exit_code": -2,
+                "stdout": "",
+                "stderr": f"install_wizard timed out after {timeout}s",
+                "duration_s": round(duration, 2),
+                "args": args,
+            }
+        except Exception as e:
+            duration = time.time() - t0
+            log.error("install_wizard: spawn failed: %s", e)
+            return {
+                "ok": False,
+                "exit_code": -3,
+                "stdout": "",
+                "stderr": f"spawn failed: {type(e).__name__}: {e}",
+                "duration_s": round(duration, 2),
+                "args": args,
+            }
+
     def health(self, params: Dict[str, Any]) -> Dict[str, Any]:
         # Probe ONNX MeMo lazily so the first /sse/health call after
         # startup returns the *real* backend name (not "not yet loaded").
