@@ -102,6 +102,9 @@ register({
   'cmd-install-wizard':      () => openWizard(),
   'cmd-setup-page':          () => renderSetupPage(),
   'cmd-code-editor':         async () => { const { renderCodeEditor } = await import('./tokui/code-editor.js'); await renderCodeEditor('details-host', { id: 'main-editor', lang: 'python', value: '# GalaxyOS Code Editor\nprint("Hello, GalaxyOS!")\n', title: 'GalaxyOS', onSave: (code) => window.galaxy?.saveFile?.('scratch.py', code), onRun: (code) => window.galaxy?.runCode?.(code, 'python') }); document.getElementById('details-panel')?.classList.remove('hidden'); },
+  'cmd-image-tools':          async () => { const { openImageTools } = await import('./tokui/image-tools.js'); await openImageTools(); },
+  'cmd-memories-search':      async () => { const { renderMemorySearchPanel } = await import('./tokui/memory-browser.js'); await renderMemorySearchPanel('details-host'); document.getElementById('details-panel')?.classList.remove('hidden'); },
+  'cmd-plan-panel':           async () => { const { renderPlanPanel } = await import('./tokui/plan.js'); renderPlanPanel('details-host'); document.getElementById('details-panel')?.classList.remove('hidden'); },
 });
 
 async function handleCommand(cmdId) {

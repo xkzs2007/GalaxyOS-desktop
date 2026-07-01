@@ -255,3 +255,56 @@ function getMemoryColor(m) {
   if (source.includes('error')) return 'danger';
   return 'info';
 }
+
+// ── P1: 搜索增强的记忆面板 ─────────────────────────────────
+
+import { registerHandler } from './runtime.js';
+
+let _memoryQuery = '';
+let _memoryView = 'timeline';
+
+/**
+ * 渲染带搜索的记忆面板到 details-host。
+ */
+export async function renderMemorySearchPanel(container) {
+  const host = typeof container === 'string' ? document.getElementById(container) : container;
+  if (!host) return;
+
+  const ui = getInstance();
+  if (!ui) return;
+
+  ui.startStream(host);
+  ui.feed(`[card tt:"🧬 长期记忆" v:highlight]`);
+  ui.feed(`  [row]`);
+  ui.feed(`    [input id:memory-search-input placeholder:"搜索记忆…" sm flex:1][/input]`);
+  ui.feed(`    [btn tx:"🔍" clk:onMemorySearch sm v:accent]`);
+  ui.feed(`  [/row]`);
+  ui.feed(`  [btngroup]`);
+  ui.feed(`    [btn tx:"⏱ 时间线" clk:onMemoryViewTimeline sm v:${_memoryView === 'timeline' ? 'accent' : 'muted'}]`);
+  ui.feed(`    [btn tx:"🃏 卡片" clk:onMemoryViewCarousel sm v:${_memoryView === 'carousel' ? 'accent' : 'muted'}]`);
+  ui.feed(`  [/btngroup]`);
+  ui.feed(`  [dv id:memory-search-results][/dv]`);
+  ui.feed(`[/card]`);
+  ui.endStream();
+
+  _memoryQuery = '';
+  _memoryView = 'timeline';
+  await fetchAndShowMemories('memory-search-results', '', 20, 'timeline');
+}
+
+registerHandler('onMemorySearch', async () => {
+  const input = document.getElementById('memory-search-input');
+  const q = input?.value?.trim() || '';
+  _memoryQuery = q;
+  await fetchAndShowMemories('memory-search-results', q, 20, _memoryView);
+});
+
+registerHandler('onMemoryViewTimeline', async () => {
+  _memoryView = 'timeline';
+  await fetchAndShowMemories('memory-search-results', _memoryQuery, 20, 'timeline');
+});
+
+registerHandler('onMemoryViewCarousel', async () => {
+  _memoryView = 'carousel';
+  await fetchAndShowMemories('memory-search-results', _memoryQuery, 20, 'carousel');
+});

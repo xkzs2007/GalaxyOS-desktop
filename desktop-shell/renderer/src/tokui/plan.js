@@ -114,3 +114,26 @@ export function buildDemoPlan() {
     }).join('\n') +
     `\n[/steps]`;
 }
+
+// ── P2: Plan 仪表盘 ───────────────────────────────────────
+
+import { getInstance } from './runtime.js';
+
+/** 渲染执行计划摘要面板 */
+export function renderPlanPanel(container) {
+  const host = typeof container === 'string' ? document.getElementById(container) : container;
+  if (!host) return;
+  const ui = getInstance();
+  if (!ui) return;
+
+  ui.startStream(host);
+  ui.feed('[card tt:"📋 执行计划" v:highlight]');
+  ui.feed('  [callout t:info tt:"Plan 模式"]发送消息时自动生成执行计划，进度在此实时显示。');
+  ui.feed('    可用模式: analyze → plan → execute → verify');
+  ui.feed('  [/callout]');
+  ui.feed('  [dv id:plan-panel-live]');
+  ui.feed('    [p v:muted sm]发送一条消息开始…[/p]');
+  ui.feed('  [/dv]');
+  ui.feed('[/card]');
+  ui.endStream();
+}
