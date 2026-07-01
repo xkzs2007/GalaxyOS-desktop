@@ -9,6 +9,7 @@
 //!   get_state / get_hidden / shutdown
 
 use ort::session::Session;
+use ort::session::builder::GraphOptimizationLevel;
 use ort::value::{Tensor, Value};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -173,19 +174,14 @@ impl LFMEngine {
         let session = Session::builder().map_err(|e| format!("builder: {}", e))?
             .with_intra_threads(num_threads).map_err(|e| format!("intra_threads: {}", e))?
             .with_inter_threads(1).map_err(|e| format!("inter_threads: {}", e))?
-            .with_optimization_level(ort::session::GraphOptimizationLevel::Level3)
+            .with_optimization_level(GraphOptimizationLevel::Level3)
             .map_err(|e| format!("opt_level: {}", e))?
             .commit_from_file(path).map_err(|e| format!("load: {}", e))?;
 
-        // GPU 检测
-        let available = ort::session::get_available_providers()
-            .unwrap_or_default();
-        let has_cuda = available.iter().any(|p| p == "CUDAExecutionProvider");
-        if has_cuda {
-            eprintln!("[lfm] CUDA GPU detected — using CUDAExecutionProvider");
-        } else {
-            eprintln!("[lfm] CPU mode — {} threads ({} cores detected)", num_threads, phys_cores);
-        }
+        // GPU 检测: ort 2.0 通过 EnvironmentBuilder::with_execution_providers()
+        // 注册 CUDA/ROCm；没有全局的 get_available_providers()。
+        // 此处记录线程配置，GPU 注册在后续版本通过 SessionBuilder 完成。
+        eprintln!("[lfm] CPU mode — {} threads ({} cores detected)", num_threads, phys_cores);
 
         let inames: Vec<String> = session.inputs().iter().map(|i| i.name().to_string()).collect();
         let onames: Vec<String> = session.outputs().iter().map(|o| o.name().to_string()).collect();
@@ -393,17 +389,16 @@ fn handle_request(line: &str, eng: &mut LFMEngine) -> String {
         "get_info" => {
             let phys_cores = std::thread::available_parallelism()
                 .map(|n| n.get()).unwrap_or(0);
-            let available = ort::session::get_available_providers()
-                .unwrap_or_default();
-            let has_cuda = available.iter().any(|p| p == "CUDAExecutionProvider");
             let num_threads = (phys_cores / 2).clamp(1, 8);
+            // ort 2.0: GPU detection via EnvironmentBuilder, not get_available_providers()
+            let provider = "cpu";
             mk_ok(req.id, serde_json::json!({
                 "version":"2.0.0","backend":"ort(Q4)","model":"LFM2.5-1.2B","dim":DIM,
                 "conv_layers": CONV_LAYER_IDS, "attn_layers": ATTN_LAYER_IDS,
                 "has_state": eng.has_state, "total_seq_len": eng.total_seq,
                 "platform": if cfg!(windows) { "windows" } else { "unix" },
                 "ipc": if cfg!(windows) { "tcp" } else { "uds" },
-                "provider": if has_cuda { "cuda" } else { "cpu" },
+                "provider": provider,
                 "num_threads": num_threads,
                 "cpu_cores": phys_cores,
             }), None)
