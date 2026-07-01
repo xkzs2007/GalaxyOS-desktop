@@ -347,6 +347,8 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
         run: |
+          # pipefail-safe: tail -50 exits early → SIGPIPE → exit 1 on GH Actions
+          set +o pipefail
           npx electron-builder ${{ matrix.electron_builder_args }} --publish never 2>&1 | tail -50
 
       - name: List release output
