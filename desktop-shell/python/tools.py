@@ -43,8 +43,9 @@ import shutil
 import subprocess
 import sys
 import time
+from enum import Enum
 from pathlib import Path
-from typing import Any, Awaitable, Callable, Dict, List, Optional
+from typing import Any, Awaitable, Callable, Dict, List, Optional, Union
 
 
 # ── Sandbox resolution ─────────────────────────────────────────────
@@ -309,6 +310,60 @@ async def apply_diff(path: str, old: str, new: str) -> Dict[str, Any]:
 
 ToolFn = Callable[..., Awaitable[Dict[str, Any]]]
 
+
+# ════════════════════════════════════════════════════════════════
+# v9.6: 权限分层（借鉴 Apix tools/registry.py 设计）
+# ════════════════════════════════════════════════════════════════
+
+class Permission(str, Enum):
+    """工具权限类型。Agent 工具调用前必须拥有对应 permission。"""
+    FILE_READ = "file_read"      # 读文件、列目录
+    FILE_WRITE = "file_write"    # 写文件、apply_diff
+    SHELL = "shell"              # shell_run
+    GREP = "grep"                # grep
+    # 对应 Apix 的 file_operation / web_search / knowledge_retrieval
+    # / command_operation / skill_load 等。我们只暴露当前已实现的
+    # 6 个工具，扩展时再加。
+
+
+class AgentRole(str, Enum):
+    """Agent 角色。不同角色有不同的工具集。
+    - main: 主 Agent，全工具可用
+    - sub_agent: 子 Agent，禁用危险操作
+    - team_worker: 团队协作者，只读优先
+    """
+    MAIN = "main"
+    SUB = "sub_agent"
+    TEAM = "team_worker"
+
+
+def _workspace_configured() -> bool:
+    """检查 workspace 是否已配置（用于需要工作区上下文的工具）。"""
+    try:
+        import path_resolver_desktop
+        ws = path_resolver_desktop.WORKSPACE_ROOT
+        return ws.exists() and ws.is_dir()
+    except Exception:
+        return False
+
+
+# 工具互斥集合（不能同时调，否则会冲突）
+# 对应 Apix: conflict_tool_set = {"write_todos", "update_memory", "load_skill"}
+CONFLICT_TOOL_SET = {
+    ("write_file", "apply_diff"),  # 同一文件写两次会乱
+}
+
+
+def _check_conflict(tool_name: str, in_flight: set) -> Optional[str]:
+    """检查工具与在飞工具是否冲突。返回冲突工具名或 None。"""
+    for pair in CONFLICT_TOOL_SET:
+        if tool_name in pair:
+            for other in pair:
+                if other != tool_name and other in in_flight:
+                    return other
+    return None
+
+
 TOOLS: Dict[str, Dict[str, Any]] = {
     "shell_run": {
         "fn": shell_run,
@@ -317,6 +372,11 @@ TOOLS: Dict[str, Dict[str, Any]] = {
             "cmd": "string — the command to run",
             "timeout_s": "int (optional, default 15)",
         },
+        # v9.6: 权限分层
+        "permission": Permission.SHELL,
+        "allowed_roles": {AgentRole.MAIN, AgentRole.SUB},  # team_worker 禁用
+        "requires_approval": True,  # 危险操作
+        "needs_workspace": True,
     },
     "read_file": {
         "fn": read_file,
@@ -325,6 +385,10 @@ TOOLS: Dict[str, Dict[str, Any]] = {
             "path": "string — relative path inside sandbox",
             "max_bytes": "int (optional, default 50000)",
         },
+        "permission": Permission.FILE_READ,
+        "allowed_roles": {AgentRole.MAIN, AgentRole.SUB, AgentRole.TEAM},  # 全角色
+        "requires_approval": False,
+        "needs_workspace": True,
     },
     "write_file": {
         "fn": write_file,
@@ -334,6 +398,10 @@ TOOLS: Dict[str, Dict[str, Any]] = {
             "content": "string — the content to write",
             "mode": "string — 'overwrite' (default) or 'append'",
         },
+        "permission": Permission.FILE_WRITE,
+        "allowed_roles": {AgentRole.MAIN, AgentRole.SUB},  # team_worker 禁用
+        "requires_approval": True,  # 写操作
+        "needs_workspace": True,
     },
     "list_dir": {
         "fn": list_dir,
@@ -342,6 +410,10 @@ TOOLS: Dict[str, Dict[str, Any]] = {
             "path": "string (optional, default '.')",
             "show_hidden": "bool (optional)",
         },
+        "permission": Permission.FILE_READ,
+        "allowed_roles": {AgentRole.MAIN, AgentRole.SUB, AgentRole.TEAM},
+        "requires_approval": False,
+        "needs_workspace": True,
     },
     "grep": {
         "fn": grep,
@@ -351,6 +423,10 @@ TOOLS: Dict[str, Dict[str, Any]] = {
             "path": "string (optional, default '.')",
             "max_results": "int (optional, default 50)",
         },
+        "permission": Permission.GREP,
+        "allowed_roles": {AgentRole.MAIN, AgentRole.SUB, AgentRole.TEAM},
+        "requires_approval": False,
+        "needs_workspace": True,
     },
     "apply_diff": {
         "fn": apply_diff,
@@ -360,15 +436,105 @@ TOOLS: Dict[str, Dict[str, Any]] = {
             "old": "string — exact text to replace",
             "new": "string — replacement text",
         },
+        "permission": Permission.FILE_WRITE,
+        "allowed_roles": {AgentRole.MAIN, AgentRole.SUB},
+        "requires_approval": True,
+        "needs_workspace": True,
     },
 }
 
 
-async def call_tool(name: str, params: Dict[str, Any]) -> Dict[str, Any]:
-    """Dispatch a tool call by name with params."""
+def get_available_tools(
+    permission: Optional[Union[str, List[str]]] = None,
+    agent_role: str = AgentRole.MAIN,
+    in_flight: Optional[set] = None,
+    workspace_configured: Optional[bool] = None,
+) -> List[Dict[str, Any]]:
+    """获取当前 Agent 角色可用的工具列表。
+
+    对应 Apix tools/registry.py: get_available_tools()。
+    过滤维度:
+    1. 按 permission 过滤
+    2. 按 agent_role 过滤（sub_agent/team_worker 有禁用工具集）
+    3. 按 workspace_configured 过滤
+    4. 按 in_flight 互斥集过滤
+    5. 去重
+    """
+    # 标准化 permission
+    if permission is None:
+        perms = None  # 不过滤
+    elif isinstance(permission, str):
+        perms = {permission}
+    else:
+        perms = set(permission)
+
+    role = AgentRole(agent_role)
+    ws_ok = workspace_configured if workspace_configured is not None else _workspace_configured()
+    in_flight = in_flight or set()
+
+    out: List[Dict[str, Any]] = []
+    for name, meta in TOOLS.items():
+        # 1. permission 过滤
+        if perms is not None and meta["permission"] not in perms:
+            continue
+        # 2. agent_role 过滤
+        if role not in meta["allowed_roles"]:
+            continue
+        # 3. workspace 过滤
+        if meta.get("needs_workspace", False) and not ws_ok:
+            continue
+        # 4. 互斥过滤
+        if _check_conflict(name, in_flight):
+            continue
+        out.append({
+            "name": name,
+            "description": meta["description"],
+            "params": meta["params"],
+            "permission": meta["permission"],
+            "requires_approval": meta.get("requires_approval", False),
+        })
+    return out
+
+
+async def call_tool(
+    name: str,
+    params: Dict[str, Any],
+    agent_role: str = AgentRole.MAIN,
+    in_flight: Optional[set] = None,
+) -> Dict[str, Any]:
+    """Dispatch a tool call by name with params, with permission check.
+
+    v9.6: 加权限校验。sub_agent 角色不能调 shell_run 等危险工具。
+    """
     if name not in TOOLS:
         return {"ok": False, "error": f"unknown tool: {name}"}
-    fn = TOOLS[name]["fn"]
+    meta = TOOLS[name]
+    role = AgentRole(agent_role)
+
+    # 权限校验
+    if role not in meta["allowed_roles"]:
+        return {
+            "ok": False,
+            "error": f"role {role.value} not allowed for tool {name}",
+            "permission_denied": True,
+        }
+    # 工作区校验
+    if meta.get("needs_workspace", False) and not _workspace_configured():
+        return {
+            "ok": False,
+            "error": f"{name} requires workspace to be configured",
+        }
+    # 互斥校验
+    conflict = _check_conflict(name, in_flight or set())
+    if conflict:
+        return {
+            "ok": False,
+            "error": f"{name} conflicts with in-flight tool {conflict}",
+            "conflict": conflict,
+        }
+    # requires_approval: 调用方负责审批决策（sidecar 传 _approved）
+    # 这里只标记，真实拦截在 handler 里
+    fn = meta["fn"]
     try:
         return await fn(**params)
     except TypeError as e:
@@ -381,7 +547,13 @@ def list_tools() -> List[Dict[str, Any]]:
     """Return a JSON-serialisable list of available tools (for the Agent
     to know what's at its disposal)."""
     return [
-        {"name": name, "description": meta["description"], "params": meta["params"]}
+        {
+            "name": name,
+            "description": meta["description"],
+            "params": meta["params"],
+            "permission": meta["permission"],
+            "requires_approval": meta.get("requires_approval", False),
+        }
         for name, meta in TOOLS.items()
     ]
 
