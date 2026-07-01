@@ -25,10 +25,13 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import http from 'node:http';
-import { fileURLToPath } from 'node:url';
 
 const TAG = '[worker-pool]';
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
+// __dirname: use CJS built-in when available (esbuild cjs bundle),
+// fallback to import.meta.url for ESM runtime (dev).
+const __dirname = typeof __dirname !== 'undefined'
+  ? __dirname
+  : path.dirname(new URL('.', import.meta.url).pathname);
 const IS_WIN = process.platform === 'win32';
 
 // ── Path resolution ──────────────────────────────────────────────

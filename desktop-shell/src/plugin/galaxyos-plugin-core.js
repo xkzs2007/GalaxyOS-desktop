@@ -13,21 +13,18 @@
  *   getStatus()       — { ready, tiers: { hot/warm/cold: { ... } } }
  */
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { spawn, spawnSync, execSync } from "node:child_process";
 import { createInterface } from "node:readline";
 import fs, { existsSync, mkdirSync, chmodSync, unlinkSync, readFileSync, openSync, writeSync, closeSync, readSync, writeFileSync, renameSync, copyFileSync, readdirSync } from "node:fs";
 import net from "node:net";
 import http from "node:http";
-import { createRequire as _createRequire } from "node:module";
-// ESM 兼容垫片: index.js 是 "type":"module" 的 ESM, 但 zeromq 是 CJS,
-// 用 createRequire 显式构造 CJS loader
-const _cjsRequire = _createRequire(import.meta.url);
 
-const TAG = "[galaxyos]";
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const WORKER_SCRIPT = path.join(__dirname, "..", "..", "..", "..", "extensions", "galaxyos", "scripts", "claw_worker.py");
-const PIL_WORKER_SCRIPT = path.join(__dirname, "..", "..", "..", "..", "extensions", "galaxyos", "scripts", "pil_worker.py");
+// CJS compat: esbuild bundles this to CJS — __dirname and require
+// are built-in globals. The ESM fallback only triggers in dev mode.
+const _cjsRequire = typeof require !== 'undefined' ? require : null;
+const __dir = typeof __dirname !== 'undefined' ? __dirname : process.cwd();
+const WORKER_SCRIPT = path.join(__dir, "..", "..", "..", "..", "extensions", "galaxyos", "scripts", "claw_worker.py");
+const PIL_WORKER_SCRIPT = path.join(__dir, "..", "..", "..", "..", "extensions", "galaxyos", "scripts", "pil_worker.py");
 
 // ════════════════════════════════════════════════════════════════
 // OpenClaw 用户配置目录解析（dev / prod / container 三模式）
@@ -44,7 +41,7 @@ const PIL_WORKER_SCRIPT = path.join(__dirname, "..", "..", "..", "..", "extensio
 //   2) /opt/openclaw               (容器固定布局)
 //   3) $HOME/.openclaw             (生产)
 //   4) $HOME/.openclaw-dev         (dev)
-//   5) 自动检测 __dirname 上溯找到的 OPENCLAW_HOME
+//   5) 自动检测 __dir 上溯找到的 OPENCLAW_HOME
 function _openclawHome() {
     const envVars = ["OPENCLAW_HOME", "GALAXYOS_OPENCLAW_HOME"];
     for (const k of envVars) {
@@ -78,7 +75,7 @@ let _pyo3Shim = false;  // true if using pure-Python shim (no Rust)
 try {
     const pyEnv = { ...process.env };
     // 确保 scripts/ 在 PYTHONPATH 中以发现 embedded galaxyos_native.py
-    const scriptsDir = path.join(__dirname, "scripts");
+    const scriptsDir = path.join(__dir, "scripts");
     pyEnv.PYTHONPATH = [scriptsDir, pyEnv.PYTHONPATH].filter(Boolean).join(":");
     const r = spawnSync(_pythonBin, ["-c", "import galaxyos_native; print(galaxyos_native.__version__)"], {
         encoding: "utf-8", timeout: 5000, stdio: ["pipe", "pipe", "ignore"],
@@ -99,9 +96,9 @@ try {
 } catch {}
 // 2. 独立二进制（stdin/stdout JSON-RPC）
 const _nativeBinaryCandidates = [
-    path.join(__dirname, "scripts", "galaxyos-native"),
-    path.join(__dirname, "native", "target", "release", "galaxyos-native"),
-    path.join(__dirname, "..", "..", "native", "target", "release", "galaxyos-native"),
+    path.join(__dir, "scripts", "galaxyos-native"),
+    path.join(__dir, "native", "target", "release", "galaxyos-native"),
+    path.join(__dir, "..", "..", "native", "target", "release", "galaxyos-native"),
     path.join(process.env.HOME || "/home/sandbox", ".cargo", "bin", "galaxyos-native"),
 ];
 let _nativeBinary = null;
@@ -123,7 +120,7 @@ _detectNativeBinary();
 
 // ═══ 自动编译 Rust native binary（启动时 cargo build 一把梭）═══
 if (!_nativeBinary && !_nativeAutoBuilt) {
-    const nativeDir = path.join(__dirname, "native");
+    const nativeDir = path.join(__dir, "native");
     const cargoToml = path.join(nativeDir, "Cargo.toml");
     if (existsSync(cargoToml)) {
         try {
@@ -138,7 +135,7 @@ if (!_nativeBinary && !_nativeAutoBuilt) {
             _nativeAutoBuilt = true;
             // 复制到 scripts/ 方便 JS 侧发现
             const src = path.join(nativeDir, "target", "release", "galaxyos-native");
-            const dst = path.join(__dirname, "scripts", "galaxyos-native");
+            const dst = path.join(__dir, "scripts", "galaxyos-native");
             if (existsSync(src)) {
                 try { copyFileSync(src, dst); chmodSync(dst, 0o755); } catch (_) {}
                 _nativeBinary = dst;
@@ -893,7 +890,7 @@ class GalaxyPool {
 
     // ═══ Cron 状态持久化 ═══
     async _flushCronState() {
-        const cronFlusher = path.join(__dirname, "scripts", "cron_state_flusher.py");
+        const cronFlusher = path.join(__dir, "scripts", "cron_state_flusher.py");
         if (!existsSync(cronFlusher)) {
             this._logger.warn?.(`${TAG} cron_state_flusher.py not found, skipping flush`);
             return;
@@ -1200,7 +1197,7 @@ function startZmqRouter(api) {
 
     let zmq;
     try {
-        zmq = _cjsRequire(path.join(__dirname, "node_modules", "zeromq"));
+        zmq = _cjsRequire(path.join(__dir, "node_modules", "zeromq"));
     } catch (e) {
         api.logger.warn?.(`${TAG} [zmq-router] zeromq not available, skipping`);
         return;
@@ -1701,8 +1698,8 @@ class ClawWorkerClient {
 
 function runClawScript(workspace, action, args, timeoutMs = 20000) {
     // v2026.6.12: unified_entry.py 已迁移到 extensions/galaxyos/scripts/
-    const script = existsSync(path.join(__dirname, "scripts", "unified_entry.py"))
-        ? path.join(__dirname, "scripts", "unified_entry.py")
+    const script = existsSync(path.join(__dir, "scripts", "unified_entry.py"))
+        ? path.join(__dir, "scripts", "unified_entry.py")
         : path.join(workspace, "extensions", "galaxyos", "dist", "scripts", "unified_entry.py");
     const argParts = [action];
     for (const [key, value] of Object.entries(args)) {

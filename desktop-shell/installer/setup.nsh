@@ -22,14 +22,6 @@ Function FindPython
       StrCpy $R0 "$0python.exe"
       IfFileExists "$R0" python_found 0
     ${EndIf}
-    ; 64-bit on 32-bit system fallback
-    ${If} ${RunningX64}
-      ReadRegStr $0 HKLM "SOFTWARE\Python\PythonCore\3.$1\InstallPath" ""
-      ${If} $0 != ""
-        StrCpy $R0 "$0python.exe"
-        IfFileExists "$R0" python_found 0
-      ${EndIf}
-    ${EndIf}
   ${Next}
 
   ; 2. 尝试 PATH 中的 python3 / python
