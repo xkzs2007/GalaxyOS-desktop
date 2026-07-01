@@ -154,10 +154,15 @@ function buildMcpSection() {
   return renderSection('mcp', '🔧', 'MCP 工具', null, buildMcpContent());
 }
 
+// ── Handler helpers ────────────────────────────────────────────
+
+let _showAddForm = false;
+
 function buildMcpContent() {
   return `    [p v:muted sm]Model Context Protocol 工具集成[/p]\n` +
     `    [btn tx:"🔍 发现 MCP 工具" clk:onMcpDiscover sm][/btn]\n` +
-    `    [btn tx:"+ 添加 MCP 服务器" clk:onMcpAdd sm v:muted][/btn]`;
+    `    [btn tx:"+ 添加 MCP 服务器" clk:onMcpShowAddForm sm v:muted]\n` +
+    `    [btn tx:"📋 查看工具表" clk:onMcpOpenPanel sm v:muted][/btn]`;
 }
 
 function buildConnectionDSL() {
@@ -331,11 +336,35 @@ registerHandler('onMemSearch', () => {
 });
 
 registerHandler('onMcpDiscover', () => {
-  notify.info('MCP 工具发现 (v9.6)', { duration: 2000 });
+  import('./mcp-panel.js').then(({ discoverMcpTools }) => discoverMcpTools());
+  const panel = document.getElementById('details-panel');
+  if (panel) panel.classList.remove('hidden');
 });
 
 registerHandler('onMcpAdd', () => {
-  notify.info('添加 MCP 服务器 (v9.6)', { duration: 2000 });
+  import('./mcp-panel.js').then(({ renderMcpPanel }) => {
+    _showAddForm = true;
+    const host = $('#details-host');
+    if (host) renderMcpPanel(host);
+    const panel = document.getElementById('details-panel');
+    if (panel) panel.classList.remove('hidden');
+  });
+});
+
+registerHandler('onMcpShowAddForm', () => {
+  import('./mcp-panel.js').then(({ renderMcpPanel }) => {
+    _showAddForm = true;
+    const host = $('#details-host');
+    if (host) renderMcpPanel(host);
+    const panel = document.getElementById('details-panel');
+    if (panel) panel.classList.remove('hidden');
+  });
+});
+
+registerHandler('onMcpOpenPanel', () => {
+  import('./mcp-panel.js').then(({ discoverMcpTools }) => discoverMcpTools());
+  const panel = document.getElementById('details-panel');
+  if (panel) panel.classList.remove('hidden');
 });
 
 registerHandler('onSettingsOpen', () => {

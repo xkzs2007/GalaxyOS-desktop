@@ -89,6 +89,7 @@ export function buildCommandPalette() {
     `    [command__item id:cmd-dashboard tt:"仪表盘" desc:"系统状态 + 统计"]\n` +
     `    [command__item id:cmd-memories tt:"记忆浏览" desc:"时间线 + 搜索"]\n` +
     `    [command__item id:cmd-dsl-inspector tt:"DSL Inspector" desc:"查看原始 DSL 源码"]\n` +
+    `    [command__item id:cmd-mcp-panel tt:"MCP 工具面板" desc:"发现与管理 MCP 工具"]\n` +
     `    [command__item id:cmd-settings tt:"设置" desc:"Ctrl+,"]\n` +
     `  [/command__group]\n` +
     `  [command__group tt:"主题"]\n` +

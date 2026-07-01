@@ -112,6 +112,13 @@ async function handleCommand(cmdId) {
       if (panel) panel.classList.remove('hidden');
       break;
     }
+    case 'cmd-mcp-panel': {
+      const { discoverMcpTools } = await import('./components/mcp-panel.js');
+      discoverMcpTools();
+      const panel = document.getElementById('details-panel');
+      if (panel) panel.classList.remove('hidden');
+      break;
+    }
     case 'cmd-settings':        openSettings(); break;
     case 'cmd-theme-dark':      setTheme('dark'); break;
     case 'cmd-theme-modern-dark': setTheme('modern-dark'); break;

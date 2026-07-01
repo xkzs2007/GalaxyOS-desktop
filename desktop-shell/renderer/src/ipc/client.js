@@ -1,21 +1,21 @@
 // renderer/src/ipc/client.js — single entry point for all sidecar calls.
 //
 // C 阶段：TokUI 自带 SSE connect() 协议 ({tokui:"..."} 帧)，可绕过
-// zmqCall 一次性响应直接走流。但当前 main.ts 的 IPC 仍然是 invoke/await
-// 一次性返回。所以这里提供两套：
+// zmqCall 一次性响应直接走流。当前 Electron main.ts 用 IPC invoke/await
+// 一次性返回。两套并存：
 //   1. galaxy.ask/process/... → 调 ipcRenderer.invoke → 一次性 fragments
 //   2. galaxy.streamAsk(...) → 走 ipcRenderer.on('tokui:fragment') 流
 //
-// C 阶段用 1（一性响应 + renderer 端 progressive feed），
-// 未来 main.ts 改造后切到 2。
+// C 阶段用 1（一次性响应 + renderer 端 progressive feed）。
+// Standalone 模式 (Playwright / 浏览器) 直接在 makeStandaloneGalaxy()
+// 中通过 HTTP SSE (port 5758) 连接 sidecar。
 
 const galaxy = window.galaxy ?? makeStandaloneGalaxy();
 
 /**
- * Standalone fallback (Playwright / browser) — proxies SSE /sse/*.
- * 注意：sidecar 实际上没启 HTTP server（main.ts:1958 注释说"_http_server
- * is gone"），所以 standalone 模式目前是 dead code。保留供未来 sidecar
- * 加回 HTTP server 时使用。
+ * Standalone fallback (Playwright / browser) — directly connects to
+ * sidecar HTTP SSE server on port 5758. v9.6: sidecar HTTP SSE server
+ * is back — this code is now live.
  */
 function makeStandaloneGalaxy() {
   async function sseCollect(endpoint, params) {

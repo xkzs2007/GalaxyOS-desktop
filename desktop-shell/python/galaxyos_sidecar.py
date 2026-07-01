@@ -223,6 +223,49 @@ def _load_engine():
         raise
 
 
+# ── Helpers ────────────────────────────────────────────────────────────
+
+def _chunk_answer(text: str, max_chunk_chars: int = 300) -> List[str]:
+    """Split answer text into sentence-based chunks for progressive rendering.
+
+    Splits on sentence boundaries (。！？\\n\\n) and groups sentences
+    until ``max_chunk_chars`` is reached. A single long sentence is
+    split at word boundaries. Returns at least one chunk.
+    """
+    if not text or not text.strip():
+        return [text or ""]
+    # Split on CJK sentence terminators + paragraph breaks
+    import re
+    sentences = re.split(r'(?<=[。！？])\s*|(?<=\n\n)', text)
+    sentences = [s.strip() for s in sentences if s.strip()]
+    if not sentences:
+        return [text]
+    chunks = []
+    buf = ""
+    for s in sentences:
+        if len(buf) + len(s) <= max_chunk_chars:
+            buf += s
+        else:
+            if buf:
+                chunks.append(buf)
+            buf = s
+    if buf:
+        chunks.append(buf)
+    # If everything is one giant sentence, split at word boundaries
+    if not chunks:
+        words = text.split()
+        buf = ""
+        for w in words:
+            if len(buf) + len(w) + 1 <= max_chunk_chars:
+                buf += (" " if buf else "") + w
+            else:
+                if buf:
+                    chunks.append(buf)
+                buf = w
+        if buf:
+            chunks.append(buf)
+    return chunks or [text]
+
 # ── Method dispatch (shared by zmq + SSE) ─────────────────────────────
 class SidecarHandlers:
     """All sidecar RPC handlers live here. Both transports reuse this
@@ -1498,11 +1541,11 @@ class SidecarHandlers:
         events = [{"tokui": f} for f in frags]
         return {"events": events, "fragments": frags}
 
-    def stream_ask_frag(self, prompt: str, sid: str) -> List[str]:
-        return self._do_stream_ask(prompt, sid)
+    def stream_ask_frag(self, prompt: str, sid: str, stream_id: str = "") -> List[str]:
+        return self._do_stream_ask(prompt, sid, stream_id)
 
-    def stream_process_frag(self, prompt: str, sid: str) -> List[str]:
-        return self._do_stream_process(prompt, sid)
+    def stream_process_frag(self, prompt: str, sid: str, stream_id: str = "") -> List[str]:
+        return self._do_stream_process(prompt, sid, stream_id)
 
     def stream_memo_frag(self, prompt: str = "What is GalaxyOS", stream_id: str = "") -> List[str]:
         return self._do_stream_memo(prompt, stream_id)
@@ -1515,11 +1558,11 @@ class SidecarHandlers:
         return asyncio.run(loop.run())
 
     # ── The actual streaming implementations ──────────────────────
-    def _do_stream_ask(self, prompt: str, sid: str) -> List[str]:
-        return self._acrouter_route(prompt, sid)
+    def _do_stream_ask(self, prompt: str, sid: str, stream_id: str = "") -> List[str]:
+        return self._acrouter_route(prompt, sid, stream_id)
 
-    def _do_stream_process(self, prompt: str, sid: str) -> List[str]:
-        return self._acrouter_route(prompt, sid)
+    def _do_stream_process(self, prompt: str, sid: str, stream_id: str = "") -> List[str]:
+        return self._acrouter_route(prompt, sid, stream_id)
 
     def _do_stream_memo(self, prompt: str = "What is GalaxyOS", stream_id: str = "") -> List[str]:
         return self._memo_three_stage(prompt, stream_id)
@@ -1535,6 +1578,10 @@ class SidecarHandlers:
         v9.4: publishes incremental "think:step" events via zmq PUB
         when stream_id is provided, so the renderer can show live
         R-CCAM phase progress in the think-chain widget.
+
+        v9.6: publishes each DSL fragment via PUB as it is appended to
+        the output list, enabling true streamed rendering without
+        waiting for the full REP response.
         """
         import concurrent.futures
         def _pub(phase: str, status: str, detail: str = "", dur_ms: int = 0):
@@ -1546,6 +1593,19 @@ class SidecarHandlers:
                     "detail": detail,
                     "dur_ms": dur_ms,
                 })
+        # v9.6: stream each DSL fragment via PUB for progressive rendering
+        _dsl_pub_index = [0]  # mutable counter for unique index
+        def _append_dsl(fragment: str) -> str:
+            """Append and publish the fragment via PUB when stream_id is set."""
+            out.append(fragment)
+            if stream_id:
+                _publish_event("dsl", {
+                    "stream_id": stream_id,
+                    "index": _dsl_pub_index[0],
+                    "tokui": fragment,
+                })
+                _dsl_pub_index[0] += 1
+            return fragment
         def _run():
             loop = asyncio.new_event_loop()
             try:
@@ -1559,10 +1619,10 @@ class SidecarHandlers:
         # T17.5: before_prompt_build hook
         self.emit_event({"type": "before_prompt_build",
                          "payload": {"prompt": prompt[:100]}})
-        out.append(tokui_dsl.open_bubble_ai(model="GalaxyOS-ACRouter"))
+        _append_dsl(tokui_dsl.open_bubble_ai(model="GalaxyOS-ACRouter"))
         _pub("retrieval", "running", "RetrievalHub 7通道检索中…")
         # T17.4: thinking [upd] — renderer can show "thinking..." status
-        out.append('[upd id:event_thinking status:running]')
+        _append_dsl('[upd id:event_thinking status:running]')
         try:
             _t_start = time.time()
             with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
@@ -1572,28 +1632,42 @@ class SidecarHandlers:
         except Exception as e:
             log.error("ACRouter route failed: %r", e)
             _pub("retrieval", "error", str(e)[:100])
-            out.append(tokui_dsl.answer_paragraph(f"[ACRouter 错误: {e}]"))
-            out.append(tokui_dsl.msg_actions())
-            out.append(tokui_dsl.close_bubble())
+            _append_dsl(tokui_dsl.answer_paragraph(f"[ACRouter 错误: {e}]"))
+            _append_dsl(tokui_dsl.msg_actions())
+            _append_dsl(tokui_dsl.close_bubble())
             return out
         # Mark thinking done
-        out.append('[upd id:event_thinking status:done]')
+        _append_dsl('[upd id:event_thinking status:done]')
         _pub("cognition", "done", f"路由决策: {caf.chosen_action} (conf={caf.confidence:.2f})")
         # T17.5: before_agent_reply hook
         self.emit_event({"type": "before_agent_reply",
                          "payload": {"action": caf.chosen_action}})
-        out.append(tokui_dsl.answer_paragraph(caf.answer or "(no answer)"))
+        # v9.6: chunk the answer into sentences for progressive rendering
+        answer_text = caf.answer or "(no answer)"
+        answer_chunks = _chunk_answer(answer_text)
+        for chunk in answer_chunks:
+            _append_dsl(tokui_dsl.answer_paragraph(chunk))
+            if len(answer_chunks) > 1 and stream_id:
+                # Small delay between chunks for visual streaming effect
+                time.sleep(0.05)
         memo_snip = self._memo_consult(prompt)
         if memo_snip:
-            out.append(f'[p v:muted]💡 记忆补充: {tokui_dsl._esc(memo_snip)}[/p]')
-        out.append(self._build_routing_footer(caf.chosen_action, caf.confidence))
-        out.append(tokui_dsl.msg_actions())
-        out.append(tokui_dsl.close_bubble())
+            _append_dsl(f'[p v:muted]💡 记忆补充: {tokui_dsl._esc(memo_snip)}[/p]')
+        _append_dsl(self._build_routing_footer(caf.chosen_action, caf.confidence))
+        _append_dsl(tokui_dsl.msg_actions())
+        _append_dsl(tokui_dsl.close_bubble())
         _pub("memory", "done", "记忆写入完成")
         # T17.5: agent_end hook
         self.emit_event({"type": "agent_end",
                          "payload": {"action": caf.chosen_action,
                                      "confidence": caf.confidence}})
+        # v9.6: stream-end marker so renderer knows the REP batch is complete
+        if stream_id:
+            _publish_event("stream", {
+                "stream_id": stream_id,
+                "status": "done",
+                "total_frags": len(out),
+            })
         return out
 
     def _memo_three_stage(self, prompt: str = "What is GalaxyOS", stream_id: str = "") -> List[str]:
@@ -1765,6 +1839,254 @@ def _http_response(status: int, headers: Dict[str, str], body: bytes = b"") -> b
         out.append(f"{k}: {v}\r\n")
     out.append("\r\n")
     return "".join(out).encode("latin-1") + body
+
+
+# ── HTTP SSE server (v9.6: restored from stage 1.5 + streaming enhancements) ─
+
+def _format_sse(event: str, data: str) -> bytes:
+    """Format one Server-Sent Event frame (RFC-compliant)."""
+    lines = [f"event: {event}"]
+    for chunk_line in data.split("\n"):
+        lines.append(f"data: {chunk_line}")
+    return ("\n".join(lines) + "\n\n").encode("utf-8")
+
+
+def _parse_query(qs: str) -> Dict[str, List[str]]:
+    """Parse a URL query string into {key: [values]} without urllib."""
+    out: Dict[str, List[str]] = {}
+    if not qs:
+        return out
+    for pair in qs.split("&"):
+        if "=" not in pair:
+            continue
+        k, v = pair.split("=", 1)
+        from urllib.parse import unquote
+        v = unquote(v.replace("+", " "))
+        out.setdefault(k, []).append(v)
+    return out
+
+
+async def _read_post_body(reader, content_length: int, max_bytes: int = 1_048_576) -> Dict[str, str]:
+    """Read and parse application/x-www-form-urlencoded POST body."""
+    if content_length <= 0 or content_length > max_bytes:
+        return {}
+    raw = await reader.readexactly(content_length)
+    out: Dict[str, str] = {}
+    for p in raw.decode("utf-8", "replace").split("&"):
+        if "=" in p:
+            k, v = p.split("=", 1)
+        else:
+            k, v = p, ""
+        v = v.replace("+", " ")
+        try:
+            from urllib.parse import unquote
+            v = unquote(v)
+        except Exception:
+            pass
+        out[k] = v
+    return out
+
+
+async def _http_server(handlers) -> None:
+    """Minimal asyncio HTTP/1.1 server, SSE-only routes.
+
+    Restored from stage 1.5 with v9.6 streaming enhancements:
+    - True fragment-by-fragment yielding with asyncio.sleep(0)
+    - Chunked answer paragraphs via _chunk_answer in _acrouter_route
+    - CORS support for localhost development
+    - Routes: /sse/ask, /sse/process, /sse/memo, /sse/agent, /sse/plan, /sse/ocr, /sse/health
+    """
+
+    async def _send_sse_fragments(writer, fragment_source):
+        """Send each DSL fragment as an individual SSE frame.
+        
+        ``fragment_source`` can be an iterable of strings or a callable
+        that returns such an iterable. On error, emits a TokUI error
+        bubble so the client sees what went wrong.
+        """
+        frame = lambda frag: _format_sse("tokui", json.dumps({"tokui": frag}))
+        try:
+            fragments = fragment_source() if callable(fragment_source) else fragment_source
+            for frag in fragments:
+                writer.write(frame(frag))
+                await asyncio.sleep(0)  # yield so client gets each frame
+                await writer.drain()
+        except Exception as e:
+            log.error("SSE fragment source failed: %s", e)
+            # Emit error event so the client renders an error bubble
+            try:
+                err_frags = tokui_dsl.error_bubble(f"stream 失败: {e}")
+                for f in err_frags:
+                    writer.write(frame(f))
+                    await asyncio.sleep(0)
+                    await writer.drain()
+            except Exception:
+                pass
+        writer.write(b"event: end\ndata: [DONE]\n\n")
+        await writer.drain()
+
+    async def handler(reader, writer):
+        try:
+            request_line = await reader.readline()
+            if not request_line:
+                writer.close()
+                return
+            try:
+                method, path_query, _ = request_line.decode("latin-1").split(" ", 2)
+            except ValueError:
+                writer.close()
+                return
+            path, _, qs = path_query.partition("?")
+
+            # Parse headers
+            headers: Dict[str, str] = {}
+            while True:
+                line = await reader.readline()
+                if line in (b"\r\n", b"", b"\n"):
+                    break
+                k, _, v = line.decode("latin-1").rstrip("\r\n").partition(":")
+                headers[k.strip().lower()] = v.strip()
+
+            log.debug("HTTP %s %s", method, path)
+
+            # CORS preflight
+            if method == "OPTIONS":
+                cors_hdrs = {
+                    "Access-Control-Allow-Origin": "*",
+                    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+                    "Access-Control-Allow-Headers": "Content-Type",
+                }
+                writer.write(_http_response(204, cors_hdrs))
+                await writer.drain()
+                writer.close()
+                return
+
+            # CORS origin (always allow localhost)
+            cors_hdrs = {"Access-Control-Allow-Origin": "*"}
+
+            # Read POST body
+            body_params: Dict[str, str] = {}
+            if method == "POST":
+                cl = int(headers.get("content-length", "0") or "0")
+                body_params = await _read_post_body(reader, cl)
+
+            params = {**_parse_query(qs), **body_params}
+
+            # ── Route dispatch ────────────────────────────────────
+            if path == "/sse/health":
+                h = handlers.health({})
+                body = json.dumps(h, ensure_ascii=False).encode("utf-8")
+                writer.write(_http_response(200, {
+                    "Content-Type": "application/json",
+                    **cors_hdrs,
+                }, body=body))
+
+            elif path == "/sse/ask" and method == "POST":
+                prompt = str(params.get("prompt", ""))
+                sid = str(params.get("session_id", "") or "")
+                stream_id = str(params.get("stream_id", "") or "")
+                writer.write(_http_response(200, {
+                    "Content-Type": "text/event-stream",
+                    "Cache-Control": "no-cache",
+                    "Connection": "keep-alive",
+                    "X-Accel-Buffering": "no",
+                    **cors_hdrs,
+                }))
+                await writer.drain()
+                await _send_sse_fragments(writer,
+                    lambda: handlers.stream_ask_frag(prompt, sid, stream_id))
+
+            elif path == "/sse/process" and method == "POST":
+                prompt = str(params.get("prompt", params.get("user_input", "")))
+                sid = str(params.get("session_id", "") or "")
+                stream_id = str(params.get("stream_id", "") or "")
+                writer.write(_http_response(200, {
+                    "Content-Type": "text/event-stream",
+                    "Cache-Control": "no-cache",
+                    "Connection": "keep-alive",
+                    "X-Accel-Buffering": "no",
+                    **cors_hdrs,
+                }))
+                await writer.drain()
+                await _send_sse_fragments(writer,
+                    lambda: handlers.stream_process_frag(prompt, sid, stream_id))
+
+            elif path == "/sse/memo" and method == "POST":
+                prompt = str(params.get("prompt", ""))
+                stream_id = str(params.get("stream_id", "") or "")
+                writer.write(_http_response(200, {
+                    "Content-Type": "text/event-stream",
+                    "Cache-Control": "no-cache",
+                    "Connection": "keep-alive",
+                    "X-Accel-Buffering": "no",
+                    **cors_hdrs,
+                }))
+                await writer.drain()
+                await _send_sse_fragments(writer,
+                    lambda: handlers.stream_memo_frag(prompt, stream_id))
+
+            elif path == "/sse/agent" and method == "POST":
+                prompt = str(params.get("prompt", ""))
+                sid = str(params.get("session_id", "") or "")
+                stream_id = str(params.get("stream_id", "") or "")
+                writer.write(_http_response(200, {
+                    "Content-Type": "text/event-stream",
+                    "Cache-Control": "no-cache",
+                    "Connection": "keep-alive",
+                    "X-Accel-Buffering": "no",
+                    **cors_hdrs,
+                }))
+                await writer.drain()
+                await _send_sse_fragments(writer,
+                    lambda: handlers.stream_agent_frag(prompt, sid, stream_id))
+
+            elif path == "/sse/plan" and method == "POST":
+                prompt = str(params.get("prompt", ""))
+                stream_id = str(params.get("stream_id", "") or "")
+                writer.write(_http_response(200, {
+                    "Content-Type": "text/event-stream",
+                    "Cache-Control": "no-cache",
+                    "Connection": "keep-alive",
+                    "X-Accel-Buffering": "no",
+                    **cors_hdrs,
+                }))
+                await writer.drain()
+                await _send_sse_fragments(writer,
+                    lambda: handlers._do_stream_plan(prompt, stream_id))
+
+            elif path == "/sse/ocr" and method == "POST":
+                writer.write(_http_response(200, {
+                    "Content-Type": "text/event-stream",
+                    "Cache-Control": "no-cache",
+                    "Connection": "keep-alive",
+                    "X-Accel-Buffering": "no",
+                    **cors_hdrs,
+                }))
+                await writer.drain()
+                await _send_sse_fragments(writer,
+                    lambda: handlers.stream_ocr(params).get("fragments", []))
+
+            else:
+                writer.write(_http_response(404, {
+                    "Content-Type": "text/plain; charset=utf-8",
+                    **cors_hdrs,
+                }, body=b"not found"))
+
+            await writer.drain()
+        except Exception as e:
+            log.error("HTTP handler error: %s", e)
+            log.error(traceback.format_exc())
+        finally:
+            try:
+                writer.close()
+            except Exception:
+                pass
+
+    server = await asyncio.start_server(handler, SIDECAR_HOST, HTTP_PORT)
+    log.info("SSE server listening on http://%s:%d/sse/{ask,process,memo,agent,plan,ocr,health}",
+             SIDECAR_HOST, HTTP_PORT)
+    async with server:
+        await server.serve_forever()
 
 
 # ── zmq REP server (unchanged from stage 1) ──────────────────────────
@@ -1946,16 +2268,14 @@ async def main_async() -> int:
                 # Windows: add_signal_handler not always available
                 pass
 
-    # Block on the stop event (the zmq thread runs independently
-    # in the background). The old _http_server is gone — for stage
-    # 5.10 we don't need an HTTP server because the Electron main
-    # process talks to the sidecar over zmq REQ/REP directly.
-    log.info("Sidecar ready (waiting for zmq requests)")
+    # Block on the HTTP SSE server (zmq runs on background thread).
+    # v9.6: restored HTTP SSE from stage 1.5 — true streaming with
+    # fragment-by-fragment yielding via asyncio.sleep(0).
+    log.info("Sidecar ready (zmq REP + HTTP SSE)")
     try:
-        # Just block until stop is set
-        while not stop.is_set():
-            await asyncio.sleep(0.5)
+        await _http_server(handlers)
     finally:
+        stop.set()
         zmq_thread.join(timeout=2)
         log.info("Sidecar stopped cleanly.")
     return 0

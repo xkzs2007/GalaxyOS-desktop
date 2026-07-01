@@ -102,6 +102,15 @@ async function onComposerSend(text) {
 
   // Subscribe to real-time events BEFORE sending the request
   let unsubs = [];
+  // v9.6: subscribe to PUB-based DSL fragments for true streaming
+  const unsubDsl = galaxy.onDslFragment?.((ev) => {
+    if (ev.stream_id === streamId) {
+      // Feed the DSL fragment immediately — it arrives before the REP response
+      feed(expandCodeBlocks(ev.tokui));
+    }
+  });
+  if (unsubDsl) unsubs.push(unsubDsl);
+
   if (viz === 'think') {
     const thinkMode = state.mode === 'memo' ? 'memo' : 'rccam';
     chain = startThinkChain(thinkMode);
@@ -142,7 +151,6 @@ async function onComposerSend(text) {
       // Pass stream_id so the sidecar publishes events tagged with it
       res = await galaxy[m.method](text, state.sessionId, streamId);
     }
-    const frags = res?.events ?? res?.fragments ?? res?._fragments ?? [];
     const frags = res?.events ?? res?.fragments ?? res?._fragments ?? [];
     // Track whether we're inside a think-chain/agent/plan from the batch response
     let inBatchThinkChain = false;

@@ -42,6 +42,15 @@ function buildWelcomeDSL() {
   const dashDemo = buildDemoDashboard();
 
   return `[welcome tt:"欢迎使用 GalaxyOS 桌面端" st:"独立 AI Agent · 76 技能 · 多 LLM"]\n  ${features}\n[/welcome]` +
+    `\n[card tt:"📊 快速概览" v:highlight]\n` +
+    `  [row]\n` +
+    `    [stat v:"76" tt:"技能" suf:"个" i:code]\n` +
+    `    [stat v:"5" tt:"LLM" suf:"Slot" i:brain]\n` +
+    `    [stat v:"6" tt:"模式" suf:"种" i:layout]\n` +
+    `    [stat v:"v9.6" tt:"版本" suf:"" i:tag]\n` +
+    `  [/row]\n` +
+    `[/card]\n` +
+    `\n[dv]` +
     `\n${dashDemo}` +
     `\n[p v:muted sm]↑ 仪表盘：侧边栏「📊 仪表盘」查看 Token / 延迟 / 模式分布[/p]` +
     `\n[dv]` +

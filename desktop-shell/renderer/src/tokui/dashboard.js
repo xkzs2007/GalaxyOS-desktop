@@ -30,12 +30,12 @@ function buildDashboardDSL() {
   const latencyData = mockLatencyTrend();
 
   return `[card tt:"📊 Agent 仪表盘" v:highlight]\n` +
-    // Stats row
+    // Stats row — uses [stat] for big-number cards with trend indicators
     `  [row]\n` +
-    `    [stats tt:"${sessionCount}" st:"会话数" i:chat]\n` +
-    `    [stats tt:"${tokenData.total}" st:"今日 Tokens" i:code v:primary]\n` +
-    `    [stats tt:"1.2s" st:"平均延迟" i:clock v:${latencyData.color}]\n` +
-    `    [stats tt:"${connStatus}" st:"连接" i:dot v:${connColor}]\n` +
+    `    [stat v:"${sessionCount}" tt:"会话数" suf:"个" i:chat]\n` +
+    `    [stat v:"${tokenData.total}" tt:"今日 Tokens" suf:"" i:code trend:"up:12%"]\n` +
+    `    [stat v:"1.2s" tt:"平均延迟" suf:"" i:clock trend:"down:0.3s"]\n` +
+    `    [stat v:"${connStatus}" tt:"连接" suf:"" i:dot]\n` +
     `  [/row]\n` +
     // Token usage bar chart
     `  [chart tt:"Token 用量分布" type:bar data:"${tokenData.barData}" w:full h:200]\n` +
@@ -98,10 +98,10 @@ export function renderDashboard(container) {
 export function buildDemoDashboard() {
   return `[card tt:"📊 Agent 仪表盘 (示例)" v:highlight]\n` +
     `  [row]\n` +
-    `    [stats tt:"23" st:"会话数"]\n` +
-    `    [stats tt:"4,520" st:"今日 Tokens" v:primary]\n` +
-    `    [stats tt:"1.2s" st:"平均延迟" v:success]\n` +
-    `    [stats tt:"已连接" st:"连接" v:success]\n` +
+    `    [stat v:"23" tt:"会话数" suf:"个" i:chat]\n` +
+    `    [stat v:"4,520" tt:"今日 Tokens" suf:"" i:code]\n` +
+    `    [stat v:"1.2s" tt:"平均延迟" suf:"" i:clock]\n` +
+    `    [stat v:"已连接" tt:"连接" suf:"" i:dot]\n` +
     `  [/row]\n` +
     `  [chart tt:"Token 用量分布" type:bar data:"Input:2840,Output:1560,MeMo:420,Embed:200" w:full h:200]\n` +
     `  [chart tt:"模式分布" type:pie data:"Ask:12,Process:5,Agent:3,MeMo:2,Plan:1" w:full h:200]\n` +

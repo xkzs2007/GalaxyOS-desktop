@@ -121,6 +121,11 @@ function buildSlotsTab() {
     }).join('\n          ');
 
     dsl += `    [h4]${slot.icon} ${slot.label} — ${slot.desc}[/h4]\n`;
+    // [desc] provides a structured label:value layout for provider metadata
+    dsl += `    [desc sm]\n`;
+    dsl += `      [desc__item tt:"当前 Provider"]${escapeLabel(_providers.find(p=>p.id===provider)?.name || provider)}[/desc__item]\n`;
+    if (model) dsl += `      [desc__item tt:"当前模型"]${escapeLabel(model)}[/desc__item]\n`;
+    dsl += `    [/desc]\n`;
     dsl += `    [picker id:settings-slot-${slot.key}-provider n:${slot.key}__provider l:"Provider" clk:onSettingsSlotChange sm]\n`;
     dsl += `          ${pickerOptions}\n`;
     dsl += `        [/picker]\n`;
@@ -209,7 +214,6 @@ function isCustomModel(providerId, model) {
   const keys = Object.keys(modelsObj);
   if (keys.length === 0) return true;  // no curated list → all models are custom
   return !(model in modelsObj);
-}
 }
 
 function buildSettingsDSL(activeTab = 'general') {
