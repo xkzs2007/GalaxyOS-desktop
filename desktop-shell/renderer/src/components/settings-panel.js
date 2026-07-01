@@ -89,18 +89,58 @@ registerHandler('onSettingsClose', () => {
   closeSettings();
 });
 
-registerHandler('onSettingsSave', async (data, _evt, formEl) => {
-  // TokUI form sub: handler — extract values from form
-  const form = formEl || document.querySelector('#settings-drawer-host form');
-  if (!form) {
-    notify.warning('表单未找到', { duration: 2000 });
-    return;
+registerHandler('onSettingsSave', async (data, evt, _formEl) => {
+  // Read values from the form. Try FormData first (standard),
+  // fall back to DOM query if TokUI doesn't set native name attrs.
+  let apiKey = '', apiBase = '', systemPrompt = '';
+
+  // Attempt 1: TokUI may pass form values through data
+  if (data && typeof data === 'object') {
+    apiKey = data.apiKey ?? '';
+    apiBase = data.apiBase ?? '';
+    systemPrompt = data.systemPrompt ?? '';
   }
 
-  // Read values from form inputs
-  const apiKey = form.querySelector('#settings-apikey')?.value ?? '';
-  const apiBase = form.querySelector('#settings-apibase')?.value ?? '';
-  const systemPrompt = form.querySelector('#settings-sysprompt')?.value ?? '';
+  // Attempt 2: Use FormData on the form element from event
+  const form = evt?.target?.closest?.('form') || evt?.target?.form;
+  if (form && (!apiKey || !apiBase)) {
+    const fd = new FormData(form);
+    apiKey = apiKey || fd.get('apiKey') || '';
+    apiBase = apiBase || fd.get('apiBase') || '';
+    systemPrompt = systemPrompt || fd.get('systemPrompt') || '';
+  }
+
+  // Attempt 3: Walk DOM looking for input/textarea/picker elements
+  if (!apiKey && !apiBase && !systemPrompt) {
+    const host = $('settings-drawer-host');
+    if (host) {
+      const inputs = host.querySelectorAll('input, textarea, [data-tokui-type="input"], [data-tokui-type="textarea"]');
+      for (const el of inputs) {
+        const name = el.getAttribute('name') || el.getAttribute('data-name') || '';
+        if (name === 'apiKey') apiKey = el.value || '';
+        if (name === 'apiBase') apiBase = el.value || '';
+        if (name === 'systemPrompt') systemPrompt = el.value || el.textContent || '';
+      }
+      // Try to find picker selected value
+      const picker = host.querySelector('[data-tokui-type="picker"]');
+      if (picker) {
+        const selected = picker.querySelector('[data-selected], [aria-selected="true"], .tokui-picker-option--selected');
+        // theme is read from store directly, already the source of truth
+      }
+    }
+  }
+
+  if (!apiKey && !apiBase && !systemPrompt) {
+    // Last resort: read from rendered TokUI elements by their rendered attributes
+    const host = $('settings-drawer-host');
+    if (host) {
+      // TokUI may render id as data-tokui-id or as element id
+      apiKey = host.querySelector('#settings-apikey, [data-tokui-id="settings-apikey"]')?.value || '';
+      apiBase = host.querySelector('#settings-apibase, [data-tokui-id="settings-apibase"]')?.value || '';
+      const sysEl = host.querySelector('#settings-sysprompt, [data-tokui-id="settings-sysprompt"]');
+      systemPrompt = sysEl?.value || sysEl?.textContent || '';
+    }
+  }
 
   const cur = settingsStore.get();
   const next = {
