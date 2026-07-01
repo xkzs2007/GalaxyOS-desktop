@@ -1,17 +1,6 @@
 // renderer/src/main.js — entry point. Wires every module together.
 //
-// D 阶段（TokUI 组件深用）：[code] 代码高亮 / [notification] 通知 /
-// [upd] 增量更新 / [dialog][progress][terminal] install-wizard。
-//
-// 模块图（架构在 A 阶段确立，未变）：
-//   ipc/client        → window.galaxy (IPC bridge to sidecar)
-//   state/*           → pub-sub stores (4 个)
-//   tokui/runtime     → TokUI 适配层（UMD lazy load）
-//   tokui/feed        → 高阶 DSL feed helper + code block 转换
-//   tokui/handlers    → msg-action 回调 + notification 反馈
-//   tokui/notify      → 全局 toast 通知系统
-//   components/sidebar / composer / details / welcome / install-wizard
-//                      → 用 TokUI DSL 渲染，[upd] 增量更新
+// v10: router.js + error-boundary.js + lazy-loading + devtools
 
 import { bootTokUI, registerHandler } from './tokui/runtime.js';
 import { registerMsgActionHandlers } from './tokui/handlers.js';
@@ -26,6 +15,23 @@ import { openCommandPalette } from './tokui/polish.js';
 import { renderSetupPage } from './tokui/setup.js';
 import { setTheme } from './tokui/runtime.js';
 import { sessionApi } from './state/session.js';
+import { register, start, navigate, lookup } from './router.js';
+import { installGlobalHandler } from './error-boundary.js';
+
+// ── v10: Global error handler (install early) ─────────────
+installGlobalHandler();
+
+// ── v10: Devtools ──────────────────────────────────────────
+// Open Console → window.__debug.stores → get/set
+//   window.__debug.ui().feed('[card tt:test]hello[/card]')
+window.__debug = {
+  ui: () => { const m = import('./tokui/runtime.js').then(r => r.getInstance()); return m.then(i => i.g); },
+  stores: window.__stores,
+  navigate: (p, q) => { window.location.hash = '#' + p + (q ? '?' + new URLSearchParams(q) : ''); },
+  resetAll: () => { for (const s of (window.__stores?.list() || [])) s._reset?.(); location.reload(); },
+};
+
+// ── Keyboard shortcuts ─────────────────────────────────────
 
 function installKeyboardShortcuts() {
   document.addEventListener('keydown', (e) => {
@@ -62,7 +68,6 @@ function installKeyboardShortcuts() {
     }
     if (e.key === 'Escape') {
       if (isStreaming()) {
-        // 简单兜底：结束当前流
         endAssistantStream();
       }
     }
@@ -77,55 +82,33 @@ function cycleTheme() {
   setTheme(next);
 }
 
-// ── Command palette handler ────────────────────────────────────
+// ── Command palette handler (v10: router-based) ───────────
+
+// Register all routes (replaces the old switch/case)
+register({
+  'cmd-new-session':         () => sessionApi.newSession(),
+  'cmd-toggle-sidebar':      () => document.querySelector('.sidebar')?.classList.toggle('hidden'),
+  'cmd-toggle-details':      () => document.getElementById('details-panel')?.classList.toggle('hidden'),
+  'cmd-clear-chat':          () => { const c = document.getElementById('tokui-container'); if (c) while (c.firstChild) c.removeChild(c.firstChild); },
+  'cmd-dashboard':           async () => { const { renderDashboard } = await import('./tokui/dashboard.js'); await renderDashboard('details-host'); document.getElementById('details-panel')?.classList.remove('hidden'); },
+  'cmd-memories':            async () => { const { fetchAndShowMemories } = await import('./tokui/memory-browser.js'); fetchAndShowMemories('details-host', '', 10, 'timeline'); document.getElementById('details-panel')?.classList.remove('hidden'); },
+  'cmd-dsl-inspector':       async () => { const { default: d } = await import('./tokui/dsl-inspector.js'); const was = d.isActive(); d.setActive(!was); if (!was) d.render('details-host'); document.getElementById('details-panel')?.classList.remove('hidden'); },
+  'cmd-mcp-panel':           async () => { const { renderMcp } = await import('./components/mcp-panel.js'); renderMcp('details-host'); document.getElementById('details-panel')?.classList.remove('hidden'); },
+  'cmd-settings':            () => openSettings(),
+  'cmd-theme-dark':          () => setTheme('dark'),
+  'cmd-theme-modern-dark':   () => setTheme('modern-dark'),
+  'cmd-theme-default':       () => setTheme('default'),
+  'cmd-theme-modern':        () => setTheme('modern'),
+  'cmd-install-wizard':      () => openWizard(),
+  'cmd-setup-page':          () => renderSetupPage(),
+});
 
 async function handleCommand(cmdId) {
-  switch (cmdId) {
-    case 'cmd-new-session':     sessionApi.newSession(); break;
-    case 'cmd-toggle-sidebar':  document.querySelector('.sidebar')?.classList.toggle('hidden'); break;
-    case 'cmd-toggle-details':  document.getElementById('details-panel')?.classList.toggle('hidden'); break;
-    case 'cmd-clear-chat': {
-      const c = document.getElementById('tokui-container');
-      if (c) while (c.firstChild) c.removeChild(c.firstChild);
-      break;
-    }
-    case 'cmd-dashboard': {
-      const { renderDashboard } = await import('./tokui/dashboard.js');
-      await renderDashboard('details-host');
-      const panel = document.getElementById('details-panel');
-      if (panel) panel.classList.remove('hidden');
-      break;
-    }
-    case 'cmd-memories': {
-      const { fetchAndShowMemories } = await import('./tokui/memory-browser.js');
-      fetchAndShowMemories('details-host', '', 10, 'timeline');
-      const panel = document.getElementById('details-panel');
-      if (panel) panel.classList.remove('hidden');
-      break;
-    }
-    case 'cmd-dsl-inspector': {
-      const { default: dslInspector } = await import('./tokui/dsl-inspector.js');
-      const wasActive = dslInspector.isActive();
-      dslInspector.setActive(!wasActive);
-      if (!wasActive) dslInspector.clear();
-      dslInspector.render('details-host');
-      const panel = document.getElementById('details-panel');
-      if (panel) panel.classList.remove('hidden');
-      break;
-    }
-    case 'cmd-mcp-panel': {
-      const { discoverMcpTools } = await import('./components/mcp-panel.js');
-      discoverMcpTools();
-      const panel = document.getElementById('details-panel');
-      if (panel) panel.classList.remove('hidden');
-      break;
-    }
-    case 'cmd-settings':        openSettings(); break;
-    case 'cmd-theme-dark':      setTheme('dark'); break;
-    case 'cmd-theme-modern-dark': setTheme('modern-dark'); break;
-    case 'cmd-theme-default':   setTheme('default'); break;
-    case 'cmd-theme-modern':    setTheme('modern'); break;
-    default: break;
+  const handler = lookup(cmdId);
+  if (handler) {
+    await handler();
+  } else {
+    console.warn(`[main] 未注册的命令: ${cmdId}`);
   }
 }
 
