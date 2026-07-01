@@ -11,6 +11,7 @@
 
 import { bootTokUI, getInstance } from './runtime.js';
 import { escapeDsl, expandCodeBlocks } from '../utils.js';
+import dslInspector from './dsl-inspector.js';
 
 let _busy = false;
 
@@ -35,6 +36,8 @@ export async function startAssistantStream() {
 export function feed(dsl) {
   const ui = getInstance();
   if (!ui) { console.warn('[tokui] feed() before boot'); return; }
+  // P1: Record DSL for inspector (no-op when inactive)
+  dslInspector.record(dsl);
   ui.feed(dsl);
 }
 

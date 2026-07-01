@@ -6,6 +6,8 @@
 // [tool-call] — individual tool invocation with status timeline
 // [agent]     — Agent session wrapper grouping tool calls
 //
+// P1: [terminal] for shell/list_dir output, [sandbox] for file read/write.
+//
 // GalaxyOS Agent 模式工具集:
 //   read_file    — 读取文件
 //   write_file   — 写文件
@@ -16,11 +18,12 @@
 //   list_dir     — 列出目录
 //
 // Usage:
-//   import { startAgent, newToolCall, completeToolCall, endAgent } from './tool-call.js';
+//   import { startAgent, newToolCall, completeToolCall, endAgent, feedToolOutput } from './tool-call.js';
 //
 //   const agentId = startAgent('GalaxyOS Agent');
 //   const tc = newToolCall(agentId, 'read_file', { path: '/src/main.ts' });
 //   completeToolCall(tc, 'done', '已读取 234 行', 0.12);
+//   feedToolOutput('read_file', { path: '/src/main.ts' }, fileContent);
 //   endAgent(agentId, 1.5);
 
 import { getInstance } from './runtime.js';
@@ -222,15 +225,97 @@ function delay(ms) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
+// ── Tool output rendering (P1: terminal / sandbox) ────────────
+
+/**
+ * Detect programming language from filename extension.
+ */
+function detectLang(filename) {
+  if (!filename) return '';
+  const ext = filename.split('.').pop()?.toLowerCase();
+  const MAP = {
+    js: 'javascript', ts: 'typescript', tsx: 'typescript', jsx: 'javascript',
+    py: 'python', rs: 'rust', go: 'go', java: 'java', rb: 'ruby',
+    c: 'c', cpp: 'cpp', h: 'c', hpp: 'cpp',
+    html: 'html', css: 'css', scss: 'scss', less: 'less',
+    json: 'json', yaml: 'yaml', yml: 'yaml', toml: 'toml',
+    md: 'markdown', xml: 'xml', sql: 'sql', sh: 'bash', bash: 'bash',
+    dockerfile: 'dockerfile', makefile: 'makefile',
+  };
+  return MAP[ext] || '';
+}
+
+/**
+ * Render a single line of tool output as terminal content.
+ * Used for shell stdout streaming.
+ */
+function wrapToolLine(line) {
+  return String(line ?? '');
+}
+
+/**
+ * Feed tool output into the chat stream using the best TokUI component.
+ * - shell / list_dir   → [terminal] dark terminal with monospace output
+ * - read_file / write_file → [sandbox] code block with syntax highlight
+ * - web_search / web_fetch → [card] with formatted result text
+ * - call_tool / default → [card] compact result card
+ *
+ * @param {string} toolName   - tool slug (e.g. 'shell', 'read_file')
+ * @param {object} params     - tool invocation params ({ path, query, ... })
+ * @param {string} content    - raw output content
+ */
+export function feedToolOutput(toolName, params, content) {
+  const ui = getInstance();
+  if (!ui || !content) return;
+
+  const title = params?.path || params?.url || params?.query || toolName;
+  const contentStr = String(content);
+
+  if (toolName === 'shell' || toolName === 'list_dir') {
+    // [terminal] — dark background, monospace, scrollable
+    ui.startStream();
+    ui.feed(`[terminal tt:"${escapeDsl(String(title))}" v:dark]\n${escapeDsl(contentStr)}\n[/terminal]`);
+    ui.endStream();
+  } else if (toolName === 'read_file' || toolName === 'write_file') {
+    // [sandbox] — syntax-highlighted code block
+    const lang = detectLang(params?.path || params?.filename || '');
+    const langAttr = lang ? ` lang:${lang}` : '';
+    ui.startStream();
+    ui.feed(`[sandbox${langAttr} tt:"${escapeDsl(String(title))}"]\n${escapeDsl(contentStr)}\n[/sandbox]`);
+    ui.endStream();
+  } else {
+    // Generic tool result — compact card
+    const truncated = contentStr.length > 2000 ? contentStr.slice(0, 1997) + '…' : contentStr;
+    ui.startStream();
+    ui.feed(`[card tt:"${escapeDsl(toolLabel(toolName))} 结果" v:${toolColor(toolName)}]\n[p]${escapeDsl(truncated)}[/p]\n[/card]`);
+    ui.endStream();
+  }
+}
+
 // ── Static demo builder (for welcome/help pages) ──────────────
 
 /**
  * Build a static DSL demo agent with tool calls.
  */
 export function buildDemoAgent() {
-  // A simulated agent session with 3 tool calls in different states
+  // A simulated agent session with 4 tool calls in different states
   return `[agent tt:"🤖 GalaxyOS Agent" done]\n` +
     `  [tool-call tt:"📖 读取文件" done v:info params:"path: /src/main.ts" tx:"读取 38,993 字节" dur:0.12s]\n` +
+    `  [sandbox lang:typescript tt:"/src/main.ts"]\n` +
+    `import { bootTokUI } from './tokui/runtime.js';\n` +
+    `import { initSidebar } from './components/sidebar.js';\n` +
+    `async function main() {\n` +
+    `  await bootTokUI('#tokui-container');\n` +
+    `  initSidebar();\n` +
+    `}\n` +
+    `[/sandbox]\n` +
+    `  [tool-call tt:"⚡ Shell" done v:warning params:"cmd: ls -la" tx:"5 行输出" dur:0.45s]\n` +
+    `  [terminal v:dark]\n` +
+    `$ ls -la\n` +
+    `total 128\n` +
+    `drwxr-xr-x  12 user  staff   384 Jul  1 10:00 .\n` +
+    `drwxr-xr-x   6 user  staff   192 Jun 30 09:00 ..\n` +
+    `[/terminal]\n` +
     `  [tool-call tt:"🔍 网络搜索" done v:primary params:"query: GalaxyOS architecture" tx:"3 条结果" dur:1.2s]\n` +
     `  [tool-call tt:"✏️ 写入文件" running v:success params:"path: /output.md"]\n` +
     `[/agent]`;

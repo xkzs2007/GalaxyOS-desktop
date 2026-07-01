@@ -44,6 +44,11 @@ function installKeyboardShortcuts() {
       });
       return;
     }
+    if (ctrl && e.shiftKey && e.key === 'D') {
+      e.preventDefault();
+      handleCommand('cmd-dsl-inspector');
+      return;
+    }
     if (ctrl && e.key === ',') {
       e.preventDefault();
       openSettings();
@@ -93,6 +98,16 @@ async function handleCommand(cmdId) {
     case 'cmd-memories': {
       const { fetchAndShowMemories } = await import('./tokui/memory-browser.js');
       fetchAndShowMemories('details-host', '', 10, 'timeline');
+      const panel = document.getElementById('details-panel');
+      if (panel) panel.classList.remove('hidden');
+      break;
+    }
+    case 'cmd-dsl-inspector': {
+      const { default: dslInspector } = await import('./tokui/dsl-inspector.js');
+      const wasActive = dslInspector.isActive();
+      dslInspector.setActive(!wasActive);
+      if (!wasActive) dslInspector.clear();
+      dslInspector.render('details-host');
       const panel = document.getElementById('details-panel');
       if (panel) panel.classList.remove('hidden');
       break;

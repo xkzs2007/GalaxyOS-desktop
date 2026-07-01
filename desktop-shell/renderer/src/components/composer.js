@@ -4,6 +4,8 @@
 //   - Process/Memo 模式集成 [think] / [think-chain] / [think-step]
 //     推理链可视化，R-CCAM 5 阶段 / MeMo 3 阶段实时展示。
 //   - Agent 模式集成 [agent] / [tool-call] 工具调用状态可视化
+//   - Plan 模式集成 [plan] / [plan-step] 计划步骤可视化
+//   - [terminal] / [sandbox] 工具输出渲染
 //   - [code] 代码语法高亮（expandCodeBlocks）
 //   - [notification] 通知反馈
 
@@ -17,7 +19,8 @@ import { registerHandler, getInstance } from '../tokui/runtime.js';
 import { escapeDsl, yieldToBrowser, expandCodeBlocks } from '../utils.js';
 import notify from '../tokui/notify.js';
 import { startThinkChain, updateThinkStep, endThinkChain } from '../tokui/think-chain.js';
-import { startAgent, newToolCall, completeToolCall, endAgent } from '../tokui/tool-call.js';
+import { startAgent, newToolCall, completeToolCall, endAgent, feedToolOutput } from '../tokui/tool-call.js';
+import { startPlan, endPlan } from '../tokui/plan.js';
 
 const state = {
   mode: 'ask',
@@ -88,9 +91,10 @@ async function onComposerSend(text) {
   const m = MODE_TO_METHOD[state.mode] ?? MODE_TO_METHOD.ask;
   const t0 = performance.now();
 
-  // 2. Start visualisation (think-chain or agent tool-calls)
+  // 2. Start visualisation (think-chain or agent tool-calls or plan)
   let chain = null;
   let agentHandle = null;
+  let planHandle = null;
   const viz = m.viz;
 
   // Generate a unique stream_id so PUB events can be correlated
@@ -122,8 +126,9 @@ async function onComposerSend(text) {
   }
   // Subscribe to plan events for plan mode
   if (state.mode === 'plan') {
+    planHandle = startPlan('执行计划');
     const unsub4 = galaxy.onPlanStep?.((ev) => {
-      if (ev.stream_id === streamId) handleLivePlanEvent(ev);
+      if (ev.stream_id === streamId) handleLivePlanEvent(planHandle, ev);
     });
     if (unsub4) unsubs.push(unsub4);
   }
@@ -139,9 +144,10 @@ async function onComposerSend(text) {
     }
     const frags = res?.events ?? res?.fragments ?? res?._fragments ?? [];
     const frags = res?.events ?? res?.fragments ?? res?._fragments ?? [];
-    // Track whether we're inside a think-chain from the batch response
+    // Track whether we're inside a think-chain/agent/plan from the batch response
     let inBatchThinkChain = false;
     let inBatchAgent = false;
+    let inBatchPlan = false;
 
     // 3a. Stream the response fragments (skip think-chain DSL if we already
     //     rendered one via startThinkChain for real-time PUB updates)
@@ -152,7 +158,6 @@ async function onComposerSend(text) {
         if (inBatchThinkChain) {
           if (/^\[\/think-chain\]/i.test(dsl)) { inBatchThinkChain = false; continue; }
           if (/^\[think-step\b/i.test(dsl) || /^\[\/think-step\]/i.test(dsl)) continue;
-          // Still pass through [upd] inside think-chain (though PUB handles these)
         }
       }
       // If we have a frontend-created agent, skip batch agent wrapper DSL
@@ -162,22 +167,39 @@ async function onComposerSend(text) {
           if (/^\[\/agent\]/i.test(dsl)) { inBatchAgent = false; continue; }
         }
       }
-      feed(expandCodeBlocks(dsl));
+      // If we have a frontend-created plan, skip batch plan wrapper DSL
+      if (planHandle) {
+        if (/^\[plan\b/i.test(dsl)) { inBatchPlan = true; continue; }
+        if (inBatchPlan) {
+          if (/^\[\/plan\]/i.test(dsl)) { inBatchPlan = false; continue; }
+          if (/^\[plan-step\b/i.test(dsl) || /^\[\/plan-step\]/i.test(dsl)) continue;
+        }
+      }
+
+      // P1: Attempt to wrap tool output in [terminal] or [sandbox]
+      const wrapped = maybeWrapToolOutput(dsl);
+      feed(expandCodeBlocks(wrapped));
       await yieldToBrowser();
     }
 
-    // 3b. Animate visualisation completion (fallback: mark any remaining steps done)
+    // 3b. Animate visualisation completion
     const totalSec = (performance.now() - t0) / 1000;
     if (chain) {
       endThinkChain(chain, totalSec);
     } else if (agentHandle) {
       endAgent(agentHandle.id, totalSec);
     }
+    if (planHandle) {
+      endPlan(planHandle, totalSec);
+    }
   } catch (e) {
     console.error('[composer] error:', e);
     feed(`[callout t:danger tt:"请求失败"]${escapeDsl(e.message ?? String(e))}[/callout]`);
     if (chain) {
       updateThinkStep(chain, 0, 'error', `请求失败: ${e.message ?? '未知错误'}`);
+    }
+    if (planHandle) {
+      endPlan(planHandle, 0, `失败: ${e.message ?? '未知错误'}`);
     }
     notify.error(`请求失败: ${e.message ?? '未知错误'}`, { duration: 5000 });
   } finally {
@@ -239,19 +261,18 @@ function handleLiveMemoEvent(chain, event) {
 /**
  * Handle live agent tool events from PUB.
  * Creates tool-call widgets on-the-fly as they execute.
+ * Tracks last completed tool for output wrapping.
  */
 function handleLiveAgentEvent(agentHandle, event) {
   if (!agentHandle) return;
 
   if (event.type === 'tool_start' && event.tool_name) {
-    // Show the tool starting
-    const tc = newToolCall(agentHandle.id, event.tool_name, { step: event.step_index });
+    const tc = newToolCall(agentHandle.id, event.tool_name, event.params || { step: event.step_index });
     if (tc) {
       tc._name = event.tool_name;
       agentHandle.toolCalls.push(tc);
     }
   } else if (event.type === 'tool_done' && event.tool_name) {
-    // Find and complete matching tool call
     const tc = agentHandle.toolCalls.find(
       t => t._name === event.tool_name && t._status !== 'done'
     );
@@ -259,18 +280,85 @@ function handleLiveAgentEvent(agentHandle, event) {
       tc._status = 'done';
       const durSec = event.dur_ms ? event.dur_ms / 1000 : undefined;
       completeToolCall(tc, 'done', event.detail || '完成', durSec);
+
+      // P1: If we have tool output content, render it
+      if (event.output) {
+        const output = typeof event.output === 'string' ? event.output : event.output.content || '';
+        if (output) {
+          feedToolOutput(event.tool_name, event.params || {}, output);
+        }
+      }
     }
   }
 }
 
-/** Handle live plan events from PUB. */
-function handleLivePlanEvent(event) {
-  // Plan events are lightweight — just notify
-  if (event.step === 'generate' && event.status === 'running') {
-    notify.info(event.detail || '生成执行计划…', { duration: 2000 });
-  } else if (event.step === 'done') {
-    notify.success(event.detail || '计划生成完毕', { duration: 2000 });
+/**
+ * Handle live plan events from PUB.
+ * P1: Replaces lightweight notify with full [plan] / [plan-step] visualisation.
+ */
+function handleLivePlanEvent(planHandle, event) {
+  if (!planHandle) return;
+
+  if (event.status === 'running' && event.step_title) {
+    // Add or update a plan step
+    const stepId = event.step_id || event.step;
+    planHandle._steps = planHandle._steps || [];
+    const existing = planHandle._steps.find(s => s.id === stepId);
+    if (!existing) {
+      planHandle._steps.push({ id: stepId, title: event.step_title, status: 'running' });
+      // Re-render all steps
+      updatePlanSteps(planHandle);
+    }
+  } else if (event.status === 'done') {
+    // Mark matching step as done
+    const stepId = event.step_id || event.step;
+    if (planHandle._steps) {
+      const step = planHandle._steps.find(s => s.id === stepId);
+      if (step) step.status = 'done';
+      updatePlanSteps(planHandle);
+    }
   }
+}
+
+/** Re-render plan steps via [upd] for each step. */
+function updatePlanSteps(planHandle) {
+  if (!planHandle?._steps) return;
+  const ui = getInstance();
+  if (!ui) return;
+  ui.startStream();
+  for (const s of planHandle._steps) {
+    const pid = `plan-${s.id}`;
+    ui.feed(`[upd id:${pid} act:${s.status}]`);
+  }
+  ui.endStream();
+}
+
+/**
+ * P1: Auto-detect tool output fragments and wrap in appropriate component.
+ * - Shell-like content (lines with $, >, or common CLI patterns) → [terminal]
+ * - Code content (blocks with keywords, brackets, indentation) → [sandbox]
+ * Returns transformed DSL or original if content doesn't match.
+ */
+function maybeWrapToolOutput(dsl) {
+  // Only transform simple [p]...[/p] fragments
+  const match = dsl.match(/^\[p\]([\s\S]*)\[\/p\]$/);
+  if (!match) return dsl;
+  const content = match[1];
+  if (!content.trim() || content.length < 20) return dsl;
+
+  // Detect shell output: common CLI patterns
+  const shellPatterns = /(^\s*[$#>]\s|\b(command not found|Permission denied|error:|fail(ed)?:|installed|removed|updated|running|downloading|cloning|building|compiling|total\s+\d+)\b|^\s*\w+@\w+[:~]|\bstd(out|err)\b|exit\s*code|pid\s*\d+|\[\w+\]\s)/mi;
+  if (shellPatterns.test(content)) {
+    return `[terminal v:dark]\n${escapeDsl(content)}\n[/terminal]`;
+  }
+
+  // Detect code content: structured patterns
+  const codePatterns = /(^\s*(import|export|const|let|var|function|class|def|async|await|return|if|for|while|#include|package|use|require|from|module)\b|\{\s*$|^\s*\/[/*]|^\s*#\w|^\s*<\w+[ >])/mi;
+  if (codePatterns.test(content) && content.split('\n').length >= 3) {
+    return `[sandbox]\n${escapeDsl(content)}\n[/sandbox]`;
+  }
+
+  return dsl;
 }
 
 // ── Real send handler ──────────────────────────────────────────

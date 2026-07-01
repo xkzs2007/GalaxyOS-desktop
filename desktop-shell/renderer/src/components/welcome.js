@@ -12,6 +12,7 @@ import { buildDemoThinkChain } from '../tokui/think-chain.js';
 import { buildDemoAgent } from '../tokui/tool-call.js';
 import { buildDemoMemoryTimeline } from '../tokui/memory-browser.js';
 import { buildDemoDashboard } from '../tokui/dashboard.js';
+import { buildDemoPlan } from '../tokui/plan.js';
 
 const FEATURES = [
   { id: 'ask',     icon: '💬', title: 'Ask 模式',      desc: '简单提问，自动路由：MeMo / process / fast_path' },
@@ -28,6 +29,9 @@ function buildWelcomeDSL() {
   // Demo think chain (R-CCAM 5-stage)
   const rccamDemo = buildDemoThinkChain('rccam');
 
+  // Demo plan steps
+  const planDemo = buildDemoPlan();
+
   // Demo agent tool calls
   const agentDemo = buildDemoAgent();
 
@@ -40,6 +44,9 @@ function buildWelcomeDSL() {
   return `[welcome tt:"欢迎使用 GalaxyOS 桌面端" st:"独立 AI Agent · 76 技能 · 多 LLM"]\n  ${features}\n[/welcome]` +
     `\n${dashDemo}` +
     `\n[p v:muted sm]↑ 仪表盘：侧边栏「📊 仪表盘」查看 Token / 延迟 / 模式分布[/p]` +
+    `\n[dv]` +
+    `\n${planDemo}` +
+    `\n[p v:muted sm]↑ 计划步骤：Plan 模式按 分析→研究→生成→优化→输出 五阶段生成执行计划[/p]` +
     `\n[dv]` +
     `\n${rccamDemo}` +
     `\n[p v:muted sm]↑ 推理链示意：Process 模式按 5 阶段执行复杂任务[/p]` +

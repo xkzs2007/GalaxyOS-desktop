@@ -4,11 +4,14 @@
 //   - recall → [timeline] 记忆时间线渲染
 //   - save   → [notification] 通知 + 记忆 ID 展示
 //   - copy/like/dislike/verify 保留原有逻辑
+//
+// P1: DSL Inspector 调试面板 handlers
 
 import { registerHandler } from './runtime.js';
 import { galaxy } from '../ipc/client.js';
 import notify from './notify.js';
 import { renderMemoryTimeline } from './memory-browser.js';
+import dslInspector from './dsl-inspector.js';
 
 function getBubbleText(evt) {
   // evt.element is the closest bubble DOM node
@@ -98,5 +101,32 @@ export function registerMsgActionHandlers() {
       appendNote(evt?.element, `💾 已保存到长期记忆 (${r.memory_id?.slice(0, 8) || ''}…)`, '#10b981');
       notify.success('已保存到长期记忆', { duration: 2500 });
     } catch (e) { console.warn('[save] failed:', e); }
+  });
+
+  // ── P1: DSL Inspector handlers ──────────────────────────────
+  registerHandler('onDslInspectorToggle', () => {
+    const wasActive = dslInspector.isActive();
+    dslInspector.setActive(!wasActive);
+    if (!wasActive) {
+      dslInspector.clear(); // start fresh
+      notify.info('DSL Inspector 已启用 — 开始捕获 DSL', { duration: 2000 });
+    } else {
+      notify.info('DSL Inspector 已禁用', { duration: 2000 });
+    }
+    // Re-render inspector in details panel
+    import('../components/details.js').then(() => {
+      dslInspector.render('details-host');
+    });
+  });
+
+  registerHandler('onDslInspectorClear', () => {
+    dslInspector.clear();
+    dslInspector.render('details-host');
+    notify.info('DSL 已清除', { duration: 1500 });
+  });
+
+  registerHandler('onDslInspectorLineClick', (data) => {
+    const lineNum = typeof data === 'number' ? data : parseInt(data?.act || data?.value || '0', 10);
+    if (lineNum > 0) dslInspector.highlightLine(lineNum);
   });
 }
