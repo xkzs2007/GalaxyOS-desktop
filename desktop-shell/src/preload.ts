@@ -94,6 +94,18 @@ export type GalaxyApi = {
   getProactiveTask(): Promise<{ task: unknown | null; error?: string }>;
   classifyKnowledge(content: string): Promise<{ classification: unknown; error?: string }>;
   correctAnswer(query: string, wrongAnswer: string, correction?: string): Promise<{ corrected: unknown; error?: string }>;
+
+  // ── v9.6: 工具权限查询（借鉴 Apix tools/registry.py）──
+  getAvailableTools(permission?: string | string[], agentRole?: string): Promise<{
+    tools: Array<{name: string; description: string; params: Record<string, string>; permission: string; requires_approval: boolean}>;
+    count: number;
+    agent_role: string;
+    error?: string;
+  }>;
+  listTools(): Promise<{
+    tools: Array<{name: string; description: string; params: Record<string, string>; permission: string; requires_approval: boolean}>;
+    count: number;
+  }>;
 };
 
 /** API schema (returned by `schema()`). */
@@ -293,6 +305,10 @@ const api: GalaxyApi = {
   getProactiveTask: () => ipcRenderer.invoke('galaxy:getProactiveTask') as any,
   classifyKnowledge: (content) => ipcRenderer.invoke('galaxy:classifyKnowledge', content) as any,
   correctAnswer: (query, wrongAnswer, correction) => ipcRenderer.invoke('galaxy:correctAnswer', query, wrongAnswer, correction) as any,
+
+  // ── v9.6: 工具权限查询 ──
+  getAvailableTools: (permission, agentRole) => ipcRenderer.invoke('galaxy:getAvailableTools', permission, agentRole) as any,
+  listTools: () => ipcRenderer.invoke('galaxy:listTools') as any,
 };
 
 contextBridge.exposeInMainWorld('galaxy', api);

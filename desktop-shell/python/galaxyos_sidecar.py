@@ -1500,6 +1500,39 @@ class SidecarHandlers:
                 if len(shared) >= 2:
                     self._skill_graph.add_edge(a, b, relation="related")
 
+    def get_available_tools(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """v9.6: 返回当前 agent_role 可用的工具列表（带权限过滤）。
+
+        params:
+          - permission: str | List[str] — 过滤 permission（可选）
+          - agent_role: str — 'main' | 'sub_agent' | 'team_worker'（默认 main）
+          - workspace_configured: bool — 是否已配置 workspace（可选，自动检测）
+
+        借鉴 Apix tools/registry.py: get_available_tools()
+        """
+        import tools as _tools
+        permission = params.get("permission")
+        agent_role = str(params.get("agent_role", "main"))
+        ws_cfg = params.get("workspace_configured")
+        try:
+            tool_list = _tools.get_available_tools(
+                permission=permission,
+                agent_role=agent_role,
+                workspace_configured=ws_cfg,
+            )
+        except Exception as e:
+            return {"tools": [], "error": f"{type(e).__name__}: {e}"}
+        return {
+            "tools": tool_list,
+            "count": len(tool_list),
+            "agent_role": agent_role,
+        }
+
+    def list_tools(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """v9.6: 简单列出所有工具（无过滤），给前端 settings 面板用。"""
+        import tools as _tools
+        return {"tools": _tools.list_tools(), "count": len(_tools.list_tools())}
+
     def graph_search(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """T13.1: graph-aware skill search using GraphAwareRetriever."""
         query = str(params.get("query", ""))
@@ -1826,7 +1859,8 @@ class SidecarHandlers:
         elif kind == "plan":
             frags = self._do_stream_plan(prompt, stream_id)
         elif kind == "agent":
-            frags = self.stream_agent_frag(prompt, sid, stream_id)
+            agent_role = str(params.get("agent_role", "main"))
+            frags = self.stream_agent_frag(prompt, sid, stream_id, agent_role=agent_role)
         else:
             frags = []
         events = [{"tokui": f} for f in frags]
@@ -1841,10 +1875,11 @@ class SidecarHandlers:
     def stream_memo_frag(self, prompt: str = "What is GalaxyOS", stream_id: str = "") -> List[str]:
         return self._do_stream_memo(prompt, stream_id)
 
-    def stream_agent_frag(self, prompt: str, sid: str, stream_id: str = "") -> List[str]:
+    def stream_agent_frag(self, prompt: str, sid: str, stream_id: str = "", agent_role: str = "main") -> List[str]:
         from agent_loop import AgentLoop
         loop = AgentLoop(question=prompt, stream_id=stream_id,
-                         llm_client=self._llm.llm_flash)
+                         llm_client=self._llm.llm_flash,
+                         agent_role=agent_role)
         import asyncio
         return asyncio.run(loop.run())
 

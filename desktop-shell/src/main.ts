@@ -1064,6 +1064,14 @@ function registerIpc() {
   ipcMain.handle('galaxy:correctAnswer', async (_e, query: string, wrongAnswer: string, correction?: string) => {
     return await zmqCall('correct_answer', { query, wrong_answer: wrongAnswer, correction: correction ?? '' });
   });
+
+  // ── v9.6: 工具权限查询（借鉴 Apix）──
+  ipcMain.handle('galaxy:getAvailableTools', async (_e, permission?: string | string[], agentRole?: string) => {
+    return await zmqCall('get_available_tools', { permission, agent_role: agentRole ?? 'main' });
+  });
+  ipcMain.handle('galaxy:listTools', async () => {
+    return await zmqCall('list_tools', {});
+  });
 }
 
 // Disable GPU hardware acceleration so PrintWindow / BitBlt can
