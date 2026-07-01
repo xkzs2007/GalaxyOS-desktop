@@ -377,6 +377,11 @@ function startSidecar(): Promise<void> {
     const cmd = isPackagedExe ? script : py;
     const args = isPackagedExe ? [] : [script];
 
+    // 关掉重开应用时，旧 sidecar 可能因 TIME_WAIT 或 Windows
+    // TerminateProcess 强杀未释放端口。先探测 5757 端口是否被
+    // 占用，最多等 5 秒。比直接 "Address in use" 错误友好。
+    await waitForPortFree(SIDECAR_PORT, SIDECAR_HOST, 5000);
+
     // Redirect sidecar stdout/stderr to a file (EPIPE avoidance).
     // The log file lives in the per-user userData dir (NOT in
     // Program Files, which is not user-writable on Windows).
@@ -603,6 +608,37 @@ function stopPubSubscriber(): void {
     log('zmq SUB closed');
   }
   mainWindowRef = null;
+}
+
+// ── 端口检测：检查 zmq REP 端口是否被占用 ──────────────────────────
+// 关掉重开应用时，旧 sidecar 进程可能因 TIME_WAIT 或未完全释放
+// 而继续占用 5757 端口。spawn 新 sidecar 前先检测端口，必要时
+// 等 1-2 秒后重试，避免 "Address already in use" 错误。
+async function waitForPortFree(port: number, host: string, timeoutMs = 5000): Promise<void> {
+  const { createConnection } = require('net') as typeof import('net');
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    const inUse = await new Promise<boolean>((resolve) => {
+      const conn = createConnection({ port, host }, () => {
+        // 连上了 = 端口被占用
+        conn.destroy();
+        resolve(true);
+      });
+      conn.on('error', () => {
+        // 连接被拒绝 = 端口空闲
+        resolve(false);
+      });
+      setTimeout(() => {
+        conn.destroy();
+        resolve(false);
+      }, 300);
+    });
+    if (!inUse) return;
+    log(`Port ${port} still busy, waiting...`);
+    await new Promise((r) => setTimeout(r, 500));
+  }
+  // 超时也不阻塞，让后续 spawn 自然失败
+  log(`Port ${port} still busy after ${timeoutMs}ms timeout, proceeding anyway`);
 }
 
 // ── Window ──────────────────────────────────────────────────────────
@@ -1038,6 +1074,8 @@ app.disableHardwareAcceleration();
 // ── App lifecycle ─────────────────────────────────────────────────
 app.whenReady().then(async () => {
   try {
+    // 启动前先确保旧 sidecar（如果僵尸残留）已清理
+    stopSidecar();
     await startSidecar();
     registerIpc();
     createWindow();
