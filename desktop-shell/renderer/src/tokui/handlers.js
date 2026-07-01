@@ -114,9 +114,7 @@ export function registerMsgActionHandlers() {
       notify.info('DSL Inspector 已禁用', { duration: 2000 });
     }
     // Re-render inspector in details panel
-    import('../components/details.js').then(() => {
-      dslInspector.render('details-host');
-    });
+    dslInspector.render('details-host');
   });
 
   registerHandler('onDslInspectorClear', () => {
@@ -128,5 +126,11 @@ export function registerMsgActionHandlers() {
   registerHandler('onDslInspectorLineClick', (data) => {
     const lineNum = typeof data === 'number' ? data : parseInt(data?.act || data?.value || '0', 10);
     if (lineNum > 0) dslInspector.highlightLine(lineNum);
+  });
+
+  registerHandler('onDslInspectorToggleScroll', () => {
+    const newVal = dslInspector.toggleAutoScroll();
+    dslInspector.render('details-host');
+    notify.info(`自动滚屏: ${newVal ? '开' : '关'}`, { duration: 1500 });
   });
 }
