@@ -7,10 +7,14 @@
 import { contextBridge, ipcRenderer } from 'electron';
 
 export type GalaxyApi = {
-  ask(question: string, sessionId?: string): Promise<{ answer: string; confidence: number }>;
+  ask(question: string, sessionId?: string, streamId?: string): Promise<{ answer: string; confidence: number }>;
   remember(content: string, metadata?: object, source?: string): Promise<{ memory_id: string }>;
   recall(query: string, topK?: number, sessionId?: string): Promise<{ results: unknown[] }>;
-  process(userInput: string, sessionId?: string): Promise<Record<string, unknown>>;
+  process(userInput: string, sessionId?: string, streamId?: string): Promise<Record<string, unknown>>;
+  memo(prompt: string, sessionId?: string, streamId?: string): Promise<Record<string, unknown>>;
+  plan(prompt: string, sessionId?: string, streamId?: string): Promise<Record<string, unknown>>;
+  agent(prompt: string, sessionId?: string, streamId?: string): Promise<Record<string, unknown>>;
+  ocr(params: { path?: string; base64?: string; prompt?: string; sessionId?: string }): Promise<Record<string, unknown>>;
   health(): Promise<Record<string, unknown>>;
   skills(): Promise<{ skills: Array<{id: string; name: string; description: string}>; count: number }>;
   skill(id: string): Promise<{ id: string; name: string; description: string; body: string }>;
@@ -44,6 +48,15 @@ export type GalaxyApi = {
   /** API schema introspection — returns the JSON contract of all
    *  IPC channels. Fetch once at startup for runtime validation. */
   schema(): Promise<ApiSchema>;
+  /** Subscribe to real-time think-chain progress events.
+   *  Returns an unsubscribe function. */
+  onThinkStep(callback: (event: ThinkStepEvent) => void): () => void;
+  /** Subscribe to real-time MeMo 3-stage progress events. */
+  onMemoStage(callback: (event: MemoStageEvent) => void): () => void;
+  /** Subscribe to real-time plan generation progress events. */
+  onPlanStep(callback: (event: PlanStepEvent) => void): () => void;
+  /** Subscribe to real-time agent tool execution events. */
+  onAgentTool(callback: (event: AgentToolEvent) => void): () => void;
 };
 
 /** API schema (returned by `schema()`). */
@@ -80,11 +93,53 @@ export interface IwResult {
   error?: string;
 }
 
+/** Real-time streaming event types (zmq PUB → main.ts → renderer). */
+
+export interface ThinkStepEvent {
+  stream_id: string;
+  phase: string;       // routing | retrieval | cognition | control | action | memory
+  status: string;      // running | done | error
+  detail: string;
+  dur_ms: number;
+}
+
+export interface MemoStageEvent {
+  stream_id: string;
+  stage: string;       // grounding | entity | answer
+  status: string;      // running | done | error
+  detail: string;
+  dur_ms: number;
+}
+
+export interface PlanStepEvent {
+  stream_id: string;
+  step: string;        // generate | step_N | done
+  status: string;      // running | pending | done
+  detail: string;
+  tool?: string;
+  step_id?: string;
+  total_steps?: number;
+}
+
+export interface AgentToolEvent {
+  stream_id: string;
+  type: string;        // plan_start | tool_start | tool_done
+  status: string;      // running | done | error
+  detail: string;
+  tool_name: string;
+  step_index: number;
+  dur_ms: number;
+}
+
 const api: GalaxyApi = {
-  ask: (q, sid) => ipcRenderer.invoke('galaxy:ask', q, sid) as any,
+  ask: (q, sid, streamId) => ipcRenderer.invoke('galaxy:ask', q, sid, streamId) as any,
   remember: (c, m, s) => ipcRenderer.invoke('galaxy:remember', c, m, s) as any,
   recall: (q, k, sid) => ipcRenderer.invoke('galaxy:recall', q, k, sid) as any,
-  process: (u, sid) => ipcRenderer.invoke('galaxy:process', u, sid) as any,
+  process: (u, sid, streamId) => ipcRenderer.invoke('galaxy:process', u, sid, streamId) as any,
+  memo: (p, sid, streamId) => ipcRenderer.invoke('galaxy:memo', p, sid, streamId) as any,
+  plan: (p, sid, streamId) => ipcRenderer.invoke('galaxy:plan', p, sid, streamId) as any,
+  agent: (p, sid, streamId) => ipcRenderer.invoke('galaxy:agent', p, sid, streamId) as any,
+  ocr: (params) => ipcRenderer.invoke('galaxy:ocr', params) as any,
   health: () => ipcRenderer.invoke('galaxy:health') as any,
   skills: () => ipcRenderer.invoke('galaxy:skills') as any,
   skill: (id) => ipcRenderer.invoke('galaxy:skill', id) as any,
@@ -123,6 +178,27 @@ const api: GalaxyApi = {
   },
   openExternal: (u) => ipcRenderer.invoke('galaxy:openExternal', u) as any,
   schema: () => ipcRenderer.invoke('galaxy:schema') as Promise<ApiSchema>,
+  // Real-time streaming event listeners (zmq PUB → webContents.send)
+  onThinkStep: (cb) => {
+    const h = (_e: unknown, payload: ThinkStepEvent) => cb(payload);
+    ipcRenderer.on('think:step', h);
+    return () => ipcRenderer.removeListener('think:step', h);
+  },
+  onMemoStage: (cb) => {
+    const h = (_e: unknown, payload: MemoStageEvent) => cb(payload);
+    ipcRenderer.on('memo:stage', h);
+    return () => ipcRenderer.removeListener('memo:stage', h);
+  },
+  onPlanStep: (cb) => {
+    const h = (_e: unknown, payload: PlanStepEvent) => cb(payload);
+    ipcRenderer.on('plan:step', h);
+    return () => ipcRenderer.removeListener('plan:step', h);
+  },
+  onAgentTool: (cb) => {
+    const h = (_e: unknown, payload: AgentToolEvent) => cb(payload);
+    ipcRenderer.on('agent:tool', h);
+    return () => ipcRenderer.removeListener('agent:tool', h);
+  },
 };
 
 contextBridge.exposeInMainWorld('galaxy', api);

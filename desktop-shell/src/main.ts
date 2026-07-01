@@ -474,8 +474,15 @@ function startPubSubscriber(win: BrowserWindow): void {
           // events (topic 'iw:').
           if (topicStr.startsWith('iw:')) {
             mainWindowRef?.webContents.send('iw:progress', payload);
+          } else if (topicStr.startsWith('think:')) {
+            mainWindowRef?.webContents.send('think:step', payload);
+          } else if (topicStr.startsWith('memo:')) {
+            mainWindowRef?.webContents.send('memo:stage', payload);
+          } else if (topicStr.startsWith('plan:')) {
+            mainWindowRef?.webContents.send('plan:step', payload);
+          } else if (topicStr.startsWith('agent:')) {
+            mainWindowRef?.webContents.send('agent:tool', payload);
           }
-          // Future topics (e.g. 'memo:', 'agent:') can be added here.
         } catch (e) {
           // EAGAIN / closed socket — break out if socket is gone
           if (!zmqSub) break;
@@ -627,16 +634,28 @@ function registerIpc() {
     try { return await zmqCall('health'); }
     catch (e) { return { error: String((e as Error).message) }; }
   });
-  ipcMain.handle('galaxy:ask', async (_e, question: string, sessionId?: string) => {
-    try { return await zmqCall('stream_ask', { prompt: question, session_id: sessionId || '' }); }
+  ipcMain.handle('galaxy:ask', async (_e, question: string, sessionId?: string, streamId?: string) => {
+    try { return await zmqCall('stream_ask', { prompt: question, session_id: sessionId || '', stream_id: streamId || '' }); }
     catch (e) { return { events: [], fragments: [], error: String((e as Error).message) }; }
   });
-  ipcMain.handle('galaxy:process', async (_e, userInput: string, sessionId?: string) => {
-    try { return await zmqCall('stream_process', { user_input: userInput, session_id: sessionId || '' }); }
+  ipcMain.handle('galaxy:process', async (_e, userInput: string, sessionId?: string, streamId?: string) => {
+    try { return await zmqCall('stream_process', { user_input: userInput, session_id: sessionId || '', stream_id: streamId || '' }); }
     catch (e) { return { events: [], fragments: [], error: String((e as Error).message) }; }
   });
-  ipcMain.handle('galaxy:agent', async (_e, prompt: string, sessionId?: string) => {
-    try { return await zmqCall('stream_agent', { prompt, session_id: sessionId || '' }); }
+  ipcMain.handle('galaxy:agent', async (_e, prompt: string, sessionId?: string, streamId?: string) => {
+    try { return await zmqCall('stream_agent', { prompt, session_id: sessionId || '', stream_id: streamId || '' }); }
+    catch (e) { return { events: [], fragments: [], error: String((e as Error).message) }; }
+  });
+  ipcMain.handle('galaxy:memo', async (_e, prompt: string, sessionId?: string, streamId?: string) => {
+    try { return await zmqCall('stream_memo', { prompt, session_id: sessionId || '', stream_id: streamId || '' }); }
+    catch (e) { return { events: [], fragments: [], error: String((e as Error).message) }; }
+  });
+  ipcMain.handle('galaxy:plan', async (_e, prompt: string, sessionId?: string, streamId?: string) => {
+    try { return await zmqCall('stream_plan', { prompt, session_id: sessionId || '', stream_id: streamId || '' }); }
+    catch (e) { return { events: [], fragments: [], error: String((e as Error).message) }; }
+  });
+  ipcMain.handle('galaxy:ocr', async (_e, params: { path?: string; base64?: string; prompt?: string; sessionId?: string }) => {
+    try { return await zmqCall('stream_ocr', { path: params.path || '', base64: params.base64 || '', prompt: params.prompt || '', session_id: params.sessionId || '' }); }
     catch (e) { return { events: [], fragments: [], error: String((e as Error).message) }; }
   });
   ipcMain.handle('galaxy:remember', async (_e, content: string, metadata?: any) => {
@@ -747,6 +766,9 @@ function registerIpc() {
       { name: 'galaxy:ask',              args: ['question: string', 'sessionId?: string'],                  returns: 'StreamResult' },
       { name: 'galaxy:process',          args: ['userInput: string', 'sessionId?: string'],                 returns: 'StreamResult' },
       { name: 'galaxy:agent',            args: ['prompt: string', 'sessionId?: string'],                    returns: 'StreamResult' },
+      { name: 'galaxy:memo',             args: ['prompt: string', 'sessionId?: string'],                    returns: 'StreamResult' },
+      { name: 'galaxy:plan',             args: ['prompt: string', 'sessionId?: string'],                    returns: 'StreamResult' },
+      { name: 'galaxy:ocr',              args: ['params: {path?, base64?, prompt?, sessionId?}'],           returns: 'StreamResult' },
       { name: 'galaxy:remember',         args: ['content: string', 'metadata?: object', 'source?: string'], returns: 'RememberResult' },
       { name: 'galaxy:recall',           args: ['query: string', 'topK?: number', 'sessionId?: string'],   returns: 'RecallResult' },
       { name: 'galaxy:skills',           args: [],                              returns: 'SkillsList' },

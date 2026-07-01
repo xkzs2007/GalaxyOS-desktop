@@ -187,11 +187,34 @@ def decide_tool_chain(question: str) -> List[Dict[str, Any]]:
 # ── Agent loop ─────────────────────────────────────────────────
 
 class AgentLoop:
-    """Yields TokUI DSL fragments as the agent executes."""
+    """Yields TokUI DSL fragments as the agent executes.
 
-    def __init__(self, question: str):
+    v9.4: supports stream_id for zmq PUB real-time progress events.
+    """
+
+    def __init__(self, question: str, stream_id: str = ""):
         self.question = question
+        self.stream_id = stream_id
         self.plan = decide_tool_chain(question)
+
+    def _pub(self, event_type: str, detail: str, status: str = "running",
+             tool_name: str = "", step_index: int = 0, dur_ms: int = 0):
+        """Publish an agent progress event via zmq PUB if stream_id is set."""
+        if not self.stream_id:
+            return
+        try:
+            from galaxyos_sidecar import _publish_event
+            _publish_event("agent", {
+                "stream_id": self.stream_id,
+                "type": event_type,
+                "status": status,
+                "detail": detail,
+                "tool_name": tool_name,
+                "step_index": step_index,
+                "dur_ms": dur_ms,
+            })
+        except Exception:
+            pass  # PUB is best-effort
 
     def _fmt(self, *fragments: str) -> List[str]:
         return list(fragments)
@@ -203,6 +226,8 @@ class AgentLoop:
         # Open the assistant bubble + think-chain header
         out.append(tokui_dsl.open_bubble_ai(model="GalaxyOS-Agent"))
         out.append(tokui_dsl.open_think_chain("Agent 思考过程"))
+        self._pub("plan_start", f"决策: {len(self.plan)} 步工具链",
+                  status="running", step_index=0)
 
         if not self.plan:
             # No tools to run — fall back to a direct answer
@@ -244,12 +269,16 @@ class AgentLoop:
             )
 
             # 3) Execute
+            self._pub("tool_start", f"执行 {name}", status="running",
+                      tool_name=name, step_index=idx)
             t0 = _now_ms()
             result = await tools.call_tool(name, params)
             dur_ms = _now_ms() - t0
 
             # 4) Update tool-call to done via [upd]
             summary = _summarize(result)
+            self._pub("tool_done", summary[:100], status="done",
+                      tool_name=name, step_index=idx, dur_ms=dur_ms)
             out.append(
                 f'[upd id:{tc_id} status:done duration:{dur_ms}ms]'
             )

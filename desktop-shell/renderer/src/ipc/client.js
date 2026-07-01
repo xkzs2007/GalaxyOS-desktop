@@ -61,12 +61,40 @@ function makeStandaloneGalaxy() {
       const frags = await sseCollect('process', { user_input: u, session_id: 'default' });
       return { events: frags.map(f => ({ tokui: f })), fragments: frags };
     },
+    memo: async (q) => {
+      const frags = await sseCollect('memo', { prompt: q, session_id: 'default' });
+      return { events: frags.map(f => ({ tokui: f })), fragments: frags };
+    },
+    plan: async (q) => {
+      const frags = await sseCollect('plan', { prompt: q, session_id: 'default' });
+      return { events: frags.map(f => ({ tokui: f })), fragments: frags };
+    },
+    agent: async (q) => {
+      const frags = await sseCollect('agent', { prompt: q, session_id: 'default' });
+      return { events: frags.map(f => ({ tokui: f })), fragments: frags };
+    },
+    ocr: async (params) => {
+      const body = new URLSearchParams(params).toString();
+      const res = await fetch('http://127.0.0.1:5758/sse/ocr', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body,
+      });
+      if (!res.ok) throw new Error(`OCR HTTP ${res.status}`);
+      return { events: [], fragments: [`[p v:danger]OCR 需要 Electron IPC 环境[/p]`] };
+    },
     health: async () => {
       const res = await fetch('http://127.0.0.1:5758/sse/health', { method: 'POST' });
       if (!res.ok) throw new Error(`health HTTP ${res.status}`);
       return res.json();
     },
     skills: async () => ({ skills: [], count: 0 }),
+    // Real-time streaming event listeners (no-ops in standalone mode —
+    // zmq PUB is only available through Electron IPC).
+    onThinkStep: (_cb) => () => {},
+    onMemoStage: (_cb) => () => {},
+    onPlanStep:  (_cb) => () => {},
+    onAgentTool: (_cb) => () => {},
   };
 }
 

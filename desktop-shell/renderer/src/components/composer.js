@@ -29,7 +29,8 @@ const MODE_TO_METHOD = {
   process: { method: 'process', paramKey: 'user_input',  viz: 'think' },
   agent:   { method: 'agent',   paramKey: 'prompt',      viz: 'agent' },
   memo:    { method: 'memo',    paramKey: 'prompt',      viz: 'think' },
-  plan:    { method: 'plan',    paramKey: 'prompt',      viz: null },
+  plan:    { method: 'plan',    paramKey: 'prompt',      viz: 'think' },
+  ocr:     { method: 'ocr',     paramKey: 'params',      viz: null },
 };
 
 const MODE_LABELS = {
@@ -38,6 +39,7 @@ const MODE_LABELS = {
   agent: 'Agent',
   memo: 'MeMo',
   plan: 'Plan',
+  ocr: 'OCR',
 };
 
 /** Mode tabs 渲染（用 TokUI [tabs][tab] 组件） */
@@ -91,36 +93,85 @@ async function onComposerSend(text) {
   let agentHandle = null;
   const viz = m.viz;
 
+  // Generate a unique stream_id so PUB events can be correlated
+  const streamId = `${state.mode}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+
+  // Subscribe to real-time events BEFORE sending the request
+  let unsubs = [];
   if (viz === 'think') {
     const thinkMode = state.mode === 'memo' ? 'memo' : 'rccam';
     chain = startThinkChain(thinkMode);
+    if (state.mode === 'memo') {
+      const unsub1 = galaxy.onMemoStage?.((ev) => {
+        if (ev.stream_id === streamId) handleLiveMemoEvent(chain, ev);
+      });
+      if (unsub1) unsubs.push(unsub1);
+    }
+    // R-CCAM modes (ask/process/plan) also get think events
+    const unsub2 = galaxy.onThinkStep?.((ev) => {
+      if (ev.stream_id === streamId) handleLiveThinkEvent(chain, ev);
+    });
+    if (unsub2) unsubs.push(unsub2);
   } else if (viz === 'agent') {
     agentHandle = startAgent('GalaxyOS Agent');
-    // Detect likely tools from the user prompt
-    const tools = detectToolsFromPrompt(text);
-    for (const t of tools) {
-      const tc = newToolCall(agentHandle?.id, t.name, t.params);
-      if (tc) agentHandle.toolCalls.push(tc);
-    }
+    // Don't pre-guess tools — let real PUB events create them
+    const unsub3 = galaxy.onAgentTool?.((ev) => {
+      if (ev.stream_id === streamId) handleLiveAgentEvent(agentHandle, ev);
+    });
+    if (unsub3) unsubs.push(unsub3);
+  }
+  // Subscribe to plan events for plan mode
+  if (state.mode === 'plan') {
+    const unsub4 = galaxy.onPlanStep?.((ev) => {
+      if (ev.stream_id === streamId) handleLivePlanEvent(ev);
+    });
+    if (unsub4) unsubs.push(unsub4);
   }
 
-  // 3. Call the sidecar
+  // 3. Call the sidecar (with stream_id for real-time PUB events)
   try {
-    const res = await galaxy[m.method](text, state.sessionId);
+    let res;
+    if (state.mode === 'ocr') {
+      res = await galaxy.ocr({ path: '', base64: '', prompt: text, sessionId: state.sessionId });
+    } else {
+      // Pass stream_id so the sidecar publishes events tagged with it
+      res = await galaxy[m.method](text, state.sessionId, streamId);
+    }
     const frags = res?.events ?? res?.fragments ?? res?._fragments ?? [];
+    const frags = res?.events ?? res?.fragments ?? res?._fragments ?? [];
+    // Track whether we're inside a think-chain from the batch response
+    let inBatchThinkChain = false;
+    let inBatchAgent = false;
 
-    // 3a. Stream the response fragments
+    // 3a. Stream the response fragments (skip think-chain DSL if we already
+    //     rendered one via startThinkChain for real-time PUB updates)
     for (const dsl of frags) {
+      // If we have a frontend-created chain, skip batch think-chain DSL
+      if (chain) {
+        if (/^\[think-chain\b/i.test(dsl)) { inBatchThinkChain = true; continue; }
+        if (inBatchThinkChain) {
+          if (/^\[\/think-chain\]/i.test(dsl)) { inBatchThinkChain = false; continue; }
+          if (/^\[think-step\b/i.test(dsl) || /^\[\/think-step\]/i.test(dsl)) continue;
+          // Still pass through [upd] inside think-chain (though PUB handles these)
+        }
+      }
+      // If we have a frontend-created agent, skip batch agent wrapper DSL
+      if (agentHandle) {
+        if (/^\[agent\b/i.test(dsl)) { inBatchAgent = true; continue; }
+        if (inBatchAgent) {
+          if (/^\[\/agent\]/i.test(dsl)) { inBatchAgent = false; continue; }
+        }
+      }
       feed(expandCodeBlocks(dsl));
       await yieldToBrowser();
     }
 
-    // 3b. Animate visualisation completion
+    // 3b. Animate visualisation completion (fallback: mark any remaining steps done)
     const totalSec = (performance.now() - t0) / 1000;
     if (chain) {
-      await animateThinkChain(chain, totalSec);
+      endThinkChain(chain, totalSec);
     } else if (agentHandle) {
-      await animateAgentTools(agentHandle, totalSec);
+      endAgent(agentHandle.id, totalSec);
     }
   } catch (e) {
     console.error('[composer] error:', e);
@@ -130,11 +181,99 @@ async function onComposerSend(text) {
     }
     notify.error(`请求失败: ${e.message ?? '未知错误'}`, { duration: 5000 });
   } finally {
+    // Unsubscribe from all real-time event listeners
+    for (const unsub of unsubs) {
+      try { unsub(); } catch { /* ignore */ }
+    }
+    unsubs = [];
     endAssistantStream();
   }
 }
 
-// ── Wire handlers (queueable, registered before/after bootTokUI) ──
+// ── Real-time streaming event handlers ────────────────────────
+
+/**
+ * Map a sidecar PUB event phase to a think-chain step index.
+ * Returns { idx, detail } for updateThinkStep().
+ */
+function mapThinkPhase(phase, detail) {
+  const RCCAM_IDX = { routing: 0, retrieval: 1, cognition: 2, control: 3, action: 3, memory: 4 };
+  const MEMO_IDX  = { grounding: 0, entity: 1, answer: 2 };
+  return { rccam: RCCAM_IDX, memo: MEMO_IDX };
+}
+
+/**
+ * Map sidecar PUB events to think-chain updates in real time.
+ * @param {{ id, steps, mode }} chain - from startThinkChain
+ * @param {object} event - PUB event payload
+ */
+function handleLiveThinkEvent(chain, event) {
+  if (!chain) return;
+  const idxMap = mapThinkPhase();
+  const map = chain.mode === 'memo' ? idxMap.memo : idxMap.rccam;
+  const idx = map[event.phase];
+  if (idx === undefined) return;
+
+  const statusMap = { running: 'running', done: 'done', error: 'error' };
+  const status = statusMap[event.status] || event.status;
+  const detail = event.detail || '';
+  const durSec = event.dur_ms ? event.dur_ms / 1000 : undefined;
+
+  updateThinkStep(chain, idx, status, detail, durSec);
+}
+
+function handleLiveMemoEvent(chain, event) {
+  if (!chain) return;
+  const idxMap = { grounding: 0, entity: 1, answer: 2 };
+  const idx = idxMap[event.stage];
+  if (idx === undefined) return;
+
+  const statusMap = { running: 'running', done: 'done', error: 'error' };
+  const status = statusMap[event.status] || event.status;
+  const detail = event.detail || '';
+  const durSec = event.dur_ms ? event.dur_ms / 1000 : undefined;
+
+  updateThinkStep(chain, idx, status, detail, durSec);
+}
+
+/**
+ * Handle live agent tool events from PUB.
+ * Creates tool-call widgets on-the-fly as they execute.
+ */
+function handleLiveAgentEvent(agentHandle, event) {
+  if (!agentHandle) return;
+
+  if (event.type === 'tool_start' && event.tool_name) {
+    // Show the tool starting
+    const tc = newToolCall(agentHandle.id, event.tool_name, { step: event.step_index });
+    if (tc) {
+      tc._name = event.tool_name;
+      agentHandle.toolCalls.push(tc);
+    }
+  } else if (event.type === 'tool_done' && event.tool_name) {
+    // Find and complete matching tool call
+    const tc = agentHandle.toolCalls.find(
+      t => t._name === event.tool_name && t._status !== 'done'
+    );
+    if (tc) {
+      tc._status = 'done';
+      const durSec = event.dur_ms ? event.dur_ms / 1000 : undefined;
+      completeToolCall(tc, 'done', event.detail || '完成', durSec);
+    }
+  }
+}
+
+/** Handle live plan events from PUB. */
+function handleLivePlanEvent(event) {
+  // Plan events are lightweight — just notify
+  if (event.step === 'generate' && event.status === 'running') {
+    notify.info(event.detail || '生成执行计划…', { duration: 2000 });
+  } else if (event.step === 'done') {
+    notify.success(event.detail || '计划生成完毕', { duration: 2000 });
+  }
+}
+
+// ── Real send handler ──────────────────────────────────────────
 registerHandler('onComposerSend', (data) => {
   // TokUI chat-input hands the value as the first arg
   const text = typeof data === 'string' ? data : data?.value ?? data?.text ?? '';
@@ -148,93 +287,6 @@ registerHandler('onModeTab', (data) => {
 
 // Export internals for main.js to wire
 export { onComposerSend, setMode };
-
-// ── Think chain animation ─────────────────────────────────────
-
-/**
- * Animate think chain steps to completion with staggered timing.
- */
-async function animateThinkChain(chain, totalSec) {
-  const steps = chain.steps;
-  const perStepDelay = Math.min(180, Math.max(60, (totalSec * 1000) / steps.length / 3));
-  for (let i = 0; i < steps.length; i++) {
-    updateThinkStep(chain, i, 'done', null, totalSec / steps.length);
-    await new Promise((r) => setTimeout(r, perStepDelay));
-  }
-  endThinkChain(chain, totalSec);
-}
-
-// ── Agent tool detection ──────────────────────────────────────
-
-/**
- * Parse user prompt for tool-related keywords.
- * Returns an array of { name, params } objects for visual feedback.
- */
-function detectToolsFromPrompt(text) {
-  const tools = [];
-
-  // File reading patterns
-  if (/(?:读|查看|打开|read|cat)\s*(?:文件|file)?/i.test(text)) {
-    const pathMatch = text.match(/(?:文件|file)\s*[:：]?\s*(\S+\.\w{1,6})/i);
-    tools.push({ name: 'read_file', params: pathMatch ? { path: pathMatch[1] } : {} });
-  }
-
-  // File writing patterns
-  if (/(?:写|创建|生成|write|create)\s*(?:文件|file)?/i.test(text)) {
-    const pathMatch = text.match(/(?:文件|file)\s*[:：]?\s*(\S+\.\w{1,6})/i);
-    tools.push({ name: 'write_file', params: pathMatch ? { path: pathMatch[1] } : {} });
-  }
-
-  // Search patterns
-  if (/(?:搜索|查找|search|find|grep)/i.test(text)) {
-    const queryMatch = text.match(/(?:搜索|search)\s*[:：]?\s*(.+?)(?:$|[,，])/i);
-    tools.push({ name: 'web_search', params: queryMatch ? { query: queryMatch[1].trim() } : {} });
-  }
-
-  // Shell/command patterns
-  if (/(?:运行|执行|shell|bash|cmd|run|命令|编译)/i.test(text)) {
-    const cmdMatch = text.match(/(?:命令|command)\s*[:：]?\s*(.+?)(?:$|[，,])/i);
-    tools.push({ name: 'shell', params: cmdMatch ? { command: cmdMatch[1].trim() } : {} });
-  }
-
-  // Directory listing patterns
-  if (/(?:列出|目录|列表|list|ls|dir)\s*(?:文件|目录)?/i.test(text)) {
-    const pathMatch = text.match(/(?:目录|dir)\s*[:：]?\s*(\S+)/i);
-    tools.push({ name: 'list_dir', params: pathMatch ? { path: pathMatch[1] } : {} });
-  }
-
-  // If no tools detected, show a generic call_tool
-  if (tools.length === 0) {
-    tools.push({ name: 'call_tool', params: { prompt: text.slice(0, 40) } });
-  }
-
-  return tools;
-}
-
-// ── Agent tool animation ──────────────────────────────────────
-
-/**
- * Animate agent tool calls to completion with staggered timing.
- * Uses the toolCalls array tracked in the agent handle (no DOM query needed).
- */
-async function animateAgentTools(agentHandle, totalSec) {
-  if (!agentHandle || !agentHandle.id) return;
-
-  const tools = agentHandle.toolCalls || [];
-  if (!tools.length) {
-    endAgent(agentHandle.id, totalSec);
-    return;
-  }
-
-  const perToolDelay = Math.min(150, Math.max(50, (totalSec * 1000) / tools.length / 2));
-
-  for (const tc of tools) {
-    completeToolCall(tc, 'done', '完成', totalSec / tools.length);
-    await new Promise((r) => setTimeout(r, perToolDelay));
-  }
-
-  endAgent(agentHandle.id, totalSec);
-}
 
 export function initComposer() {
   // Keep sessionId in sync with the active session.

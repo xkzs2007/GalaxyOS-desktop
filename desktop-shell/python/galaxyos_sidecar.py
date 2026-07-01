@@ -1378,6 +1378,11 @@ class SidecarHandlers:
         list, and returns them as JSON. The main process's protocol
         handler then streams them to the renderer as a single
         JSON event with an 'events' array.
+
+        v9.4: passes stream_id through so the fragment methods can
+        publish incremental progress events via zmq PUB. The
+        renderer subscribes to these before calling the REP so live
+        think-chain / plan-step updates show in real time.
         """
         import concurrent.futures
         # params may have prompt or user_input as a list (legacy
@@ -1391,16 +1396,17 @@ class SidecarHandlers:
             return ""
         prompt = _first_str(params, "prompt", "user_input")
         sid = str(params.get("session_id", "") or "")
+        stream_id = str(params.get("stream_id", "") or "")
         if kind == "ask":
-            frags = self.stream_ask_frag(prompt, sid)
+            frags = self.stream_ask_frag(prompt, sid, stream_id)
         elif kind == "process":
-            frags = self.stream_process_frag(prompt, sid)
+            frags = self.stream_process_frag(prompt, sid, stream_id)
         elif kind == "memo":
-            frags = self.stream_memo_frag(prompt)
+            frags = self.stream_memo_frag(prompt, stream_id)
         elif kind == "plan":
-            frags = self._do_stream_plan(prompt)
+            frags = self._do_stream_plan(prompt, stream_id)
         elif kind == "agent":
-            frags = self.stream_agent_frag(prompt, sid)
+            frags = self.stream_agent_frag(prompt, sid, stream_id)
         else:
             frags = []
         events = [{"tokui": f} for f in frags]
@@ -1412,12 +1418,12 @@ class SidecarHandlers:
     def stream_process_frag(self, prompt: str, sid: str) -> List[str]:
         return self._do_stream_process(prompt, sid)
 
-    def stream_memo_frag(self, prompt: str = "What is GalaxyOS") -> List[str]:
-        return self._do_stream_memo(prompt)
+    def stream_memo_frag(self, prompt: str = "What is GalaxyOS", stream_id: str = "") -> List[str]:
+        return self._do_stream_memo(prompt, stream_id)
 
-    def stream_agent_frag(self, prompt: str, sid: str) -> List[str]:
+    def stream_agent_frag(self, prompt: str, sid: str, stream_id: str = "") -> List[str]:
         from agent_loop import AgentLoop
-        loop = AgentLoop(question=prompt)
+        loop = AgentLoop(question=prompt, stream_id=stream_id)
         import asyncio
         return asyncio.run(loop.run())
 
@@ -1428,18 +1434,31 @@ class SidecarHandlers:
     def _do_stream_process(self, prompt: str, sid: str) -> List[str]:
         return self._acrouter_route(prompt, sid)
 
-    def _do_stream_memo(self, prompt: str = "What is GalaxyOS") -> List[str]:
-        return self._memo_three_stage(prompt)
+    def _do_stream_memo(self, prompt: str = "What is GalaxyOS", stream_id: str = "") -> List[str]:
+        return self._memo_three_stage(prompt, stream_id)
 
-    def _acrouter_route(self, prompt: str, sid: str) -> List[str]:
+    def _acrouter_route(self, prompt: str, sid: str, stream_id: str = "") -> List[str]:
         """Run the global ACRouter C-A-F loop and build DSL.
 
         T17.4 + T17.5: emits lifecycle hook events as [upd] DSL
         fragments at before_prompt_build, before_agent_reply, and
         agent_end. The renderer can listen for these to show live
         progress (e.g. "thinking..." → "answered").
+
+        v9.4: publishes incremental "think:step" events via zmq PUB
+        when stream_id is provided, so the renderer can show live
+        R-CCAM phase progress in the think-chain widget.
         """
         import concurrent.futures
+        def _pub(phase: str, status: str, detail: str = "", dur_ms: int = 0):
+            if stream_id:
+                _publish_event("think", {
+                    "stream_id": stream_id,
+                    "phase": phase,
+                    "status": status,
+                    "detail": detail,
+                    "dur_ms": dur_ms,
+                })
         def _run():
             loop = asyncio.new_event_loop()
             try:
@@ -1449,23 +1468,30 @@ class SidecarHandlers:
             finally:
                 loop.close()
         out: List[str] = []
+        _pub("routing", "running", "ACRouter C-A-F 路由启动")
         # T17.5: before_prompt_build hook
         self.emit_event({"type": "before_prompt_build",
                          "payload": {"prompt": prompt[:100]}})
         out.append(tokui_dsl.open_bubble_ai(model="GalaxyOS-ACRouter"))
+        _pub("retrieval", "running", "RetrievalHub 7通道检索中…")
         # T17.4: thinking [upd] — renderer can show "thinking..." status
         out.append('[upd id:event_thinking status:running]')
         try:
+            _t_start = time.time()
             with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
                 caf = ex.submit(_run).result(timeout=20)
+            _t_retrieval_ms = int((time.time() - _t_start) * 1000)
+            _pub("retrieval", "done", f"检索完成 ({_t_retrieval_ms}ms)", _t_retrieval_ms)
         except Exception as e:
             log.error("ACRouter route failed: %r", e)
+            _pub("retrieval", "error", str(e)[:100])
             out.append(tokui_dsl.answer_paragraph(f"[ACRouter 错误: {e}]"))
             out.append(tokui_dsl.msg_actions())
             out.append(tokui_dsl.close_bubble())
             return out
         # Mark thinking done
         out.append('[upd id:event_thinking status:done]')
+        _pub("cognition", "done", f"路由决策: {caf.chosen_action} (conf={caf.confidence:.2f})")
         # T17.5: before_agent_reply hook
         self.emit_event({"type": "before_agent_reply",
                          "payload": {"action": caf.chosen_action}})
@@ -1476,19 +1502,35 @@ class SidecarHandlers:
         out.append(self._build_routing_footer(caf.chosen_action, caf.confidence))
         out.append(tokui_dsl.msg_actions())
         out.append(tokui_dsl.close_bubble())
+        _pub("memory", "done", "记忆写入完成")
         # T17.5: agent_end hook
         self.emit_event({"type": "agent_end",
                          "payload": {"action": caf.chosen_action,
                                      "confidence": caf.confidence}})
         return out
 
-    def _memo_three_stage(self, prompt: str = "What is GalaxyOS") -> List[str]:
-        """The 3-stage MeMo protocol trace (no router, direct call)."""
+    def _memo_three_stage(self, prompt: str = "What is GalaxyOS", stream_id: str = "") -> List[str]:
+        """The 3-stage MeMo protocol trace (no router, direct call).
+
+        v9.4: publishes "memo:stage" events via zmq PUB when
+        stream_id is provided for live think-chain updates.
+        """
         from tokui_dsl import (
             open_bubble_ai, open_think_chain, think_step, close_think_chain,
             answer_paragraph, msg_actions, close_bubble,
         )
         import concurrent.futures
+        def _pub(stage: str, status: str, detail: str = "", dur_ms: int = 0):
+            if stream_id:
+                _publish_event("memo", {
+                    "stream_id": stream_id,
+                    "stage": stage,
+                    "status": status,
+                    "detail": detail,
+                    "dur_ms": dur_ms,
+                })
+        _pub("grounding", "running", "Grounding 原子化分解…")
+        t_start = time.time()
         def _run():
             loop = asyncio.new_event_loop()
             try:
@@ -1502,24 +1544,34 @@ class SidecarHandlers:
         out.append(open_think_chain("MeMo 3-stage 协议"))
         n_sub = len(trace.grounding.sub_questions)
         n_ans = len(trace.grounding.answers)
+        dur_grounding = int((time.time() - t_start) * 1000)
+        _pub("grounding", "done", f"{n_sub}子问题→{n_ans}证据", dur_grounding)
         out.append(think_step(
             title="Grounding (Grounding 阶段)",
-            status="done", dur="42ms",
+            status="done", dur=f"{dur_grounding}ms",
             body=f"{n_sub} 个原子子问题 → {n_ans} 个 grounding 证据",
         ))
+        _pub("entity", "running", "实体识别中…")
+        t_entity = time.time()
         chosen = trace.entity.chosen or "无候选"
         cands_short = ", ".join(
             f"{c[0]}({c[1]:.1f})"
             for c in (trace.entity.candidates or [])[:3]
         ) or "无"
+        dur_entity = int((time.time() - t_entity) * 1000)
+        _pub("entity", "done", f"选定 {chosen}", dur_entity)
         out.append(think_step(
-            title="Entity (实体识别)", status="done", dur="18ms",
+            title="Entity (实体识别)", status="done", dur=f"{dur_entity}ms",
             body=f"候选: [{cands_short}] → 选定 **{chosen}**",
         ))
+        _pub("answer", "running", "答案合成中…")
+        t_answer = time.time()
         n_sup = len(trace.answer.supporting_facts)
         ans_len = len(trace.answer.final_answer)
+        dur_answer = int((time.time() - t_answer) * 1000)
+        _pub("answer", "done", f"{n_sup}事实, {ans_len}字符", dur_answer)
         out.append(think_step(
-            title="Answer (答案合成)", status="done", dur="6ms",
+            title="Answer (答案合成)", status="done", dur=f"{dur_answer}ms",
             body=f"{n_sup} 个 supporting fact, 最终答案 {ans_len} 字符",
         ))
         out.append(close_think_chain())
@@ -1528,7 +1580,7 @@ class SidecarHandlers:
         out.append(close_bubble())
         return out
 
-    def _do_stream_plan(self, prompt: str) -> List[str]:
+    def _do_stream_plan(self, prompt: str, stream_id: str = "") -> List[str]:
         """Plan mode — Agent proposes a multi-step plan for user approval.
 
         v9.3: each plan-step gets a stable `id` so the renderer can
@@ -1537,30 +1589,38 @@ class SidecarHandlers:
         both the initial plan-step (status=pending) and a paired
         `[upd]` fragment for each step that is "auto-resolvable" by
         inspection (read/list/grep — the "safe" operations).
+
+        v9.4: publishes "plan:step" events via zmq PUB when
+        stream_id is provided for live plan generation feedback.
         """
         from tokui_dsl import (
             open_bubble_ai, answer_paragraph, msg_actions, close_bubble,
             open_plan, plan_step, close_plan, upd,
         )
+        if stream_id:
+            _publish_event("plan", {
+                "stream_id": stream_id, "step": "generate",
+                "status": "running", "detail": "分析 prompt 生成执行计划…",
+            })
         steps = self._generate_plan(prompt)
         out: List[str] = []
         out.append(open_bubble_ai(model="GalaxyOS-Plan"))
         out.append(open_plan("执行计划"))
         # Tools that we consider "safe to auto-execute" (read-only).
-        # Their plan-steps start in status="pending" but the user can
-        # see immediately that they don't need a confirmation gate.
         safe_tools = {"list_dir", "read_file", "grep"}
         for i, (title, tool, desc) in enumerate(steps, start=1):
             step_id = f"plan_step_{i}"
-            # First fragment: the plan-step container with its id
             out.append(plan_step(
                 title=f"步骤 {i}: {title}",
                 status="pending",
                 body=desc, tool=tool,
             ))
-            # Optional: emit a paired upd that hints at "this one is
-            # safe — auto-confirmed" by status (visual cue, doesn't
-            # actually skip the step). The user can still intervene.
+            if stream_id:
+                _publish_event("plan", {
+                    "stream_id": stream_id, "step": f"step_{i}",
+                    "status": "pending", "detail": f"{title} — {desc}",
+                    "tool": tool, "step_id": step_id,
+                })
             if tool in safe_tools:
                 out.append(upd(step_id, 0, status="success"))
         out.append(close_plan())
@@ -1571,6 +1631,12 @@ class SidecarHandlers:
         ))
         out.append(msg_actions())
         out.append(close_bubble())
+        if stream_id:
+            _publish_event("plan", {
+                "stream_id": stream_id, "step": "done",
+                "status": "done", "detail": f"共 {len(steps)} 步",
+                "total_steps": len(steps),
+            })
         return out
 
     def _generate_plan(self, prompt: str) -> List[tuple]:
