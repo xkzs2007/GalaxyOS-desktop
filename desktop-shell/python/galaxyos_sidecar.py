@@ -1256,6 +1256,214 @@ class SidecarHandlers:
         log.info(f"[event] {event_type}: {list(payload.keys()) if isinstance(payload, dict) else '?'}")
         return {"ok": True, "received": event_type, "ts": int(time.time() * 1000)}
 
+    # ── P0: 记忆管理完整闭环 ──────────────────────────────────────
+    def forget(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """删除指定记忆。"""
+        try:
+            memory_id = str(params.get("memory_id", ""))
+            if not memory_id:
+                return {"error": "missing 'memory_id'"}
+            deleted = self._llm.forget(memory_id)
+            return {"ok": True, "deleted": deleted, "memory_id": memory_id}
+        except Exception as e:
+            return {"error": str(e)}
+
+    def get_entity(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """查询实体信息。"""
+        try:
+            name = str(params.get("entity_name", ""))
+            if not name:
+                return {"error": "missing 'entity_name'"}
+            result = self._llm.get_entity(name)
+            return {"entity": name, "result": result}
+        except Exception as e:
+            return {"error": str(e)}
+
+    def learn_preference(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """学习用户偏好。"""
+        try:
+            key = str(params.get("key", ""))
+            value = params.get("value", "")
+            if not key:
+                return {"error": "missing 'key'"}
+            self._llm.learn_preference(key, value)
+            return {"ok": True, "key": key}
+        except Exception as e:
+            return {"error": str(e)}
+
+    def learn_correction(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """学习纠错。"""
+        try:
+            original = str(params.get("original", ""))
+            corrected = str(params.get("corrected", ""))
+            if not original or not corrected:
+                return {"error": "missing 'original' or 'corrected'"}
+            self._llm.learn_correction(original, corrected)
+            return {"ok": True}
+        except Exception as e:
+            return {"error": str(e)}
+
+    def auto_learn(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """自动学习：从对话中提取知识。"""
+        try:
+            user_input = str(params.get("user_input", ""))
+            assistant_response = str(params.get("assistant_response", ""))
+            feedback = params.get("feedback")
+            if not user_input:
+                return {"error": "missing 'user_input'"}
+            self._llm.auto_learn(user_input, assistant_response, feedback)
+            return {"ok": True}
+        except Exception as e:
+            return {"error": str(e)}
+
+    def analyze_forget(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """分析哪些记忆应该被遗忘。"""
+        try:
+            memories = params.get("memories", [])
+            if not memories:
+                return {"error": "missing 'memories'"}
+            result = self._llm.analyze_forget(memories)
+            return {"analysis": result}
+        except Exception as e:
+            return {"error": str(e)}
+
+    def run_cleanup(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """执行记忆清理。"""
+        try:
+            memories = params.get("memories", [])
+            dry_run = bool(params.get("dry_run", True))
+            result = self._llm.run_cleanup(memories, dry_run=dry_run)
+            return {"cleanup": result}
+        except Exception as e:
+            return {"error": str(e)}
+
+    def link_task_memory(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """关联任务与记忆。"""
+        try:
+            task_id = str(params.get("task_id", ""))
+            memory_id = str(params.get("memory_id", ""))
+            link_type = str(params.get("link_type", "related_to"))
+            if not task_id or not memory_id:
+                return {"error": "missing 'task_id' or 'memory_id'"}
+            self._llm.link_task(task_id, memory_id, link_type)
+            return {"ok": True}
+        except Exception as e:
+            return {"error": str(e)}
+
+    def get_task_memories(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """查询任务关联的记忆。"""
+        try:
+            task_id = str(params.get("task_id", ""))
+            if not task_id:
+                return {"error": "missing 'task_id'"}
+            memories = self._llm.get_task_memories(task_id)
+            return {"task_id": task_id, "memories": memories}
+        except Exception as e:
+            return {"error": str(e)}
+
+    # ── P0: 图像/文档理解 ─────────────────────────────────────────
+    def understand_image(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """图片理解（VLM 三模型通道）。"""
+        try:
+            image_source = params.get("image_source") or params.get("path", "")
+            prompt = str(params.get("prompt", "描述这张图片"))
+            if not image_source:
+                return {"error": "missing 'image_source' or 'path'"}
+            result = self._llm.understand_image(image_source, prompt)
+            return {"result": result}
+        except Exception as e:
+            return {"error": str(e)}
+
+    def ocr_image(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """OCR 文字识别。"""
+        try:
+            image_source = params.get("image_source") or params.get("path", "")
+            if not image_source:
+                return {"error": "missing 'image_source' or 'path'"}
+            result = self._llm.ocr_image(image_source)
+            return {"result": result}
+        except Exception as e:
+            return {"error": str(e)}
+
+    def parse_document(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """文档解析。"""
+        try:
+            image_source = params.get("image_source") or params.get("path", "")
+            if not image_source:
+                return {"error": "missing 'image_source' or 'path'"}
+            result = self._llm.parse_document(image_source)
+            return {"result": result}
+        except Exception as e:
+            return {"error": str(e)}
+
+    def analyze_chart(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """图表分析。"""
+        try:
+            image_source = params.get("image_source") or params.get("path", "")
+            if not image_source:
+                return {"error": "missing 'image_source' or 'path'"}
+            result = self._llm.analyze_chart(image_source)
+            return {"result": result}
+        except Exception as e:
+            return {"error": str(e)}
+
+    def verify_image_claim(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """图片事实核查。"""
+        try:
+            claim = str(params.get("claim", ""))
+            image_source = params.get("image_source") or params.get("path", "")
+            if not claim or not image_source:
+                return {"error": "missing 'claim' or 'image_source'"}
+            result = self._llm.verify_image_claim(claim, image_source)
+            return {"result": result}
+        except Exception as e:
+            return {"error": str(e)}
+
+    # ── P0: 优化与主动任务 ────────────────────────────────────────
+    def optimize_query(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """查询优化。"""
+        try:
+            query = str(params.get("query", ""))
+            context = params.get("context")
+            if not query:
+                return {"error": "missing 'query'"}
+            result = self._llm.optimize_query_processing(query, context)
+            return {"optimization": result}
+        except Exception as e:
+            return {"error": str(e)}
+
+    def get_proactive_task(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """获取下一个主动任务。"""
+        try:
+            task = self._llm.get_next_proactive_task()
+            return {"task": task}
+        except Exception as e:
+            return {"error": str(e)}
+
+    def classify_knowledge(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """知识分类。"""
+        try:
+            content = str(params.get("content", ""))
+            if not content:
+                return {"error": "missing 'content'"}
+            result = self._llm.classify_knowledge(content)
+            return {"classification": result}
+        except Exception as e:
+            return {"error": str(e)}
+
+    def correct_answer(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """纠错：基于用户反馈修正答案。"""
+        try:
+            query = str(params.get("query", ""))
+            wrong_answer = str(params.get("wrong_answer", ""))
+            correction = str(params.get("correction", ""))
+            if not query or not wrong_answer:
+                return {"error": "missing 'query' or 'wrong_answer'"}
+            result = self._llm.correct(query, wrong_answer, correction)
+            return {"corrected": result}
+        except Exception as e:
+            return {"error": str(e)}
+
     # ── T13.1: SkillGraph integration ──────────────────────────────
     def _load_skill_graph(self) -> None:
         """Populate the SkillGraph from the 76 upstream skills."""
@@ -1415,13 +1623,57 @@ class SidecarHandlers:
 
     # ── Health / heartbeat / stats (Stage 14.3) ───────────────────
     def heartbeat(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Lightweight liveness ping — returns the current monotonic ms.
+        """Lightweight liveness ping + background engine triggers.
 
-        Used by the renderer's status footer to show a live connection
-        indicator that updates every 30s. Cheap (no I/O).
+        v9.6: 除了 liveness ping，还触发后台引擎：
+        - 记忆巩固（ConsolidationEngine）
+        - 自进化（SelfEvolutionEngine）
+        - 行为记录（KoRa）
+        - 主动任务检查
         """
         import time as _t
-        return {"ok": True, "ts_ms": int(_t.time() * 1000), "uptime_s": int(_t.time() - START_TIME)}
+        result: Dict[str, Any] = {"ok": True, "ts_ms": int(_t.time() * 1000), "uptime_s": int(_t.time() - START_TIME)}
+
+        # P1: 触发后台引擎（每个都 try/except，失败不影响 liveness）
+        bg_tasks: Dict[str, Any] = {}
+
+        # 记忆巩固
+        try:
+            ce = getattr(self._llm, "_consolidation_engine", None)
+            if ce and hasattr(ce, "_run_consolidation_cycle"):
+                ce._run_consolidation_cycle()
+                bg_tasks["consolidation"] = "ok"
+        except Exception as e:
+            bg_tasks["consolidation"] = f"error: {e}"
+
+        # 自进化
+        try:
+            se = getattr(self._llm, "_self_evolution", None)
+            if se and hasattr(se, "evolve"):
+                se.evolve()
+                bg_tasks["self_evolution"] = "ok"
+        except Exception as e:
+            bg_tasks["self_evolution"] = f"error: {e}"
+
+        # 行为模式记录
+        try:
+            kora = getattr(self._llm, "_kora", None)
+            if kora and hasattr(kora, "record_session"):
+                kora.record_session()
+                bg_tasks["kora"] = "ok"
+        except Exception as e:
+            bg_tasks["kora"] = f"error: {e}"
+
+        # 主动任务
+        try:
+            task = self._llm.get_next_proactive_task()
+            if task:
+                bg_tasks["proactive_task"] = task
+        except Exception:
+            pass
+
+        result["bg_tasks"] = bg_tasks
+        return result
 
     def stats(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Snapshot of sidecar + engine + ACRouter + MCP state.

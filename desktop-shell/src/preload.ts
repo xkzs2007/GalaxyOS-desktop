@@ -66,6 +66,30 @@ export type GalaxyApi = {
   onPlanStep(callback: (event: PlanStepEvent) => void): () => void;
   /** Subscribe to real-time agent tool execution events. */
   onAgentTool(callback: (event: AgentToolEvent) => void): () => void;
+
+  // ── P0: 记忆管理完整闭环 ──
+  forget(memoryId: string): Promise<{ ok: boolean; deleted: number; memory_id: string; error?: string }>;
+  getEntity(entityName: string): Promise<{ entity: string; result: unknown; error?: string }>;
+  learnPreference(key: string, value: unknown): Promise<{ ok: boolean; error?: string }>;
+  learnCorrection(original: string, corrected: string): Promise<{ ok: boolean; error?: string }>;
+  autoLearn(userInput: string, assistantResponse: string, feedback?: string): Promise<{ ok: boolean; error?: string }>;
+  analyzeForget(memories: unknown[]): Promise<{ analysis: unknown; error?: string }>;
+  runCleanup(memories: unknown[], dryRun?: boolean): Promise<{ cleanup: unknown; error?: string }>;
+  linkTaskMemory(taskId: string, memoryId: string, linkType?: string): Promise<{ ok: boolean; error?: string }>;
+  getTaskMemories(taskId: string): Promise<{ task_id: string; memories: unknown[]; error?: string }>;
+
+  // ── P0: 图像/文档理解 ──
+  understandImage(imageSource: string, prompt?: string): Promise<{ result: unknown; error?: string }>;
+  ocrImage(imageSource: string): Promise<{ result: unknown; error?: string }>;
+  parseDocument(imageSource: string): Promise<{ result: unknown; error?: string }>;
+  analyzeChart(imageSource: string): Promise<{ result: unknown; error?: string }>;
+  verifyImageClaim(claim: string, imageSource: string): Promise<{ result: unknown; error?: string }>;
+
+  // ── P0: 优化与主动任务 ──
+  optimizeQuery(query: string, context?: string): Promise<{ optimization: unknown; error?: string }>;
+  getProactiveTask(): Promise<{ task: unknown | null; error?: string }>;
+  classifyKnowledge(content: string): Promise<{ classification: unknown; error?: string }>;
+  correctAnswer(query: string, wrongAnswer: string, correction?: string): Promise<{ corrected: unknown; error?: string }>;
 };
 
 /** API schema (returned by `schema()`). */
@@ -231,6 +255,30 @@ const api: GalaxyApi = {
     ipcRenderer.on('agent:tool', h);
     return () => ipcRenderer.removeListener('agent:tool', h);
   },
+
+  // ── P0: 记忆管理完整闭环 ──
+  forget: (memoryId) => ipcRenderer.invoke('galaxy:forget', memoryId) as any,
+  getEntity: (entityName) => ipcRenderer.invoke('galaxy:getEntity', entityName) as any,
+  learnPreference: (key, value) => ipcRenderer.invoke('galaxy:learnPreference', key, value) as any,
+  learnCorrection: (original, corrected) => ipcRenderer.invoke('galaxy:learnCorrection', original, corrected) as any,
+  autoLearn: (userInput, assistantResponse, feedback) => ipcRenderer.invoke('galaxy:autoLearn', userInput, assistantResponse, feedback) as any,
+  analyzeForget: (memories) => ipcRenderer.invoke('galaxy:analyzeForget', memories) as any,
+  runCleanup: (memories, dryRun) => ipcRenderer.invoke('galaxy:runCleanup', memories, dryRun) as any,
+  linkTaskMemory: (taskId, memoryId, linkType) => ipcRenderer.invoke('galaxy:linkTaskMemory', taskId, memoryId, linkType) as any,
+  getTaskMemories: (taskId) => ipcRenderer.invoke('galaxy:getTaskMemories', taskId) as any,
+
+  // ── P0: 图像/文档理解 ──
+  understandImage: (imageSource, prompt) => ipcRenderer.invoke('galaxy:understandImage', imageSource, prompt) as any,
+  ocrImage: (imageSource) => ipcRenderer.invoke('galaxy:ocrImage', imageSource) as any,
+  parseDocument: (imageSource) => ipcRenderer.invoke('galaxy:parseDocument', imageSource) as any,
+  analyzeChart: (imageSource) => ipcRenderer.invoke('galaxy:analyzeChart', imageSource) as any,
+  verifyImageClaim: (claim, imageSource) => ipcRenderer.invoke('galaxy:verifyImageClaim', claim, imageSource) as any,
+
+  // ── P0: 优化与主动任务 ──
+  optimizeQuery: (query, context) => ipcRenderer.invoke('galaxy:optimizeQuery', query, context) as any,
+  getProactiveTask: () => ipcRenderer.invoke('galaxy:getProactiveTask') as any,
+  classifyKnowledge: (content) => ipcRenderer.invoke('galaxy:classifyKnowledge', content) as any,
+  correctAnswer: (query, wrongAnswer, correction) => ipcRenderer.invoke('galaxy:correctAnswer', query, wrongAnswer, correction) as any,
 };
 
 contextBridge.exposeInMainWorld('galaxy', api);

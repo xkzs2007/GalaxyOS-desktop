@@ -959,6 +959,66 @@ function registerIpc() {
     },
   };
   ipcMain.handle('galaxy:schema', async () => API_SCHEMA);
+
+  // ── P0: 记忆管理完整闭环 ──
+  ipcMain.handle('galaxy:forget', async (_e, memoryId: string) => {
+    return await zmqCall('forget', { memory_id: memoryId });
+  });
+  ipcMain.handle('galaxy:getEntity', async (_e, entityName: string) => {
+    return await zmqCall('get_entity', { entity_name: entityName });
+  });
+  ipcMain.handle('galaxy:learnPreference', async (_e, key: string, value: any) => {
+    return await zmqCall('learn_preference', { key, value });
+  });
+  ipcMain.handle('galaxy:learnCorrection', async (_e, original: string, corrected: string) => {
+    return await zmqCall('learn_correction', { original, corrected });
+  });
+  ipcMain.handle('galaxy:autoLearn', async (_e, userInput: string, assistantResponse: string, feedback?: string) => {
+    return await zmqCall('auto_learn', { user_input: userInput, assistant_response: assistantResponse, feedback });
+  });
+  ipcMain.handle('galaxy:analyzeForget', async (_e, memories: any[]) => {
+    return await zmqCall('analyze_forget', { memories });
+  });
+  ipcMain.handle('galaxy:runCleanup', async (_e, memories: any[], dryRun?: boolean) => {
+    return await zmqCall('run_cleanup', { memories, dry_run: dryRun ?? true });
+  });
+  ipcMain.handle('galaxy:linkTaskMemory', async (_e, taskId: string, memoryId: string, linkType?: string) => {
+    return await zmqCall('link_task_memory', { task_id: taskId, memory_id: memoryId, link_type: linkType ?? 'related_to' });
+  });
+  ipcMain.handle('galaxy:getTaskMemories', async (_e, taskId: string) => {
+    return await zmqCall('get_task_memories', { task_id: taskId });
+  });
+
+  // ── P0: 图像/文档理解 ──
+  ipcMain.handle('galaxy:understandImage', async (_e, imageSource: string, prompt?: string) => {
+    return await zmqCall('understand_image', { image_source: imageSource, prompt: prompt ?? '描述这张图片' });
+  });
+  ipcMain.handle('galaxy:ocrImage', async (_e, imageSource: string) => {
+    return await zmqCall('ocr_image', { image_source: imageSource });
+  });
+  ipcMain.handle('galaxy:parseDocument', async (_e, imageSource: string) => {
+    return await zmqCall('parse_document', { image_source: imageSource });
+  });
+  ipcMain.handle('galaxy:analyzeChart', async (_e, imageSource: string) => {
+    return await zmqCall('analyze_chart', { image_source: imageSource });
+  });
+  ipcMain.handle('galaxy:verifyImageClaim', async (_e, claim: string, imageSource: string) => {
+    return await zmqCall('verify_image_claim', { claim, image_source: imageSource });
+  });
+
+  // ── P0: 优化与主动任务 ──
+  ipcMain.handle('galaxy:optimizeQuery', async (_e, query: string, context?: string) => {
+    return await zmqCall('optimize_query', { query, context });
+  });
+  ipcMain.handle('galaxy:getProactiveTask', async () => {
+    return await zmqCall('get_proactive_task', {});
+  });
+  ipcMain.handle('galaxy:classifyKnowledge', async (_e, content: string) => {
+    return await zmqCall('classify_knowledge', { content });
+  });
+  ipcMain.handle('galaxy:correctAnswer', async (_e, query: string, wrongAnswer: string, correction?: string) => {
+    return await zmqCall('correct_answer', { query, wrong_answer: wrongAnswer, correction: correction ?? '' });
+  });
 }
 
 // Disable GPU hardware acceleration so PrintWindow / BitBlt can
