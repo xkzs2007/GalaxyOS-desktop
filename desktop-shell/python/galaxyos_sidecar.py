@@ -558,7 +558,44 @@ class SidecarHandlers:
                 "cost": 0.010,
             }
         else:
-            # fast_path / liquid_only: single ask()
+            # fast_path / liquid_only: recall + LLM synthesis
+            # v9.5: previously returned raw recall snippet (zero-LLM).
+            # Now calls llm_flash to synthesize answer from memories.
+            memories = self._llm.recall(query, top_k=5)
+            if memories and self._llm.llm_flash:
+                # Build context from top memories
+                ctx = "\n---\n".join(
+                    m.get("content", "")[:300] for m in memories[:5]
+                )
+                system = (
+                    "你是一个知识丰富的 AI 助手。请基于以下记忆信息回答用户问题。"
+                    "如果记忆信息不足，请基于你的知识补充。用自然的中文回答，不要编造。"
+                )
+                try:
+                    rsp = self._llm.llm_flash.chat.completions.create(
+                        model=getattr(self._llm, '_llm_flash_model', 'deepseek-v4-flash'),
+                        messages=[
+                            {"role": "system", "content": system},
+                            {"role": "user",
+                             "content": f"记忆信息:\n{ctx[:3000]}\n\n用户问题: {query}"},
+                        ],
+                        max_tokens=800,
+                        temperature=0.5,
+                    )
+                    answer = rsp.choices[0].message.content.strip()
+                    return {
+                        "answer": answer,
+                        "signals": self._ac_router_module.VerifierSignals(
+                            s_structural=0.85,
+                            s_sandbox=0.0,
+                            s_consistency=0.75,
+                            s_judge=0.8,
+                        ),
+                        "cost": 0.002,
+                    }
+                except Exception as e:
+                    log.warning("fast_path LLM synthesis failed: %s; fallback to recall", e)
+            # Fallback: return top memory content
             r = self.ask({"question": query, "session_id": ""})
             return {
                 "answer": r.get("answer", ""),
