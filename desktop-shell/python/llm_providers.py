@@ -504,6 +504,98 @@ class MultiSlotRouter:
 # ── Helpers ────────────────────────────────────────────────────────────
 
 
+async def fetch_provider_models(provider_id: str, api_key: str = "",
+                                 base_url: str = "", timeout: float = 8.0) -> Dict[str, Any]:
+    """Fetch the live model list from a provider's API.
+
+    Returns ``{"ok": True, "models": [{"id": "...", "owned_by": "...", "label": "...", "curated": bool}], "provider": ..., "source": "api"}``.
+    On failure returns ``{"ok": False, "error": "...", "source": "curated"}``.
+
+    Supports OpenAI-compatible (DeepSeek/OpenAI/Qwen/etc.) and Ollama.
+    Anthropic/Google have no public models endpoint — falls back to curated.
+    """
+    result: Dict[str, Any] = {"ok": False, "provider": provider_id}
+    provider_lower = provider_id.lower()
+
+    if provider_lower in ("anthropic", "google"):
+        result["error"] = f"{provider_id} 无公开 models API，使用内置列表"
+        result["source"] = "curated"
+        return result
+
+    if not base_url:
+        defaults = get_provider_defaults(provider_lower)
+        base_url = defaults.get("base_url", "")
+    if not base_url:
+        result["error"] = "未配置 base_url"
+        result["source"] = "curated"
+        return result
+
+    if provider_lower == "ollama":
+        models_url = base_url.rstrip("/").replace("/v1", "") + "/api/tags"
+    else:
+        models_url = base_url.rstrip("/") + "/models"
+
+    import httpx
+    headers: Dict[str, str] = {"Accept": "application/json"}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+
+    try:
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            resp = await client.get(models_url, headers=headers)
+        if resp.status_code in (401, 403):
+            result["error"] = f"API Key 无效 ({resp.status_code})"
+            result["source"] = "curated"
+            return result
+        if resp.status_code == 404:
+            result["error"] = f"端点不存在 (404): {models_url}"
+            result["source"] = "curated"
+            return result
+        resp.raise_for_status()
+        data = resp.json()
+    except httpx.TimeoutException:
+        result["error"] = f"请求超时 ({timeout}s)"
+        result["source"] = "curated"
+        return result
+    except Exception as e:
+        result["error"] = str(e)[:200]
+        result["source"] = "curated"
+        return result
+
+    models_raw: List[Dict[str, Any]] = []
+    if provider_lower == "ollama":
+        for m in data.get("models", []):
+            models_raw.append({"id": m.get("name", ""), "owned_by": "ollama"})
+    else:
+        for m in data.get("data", []):
+            models_raw.append({
+                "id": m.get("id", ""),
+                "owned_by": m.get("owned_by", ""),
+            })
+
+    if not models_raw:
+        result["error"] = "API 返回空模型列表"
+        result["source"] = "curated"
+        return result
+
+    curated = get_provider_defaults(provider_lower).get("models", {})
+    enriched = []
+    for m in models_raw:
+        mid = m["id"]
+        enriched.append({
+            "id": mid,
+            "owned_by": m.get("owned_by", ""),
+            "label": curated.get(mid, ""),
+            "curated": mid in curated,
+        })
+    enriched.sort(key=lambda m: (not m["curated"], m["id"]))
+
+    result["ok"] = True
+    result["models"] = enriched
+    result["source"] = "api"
+    return result
+
+
 async def _async_sleep_ms(ms: int) -> None:
     import asyncio
     await asyncio.sleep(ms / 1000.0)
@@ -547,5 +639,6 @@ __all__ = [
     "MAINSTREAM_PROVIDERS",
     "build_llm_backend",
     "get_provider_defaults",
+    "fetch_provider_models",
     "_PROVIDER_DEFAULTS",
 ]

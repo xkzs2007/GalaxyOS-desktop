@@ -676,6 +676,30 @@ class SidecarHandlers:
             result["router"] = self._router.info()
         return result
 
+    def fetch_models(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """v9.4: fetch the live model list from a provider's API.
+
+        Calls ``GET /v1/models`` (OpenAI-compat) or ``/api/tags`` (Ollama)
+        and returns the real model IDs. Falls back to curated list on error.
+
+        Params: provider (str), api_key (str, optional), base_url (str, optional)
+        """
+        provider_id = str(params.get("provider", ""))
+        api_key = str(params.get("api_key", self._live_config.get("api_key", "")))
+        base_url = str(params.get("base_url", ""))
+        if not provider_id:
+            return {"ok": False, "error": "missing 'provider' param"}
+
+        import asyncio as _aio
+        from llm_providers import fetch_provider_models
+
+        try:
+            result = _aio.run(fetch_provider_models(
+                provider_id, api_key=api_key, base_url=base_url, timeout=8.0))
+            return result
+        except Exception as e:
+            return {"ok": False, "error": str(e)[:200], "source": "curated"}
+
     def install_wizard(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Run install_wizard.py as a subprocess and return the final result.
 

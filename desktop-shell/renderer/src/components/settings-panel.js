@@ -32,6 +32,8 @@ const SLOTS = [
 // Cached provider list (loaded once when settings opens)
 let _providers = [];
 let _routerInfo = null;
+// Fetched live models per slot (keyed by slot key like "llm")
+let _fetchedModels = {};
 
 async function loadProviders() {
   if (_providers.length > 0) return;
@@ -135,6 +137,8 @@ function buildSlotsTab() {
     dsl += `    [/row]\n`;
     dsl += `    [input id:settings-slot-${slot.key}-url n:${slot.key}__base_url ph:"(默认)" l:"Base URL" value:"${escapeAttr(baseUrl)}" v:muted]\n`;
     dsl += `    [input id:settings-slot-${slot.key}-apikey n:${slot.key}__api_key ph:"(继承通用 API Key)" l:"API Key" value:"${escapeAttr(apiKey)}" type:password v:muted]\n`;
+    dsl += `    [btn id:settings-slot-${slot.key}-fetch tx:"🔄 获取模型列表" clk:onSettingsFetchModels data-slot:${slot.key} sm v:muted]\n`;
+    dsl += `    [div id:settings-slot-${slot.key}-fetch-status v:muted]\n`;
     dsl += `    [div v:${enabled ? 'success' : 'muted'} tt:"${enabled ? '✅ 已启用' : '⏸ 已禁用'}"]\n`;
     dsl += `      [p]状态: ${enabled ? '🟢 已启用' : '⚫ 已禁用（使用本地回退）'}[/p]\n`;
     dsl += `    [/div]\n`;
@@ -159,9 +163,19 @@ function getProviderModels(providerId) {
  * Includes a "custom" option at the end.
  */
 function buildModelPickerOptions(slotKey, modelsObj, currentModel, providerId) {
-  const entries = Object.entries(modelsObj);
+  // Merge curated + live-fetched models
+  const liveModels = _fetchedModels[slotKey] || [];
+  const merged = { ...modelsObj };
+
+  // Add live models that aren't in the curated list
+  for (const m of liveModels) {
+    if (!(m.id in merged)) {
+      merged[m.id] = m.label || m.id;
+    }
+  }
+
+  const entries = Object.entries(merged);
   if (entries.length === 0) {
-    // No curated list — just show current value as the only option
     if (currentModel) {
       return `[picker-option value:"${escapeAttr(currentModel)}" selected]${escapeLabel(currentModel)} (当前)[/picker-option]`;
     }
@@ -172,10 +186,11 @@ function buildModelPickerOptions(slotKey, modelsObj, currentModel, providerId) {
   let opts = '';
   for (const [modelId, label] of entries) {
     const sel = modelId === currentModel ? 'selected' : '';
-    opts += `[picker-option value:"${escapeAttr(modelId)}" ${sel}]${escapeLabel(label)} (${modelId})[/picker-option]\n          `;
+    const isLive = liveModels.some(m => m.id === modelId);
+    const tag = isLive && !(modelId in modelsObj) ? ' (🆕 实时)' : '';
+    opts += `[picker-option value:"${escapeAttr(modelId)}" ${sel}]${escapeLabel(String(label))}${tag} (${modelId})[/picker-option]\n          `;
   }
-  // If current model isn't in the curated list, add it
-  if (currentModel && !(currentModel in modelsObj)) {
+  if (currentModel && !(currentModel in merged)) {
     opts += `[picker-option value:"${escapeAttr(currentModel)}" selected]${escapeLabel(currentModel)} (当前)[/picker-option]\n          `;
   }
   return opts;
@@ -272,6 +287,52 @@ registerHandler('onSettingsSlotChange', (data) => {
   // When provider picker changes, update the default model hint
   // We re-render to show the new default model in the placeholder
   if (_drawerRendered) openSettings();
+});
+
+registerHandler('onSettingsFetchModels', async (data) => {
+  const slotKey = typeof data === 'string' ? data : data?.['data-slot'] || data?.slotKey || '';
+  if (!slotKey) return;
+
+  const sk = slotKey;
+  const host = $('settings-drawer-host');
+
+  // Read current provider + api_key from the form
+  const provider = host?.querySelector(`#settings-slot-${sk}-provider [data-selected]`)
+    ?.getAttribute('data-value')
+    || host?.querySelector(`#settings-slot-${sk}-provider`)?.value
+    || 'mock';
+
+  const slotApiKey = host?.querySelector(`#settings-slot-${sk}-apikey`)?.value
+    || settingsStore.get()?.apiKey || '';
+  const slotBaseUrl = host?.querySelector(`#settings-slot-${sk}-url`)?.value || '';
+
+  // Show loading state
+  const statusEl = host?.querySelector(`#settings-slot-${sk}-fetch-status`);
+  if (statusEl) statusEl.innerHTML = '<p>⏳ 正在获取模型列表...</p>';
+
+  try {
+    const res = await galaxy.fetchModels?.({
+      provider,
+      api_key: slotApiKey,
+      base_url: slotBaseUrl,
+    });
+
+    if (!res?.ok) {
+      if (statusEl) statusEl.innerHTML = `<p v:warn>⚠️ ${res?.error || '获取失败'}，使用内置列表</p>`;
+      return;
+    }
+
+    const count = res.models?.length || 0;
+    if (statusEl) statusEl.innerHTML = `<p v:success>✅ 获取到 ${count} 个模型 (${res.source})</p>`;
+
+    // Store fetched models for the picker
+    _fetchedModels[sk] = res.models || [];
+
+    // Re-render to show the live model list
+    if (_drawerRendered) openSettings();
+  } catch (e) {
+    if (statusEl) statusEl.innerHTML = `<p v:danger>❌ ${e?.message || '请求失败'}</p>`;
+  }
 });
 
 registerHandler('onSettingsSave', async (data, evt, _formEl) => {

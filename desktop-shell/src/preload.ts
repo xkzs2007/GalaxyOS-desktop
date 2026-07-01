@@ -20,6 +20,8 @@ export type GalaxyApi = {
   skill(id: string): Promise<{ id: string; name: string; description: string; body: string }>;
   updateSettings(settings: Record<string, string>): Promise<{ ok: boolean; updated: string[] }>;
   listProviders(): Promise<{ providers: ProviderInfo[]; router?: Record<string, unknown> }>;
+  /** Fetch live model list from a provider's API. */
+  fetchModels(params: { provider: string; api_key?: string; base_url?: string }): Promise<FetchModelsResult>;
   heartbeat(): Promise<{ ok: boolean; ts_ms: number; uptime_s: number }>;
   stats(): Promise<Record<string, unknown>>;
   verify(claim: string): Promise<{ claim: string; confidence: number; verdict: string; evidence_count: number; top_evidence: string[] }>;
@@ -138,6 +140,16 @@ export interface ProviderInfo {
   name: string;
   default_model: string;
   hint: string;
+  models?: Record<string, string>;  // model_id → display name
+}
+
+/** Result of fetchModels() — live model list from provider API. */
+export interface FetchModelsResult {
+  ok: boolean;
+  provider: string;
+  models?: Array<{ id: string; owned_by: string; label: string; curated: boolean }>;
+  source: 'api' | 'curated';
+  error?: string;
 }
 
 const api: GalaxyApi = {
@@ -154,6 +166,7 @@ const api: GalaxyApi = {
   skill: (id) => ipcRenderer.invoke('galaxy:skill', id) as any,
   updateSettings: (s) => ipcRenderer.invoke('galaxy:updateSettings', s) as any,
   listProviders: () => ipcRenderer.invoke('galaxy:listProviders') as any,
+  fetchModels: (params) => ipcRenderer.invoke('galaxy:fetchModels', params) as any,
   heartbeat: () => ipcRenderer.invoke('galaxy:heartbeat') as any,
   stats: () => ipcRenderer.invoke('galaxy:stats') as any,
   verify: (claim) => ipcRenderer.invoke('galaxy:verify', claim) as any,
