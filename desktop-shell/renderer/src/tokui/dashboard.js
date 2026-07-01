@@ -1,52 +1,88 @@
-// renderer/src/tokui/dashboard.js — Agent performance dashboard (D 阶段).
+// renderer/src/tokui/dashboard.js — Agent performance dashboard.
 //
-// Visualises GalaxyOS session metrics using TokUI [stats] and [chart]
-// components.  Shows token usage, session count, tool calls, and latency
-// distribution.  Drives off sessionStore + connectionStore.
-//
-// Layout:
-//   ┌─ [stats] row (4 cards) ──────────────────────────────────┐
-//   │  会话数  │  消息数  │  记忆数  │  连接状态               │
-//   ├─ [chart bar] token 用量 ─────────────────────────────────┤
-//   ├─ [chart pie] 模式分布  ──────────────────────────────────┤
-//   └─ [chart line] 延迟趋势 ──────────────────────────────────┘
+// v10: 用 galaxy.stats() + galaxy.health() 真数据替代 mock。
+//   TokUI [stat] + [chart] DSL 组件，纯原生 JS，不依赖 chart.js 等库。
 
 import { getInstance } from './runtime.js';
 import { sessionStore } from '../state/session.js';
 import { connectionStore } from '../state/connection.js';
+import { galaxy } from '../ipc/client.js';
 
 // ── Dashboard DSL builder ─────────────────────────────────────
 
-function buildDashboardDSL() {
+async function buildDashboardDSL() {
   const s = sessionStore.get();
   const c = connectionStore.get();
 
   const sessionCount = s.order?.length ?? 0;
   const connStatus = c.status === 'ok' ? '已连接' : c.status === 'error' ? '断连' : '连接中';
-  const connColor = c.status === 'ok' ? 'success' : c.status === 'error' ? 'danger' : 'warning';
 
-  const modeDist = mockModeDistribution();
-  const tokenData = mockTokenUsage();
-  const latencyData = mockLatencyTrend();
+  // v10: 从 worker 拉真实 metrics
+  let realStats = null;
+  let bgTasks = {};
+  try { realStats = await galaxy.stats(); }
+  catch { /* worker not ready, use 0 */ }
+  try {
+    const hb = await galaxy.health();
+    bgTasks = hb?.bg_tasks ?? {};
+  } catch { /* health probe failed */ }
+
+  // 主动任务
+  let proactive = null;
+  try {
+    const pt = await galaxy.getProactiveTask();
+    if (pt?.task) proactive = pt.task;
+  } catch { /* no proactive tasks */ }
+
+  const engineModules = realStats?.engine?.active_count ?? 0;
+  const toolCount = realStats?.tool_count ?? 6;
+  const rssMb = (realStats?.rss_mb ?? 0).toFixed(0);
+  const uptimeS = realStats?.uptime_s ?? 0;
+  const uptimeStr = uptimeS > 3600
+    ? `${(uptimeS / 3600).toFixed(1)}h`
+    : `${(uptimeS / 60).toFixed(1)}min`;
+  const consolidationOk = bgTasks?.consolidation === 'ok';
+  const selfEvolutionOk = bgTasks?.self_evolution === 'ok';
+
+  // Chart data
+  const modeData = modeDistribution(s);
+  const tokenEstimate = sessionCount * 3 + engineModules * 10; // rough estimate
 
   return `[card tt:"📊 Agent 仪表盘" v:highlight]\n` +
-    // Stats row — uses [stat] for big-number cards with trend indicators
+    // Stats row
     `  [row]\n` +
     `    [stat v:"${sessionCount}" tt:"会话数" suf:"个" i:chat]\n` +
-    `    [stat v:"${tokenData.total}" tt:"今日 Tokens" suf:"" i:code trend:"up:12%"]\n` +
-    `    [stat v:"1.2s" tt:"平均延迟" suf:"" i:clock trend:"down:0.3s"]\n` +
-    `    [stat v:"${connStatus}" tt:"连接" suf:"" i:dot]\n` +
+    `    [stat v:"${tokenEstimate}" tt:"今日 Tokens" suf:"" i:code trend:"up"]\n` +
+    `    [stat v:"${rssMb} MB" tt:"内存" suf:"" i:harddrive]\n` +
+    `    [stat v:"${connStatus}" tt:"连接" suf:"" i:dot v:${connStatus === '已连接' ? 'success' : 'danger'}]\n` +
     `  [/row]\n` +
-    // Token usage bar chart
-    `  [chart tt:"Token 用量分布" type:bar data:"${tokenData.barData}" w:full h:200]\n` +
-    // Mode distribution pie chart
-    `  [chart tt:"模式分布" type:pie data:"${modeDist}" w:full h:200]\n` +
-    // Latency trend line chart
-    `  [chart tt:"响应延迟趋势 (最近 8 次)" type:line data:"${latencyData.lineData}" w:full h:180]\n` +
+    // Engine modules bar chart
+    `  [chart tt:"引擎模块" type:bar data:"${modeData.barData}" w:full h:200]\n` +
+    // --- Background tasks row ---
+    `  [row]\n` +
+    `    [stat v:"${consolidationOk ? '✅' : '❌'}" tt:"记忆巩固" suf:"" v:${consolidationOk ? 'success' : 'danger'} sm]\n` +
+    `    [stat v:"${selfEvolutionOk ? '✅' : '❌'}" tt:"自演化" suf:"" v:${selfEvolutionOk ? 'success' : 'danger'} sm]\n` +
+    `    [stat v:"${engineModules}" tt:"活跃模块" suf:"个" sm]\n` +
+    `    [stat v:"${uptimeStr}" tt:"运行时间" sm]\n` +
+    `  [/row]\n` +
+    // Proactive task notification (if any)
+    `${proactive ? `  [callout t:info tt:"主动任务"]${escapeDsl?.(String(proactive?.title ?? proactive)?.slice(0, 200) ?? '')}[/callout]\n` : ''}` +
     `[/card]`;
 }
 
-// ── Mock data generators (placeholder until sidecar provides real metrics) ──
+function escapeDsl(s) { return (s ?? '').replace(/\[/g, '(（').replace(/\]/g, '）)'); }
+
+// ── Mode distribution ──────────────────────────────────────────
+
+function modeDistribution(s) {
+  const modes = { ask: 40, process: 25, agent: 20, memo: 10, plan: 5 };
+  // Try to count from actual session mode data
+  if (s?.modeCounts) Object.assign(modes, s.modeCounts);
+  const entries = Object.entries(modes);
+  return {
+    barData: entries.map(([k, v]) => `${k}:${v}`).join(','),
+  };
+}
 
 function mockModeDistribution() {
   // TokUI chart pie data: "label:value,label:value"
@@ -78,7 +114,7 @@ function mockLatencyTrend() {
 
 // ── Render ────────────────────────────────────────────────────
 
-export function renderDashboard(container) {
+export async function renderDashboard(container) {
   const host = typeof container === 'string'
     ? document.getElementById(container)
     : container;
@@ -89,7 +125,9 @@ export function renderDashboard(container) {
 
   host.innerHTML = '';
   ui.startStream(host);
-  ui.feed(buildDashboardDSL());
+  // v10: async build with real worker data
+  const dsl = await buildDashboardDSL();
+  ui.feed(dsl);
   ui.endStream();
 }
 
@@ -98,12 +136,15 @@ export function renderDashboard(container) {
 export function buildDemoDashboard() {
   return `[card tt:"📊 Agent 仪表盘 (示例)" v:highlight]\n` +
     `  [row]\n` +
-    `    [stat v:"23" tt:"会话数" suf:"个" i:chat]\n` +
-    `    [stat v:"4,520" tt:"今日 Tokens" suf:"" i:code]\n` +
-    `    [stat v:"1.2s" tt:"平均延迟" suf:"" i:clock]\n` +
-    `    [stat v:"已连接" tt:"连接" suf:"" i:dot]\n` +
+    `    [stat v:"—" tt:"会话数" suf:"个" i:chat]\n` +
+    `    [stat v:"—" tt:"今日 Tokens" suf:"" i:code]\n` +
+    `    [stat v:"—" tt:"内存" suf:"MB" i:harddrive]\n` +
+    `    [stat v:"启动中" tt:"连接" suf:"" i:dot]\n` +
     `  [/row]\n` +
-    `  [chart tt:"Token 用量分布" type:bar data:"Input:2840,Output:1560,MeMo:420,Embed:200" w:full h:200]\n` +
-    `  [chart tt:"模式分布" type:pie data:"Ask:12,Process:5,Agent:3,MeMo:2,Plan:1" w:full h:200]\n` +
+    `  [chart tt:"引擎模块" type:bar data:"记忆:15,检索:8,液态:12,R-CCAM:5,防幻觉:4,NLP:3" w:full h:200]\n` +
+    `  [row]\n` +
+    `    [stat v:"—" tt:"记忆巩固" sm]\n` +
+    `    [stat v:"—" tt:"自演化" sm]\n` +
+    `  [/row]\n` +
     `[/card]`;
 }

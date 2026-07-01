@@ -91,7 +91,7 @@ async function handleCommand(cmdId) {
     }
     case 'cmd-dashboard': {
       const { renderDashboard } = await import('./tokui/dashboard.js');
-      renderDashboard('details-host');
+      await renderDashboard('details-host');
       const panel = document.getElementById('details-panel');
       if (panel) panel.classList.remove('hidden');
       break;

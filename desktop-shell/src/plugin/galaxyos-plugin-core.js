@@ -26,8 +26,8 @@ const _cjsRequire = _createRequire(import.meta.url);
 
 const TAG = "[galaxyos]";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const WORKER_SCRIPT = path.join(__dirname, "scripts", "claw_worker.py");
-const PIL_WORKER_SCRIPT = path.join(__dirname, "scripts", "pil_worker.py");
+const WORKER_SCRIPT = path.join(__dirname, "..", "..", "..", "..", "extensions", "galaxyos", "scripts", "claw_worker.py");
+const PIL_WORKER_SCRIPT = path.join(__dirname, "..", "..", "..", "..", "extensions", "galaxyos", "scripts", "pil_worker.py");
 
 // ════════════════════════════════════════════════════════════════
 // OpenClaw 用户配置目录解析（dev / prod / container 三模式）
