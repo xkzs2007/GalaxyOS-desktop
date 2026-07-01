@@ -7,6 +7,8 @@
   "type": "module",
   "scripts": {
     "dev": "node scripts/dev.mjs",
+    "typecheck": "tsc --noEmit",
+    "dev:once": "node scripts/dev-once.mjs",
     "build:main": "node esbuild.config.mjs",
     "build:renderer": "echo '[renderer] no separate build step — index.html loads JS directly. See renderer/index.html.'",
     "build:python": "bash scripts/build-python.sh",

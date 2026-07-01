@@ -222,7 +222,7 @@ async function zmqCall(method: string, params: Record<string, unknown> = {}): Pr
   if (!zmqReq) throw new Error('sidecar zmq not ready');
   // Serialize via a lock chain
   const release = zmqLock;
-  let unlock: () => void = () => {};
+  let unlock: (value?: unknown) => void = () => {};
   zmqLock = new Promise((r) => { unlock = r; });
   await release;
   try {
@@ -542,6 +542,12 @@ function createWindow(): BrowserWindow {
   win.webContents.once('did-finish-load', () => {
     log('did-finish-load; injecting TokUI UMD');
     injectTokUI(win);
+
+    // Dev mode: auto-open DevTools for renderer debugging
+    if (process.env.GALAXYOS_DEV === '1' || process.env.GALAXYOS_DEV_HTTP === '1') {
+      win.webContents.openDevTools({ mode: 'detach' });
+      log('DevTools opened (GALAXYOS_DEV=1)');
+    }
   });
 
   win.on('closed', () => stopSidecar());
@@ -550,6 +556,12 @@ function createWindow(): BrowserWindow {
   if (!process.env.GALAXYOS_SHOW_MENU) {
     win.setMenuBarVisibility(false);
   }
+
+  // Start the zmq PUB/SUB subscriber so streaming progress events
+  // (think-chain, install_wizard, etc.) flow into the renderer.
+  startPubSubscriber(win);
+
+  return win;
 }
 
 /**
@@ -615,12 +627,6 @@ async function injectTokUI(win: BrowserWindow): Promise<void> {
   } else {
     log(`TokUI UMD not found at ${TOKUI_DIST_JS}; renderer will use stub`);
   }
-
-  // Start the zmq PUB/SUB subscriber so streaming progress events
-  // (install_wizard download progress, etc.) flow into the renderer.
-  startPubSubscriber(win);
-
-  return win;
 }
 
 // ── IPC handlers (renderer → main → sidecar via zmq) ──────────────

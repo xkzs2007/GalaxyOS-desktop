@@ -1,15 +1,21 @@
 #!/usr/bin/env node
-// scripts/dev.mjs — one-shot dev launcher.
+// scripts/dev.mjs — dev launcher with type-check + watch + auto-reload.
 //
-// 1. Ensures the Python venv exists (or creates one).
-// 2. Installs requirements-core.txt into the venv.
-// 3. Builds main + preload via esbuild.
-// 4. Launches Electron with the built dist/main.cjs.
+// 1. Runs tsc --noEmit (type checking only, fast).
+// 2. Ensures Python venv + deps.
+// 3. Builds main + preload via esbuild (watch mode).
+// 4. Launches Electron with DevTools auto-open.
+// 5. On file change (src/*.ts): rebuild → app.relaunch() → auto-restart.
+//
+// Renderer files (HTML/JS) are loaded directly from disk — no build step.
+// Ctrl+R in the Electron window reloads them.
 
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { watch } from 'node:fs/promises';
+import { context } from 'esbuild';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const APP_ROOT = resolve(__dirname, '..');
@@ -20,14 +26,37 @@ const VENV_PY = process.platform === 'win32'
   ? resolve(VENV, 'Scripts', 'python.exe')
   : resolve(VENV, 'bin', 'python');
 
-function log(msg) { console.log(`[dev] ${msg}`); }
+const DEV_PORT = process.env.GALAXYOS_DEV_PORT || '5758';
+
+function log(msg) { console.log(`\x1b[36m[dev]\x1b[0m ${msg}`); }
+function warn(msg) { console.log(`\x1b[33m[dev]\x1b[0m ${msg}`); }
+
+// ── Type check ─────────────────────────────────────────────────
+
+function typecheck() {
+  log('Type checking (tsc --noEmit)...');
+  const r = spawnSync(resolve(APP_ROOT, 'node_modules', '.bin', 'tsc'), ['--noEmit'], {
+    cwd: APP_ROOT,
+    stdio: 'pipe',
+    encoding: 'utf-8',
+  });
+  if (r.status !== 0) {
+    warn('⚠️  Type errors found (build continues anyway):');
+    // Print first 20 lines of errors
+    const lines = (r.stdout + r.stderr).split('\n').filter(Boolean);
+    for (const line of lines.slice(0, 20)) console.log(`  ${line}`);
+    if (lines.length > 20) console.log(`  ... and ${lines.length - 20} more`);
+  } else {
+    log('✅  Type check passed');
+  }
+  return r.status;  // 0 = clean, non-zero = errors
+}
+
+// ── Python venv ────────────────────────────────────────────────
 
 function ensureVenv() {
   if (existsSync(VENV_PY)) return;
   log(`Creating venv at ${VENV}...`);
-  // Try several python names so this works on Windows (where
-  // `python` is the MS Store stub and the user-installed one is
-  // usually `py -3` or `python3`).
   const candidates = process.platform === 'win32'
     ? ['py', 'python', 'python3', 'python3.12', 'python3.11']
     : ['python3.12', 'python3.11', 'python3', 'python'];
@@ -37,70 +66,153 @@ function ensureVenv() {
     if (r.status === 0) return;
     lastErr = r.error || new Error(`exit ${r.status}`);
   }
-  throw new Error(`venv creation failed with all candidates: ${lastErr}`);
+  throw new Error(`venv creation failed: ${lastErr}`);
 }
 
 function installDeps() {
-  log('Installing requirements-core.txt...');
+  log('Installing deps...');
   let r = spawnSync(VENV_PY, ['-m', 'pip', 'install', '-q', '-r',
     resolve(REPO_ROOT, 'requirements-core.txt')], { stdio: 'inherit' });
   if (r.status !== 0) throw new Error('pip install requirements-core failed');
-  log('Installing pyzmq into venv...');
   r = spawnSync(VENV_PY, ['-m', 'pip', 'install', '-q', 'pyzmq'], { stdio: 'inherit' });
-  // CRITICAL: pyzmq is required for the Electron main process to
-  // talk to the Python sidecar. A previous version of this script
-  // didn't check r.status, so a failed install was silently
-  // swallowed and the user got a confusing "sidecar zmq did not
-  // respond" error 30s later in the packaged app.
-  if (r.status !== 0) throw new Error('pip install pyzmq failed (sidecar IPC needs it)');
+  if (r.status !== 0) throw new Error('pip install pyzmq failed');
 }
 
-function bundle() {
-  log('Bundling main + preload via esbuild...');
-  const r = spawnSync('node', [resolve(APP_ROOT, 'esbuild.config.mjs')],
-    { stdio: 'inherit', cwd: APP_ROOT });
-  if (r.status !== 0) throw new Error('esbuild failed');
+// ── esbuild bundling (watch mode) ──────────────────────────────
+
+async function startBuildWatch() {
+  log('Starting esbuild watch mode...');
+
+  const mainCtx = await context({
+    entryPoints: [resolve(APP_ROOT, 'src/main.ts')],
+    bundle: true,
+    platform: 'node',
+    target: 'node20',
+    format: 'cjs',
+    outfile: resolve(APP_ROOT, 'dist/main.cjs'),
+    external: ['electron', 'fsevents', 'zeromq', '@jboltai/tokui'],
+    sourcemap: true,
+    logLevel: 'info',
+  });
+
+  const preloadCtx = await context({
+    entryPoints: [resolve(APP_ROOT, 'src/preload.ts')],
+    bundle: true,
+    platform: 'node',
+    target: 'node20',
+    format: 'cjs',
+    outfile: resolve(APP_ROOT, 'dist/preload.cjs'),
+    external: ['electron'],
+    sourcemap: true,
+    logLevel: 'info',
+  });
+
+  // Initial build
+  await Promise.all([mainCtx.rebuild(), preloadCtx.rebuild()]);
+  log('✅  Initial build complete');
+
+  return { mainCtx, preloadCtx };
 }
+
+// ── Electron launcher ──────────────────────────────────────────
 
 function launchElectron() {
   log('Launching Electron...');
+  const env = {
+    ...process.env,
+    GALAXYOS_PYTHON: VENV_PY,
+    GALAXYOS_SIDECAR_LOG: 'DEBUG',
+    GALAXYOS_DEV: '1',           // signal main.ts to open DevTools
+    GALAXYOS_DEV_PORT: DEV_PORT, // reserved for future renderer dev server
+    GALAXYOS_SHOW_MENU: '1',     // show menu bar in dev
+  };
+
   if (process.platform === 'win32') {
-    // On Windows the electron binary is electron.cmd — Node's
-    // `spawn` cannot execute a .cmd directly without `shell: true`
-    // (or it gets ENOENT). Using `npx electron` is the most
-    // portable option: npx wraps the .cmd transparently.
     const child = spawn('npx', ['electron', '.'], {
-      cwd: APP_ROOT,
-      stdio: 'inherit',
-      shell: process.platform === 'win32',
-      env: {
-        ...process.env,
-        GALAXYOS_PYTHON: VENV_PY,
-        GALAXYOS_SIDECAR_LOG: 'DEBUG',
-      },
+      cwd: APP_ROOT, stdio: 'inherit', shell: true, env,
     });
-    child.on('exit', (code) => process.exit(code ?? 0));
-    return;
+    return child;
   }
+
   const electronBin = resolve(APP_ROOT, 'node_modules', '.bin', 'electron');
   const child = spawn(electronBin, ['.'], {
-    cwd: APP_ROOT,
-    stdio: 'inherit',
-    env: {
-      ...process.env,
-      GALAXYOS_PYTHON: VENV_PY,
-      GALAXYOS_SIDECAR_LOG: 'DEBUG',
-    },
+    cwd: APP_ROOT, stdio: 'inherit', env,
   });
-  child.on('exit', (code) => process.exit(code ?? 0));
+  return child;
 }
 
-try {
+// ── Graceful restart helpers ───────────────────────────────────
+
+let _electronProc = null;
+let _restartScheduled = false;
+
+function killElectron() {
+  if (_electronProc) {
+    try { _electronProc.kill('SIGTERM'); } catch { /* */ }
+    _electronProc = null;
+  }
+}
+
+function scheduleRestart() {
+  if (_restartScheduled) return;
+  _restartScheduled = true;
+  // Debounce: wait 300ms to batch rapid file saves
+  setTimeout(() => {
+    _restartScheduled = false;
+    log('🔁  Rebuilding & restarting Electron...');
+    killElectron();
+    _electronProc = launchElectron();
+  }, 300);
+}
+
+// ── Main ───────────────────────────────────────────────────────
+
+async function main() {
+  // 1. Type check first (non-blocking: errors are warnings)
+  typecheck();
+
+  // 2. Python venv
   ensureVenv();
   installDeps();
-  bundle();
-  launchElectron();
-} catch (e) {
-  console.error('[dev] FATAL:', e.message);
-  process.exit(1);
+
+  // 3. Build + start watch
+  const { mainCtx, preloadCtx } = await startBuildWatch();
+
+  // 4. Launch Electron
+  _electronProc = launchElectron();
+
+  // 5. Watch src/*.ts files for changes → rebuild → restart
+  log('👀  Watching src/*.ts for changes...');
+  log('   ┌─ src/*.ts  → rebuild → app restart');
+  log('   └─ renderer/* → Ctrl+R to reload in Electron');
+
+  const srcDir = resolve(APP_ROOT, 'src');
+  const pattern = /\.ts$/;
+
+  for await (const event of watch(srcDir, { recursive: true })) {
+    if (!pattern.test(event.filename)) continue;
+    log(`  📝  ${event.filename} changed`);
+
+    try {
+      await Promise.all([mainCtx.rebuild(), preloadCtx.rebuild()]);
+      log('  ✅  Rebuild OK');
+    } catch (e) {
+      warn(`  ❌  Build error: ${e.message}`);
+      continue;  // don't restart on build failure
+    }
+
+    // Re-run type check on change (fast, just for feedback)
+    typecheck();
+
+    scheduleRestart();
+  }
 }
+
+process.on('SIGINT', () => { killElectron(); process.exit(0); });
+process.on('SIGTERM', () => { killElectron(); process.exit(0); });
+
+main().catch((e) => {
+  console.error('[dev] FATAL:', e.message);
+  killElectron();
+  process.exit(1);
+});
