@@ -322,18 +322,131 @@ class SidecarHandlers:
         debugging). The router picks the best expert for each
         query; the choice is surfaced as a meta footer on every
         assistant bubble.
+
+    v10 (plugin-as-base):
+      - ``self._worker`` (ClawWorkerUdsClient) replaces direct
+        XiaoYiClawLLM calls for engine operations.  The sidecar
+        spawns ``claw_worker.py`` as a child process and talks
+        to it via HTTP-over-UDS (Unix) or HTTP-over-TCP (Windows).
+        This gives us all 59 worker methods + SessionContext
+        isolation + CircuitBreaker without duplicating code.
+      - ``self._llm`` is kept only for the LLM client reference
+        (llm_flash, llm_pro) used by MeMo / ACRouter / agent_loop.
     """
 
     def __init__(self) -> None:
-        log.info("Loading GalaxyOS engine (this may take a few seconds)...")
+        # ── llm client (kept for MeMo / ACRouter / agent) ──────────
+        log.info("Loading GalaxyOS engine for LLM client only...")
         XiaoYiClawLLM = _load_engine()
         self._llm = XiaoYiClawLLM(config={
             "home": str(path_resolver_desktop.OPENCLAW_HOME),
             "workspace": str(path_resolver_desktop.WORKSPACE_ROOT),
         })
         self._XiaoYiClawLLM = XiaoYiClawLLM
-        log.info("Engine ready: XiaoYiClawLLM at %s",
-                 path_resolver_desktop.GALAXYOS_ENGINE)
+
+        # ── v10: claw_worker UDS client (the backend) ──────────────
+        from claw_worker_client import ClawWorkerUdsClient
+        self._worker = ClawWorkerUdsClient(worker_id="worker:1")
+        self._worker_proc = None  # spawned claw_worker process
+        self._spawn_worker_if_needed()
+        log.info("claw_worker UDS client ready")
+
+        log.info("Engine ready: LLM=%s, Worker=%s",
+                 path_resolver_desktop.GALAXYOS_ENGINE,
+                 self._worker._uds_path)
+
+    def _spawn_worker_if_needed(self) -> None:
+        """Spawn claw_worker.py as a subprocess if no existing worker
+        is reachable via UDS.  Falls back to a new subprocess."""
+        import subprocess as _sp
+
+        # Check if a worker is already running (probe UDS / TCP)
+        try:
+            self._worker.start(timeout=3.0)
+            log.info("ClawWorker already running (UDS=%s)", self._worker._uds_path)
+            return
+        except Exception:
+            log.info("No existing claw_worker found — spawning one...")
+
+        # Resolve claw_worker.py path
+        _candidates = [
+            os.path.join(
+                os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+                "extensions", "galaxyos", "scripts", "claw_worker.py",
+            ),
+            os.path.join(
+                os.path.dirname(os.path.dirname(__file__)),
+                "galaxyos", "extensions", "galaxyos", "scripts", "claw_worker.py",
+            ),
+        ]
+        _script = None
+        for _c in _candidates:
+            if os.path.isfile(_c):
+                _script = _c
+                break
+        if _script is None:
+            log.warning("claw_worker.py not found — engine methods will be unavailable")
+            return
+
+        _py = os.environ.get("GALAXYOS_PYTHON", "python3")
+
+        _workspace = str(path_resolver_desktop.WORKSPACE_ROOT)
+        _var_dir = os.path.dirname(self._worker._uds_path)
+        os.makedirs(_var_dir, exist_ok=True)
+
+        try:
+            self._worker_proc = _sp.Popen(
+                [_py, _script],
+                cwd=_workspace,
+                env={
+                    **os.environ,
+                    "PYTHONIOENCODING": "utf-8",
+                    "OPENCLAW_WORKSPACE": _workspace,
+                    "WORKER_UDS": "0" if sys.platform.startswith("win") else "1",
+                    "WORKER_TCP": "1" if sys.platform.startswith("win") else "0",
+                    "WORKER_ID": "worker:1",
+                    "GALAXYOS_VAR_DIR": _var_dir,
+                },
+                stdout=_sp.DEVNULL,
+                stderr=None,  # inherit stderr for logging
+            )
+            log.info("ClawWorker spawned (pid=%d)", self._worker_proc.pid)
+
+            # Wait for ready
+            self._worker.start(timeout=15.0)
+            log.info("ClawWorker ready via UDS")
+        except Exception as e:
+            log.warning("ClawWorker spawn failed: %s — engine methods will use fallback", e)
+            self._worker_proc = None
+
+    def _stop_worker(self) -> None:
+        """Gracefully stop the spawned claw_worker process."""
+        if self._worker_proc and self._worker_proc.poll() is None:
+            try:
+                self._worker.call("shutdown", timeout=3.0)
+            except Exception:
+                pass
+            try:
+                self._worker_proc.terminate()
+                self._worker_proc.wait(timeout=5)
+            except Exception:
+                self._worker_proc.kill()
+            self._worker_proc = None
+        self._worker.stop()
+
+    def _worker_call(self, method: str, params: Dict[str, Any] = None,
+                     timeout: float = 30.0) -> Any:
+        """Call claw_worker via UDS. Raises RuntimeError on failure."""
+        return self._worker.call(method, params or {}, timeout=timeout)
+
+    def _worker_call_or_none(self, method: str, params: Dict[str, Any] = None,
+                              timeout: float = 30.0) -> Optional[Any]:
+        """Call claw_worker via UDS. Returns None on failure."""
+        try:
+            return self._worker.call(method, params or {}, timeout=timeout)
+        except Exception as e:
+            log.warning("claw_worker.%s failed: %s", method, e)
+            return None
 
         # Stage 4: global background layers
         log.info("Booting global MeMo memory layer...")
@@ -654,7 +767,10 @@ class SidecarHandlers:
             # fast_path / liquid_only: recall + LLM synthesis
             # v9.5: previously returned raw recall snippet (zero-LLM).
             # Now calls llm_flash to synthesize answer from memories.
-            memories = self._llm.recall(query, top_k=5)
+            memories = self._worker_call_or_none("recall", {"query": query, "top_k": 5}, timeout=15.0)
+            if memories is None:
+                # Fallback: use LLM directly
+                memories = self._llm.recall(query, top_k=5)
             n_recall = len(memories) if memories else 0
             if memories and self._llm.llm_flash:
                 # Build context from top memories
@@ -759,11 +875,17 @@ class SidecarHandlers:
     # ── Structured methods (zmq) ────────────────────────────────
     def ask(self, params: Dict[str, Any]) -> Dict[str, Any]:
         q = params["question"]
-        result = self._llm.answer(
-            query=q,
-            top_k=int(params.get("top_k", 5)),
-            min_confidence=float(params.get("min_confidence", 0.3)),
-        )
+        result = self._worker_call_or_none("answer", {
+            "query": q,
+            "top_k": int(params.get("top_k", 5)),
+        })
+        if result is None:
+            # Fallback to direct LLM
+            result = self._llm.answer(
+                query=q,
+                top_k=int(params.get("top_k", 5)),
+                min_confidence=float(params.get("min_confidence", 0.3)),
+            )
         return {
             "answer": result.get("answer", ""),
             "confidence": result.get("confidence", 0.0),
@@ -771,30 +893,41 @@ class SidecarHandlers:
         }
 
     def remember(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        mid = self._llm.remember(
-            content=params["content"],
-            metadata=params.get("metadata"),
-            source=params.get("source", "user"),
-            session_id=params.get("session_id", ""),
-        )
+        mid = self._worker_call_or_none("remember", {
+            "key": params.get("key", params.get("content", "")),
+            "value": str(params.get("value", params.get("metadata", ""))),
+        })
+        if mid is None:
+            mid = self._llm.remember(
+                content=params["content"],
+                metadata=params.get("metadata"),
+                source=params.get("source", "user"),
+                session_id=params.get("session_id", ""),
+            )
         return {"memory_id": mid}
 
     def recall(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        results = self._llm.recall(
-            query=params["query"],
-            top_k=int(params.get("top_k", 10)),
-            session_id=params.get("session_id", ""),
-        )
+        results = self._worker_call_or_none("recall", {
+            "query": params["query"],
+            "top_k": int(params.get("top_k", 10)),
+            "session_id": params.get("session_id", ""),
+        })
         return {"results": results}
 
     def process(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        return self._llm.process(
-            user_input=params["user_input"],
-            max_cycles=int(params.get("max_cycles", 1)),
-            store_memory=bool(params.get("store_memory", True)),
-            has_image=bool(params.get("has_image", False)),
-            session_key=params.get("session_id", ""),
-        )
+        result = self._worker_call_or_none("smart_process", {
+            "query": params["user_input"],
+            "session_id": params.get("session_id", ""),
+        }, timeout=60.0)
+        if result is None:
+            return self._llm.process(
+                user_input=params["user_input"],
+                max_cycles=int(params.get("max_cycles", 1)),
+                store_memory=bool(params.get("store_memory", True)),
+                has_image=bool(params.get("has_image", False)),
+                session_key=params.get("session_id", ""),
+            )
+        return result
 
     def list_providers(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Return the mainstream provider catalogue + current router state.
@@ -1230,12 +1363,17 @@ class SidecarHandlers:
         if not content:
             return {"error": "missing 'content' param"}
         try:
-            memory_id = self._llm.remember(
-                content=content,
-                metadata=metadata or {"saved_via": "claw_save_memory"},
-                source=source,
-                session_id=session_id,
-            )
+            memory_id = self._worker_call_or_none("save_memory", {
+                "content": content,
+                "metadata": metadata or {"saved_via": "claw_save_memory"},
+            })
+            if memory_id is None:
+                memory_id = self._llm.remember(
+                    content=content,
+                    metadata=metadata or {"saved_via": "claw_save_memory"},
+                    source=source,
+                    session_id=session_id,
+                )
             return {"memory_id": memory_id, "ok": True}
         except Exception as e:
             return {"error": str(e)}
@@ -1263,7 +1401,11 @@ class SidecarHandlers:
             memory_id = str(params.get("memory_id", ""))
             if not memory_id:
                 return {"error": "missing 'memory_id'"}
-            deleted = self._llm.forget(memory_id)
+            result = self._worker_call_or_none("forget", {"memory_id": memory_id})
+            if result is None:
+                deleted = self._llm.forget(memory_id)
+            else:
+                deleted = result.get("deleted", 0)
             return {"ok": True, "deleted": deleted, "memory_id": memory_id}
         except Exception as e:
             return {"error": str(e)}
@@ -1274,7 +1416,9 @@ class SidecarHandlers:
             name = str(params.get("entity_name", ""))
             if not name:
                 return {"error": "missing 'entity_name'"}
-            result = self._llm.get_entity(name)
+            result = self._worker_call_or_none("get_entity", {"entity_name": name})
+            if result is None:
+                result = self._llm.get_entity(name)
             return {"entity": name, "result": result}
         except Exception as e:
             return {"error": str(e)}
@@ -1286,7 +1430,9 @@ class SidecarHandlers:
             value = params.get("value", "")
             if not key:
                 return {"error": "missing 'key'"}
-            self._llm.learn_preference(key, value)
+            result = self._worker_call_or_none("learn_preference", {"key": key, "value": value})
+            if result is None:
+                self._llm.learn_preference(key, value)
             return {"ok": True, "key": key}
         except Exception as e:
             return {"error": str(e)}
@@ -1298,7 +1444,9 @@ class SidecarHandlers:
             corrected = str(params.get("corrected", ""))
             if not original or not corrected:
                 return {"error": "missing 'original' or 'corrected'"}
-            self._llm.learn_correction(original, corrected)
+            result = self._worker_call_or_none("learn_correction", {"original": original, "corrected": corrected})
+            if result is None:
+                self._llm.learn_correction(original, corrected)
             return {"ok": True}
         except Exception as e:
             return {"error": str(e)}
@@ -1345,7 +1493,10 @@ class SidecarHandlers:
             link_type = str(params.get("link_type", "related_to"))
             if not task_id or not memory_id:
                 return {"error": "missing 'task_id' or 'memory_id'"}
-            self._llm.link_task(task_id, memory_id, link_type)
+            result = self._worker_call_or_none("link_task_memory", {
+                "task_id": task_id, "memory_id": memory_id, "link_type": link_type})
+            if result is None:
+                self._llm.link_task(task_id, memory_id, link_type)
             return {"ok": True}
         except Exception as e:
             return {"error": str(e)}
@@ -1369,7 +1520,10 @@ class SidecarHandlers:
             prompt = str(params.get("prompt", "描述这张图片"))
             if not image_source:
                 return {"error": "missing 'image_source' or 'path'"}
-            result = self._llm.understand_image(image_source, prompt)
+            result = self._worker_call_or_none("understand_image", {
+                "image_b64": image_source, "prompt": prompt})
+            if result is None:
+                result = self._llm.understand_image(image_source, prompt)
             return {"result": result}
         except Exception as e:
             return {"error": str(e)}
@@ -1380,7 +1534,9 @@ class SidecarHandlers:
             image_source = params.get("image_source") or params.get("path", "")
             if not image_source:
                 return {"error": "missing 'image_source' or 'path'"}
-            result = self._llm.ocr_image(image_source)
+            result = self._worker_call_or_none("ocr_image", {"image_b64": image_source})
+            if result is None:
+                result = self._llm.ocr_image(image_source)
             return {"result": result}
         except Exception as e:
             return {"error": str(e)}
@@ -2603,6 +2759,7 @@ async def main_async() -> int:
     finally:
         stop.set()
         zmq_thread.join(timeout=2)
+        handlers._stop_worker()
         log.info("Sidecar stopped cleanly.")
     return 0
 
