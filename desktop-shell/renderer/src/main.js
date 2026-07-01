@@ -101,6 +101,7 @@ register({
   'cmd-theme-modern':        () => setTheme('modern'),
   'cmd-install-wizard':      () => openWizard(),
   'cmd-setup-page':          () => renderSetupPage(),
+  'cmd-code-editor':         async () => { const { renderCodeEditor } = await import('./tokui/code-editor.js'); await renderCodeEditor('details-host', { id: 'main-editor', lang: 'python', value: '# GalaxyOS Code Editor\nprint("Hello, GalaxyOS!")\n', title: 'GalaxyOS', onSave: (code) => window.galaxy?.saveFile?.('scratch.py', code), onRun: (code) => window.galaxy?.runCode?.(code, 'python') }); document.getElementById('details-panel')?.classList.remove('hidden'); },
 });
 
 async function handleCommand(cmdId) {
