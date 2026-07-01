@@ -19,6 +19,7 @@ export type GalaxyApi = {
   skills(): Promise<{ skills: Array<{id: string; name: string; description: string}>; count: number }>;
   skill(id: string): Promise<{ id: string; name: string; description: string; body: string }>;
   updateSettings(settings: Record<string, string>): Promise<{ ok: boolean; updated: string[] }>;
+  listProviders(): Promise<{ providers: ProviderInfo[]; router?: Record<string, unknown> }>;
   heartbeat(): Promise<{ ok: boolean; ts_ms: number; uptime_s: number }>;
   stats(): Promise<Record<string, unknown>>;
   verify(claim: string): Promise<{ claim: string; confidence: number; verdict: string; evidence_count: number; top_evidence: string[] }>;
@@ -131,6 +132,14 @@ export interface AgentToolEvent {
   dur_ms: number;
 }
 
+/** Provider catalogue entry (from sidecar llm_providers.MAINSTREAM_PROVIDERS). */
+export interface ProviderInfo {
+  id: string;
+  name: string;
+  default_model: string;
+  hint: string;
+}
+
 const api: GalaxyApi = {
   ask: (q, sid, streamId) => ipcRenderer.invoke('galaxy:ask', q, sid, streamId) as any,
   remember: (c, m, s) => ipcRenderer.invoke('galaxy:remember', c, m, s) as any,
@@ -144,6 +153,7 @@ const api: GalaxyApi = {
   skills: () => ipcRenderer.invoke('galaxy:skills') as any,
   skill: (id) => ipcRenderer.invoke('galaxy:skill', id) as any,
   updateSettings: (s) => ipcRenderer.invoke('galaxy:updateSettings', s) as any,
+  listProviders: () => ipcRenderer.invoke('galaxy:listProviders') as any,
   heartbeat: () => ipcRenderer.invoke('galaxy:heartbeat') as any,
   stats: () => ipcRenderer.invoke('galaxy:stats') as any,
   verify: (claim) => ipcRenderer.invoke('galaxy:verify', claim) as any,

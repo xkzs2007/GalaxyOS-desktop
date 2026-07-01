@@ -89,6 +89,7 @@ function makeStandaloneGalaxy() {
       return res.json();
     },
     skills: async () => ({ skills: [], count: 0 }),
+    listProviders: async () => ({ providers: [], router: null }),
     // Real-time streaming event listeners (no-ops in standalone mode —
     // zmq PUB is only available through Electron IPC).
     onThinkStep: (_cb) => () => {},

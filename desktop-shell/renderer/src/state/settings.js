@@ -23,12 +23,29 @@ settingsStore.subscribe((s) => {
 
 export async function saveSettings(next) {
   settingsStore.set(next);
+
+  // Build single-slot config (backward compat)
   const update = {
-    api_key: next.apiKey,
-    api_base: next.apiBase,
-    system_prompt: next.systemPrompt,
+    api_key: next.apiKey || next.llm?.api_key || '',
+    api_base: next.apiBase || next.llm?.base_url || '',
+    system_prompt: next.systemPrompt || '',
   };
-  if (next.slots) Object.assign(update, next.slots);
+
+  // Pack multi-slot config for sidecar MultiSlotRouter
+  const SLOT_KEYS = ['llm', 'llm_pro', 'embedding', 'rerank', 'vlm'];
+  for (const slot of SLOT_KEYS) {
+    const sc = next[slot];
+    if (sc && typeof sc === 'object') {
+      update[slot] = {
+        provider: sc.provider || 'mock',
+        api_key: sc.api_key || next.apiKey || '',
+        base_url: sc.base_url || '',
+        model: sc.model || '',
+        enabled: sc.enabled !== false,
+      };
+    }
+  }
+
   if (galaxy.updateSettings) {
     try { return await galaxy.updateSettings(update); }
     catch (e) { console.warn('[settings] sidecar update failed:', e); }

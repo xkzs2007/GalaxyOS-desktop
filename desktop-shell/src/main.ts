@@ -681,6 +681,10 @@ function registerIpc() {
     try { return await zmqCall('set_config', settings); }
     catch (e) { return { ok: false, error: String((e as Error).message) }; }
   });
+  ipcMain.handle('galaxy:listProviders', async () => {
+    try { return await zmqCall('list_providers'); }
+    catch (e) { return { providers: [], router: {}, error: String((e as Error).message) }; }
+  });
   ipcMain.handle('galaxy:heartbeat', async () => {
     try { return await zmqCall('heartbeat'); }
     catch (e) { return { ok: false, error: String((e as Error).message) }; }
