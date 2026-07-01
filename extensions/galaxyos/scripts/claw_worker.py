@@ -175,50 +175,22 @@ class _GatewayProxy:
         self._local.id = 0
 
     def _get_conn(self):
-        """获取或创建当前线程 IPC 连接（线程安全，无锁）
-
-        跨平台：
-          Unix/macOS:   HTTP over UDS
-          Windows:      HTTP over TCP localhost（端口从 .port 文件读）
-        """
+        """获取或创建当前线程 HTTP over UDS 连接（线程安全，无锁）"""
         if not hasattr(self._local, 'conn'):
             self._init_thread()
         if self._local.conn is not None:
             return self._local.conn
         import http.client
-        import sys as _sys
-        _IS_WINDOWS = _sys.platform.startswith("win")
-
-        if _IS_WINDOWS:
-            # Windows: 读 Gateway 的 TCP 端口文件（gateway 自己启动时写）
-            _port_file = _GATEWAY_UDS_PATH + ".port"
-            _gw_port = None
-            try:
-                with open(_port_file, "r") as f:
-                    _gw_port = int(f.read().strip())
-            except Exception:
-                pass
-            if not _gw_port:
-                # Gateway 没起，让上层 try/except 接住 RuntimeError
-                raise RuntimeError(
-                    f"Gateway port file not found or unreadable: {_port_file} "
-                    f"(Gateway not started on Windows?)"
-                )
-            self._local.conn = http.client.HTTPConnection(
-                "127.0.0.1", _gw_port, timeout=10.0
-            )
-        else:
-            # Unix: UDS
-            class _UnixHTTPConn(http.client.HTTPConnection):
-                def __init__(self, path):
-                    self._uds_path = path
-                    super().__init__('localhost')
-                def connect(self):
-                    import socket
-                    self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-                    self.sock.settimeout(10.0)
-                    self.sock.connect(self._uds_path)
-            self._local.conn = _UnixHTTPConn(_GATEWAY_UDS_PATH)
+        class _UnixHTTPConn(http.client.HTTPConnection):
+            def __init__(self, path):
+                self._uds_path = path
+                super().__init__('localhost')
+            def connect(self):
+                import socket
+                self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+                self.sock.settimeout(10.0)
+                self.sock.connect(self._uds_path)
+        self._local.conn = _UnixHTTPConn(_GATEWAY_UDS_PATH)
         return self._local.conn
 
     def _call(self, method, params=None, timeout=10.0):
@@ -2068,60 +2040,22 @@ def _send_http_reply(conn, status, data):
 
 
 def _uds_server_thread(methods_map):
-    """阻塞式 IPC HTTP 服务端 — blocking accept，无 selectors
-
-    跨平台:
-      Unix/macOS:   UDS (AF_UNIX) — 沿用 UDS_PATH 路径
-      Windows:      TCP (AF_INET) — 自动分配 127.0.0.1:0 端口，避免
-                    UDS 在 Win10+ 虽可用但需 1803+ 兼容性差的麻烦
-    """
+    """阻塞式 UDS HTTP 服务端 — blocking accept，无 selectors"""
     import socket as _sock
-    import sys as _sys
 
-    _IS_WINDOWS = _sys.platform.startswith("win")
+    try:
+        os.unlink(UDS_PATH)
+    except FileNotFoundError:
+        pass
+    os.makedirs(os.path.dirname(UDS_PATH), exist_ok=True)
 
-    if _IS_WINDOWS:
-        # Windows: 绑定 127.0.0.1:0 让 OS 自动分配端口（避免端口冲突）
-        # 选定后写入 UDS_PATH 同目录下的 .port 文件，让客户端能找到
-        try:
-            os.makedirs(os.path.dirname(UDS_PATH), exist_ok=True)
-        except Exception:
-            pass
-        server = _sock.socket(_sock.AF_INET, _sock.SOCK_STREAM)
-        server.setsockopt(_sock.SOL_SOCKET, _sock.SO_REUSEADDR, 1)
-        server.bind(("127.0.0.1", 0))
-        server.listen(8)
-        server.settimeout(1.0)
-        _actual_port = server.getsockname()[1]
-        # 把实际端口写到 UDS_PATH + ".port" 文件让客户端发现
-        _port_file = UDS_PATH + ".port"
-        try:
-            with open(_port_file, "w") as f:
-                f.write(str(_actual_port))
-        except Exception:
-            pass
-        sys.stderr.write(
-            f"[claw-worker] TCP (Windows fallback, timeout={REQUEST_TIMEOUT}s) "
-            f"listening on 127.0.0.1:{_actual_port} (port_file={_port_file})\n"
-        )
-    else:
-        # Unix: UDS 原样
-        try:
-            os.unlink(UDS_PATH)
-        except FileNotFoundError:
-            pass
-        os.makedirs(os.path.dirname(UDS_PATH), exist_ok=True)
+    server = _sock.socket(_sock.AF_UNIX, _sock.SOCK_STREAM)
+    server.bind(UDS_PATH)
+    server.listen(8)
+    server.settimeout(1.0)
+    os.chmod(UDS_PATH, 0o600)
 
-        server = _sock.socket(_sock.AF_UNIX, _sock.SOCK_STREAM)
-        server.bind(UDS_PATH)
-        server.listen(8)
-        server.settimeout(1.0)
-        os.chmod(UDS_PATH, 0o600)
-
-        sys.stderr.write(
-            f"[claw-worker] UDS (blocking, timeout={REQUEST_TIMEOUT}s) "
-            f"listening on {UDS_PATH}\n"
-        )
+    sys.stderr.write(f"[claw-worker] UDS (blocking, timeout={REQUEST_TIMEOUT}s) listening on {UDS_PATH}\n")
 
     while not _shutdown_flag:
         try:
@@ -2141,7 +2075,7 @@ def _uds_server_thread(methods_map):
             if raw:
                 _handle_one_http_request(conn, raw, methods_map)
         except Exception as _e:
-            sys.stderr.write(f"[claw-worker] IPC handler error: {_e}\n")
+            sys.stderr.write(f"[claw-worker] UDS handler error: {_e}\n")
         finally:
             try:
                 conn.close()
@@ -2149,17 +2083,10 @@ def _uds_server_thread(methods_map):
                 pass
 
     server.close()
-    if not _IS_WINDOWS:
-        try:
-            os.unlink(UDS_PATH)
-        except Exception:
-            pass
-    else:
-        # Windows: 清理端口发现文件
-        try:
-            os.unlink(UDS_PATH + ".port")
-        except Exception:
-            pass
+    try:
+        os.unlink(UDS_PATH)
+    except Exception:
+        pass
 
 def _handle_one_http_request(conn, raw_data, methods_map):
     """解析 HTTP 请求 → 串行执行 → 返回 JSON 响应
