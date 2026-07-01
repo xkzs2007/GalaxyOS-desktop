@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-tokui-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <title>GalaxyOS TokUI — 全组件预览</title>
+  <link rel="stylesheet" href="https://unpkg.com/@jboltai/tokui/dist/tokui.css" />
+  <style>
+    body { background: var(--tokui-bg, #0d1117); padding: 24px; font-family: system-ui; }
+    h1 { color: var(--tokui-text, #e6edf3); margin-bottom: 8px; }
+    .sub { color: var(--tokui-text-muted, #8b949e); margin-bottom: 32px; }
+    .section { margin-bottom: 48px; }
+    .section-title { color: var(--tokui-text, #e6edf3); font-size: 20px; font-weight: 600; margin-bottom: 16px; border-left: 3px solid #4f9dff; padding-left: 12px; }
+    .demo-grid { display: flex; flex-wrap: wrap; gap: 24px; }
+    .demo-col { flex: 1; min-width: 360px; max-width: 600px; }
+    .demo-col-wide { flex: 1; min-width: 600px; }
+  </style>
+</head>
+<body>
+  <h1>🚀 GalaxyOS Desktop — TokUI 全组件预览</h1>
+  <p class="sub">22 个 TokUI 深层组件 · D+E 阶段交付物</p>
+
+  <div class="section">
+    <div class="section-title">1. Welcome 欢迎页 — [welcome] + [feature]</div>
+    <div class="demo-col-wide" id="demo-welcome"></div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">2. 仪表盘 — [stats] + [chart bar] + [chart pie]</div>
+    <div class="demo-col-wide" id="demo-dashboard"></div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">3. R-CCAM 推理链 — [think] + [think-chain] + [think-step]</div>
+    <div class="demo-col-wide" id="demo-think"></div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">4. Agent 工具调用 — [agent] + [tool-call]</div>
+    <div class="demo-col-wide" id="demo-agent"></div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">5. 记忆时间线 — [timeline] + [ti]</div>
+    <div class="demo-col-wide" id="demo-timeline"></div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">6. 通知系统 — [notification]</div>
+    <div class="demo-col-wide" id="demo-notify"></div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">7. 安装向导 — [dialog] + [progress] + [terminal] + [picker]</div>
+    <div class="demo-col-wide" id="demo-dialog"></div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">8. 设置面板 — [drawer] + [form] + [input] + [textarea] + [picker]</div>
+    <div class="demo-col-wide" id="demo-settings"></div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">9. 代码高亮 + 差异 — [code] + [diff]</div>
+    <div class="demo-col-wide" id="demo-code"></div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">10. 骨架屏 + 空状态 — [skeleton] + [empty]</div>
+    <div class="demo-grid">
+      <div class="demo-col" id="demo-skeleton"></div>
+      <div class="demo-col" id="demo-empty"></div>
+    </div>
+  </div>
+
+  <script src="https://unpkg.com/@jboltai/tokui/dist/tokui.umd.js"></script>
+  <script>
+    (async function () {
+      // Wait for TokUI UMD
+      await new Promise((resolve) => {
+        if (window.TokUI?.TokUI) return resolve();
+        const t = setInterval(() => {
+          if (window.TokUI?.TokUI) { clearInterval(t); resolve(); }
+        }, 50);
+      });
+
+      const { TokUI } = window.TokUI;
+      const theme = 'dark';
+      window.TokUI.setTheme?.(theme);
+
+      function renderTo(id, dsl) {
+        const el = document.getElementById(id);
+        if (!el) return;
+        const ui = new TokUI({ container: el, theme });
+        ui.render(dsl);
+      }
+
+      // 1. Welcome
+      renderTo('demo-welcome',
+        `[welcome tt:"欢迎使用 GalaxyOS 桌面端" st:"独立 AI Agent · 76 技能 · 多 LLM"]
+          [feature tt:"💬 Ask 模式" tx:"简单提问，自动路由" i:code]
+          [feature tt:"🧠 Process 模式" tx:"R-CCAM 五阶段推理链" i:chat]
+          [feature tt:"🤖 Agent 模式" tx:"shell / 读写 / 搜索" i:terminal]
+        [/welcome]`
+      );
+
+      // 2. Dashboard
+      renderTo('demo-dashboard',
+        `[card tt:"📊 Agent 仪表盘" v:highlight]
+          [row]
+            [stats tt:"23" st:"会话数"]
+            [stats tt:"4,520" st:"今日 Tokens" v:primary]
+            [stats tt:"1.2s" st:"平均延迟" v:success]
+            [stats tt:"已连接" st:"连接" v:success]
+          [/row]
+          [chart tt:"Token 用量分布" t:bar d:"Input:2840,Output:1560,MeMo:420,Embed:200" w:full h:200]
+          [chart tt:"模式分布" t:pie d:"Ask:12,Process:5,Agent:3,MeMo:2,Plan:1" w:full h:200]
+        [/card]`
+      );
+
+      // 3. R-CCAM Think Chain
+      renderTo('demo-think',
+        `[think tt:"R-CCAM 5 阶段推理"]
+          [think-chain tt:"R-CCAM 认知循环"]
+            [think-step tt:"🔍 Retrieval 检索" tx:"查询改写 + 五路并行检索 + RRF 融合" done dur:0.8s]
+            [think-step tt:"🧠 Cognition 认知" tx:"IntelligentThinkingTrigger 技能推荐" done dur:0.6s]
+            [think-step tt:"🎯 Control 控制" tx:"边界检查 + 策略决策 + 约束设定" done dur:0.3s]
+            [think-step tt:"⚡ Action 行动" tx:"工具调用 + 答案生成" running dur:1.2s]
+            [think-step tt:"💾 Memory 记忆" tx:"记忆写入 + DAG + Cognition Forest" pending]
+          [/think-chain]
+        [/think]`
+      );
+
+      // 4. Agent Tool Calls
+      renderTo('demo-agent',
+        `[agent tt:"🤖 GalaxyOS Agent" done]
+          [tool-call tt:"📖 读取文件" done v:info params:"path: /src/main.ts" tx:"读取 38,993 字节" dur:0.12s]
+          [tool-call tt:"🔍 网络搜索" done v:primary params:"query: GalaxyOS architecture" tx:"搜索返回 3 条结果" dur:1.20s]
+          [tool-call tt:"✏️ 写入文件" running v:success params:"path: /output.md"]
+          [tool-call tt:"⚡ Shell 命令" pending v:warning params:"command: npm run build"]
+        [/agent]`
+      );
+
+      // 5. Memory Timeline
+      renderTo('demo-timeline',
+        `[card tt:"🧬 长期记忆 · 3 条" v:highlight]
+          [timeline alternate]
+            [ti tt:"R-CCAM 是一个五阶段结构化认知循环，包含 Retrieval→Cognition→Control→Action→Memory" v:info alt-left time:"3 小时前"]
+              [tag sm v:muted]agent[/tag]
+            [/ti]
+            [ti tt:"GalaxyOS 使用 BGE-M3 作为向量模型，部署在 ONNX Runtime 上以降低推理延迟" v:success alt-right time:"昨天"]
+              [tag sm v:muted]meeting[/tag]
+            [/ti]
+            [ti tt:"用户偏好 TypeScript + Vite 前端开发，数据库首选 SQLite 嵌入式存储" v:warning alt-left time:"2 天前"]
+              [tag sm v:muted]user[/tag]
+            [/ti]
+          [/timeline]
+        [/card]`
+      );
+
+      // 6. Notifications
+      renderTo('demo-notify',
+        `[row]
+          [notification v:success tt:"✓ 已保存" duration:0]设置已同步到 sidecar[/notification]
+          [notification v:info tt:"ℹ 提示" duration:0]新会话已创建[/notification]
+          [notification v:warning tt:"⚠ 警告" duration:0]连接延迟较高 (2.1s)[/notification]
+          [notification v:error tt:"✗ 错误" duration:0]sidecar 连接失败[/notification]
+        [/row]`
+      );
+
+      // 7. Install Wizard
+      renderTo('demo-dialog',
+        `[dialog id:iw-demo open tt:"📥 下载模型" closable]
+          [progress v:primary w:67 tt:"下载中 67%…" stripe]
+          [row]
+            [tag sm v:success]downloading[/tag]
+            [span sm v:muted]12.3s[/span]
+          [/row]
+          [terminal v:dark]
+[stdout] Downloading LFM2.5-1.2B ONNX Q4 (~1.2GB)…
+[stdout] Progress: 824MB / 1.2GB (67%)
+[stdout] Speed: 12.4 MB/s  ETA: 30s
+          [/terminal]
+          [row align:right]
+            [picker sm]
+              [picker-option value:lfm-onnx-q4 selected]LFM2.5-1.2B ONNX Q4[/picker-option]
+              [picker-option value:lfm-onnx-fp16]LFM2.5-1.2B ONNX FP16[/picker-option]
+            [/picker]
+            [btn tx:"下载中…" v:muted sm]
+          [/row]
+        [/dialog]`
+      );
+
+      // 8. Settings Panel (rendered as static preview)
+      renderTo('demo-settings',
+        `[card tt:"⚙️ 设置" v:highlight]
+          [input ph:"API Key (sk-...)" l:"API Key" value:"sk-••••••••••••••" type:password]
+          [input ph:"https://api.openai.com/v1" l:"API Base" value:"https://api.openai.com/v1"]
+          [textarea l:"System Prompt" rows:2]你是一个有帮助的 AI 助手。[/textarea]
+          [picker l:"主题" sm]
+            [picker-option value:dark selected]Dark 暗色[/picker-option]
+            [picker-option value:modern-dark]Modern Dark[/picker-option]
+            [picker-option value:default]Default 默认[/picker-option]
+            [picker-option value:modern]Modern 亮色[/picker-option]
+          [/picker]
+          [row]
+            [btn tx:"💾 保存" v:primary sm]
+            [btn tx:"✕ 取消" sm]
+          [/row]
+        [/card]`
+      );
+
+      // 9. Code + Diff
+      renderTo('demo-code',
+        `[code lang:javascript]
+// GalaxyOS D-stage entry point
+import { bootTokUI } from './tokui/runtime.js';
+import { renderSidebar } from './components/sidebar.js';
+
+(async () => {
+  await bootTokUI('#tokui-container');
+  renderSidebar();
+  console.log('[main] TokUI D-stage ready');
+})();
+        [/code]`
+      );
+
+      // 10a. Skeleton
+      renderTo('demo-skeleton',
+        `[card tt:"加载中…"][skeleton v:card][/card]`
+      );
+
+      // 10b. Empty
+      renderTo('demo-empty',
+        `[empty tt:"暂无记忆" desc:"点击「🧬 记忆」浏览长期记忆条目" i:inbox]`
+      );
+
+      console.log('[demo] All 10 sections rendered with TokUI');
+      document.body.setAttribute('data-ready', 'true');
+    })();
+  </script>
+</body>
+</html>
