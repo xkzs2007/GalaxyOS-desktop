@@ -225,13 +225,15 @@ class AgentLoop:
     """Yields TokUI DSL fragments as the agent executes.
 
     v9.4: supports stream_id for zmq PUB real-time progress events.
+    v9.6: supports agent_role for tool permission gating.
     """
 
     def __init__(self, question: str, stream_id: str = "",
-                 llm_client=None):
+                 llm_client=None, agent_role: str = "main"):
         self.question = question
         self.stream_id = stream_id
         self.llm_client = llm_client
+        self.agent_role = agent_role
         self.plan = decide_tool_chain(question, llm_client=llm_client)
 
     def _pub(self, event_type: str, detail: str, status: str = "running",
@@ -309,7 +311,8 @@ class AgentLoop:
             self._pub("tool_start", f"执行 {name}", status="running",
                       tool_name=name, step_index=idx)
             t0 = _now_ms()
-            result = await tools.call_tool(name, params)
+            # v9.6: pass agent_role for tool permission check
+            result = await tools.call_tool(name, params, agent_role=self.agent_role)
             dur_ms = _now_ms() - t0
 
             # 4) Update tool-call to done via [upd]
@@ -388,7 +391,12 @@ class AgentLoop:
 
             # 6) If the tool errored, surface it
             if not result.get("ok"):
-                if result.get("needs_approval"):
+                if result.get("permission_denied"):
+                    # v9.6: 权限被拒 — 提示用户该角色不能调此工具
+                    out.append(
+                        f'[p v:warn]🔒 权限被拒（角色 {self.agent_role}）: {tokui_dsl._esc(result.get("error", ""))}[/p]'
+                    )
+                elif result.get("needs_approval"):
                     out.append(
                         f'[p v:warn]⚠️ 需要确认: {tokui_dsl._esc(result.get("command", name))}[/p]'
                     )
