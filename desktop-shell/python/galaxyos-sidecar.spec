@@ -164,21 +164,17 @@ assert os.path.isfile(os.path.join(_scripts_dir, 'install_wizard.py')), (
 datas += [
     (_scripts_dir, 'scripts'),
 ]
-# Bundle `extensions/galaxyos/` so the desktop sidecar can spawn
-# the LFM ONNX server (Rust binary built separately + shipped as
-# extraResource by electron-builder) AND the Python worker pool
-# (claw_worker.py). The native/ subdir is bundled for source
-# reference + future in-process PyO3 use; the scripts/ subdir
-# contains claw_worker.py + galaxyos_native.py which the sidecar
-# imports at runtime.
-_ext_galaxyos_dir = os.path.abspath(os.path.join(_spec_dir, '..', '..', 'extensions', 'galaxyos'))
-assert os.path.isdir(_ext_galaxyos_dir), (
-    f"extensions/galaxyos/ not found at {_ext_galaxyos_dir}. "
-    f"The desktop sidecar's LFM server + claw_worker integration "
-    f"depends on this directory being present in the bundle."
+# Bundle `extensions/galaxyos/scripts/` so the desktop sidecar can spawn
+# claw_worker.py (Python worker pool). IMPORTANT: do NOT bundle the
+# entire extensions/galaxyos/ tree — the native/target/ dir alone is
+# 700MB of Rust build artifacts. We only need the scripts/ subdir.
+_ext_scripts_dir = os.path.abspath(os.path.join(_spec_dir, '..', '..', 'extensions', 'galaxyos', 'scripts'))
+assert os.path.isdir(_ext_scripts_dir), (
+    f"extensions/galaxyos/scripts/ not found at {_ext_scripts_dir}. "
+    f"The desktop sidecar's claw_worker integration depends on this directory."
 )
 datas += [
-    (_ext_galaxyos_dir, 'extensions/galaxyos'),
+    (_ext_scripts_dir, 'extensions/galaxyos/scripts'),
 ]
 # Bundle repo-root skills/ (76 SKILL.md files) so the sidecar can
 # scan them at runtime. PyInstaller's static analysis doesn't follow
