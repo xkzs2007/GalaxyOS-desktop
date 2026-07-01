@@ -21,6 +21,9 @@ import { initComposer, renderComposer, onComposerSend, setMode } from './compone
 import { initDetails } from './components/details.js';
 import { renderWelcome } from './components/welcome.js';
 import { initInstallWizard, openWizard } from './components/install-wizard.js';
+import { openSettings } from './components/settings-panel.js';
+import { openCommandPalette } from './tokui/polish.js';
+import { setTheme } from './tokui/runtime.js';
 import { sessionApi } from './state/session.js';
 
 function installKeyboardShortcuts() {
@@ -30,13 +33,18 @@ function installKeyboardShortcuts() {
     if (ctrl && e.key === 'b') { e.preventDefault(); document.querySelector('.sidebar')?.classList.toggle('hidden'); return; }
     if (ctrl && e.key === 'k') {
       e.preventDefault();
-      const c = document.getElementById('tokui-container');
-      if (c) while (c.firstChild) c.removeChild(c.firstChild);
+      openCommandPalette(async (cmdId) => {
+        await handleCommand(cmdId);
+      });
       return;
     }
     if (ctrl && e.key === ',') {
       e.preventDefault();
-      // Theme picker dialog — defer to settings page (future)
+      openSettings();
+      return;
+    }
+    if (ctrl && e.shiftKey && e.key === 'T') {
+      e.preventDefault();
       cycleTheme();
       return;
     }
@@ -54,8 +62,41 @@ function cycleTheme() {
   const cur = (window.TokUI?.getTheme?.() ?? 'modern-dark');
   const idx = THEMES.indexOf(cur);
   const next = THEMES[(idx + 1) % THEMES.length];
-  window.TokUI?.setTheme?.(next);
-  console.log('[main] theme →', next);
+  setTheme(next);
+}
+
+// ── Command palette handler ────────────────────────────────────
+
+async function handleCommand(cmdId) {
+  switch (cmdId) {
+    case 'cmd-new-session':     sessionApi.newSession(); break;
+    case 'cmd-toggle-sidebar':  document.querySelector('.sidebar')?.classList.toggle('hidden'); break;
+    case 'cmd-clear-chat': {
+      const c = document.getElementById('tokui-container');
+      if (c) while (c.firstChild) c.removeChild(c.firstChild);
+      break;
+    }
+    case 'cmd-dashboard': {
+      const { renderDashboard } = await import('./tokui/dashboard.js');
+      renderDashboard('details-host');
+      const panel = document.getElementById('details-panel');
+      if (panel) panel.classList.remove('hidden');
+      break;
+    }
+    case 'cmd-memories': {
+      const { fetchAndShowMemories } = await import('./tokui/memory-browser.js');
+      fetchAndShowMemories('details-host', '', 10, 'timeline');
+      const panel = document.getElementById('details-panel');
+      if (panel) panel.classList.remove('hidden');
+      break;
+    }
+    case 'cmd-settings':        openSettings(); break;
+    case 'cmd-theme-dark':      setTheme('dark'); break;
+    case 'cmd-theme-modern-dark': setTheme('modern-dark'); break;
+    case 'cmd-theme-default':   setTheme('default'); break;
+    case 'cmd-theme-modern':    setTheme('modern'); break;
+    default: break;
+  }
 }
 
 // ── Welcome feature click → set composer mode + fill placeholder ──

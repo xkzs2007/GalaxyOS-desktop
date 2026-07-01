@@ -15,6 +15,8 @@ import { bootTokUI, registerHandler, getInstance } from '../tokui/runtime.js';
 import { escapeDsl } from '../utils.js';
 import notify from '../tokui/notify.js';
 import { fetchAndShowMemories } from '../tokui/memory-browser.js';
+import { renderDashboard } from '../tokui/dashboard.js';
+import { buildEmpty } from '../tokui/polish.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -27,7 +29,7 @@ let _lastConn = { status: '', detail: '' };
 
 function buildConversationsDSL() {
   const s = sessionStore.get();
-  if (!s.order.length) return '[p v:muted]暂无会话[/p]';
+  if (!s.order.length) return buildEmpty('暂无会话', '点击「+ 新对话」开始');
   const items = s.order.map((id) => {
     const sess = s.byId[id];
     if (!sess) return '';
@@ -73,7 +75,9 @@ async function renderSidebarFull() {
   ui.feed(`[card tt:"状态"]${buildConnectionDSL()}[/card]`);
   ui.feed(`[toolbar pos:bottom align:right]`);
   ui.feed(`  [btn tx:"+ 新对话" v:primary sm clk:onNewChat]`);
+  ui.feed(`  [btn tx:"📊 仪表盘" sm clk:onOpenDashboard]`);
   ui.feed(`  [btn tx:"🧬 记忆" sm clk:onBrowseMemories]`);
+  ui.feed(`  [btn tx:"⚙️" sm clk:onSettingsOpen]`);
   ui.feed(`  [btn tx:"📥 下载模型" sm clk:onOpenWizard]`);
   ui.feed(`[/toolbar]`);
   ui.endStream();
@@ -172,6 +176,12 @@ registerHandler('onBrowseMemories', () => {
   const panel = document.getElementById('details-panel');
   if (panel) panel.classList.remove('hidden');
   notify.info('正在加载记忆时间线…', { duration: 2000 });
+});
+
+registerHandler('onOpenDashboard', () => {
+  renderDashboard('details-host');
+  const panel = document.getElementById('details-panel');
+  if (panel) panel.classList.remove('hidden');
 });
 
 // ── Time formatting ────────────────────────────────────────────

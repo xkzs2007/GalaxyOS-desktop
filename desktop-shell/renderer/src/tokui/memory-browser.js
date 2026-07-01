@@ -19,6 +19,7 @@
 import { getInstance } from './runtime.js';
 import { escapeDsl } from '../utils.js';
 import { galaxy } from '../ipc/client.js';
+import { buildSkeleton } from './polish.js';
 
 // ── Memory browser: timeline view ─────────────────────────────
 
@@ -170,10 +171,12 @@ export async function fetchAndShowMemories(container, query = '', topK = 10, vie
   const ui = getInstance();
   if (!ui) return;
 
-  // Show loading
+  // Show loading skeleton
   host.innerHTML = '';
   ui.startStream(host);
-  ui.feed(`[card tt:"加载记忆…"][spin v:muted sm][/spin][/card]`);
+  ui.feed(`[card tt:"加载记忆…"]`);
+  ui.feed(buildSkeleton('chat'));
+  ui.feed(`[/card]`);
   ui.endStream();
 
   try {
