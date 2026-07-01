@@ -96,7 +96,9 @@
         "to": ".",
         "filter": [
           "lfm_server",
-          "lfm_server.exe"
+          "lfm_server.exe",
+          "libgalaxyos_native.so",
+          "galaxyos_native.pyd"
         ]
       }
     ],

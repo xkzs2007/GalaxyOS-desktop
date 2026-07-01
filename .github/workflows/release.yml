@@ -144,24 +144,34 @@ jobs:
         with:
           workspaces: extensions/galaxyos/native
 
-      - name: Build lfm_server binary (Rust, release)
+      - name: Build Rust native binaries (lfm_server + PyO3 cdylib)
         shell: bash
         run: |
           set -e
           cd extensions/galaxyos/native
-          # Build the lfm_server binary (standalone, no PyO3) in
-          # release mode. --no-default-features skips the python
-          # feature (PyO3 cdylib) which we don't ship — only the
-          # standalone binary is needed at runtime.
+
+          # 1. Build lfm_server (standalone, no PyO3) — ships as extraResource
           cargo build --release --bin lfm_server --no-default-features
-          # Verify the binary exists (the .exe suffix on Windows is
-          # added by cargo automatically; on Linux it's bare).
           if [ "$RUNNER_OS" = "Windows" ]; then
             test -f target/release/lfm_server.exe
             ls -lh target/release/lfm_server.exe
           else
             test -f target/release/lfm_server
             ls -lh target/release/lfm_server
+          fi
+
+          # 2. Build PyO3 cdylib (libgalaxyos_native) — for Python import
+          #    This produces the native extension that `import galaxyos_native`
+          #    loads at runtime (PIL replacement + SIMD vector compute).
+          #    Requires Python dev headers (already installed in prior steps).
+          #    On Windows the output is galaxyos_native.pyd; on Linux .so.
+          cargo build --release --lib
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            test -f target/release/galaxyos_native.pyd
+            ls -lh target/release/galaxyos_native.pyd
+          else
+            test -f target/release/libgalaxyos_native.so
+            ls -lh target/release/libgalaxyos_native.so
           fi
 
       - name: Install Python deps + PyInstaller
