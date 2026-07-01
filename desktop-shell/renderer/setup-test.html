@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-tokui-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <title>GalaxyOS Setup Test</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #0d1117; font-family: -apple-system, BlinkMacSystemFont, sans-serif; }
+    .setup-page {
+      display: flex; align-items: center; justify-content: center;
+      min-height: 100vh; padding: 20px;
+    }
+    .setup-card {
+      background: #1a1d25; border-radius: 16px;
+      padding: 40px 48px; max-width: 560px; width: 100%;
+      box-shadow: 0 8px 32px rgba(0,0,0,.4);
+    }
+    .setup-card h1 { margin: 0 0 8px; font-size: 28px; color: #e1e4e8; }
+    .setup-subtitle { color: #8b949e; font-size: 14px; margin: 0 0 8px; }
+    .setup-card hr { border: none; border-top: 1px solid #30363d; margin: 20px 0; }
+    .setup-card > p { color: #8b949e; font-size: 14px; line-height: 1.6; }
+    .setup-steps { margin: 8px 0; }
+    .setup-step {
+      display: flex; align-items: center; gap: 12px;
+      padding: 10px 0; border-bottom: 1px solid #30363d;
+    }
+    .step-icon { font-size: 20px; width: 28px; text-align: center; }
+    .step-label { flex: 1; font-size: 14px; color: #e1e4e8; }
+    .step-status { font-size: 13px; color: #8b949e; min-width: 100px; text-align: right; }
+    .setup-log {
+      margin: 16px 0; max-height: 200px; overflow-y: auto;
+      background: #0d1117; border-radius: 8px;
+      padding: 12px; font-family: monospace; font-size: 12px;
+      color: #8b949e; white-space: pre-wrap; line-height: 1.5;
+    }
+    .setup-actions { display: flex; gap: 12px; margin-top: 20px; }
+    .setup-btn {
+      flex: 1; padding: 12px 24px; border-radius: 10px; border: none;
+      font-size: 15px; font-weight: 600; cursor: pointer; transition: .2s;
+    }
+    .setup-btn.primary {
+      background: linear-gradient(135deg, #4f46e5, #7c3aed); color: #fff;
+    }
+    .setup-btn.primary:hover { opacity: .9; transform: translateY(-1px); }
+    .setup-btn.primary:disabled { opacity: .5; cursor: not-allowed; transform: none; }
+    .setup-btn:not(.primary) {
+      background: #21262d; color: #e1e4e8;
+    }
+    .setup-btn:not(.primary):hover { background: #30363d; }
+    .setup-btn:disabled { opacity: .5; cursor: not-allowed; }
+    
+    /* Log styling */
+    .log-ok { color: #3fb950; }
+    .log-warn { color: #d29922; }
+    .log-error { color: #f85149; }
+    .log-info { color: #58a6ff; }
+  </style>
+</head>
+<body>
+<div class="setup-page">
+  <div class="setup-card">
+    <h1>🚀 欢迎使用 GalaxyOS</h1>
+    <p class="setup-subtitle">AI 桌面 Agent · 液态神经记忆 · 76 技能图</p>
+    <hr/>
+    <p>首次启动需要安装 Python 依赖库（约 200MB），以启用完整的 AI 认知引擎。</p>
+    <div class="setup-steps">
+      <div class="setup-step">
+        <span class="step-icon">✅</span>
+        <span class="step-label">检测 Python 环境</span>
+        <span class="step-status log-ok">Python 3.13 就绪</span>
+      </div>
+      <div class="setup-step">
+        <span class="step-icon">✅</span>
+        <span class="step-label">安装核心依赖 (~200MB)</span>
+        <span class="step-status log-ok">已安装</span>
+      </div>
+      <div class="setup-step">
+        <span class="step-icon">🧠</span>
+        <span class="step-label">安装 AI 组件 (~3GB，可选)</span>
+        <span class="step-status log-warn">等待中...</span>
+      </div>
+      <div class="setup-step">
+        <span class="step-icon">🔄</span>
+        <span class="step-label">重启引擎</span>
+        <span class="step-status">-</span>
+      </div>
+    </div>
+    <div class="setup-log">Python: /usr/bin/python3 (3.13)
+<span class="log-ok">requirements-core: /workspace/requirements-core.txt</span>
+Installing core dependencies (~200MB)...
+<span class="log-ok">Core dependencies installed OK</span>
+<span class="log-info">✅ 18/18 核心包验证通过 (numpy, jieba, pydantic, zmq, ...)</span>
+<span class="log-warn">⚠️ 重型 AI 组件未安装 (torch/faiss/transformers)</span>
+<span class="log-warn">   引擎将以轻量模式运行（Mock/Pure-NumPy 回退）</span></div>
+    <div class="setup-actions">
+      <button class="setup-btn primary" onclick="this.textContent='✅ 安装完成！'; setTimeout(()=>location.reload(),1000)">
+        ⚡ 安装重型 AI 组件
+      </button>
+      <button class="setup-btn" onclick="this.textContent='✅ 已跳过'; setTimeout(()=>location.reload(),1000)">
+        跳过（轻量模式）
+      </button>
+    </div>
+  </div>
+</div>
+</body>
+</html>

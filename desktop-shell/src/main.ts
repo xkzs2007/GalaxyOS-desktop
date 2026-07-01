@@ -141,8 +141,7 @@ const SIDECAR_HOST = process.env.GALAXYOS_SIDECAR_HOST ?? '127.0.0.1';
 const RESOURCES_DIR = app.isPackaged && process.resourcesPath
   ? process.resourcesPath
   : APP_ROOT;
-const PACKAGED_SIDECAR = join(RESOURCES_DIR, 'galaxyos-sidecar');
-const PACKAGED_PYTHON_DIR = join(RESOURCES_DIR, 'python');
+const PACKAGED_SIDECAR_SOURCE = join(RESOURCES_DIR, 'python', 'galaxyos_sidecar.py');
 
 // Log the resolved paths so users can debug "where is it looking"
 // issues from the electron.log / sidecar.log files.
@@ -154,56 +153,134 @@ log(`TOKUI_DIST_CSS        = ${TOKUI_DIST_CSS}  (exists=${existsSync(TOKUI_DIST_
 log(`app.isPackaged        = ${app.isPackaged}`);
 log(`process.resourcesPath = ${process.resourcesPath ?? '(unset)'}`);
 log(`RESOURCES_DIR         = ${RESOURCES_DIR}`);
-log(`PACKAGED_SIDECAR      = ${PACKAGED_SIDECAR}  (exists=${existsSync(PACKAGED_SIDECAR)})`);
+log(`PACKAGED_SIDECAR_SOURCE= ${PACKAGED_SIDECAR_SOURCE}  (exists=${existsSync(PACKAGED_SIDECAR_SOURCE)})`);
 
 function resolveSidecarPath(): string {
-  if (!app.isPackaged) {
-    // Dev mode: run the .py source directly with the system Python.
-    return SIDECAR_SCRIPT;
-  }
-  // Packaged: use the PyInstaller-bundled executable. We enumerate
-  // candidate locations explicitly rather than relying on implicit
-  // fallbacks — this catches both Windows (.exe suffix) and POSIX
-  // (no suffix) layouts, and supports a `python/` subdir under
-  // resources/ if extraResources is configured that way in the
-  // future.
-  const isWin = process.platform === 'win32';
-  const candidates = isWin
-    ? [
-        join(RESOURCES_DIR, 'galaxyos-sidecar.exe'),
-        join(RESOURCES_DIR, 'python', 'galaxyos-sidecar.exe'),
-      ]
-    : [
-        join(RESOURCES_DIR, 'galaxyos-sidecar'),
-        join(RESOURCES_DIR, 'python', 'galaxyos-sidecar'),
-      ];
-  for (const p of candidates) {
+  // Both dev and packaged: run the Python source directly with the
+  // system Python interpreter.  This is the canonical path now that
+  // the NSIS installer handles `pip install -r requirements.txt`
+  // during setup.
+  //
+  // Layout:
+  //   Dev:  <repo>/desktop-shell/python/galaxyos_sidecar.py
+  //   Pkg:  <install>/resources/python/galaxyos_sidecar.py
+  //
+  // We ALWAYS resolve to the .py source.  isPackagedExe (below)
+  // will be false, and spawn() will use the Python interpreter.
+  //
+  // As a fallback, we also check for a legacy PyInstaller-frozen
+  // binary (from pre-v0.2.0 installs) so existing users are not
+  // stranded on upgrade.
+
+  // Primary: Python source (dev + new packaged)
+  const sourceCandidates = app.isPackaged
+    ? [join(RESOURCES_DIR, 'python', 'galaxyos_sidecar.py')]
+    : [SIDECAR_SCRIPT];
+
+  for (const p of sourceCandidates) {
     if (existsSync(p)) {
-      log(`sidecar resolved: ${p}`);
+      log(`sidecar resolved (source): ${p}`);
       return p;
     }
   }
+
+  // Legacy fallback: PyInstaller-frozen binary (pre-v0.2.0 packaged builds)
+  if (app.isPackaged) {
+    const isWin = process.platform === 'win32';
+    const binaryCandidates = isWin
+      ? [
+          join(RESOURCES_DIR, 'galaxyos-sidecar.exe'),
+          join(RESOURCES_DIR, 'python', 'galaxyos-sidecar.exe'),
+        ]
+      : [
+          join(RESOURCES_DIR, 'galaxyos-sidecar'),
+          join(RESOURCES_DIR, 'python', 'galaxyos-sidecar'),
+        ];
+    for (const p of binaryCandidates) {
+      if (existsSync(p)) {
+        log(`sidecar resolved (legacy frozen binary): ${p}`);
+        return p;
+      }
+    }
+  }
+
   throw new Error(
-    `GalaxyOS sidecar binary not found.\n` +
-    `  Looked in: ${candidates.join(', ')}\n` +
+    `GalaxyOS sidecar not found.\n` +
+    `  Looked for source: ${sourceCandidates.join(', ')}\n` +
+    (app.isPackaged
+      ? `  Looked for legacy binary: ${[
+          join(RESOURCES_DIR, 'galaxyos-sidecar.exe'),
+          join(RESOURCES_DIR, 'python', 'galaxyos-sidecar.exe'),
+          join(RESOURCES_DIR, 'galaxyos-sidecar'),
+          join(RESOURCES_DIR, 'python', 'galaxyos-sidecar'),
+        ].join(', ')}\n`
+      : '') +
     `  RESOURCES_DIR: ${RESOURCES_DIR}\n` +
     `  isPackaged: ${app.isPackaged}\n` +
     `  process.resourcesPath: ${process.resourcesPath ?? '(unset)'}\n` +
     `  APP_ROOT: ${APP_ROOT}\n` +
-    `  This is a packaging bug — the .exe / AppImage is missing the bundled Python sidecar.\n` +
+    `  This is a packaging bug — the app bundle is missing the Python sidecar.\n` +
     `  Please report it with the contents of: ${LOG_FILE}\n`
   );
 }
 
 function resolvePythonInterpreter(): string {
-  if (!app.isPackaged) {
-    return process.env.GALAXYOS_PYTHON ?? 'python';
+  // Honour explicit override first (env var or config)
+  if (process.env.GALAXYOS_PYTHON) {
+    const p = process.env.GALAXYOS_PYTHON;
+    if (existsSync(p)) return p;
+    log(`GALAXYOS_PYTHON set but not found: ${p}, falling back to auto-detect`);
   }
-  // In packaged builds the sidecar is a standalone PyInstaller
-  // binary, so the Python interpreter is unused. Return a dummy
-  // value (spawn() never invokes it because isPackagedExe picks
-  // the binary directly).
-  return process.env.GALAXYOS_PYTHON ?? 'python';
+
+  // In packaged builds, the sidecar is a .py source file, so we need
+  // a real Python interpreter.  Search in priority order.
+  const isWin = process.platform === 'win32';
+
+  // Dev mode: check PATH first
+  if (!app.isPackaged) {
+    // On Windows the path may include the venv; just return the
+    // generic name and let the OS resolve it via PATHEXT / PATH.
+    return isWin ? 'python' : 'python3';
+  }
+
+  // Packaged: search explicitly
+  if (isWin) {
+    // Windows: search registry + common paths
+    const winCandidates: string[] = [];
+    // Python.org installs
+    for (const ver of ['312', '311', '310']) {
+      winCandidates.push(
+        `C:\\Program Files\\Python${ver}\\python.exe`,
+        `C:\\Python${ver}\\python.exe`,
+        `${process.env.LOCALAPPDATA}\\Programs\\Python\\Python${ver}\\python.exe`,
+      );
+    }
+    winCandidates.push('python.exe', 'python3.exe');
+    for (const p of winCandidates) {
+      if (existsSync(p)) {
+        log(`Python resolved (packaged): ${p}`);
+        return p;
+      }
+    }
+  } else {
+    // Linux / macOS
+    const candidates = ['python3.12', 'python3.11', 'python3.10', 'python3', 'python'];
+    for (const name of candidates) {
+      try {
+        const which = require('node:child_process')
+          .execFileSync('which', [name], { encoding: 'utf-8' })
+          .trim();
+        if (which && existsSync(which)) {
+          log(`Python resolved (packaged): ${which}`);
+          return which;
+        }
+      } catch { /* continue */ }
+    }
+  }
+
+  // Last resort
+  log('WARNING: Could not auto-detect Python; falling back to "python3"');
+  return isWin ? 'python' : 'python3';
 }
 
 // ── Sidecar lifecycle + zmq REQ client ────────────────────────────
@@ -292,12 +369,10 @@ function startSidecar(): Promise<void> {
       return;
     }
 
-    // In a packaged build, the sidecar is a standalone PyInstaller
-    // .exe — run it directly, not through a Python interpreter.
-    // isPackagedExe is true when:
-    //   - we're in a packaged build, AND
-    //   - the resolved path is the bundled binary (ends with the
-    //     platform-specific name, never the .py source).
+    // isPackagedExe: true only for legacy PyInstaller-frozen binaries.
+    // New source-based packaged installs ship .py files, so the sidecar
+    // runs via `python galaxyos_sidecar.py` (not as a standalone .exe).
+    // Dev mode always uses the Python interpreter directly.
     const isPackagedExe = app.isPackaged && !script.endsWith('.py');
     const cmd = isPackagedExe ? script : py;
     const args = isPackagedExe ? [] : [script];
@@ -336,13 +411,28 @@ function startSidecar(): Promise<void> {
     log(`isPackagedExe=${isPackagedExe}  py=${py}  script=${script}`);
 
     try {
+      // Build PYTHONPATH for the sidecar so it can find galaxyos.engine
+      // and its sibling modules (llm_providers, tokui_dsl, etc.).
+      const pathParts: string[] = [];
+      if (process.env.PYTHONPATH) pathParts.push(process.env.PYTHONPATH);
+
+      if (app.isPackaged) {
+        // Packaged: galaxyos/ is at resources/galaxyos/
+        pathParts.push(join(RESOURCES_DIR, 'galaxyos'));
+        pathParts.push(join(RESOURCES_DIR, 'python'));
+      } else {
+        pathParts.push(PYTHON_DIR);
+        // Dev: galaxyos package is at repo root
+        const repoRoot = resolve(APP_ROOT, '..');
+        pathParts.push(repoRoot);
+      }
+
+      const pythonPath = pathParts.join(process.platform === 'win32' ? ';' : ':');
+
       sidecar = spawn(cmd, args, {
         env: {
           ...process.env,
-          PYTHONPATH:
-            (process.env.PYTHONPATH ? process.env.PYTHONPATH + ';' : '')
-            + (existsSync(PACKAGED_PYTHON_DIR) ? PACKAGED_PYTHON_DIR + ';' : '')
-            + PYTHON_DIR,
+          PYTHONPATH: pythonPath,
           GALAXYOS_SIDECAR_PORT: String(SIDECAR_PORT),
           GALAXYOS_SIDECAR_HTTP_PORT: String(SIDECAR_HTTP_PORT),
           GALAXYOS_SIDECAR_HOST: SIDECAR_HOST,
@@ -761,6 +851,53 @@ function registerIpc() {
     }
   });
 
+  // ── First-launch setup IPC ──────────────────────────────────────
+  // Marker file path: ~/AppData/Roaming/GalaxyOS/.setup-complete (win)
+  //                   ~/.config/GalaxyOS/.setup-complete        (linux)
+  //                   ~/Library/Application Support/GalaxyOS/.setup-complete (mac)
+  const _setupMarker = (() => {
+    try {
+      return join(app.getPath('userData'), '.setup-complete');
+    } catch { return join(APP_ROOT, '.setup-complete'); }
+  })();
+
+  ipcMain.handle('galaxy:isFirstLaunch', async () => {
+    const isFirst = !existsSync(_setupMarker);
+    log(`isFirstLaunch: ${isFirst} (marker: ${_setupMarker})`);
+    return { isFirstLaunch: isFirst };
+  });
+
+  ipcMain.handle('galaxy:completeSetup', async () => {
+    try {
+      const dir = dirname(_setupMarker);
+      if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+      writeFileSync(_setupMarker, new Date().toISOString());
+      log(`Setup marker written: ${_setupMarker}`);
+      return { ok: true };
+    } catch (e) {
+      log(`Failed to write setup marker: ${(e as Error).message}`);
+      return { ok: false, error: (e as Error).message };
+    }
+  });
+
+  // Restart sidecar: stop the current one, wait, start a fresh one.
+  // Used after dependency installation so the new sidecar picks up
+  // freshly pip-installed packages.
+  ipcMain.handle('galaxy:restartSidecar', async () => {
+    log('Restarting sidecar...');
+    stopSidecar();
+    // Wait for the old zmq socket to fully release
+    await new Promise((r) => setTimeout(r, 1500));
+    try {
+      await startSidecar();
+      log('Sidecar restarted OK');
+      return { ok: true };
+    } catch (e) {
+      log(`Sidecar restart failed: ${(e as Error).message}`);
+      return { ok: false, error: (e as Error).message };
+    }
+  });
+
   // ── API schema (introspection for the renderer / future codegen) ────
   // Returns a JSON description of every IPC channel this app exposes.
   // The renderer can fetch this once at startup to:
@@ -797,6 +934,9 @@ function registerIpc() {
       { name: 'galaxy:graphSearch',      args: ['query: string', 'topK?: number'], returns: 'GraphSearchResult' },
       { name: 'galaxy:skillNeighbors',   args: ['name: string'],                returns: 'SkillNeighbors' },
       { name: 'galaxy:installWizard',    args: ['args: string[]', 'timeout?: number'], returns: 'IwResult' },
+      { name: 'galaxy:isFirstLaunch',   args: [],                              returns: '{isFirstLaunch: boolean}' },
+      { name: 'galaxy:completeSetup',   args: [],                              returns: '{ok: boolean, error?: string}' },
+      { name: 'galaxy:restartSidecar',  args: [],                              returns: '{ok: boolean, error?: string}' },
       { name: 'galaxy:openExternal',     args: ['url: string'],                 returns: 'void' },
     ],
     types: {
@@ -855,10 +995,14 @@ app.whenReady().then(async () => {
     try { sidecarLog = join(app.getPath('userData'), 'sidecar.log'); }
     catch { sidecarLog = join(RESOURCES_DIR, 'sidecar.log'); }
     const hint = isPackaged
-      ? `This is a PACKAGED build (${platform}). The sidecar is a self-contained\n` +
-        `binary bundled with the app — no Python install is needed.\n` +
-        `This usually means the bundle is incomplete or the sidecar crashed\n` +
-        `on startup (antivirus block, missing OS runtime, or packaging bug).\n\n` +
+      ? `This is a PACKAGED build (${platform}). The sidecar uses your system's\n` +
+        `Python interpreter (${resolvePythonInterpreter()}) to run the GalaxyOS engine.\n` +
+        `This usually means one of:\n` +
+        `  - Python 3.11+ is not installed (download from https://python.org)\n` +
+        `  - The NSIS dependency installer was skipped and pip packages are missing\n` +
+        `  - Antivirus blocked the Python subprocess launch\n\n` +
+        `To install Python dependencies manually:\n` +
+        `  pip install -r "${join(RESOURCES_DIR, 'requirements-core.txt')}"\n\n` +
         `Please share the following files when reporting a bug:\n` +
         `  - ${LOG_FILE}\n` +
         `  - ${sidecarLog}\n\n` +

@@ -47,6 +47,12 @@ export type GalaxyApi = {
     timeout?: number,
   ): Promise<IwResult>;
   onInstallWizardProgress(callback: (event: IwProgressEvent) => void): () => void;
+  /** Check if this is the first launch (setup marker not present). */
+  isFirstLaunch(): Promise<{ isFirstLaunch: boolean }>;
+  /** Write the setup-complete marker after first-launch wizard finishes. */
+  completeSetup(): Promise<{ ok: boolean; error?: string }>;
+  /** Restart the Python sidecar (e.g. after pip install of new deps). */
+  restartSidecar(): Promise<{ ok: boolean; error?: string }>;
   openExternal(url: string): Promise<void>;
   /** API schema introspection — returns the JSON contract of all
    *  IPC channels. Fetch once at startup for runtime validation. */
@@ -199,6 +205,9 @@ const api: GalaxyApi = {
     ipcRenderer.on('iw:progress', handler);
     return () => ipcRenderer.removeListener('iw:progress', handler);
   },
+  isFirstLaunch: () => ipcRenderer.invoke('galaxy:isFirstLaunch') as any,
+  completeSetup: () => ipcRenderer.invoke('galaxy:completeSetup') as any,
+  restartSidecar: () => ipcRenderer.invoke('galaxy:restartSidecar') as any,
   openExternal: (u) => ipcRenderer.invoke('galaxy:openExternal', u) as any,
   schema: () => ipcRenderer.invoke('galaxy:schema') as Promise<ApiSchema>,
   // Real-time streaming event listeners (zmq PUB → webContents.send)

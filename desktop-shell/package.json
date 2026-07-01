@@ -19,7 +19,8 @@
     "build:mac:arm64": "electron-builder --mac dmg --arm64",
     "build:linux": "electron-builder --linux AppImage --x64",
     "build:lfm": "cd ../extensions/galaxyos/native && cargo build --release",
-    "build:all": "npm run build:lfm && npm run build:main && npm run build:python && npm run build:electron",
+    "build:all": "npm run build:lfm && npm run build:main && npm run build:electron",
+    "build:all:frozen": "npm run build:lfm && npm run build:main && npm run build:python && npm run build:electron",
     "postinstall": "electron-rebuild -f -w zeromq || true",
     "rebuild:native": "electron-rebuild -f -w zeromq",
     "test": "node --test test/*.test.mjs",
@@ -55,6 +56,7 @@
       "dist/**/*",
       "renderer/**/*",
       "package.json",
+      "installer/**/*",
       "node_modules/@jboltai/tokui/dist/**/*"
     ],
     "asarUnpack": [
@@ -62,12 +64,32 @@
     ],
     "extraResources": [
       {
-        "from": "python/dist",
-        "to": ".",
-        "filter": [
-          "galaxyos-sidecar",
-          "galaxyos-sidecar.exe"
-        ]
+        "from": "python",
+        "to": "python"
+      },
+      {
+        "from": "../galaxyos",
+        "to": "galaxyos"
+      },
+      {
+        "from": "../scripts",
+        "to": "scripts"
+      },
+      {
+        "from": "../skills",
+        "to": "skills"
+      },
+      {
+        "from": "../config",
+        "to": "config"
+      },
+      {
+        "from": "../requirements-core.txt",
+        "to": "."
+      },
+      {
+        "from": "../requirements-heavy.txt",
+        "to": "."
       },
       {
         "from": "../extensions/galaxyos/native/target/release",
@@ -95,7 +117,8 @@
       "perMachine": false,
       "installerIcon": "build/icon.ico",
       "uninstallerIcon": "build/icon.ico",
-      "shortcutName": "GalaxyOS"
+      "shortcutName": "GalaxyOS",
+      "include": "installer/setup.nsh"
     },
     "mac": {
       "target": "dmg",

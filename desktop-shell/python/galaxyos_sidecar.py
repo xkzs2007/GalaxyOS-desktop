@@ -62,35 +62,74 @@ _THIS_DIR = Path(__file__).resolve().parent
 _FROZEN = getattr(sys, "frozen", False)
 
 if not _FROZEN:
-    # Sidecar is at desktop-shell/python/, so the repo root is two levels up.
-    _REPO_ROOT = _THIS_DIR.parent.parent
-    # Order matters: engine + privileged dirs must be on path BEFORE
-    # the engine's bare imports (e.g. `from unified_vector_store import ...`)
-    # resolve. We insert them at the FRONT so they take priority.
-    _ENGINE_DIR = _REPO_ROOT / "galaxyos" / "engine"
-    _PRIVILEGED_DIR = _REPO_ROOT / "galaxyos" / "privileged"
-    _GALAXYOS_PKG = _REPO_ROOT / "galaxyos"
-    # Use the stdlib logger once it's configured below, but for this
-    # early-bootstrap section use print() so the message appears
-    # even if the sidecar's logging hasn't been set up yet.
+    # ── Detect run mode ────────────────────────────────────────────
+    # Three layouts are possible:
+    #   1. Dev:      <repo>/desktop-shell/python/galaxyos_sidecar.py
+    #   2. Packaged: <install>/resources/python/galaxyos_sidecar.py
+    #   3. PyInstaller frozen (handled in the `else` branch below)
+    #
+    # In packaged mode, the resources/ directory contains:
+    #   python/     — sidecar + sibling modules
+    #   galaxyos/   — the engine package
+    #   scripts/    — install_wizard.py + co
+    #   skills/     — 76 SKILL.md files
+    #   config/     — system_config.json etc.
+    #
+    # We detect this by looking for a `galaxyos/` sibling to `python/`.
+
     _print = lambda *a: print("[sidecar bootstrap]", *a, file=sys.stderr)
-    for d in (_ENGINE_DIR, _PRIVILEGED_DIR, _GALAXYOS_PKG, _REPO_ROOT):
-        if d.exists():
-            if str(d) not in sys.path:
+
+    # Check if we're inside a packaged install (resources/python/galaxyos_sidecar.py)
+    _resources_dir = _THIS_DIR.parent  # resources/ in packaged, desktop-shell/ in dev
+    _packaged_galaxyos = _resources_dir / "galaxyos" / "__init__.py"
+    _IS_PACKAGED_SOURCE = _packaged_galaxyos.exists()
+
+    if _IS_PACKAGED_SOURCE:
+        # ── Packaged source mode ───────────────────────────────────
+        # All GalaxyOS packages are siblings under resources/.
+        # Add them to sys.path so bare imports (from galaxyos.engine.xxx)
+        # resolve.  The PYTHONPATH set by main.ts already includes
+        # the resources/ dir, but we also add explicit subdirs for
+        # legacy bare imports (from unified_vector_store import ...).
+        _GALAXYOS_PKG = _resources_dir / "galaxyos"
+        _ENGINE_DIR = _GALAXYOS_PKG / "engine"
+        _PRIVILEGED_DIR = _GALAXYOS_PKG / "privileged"
+
+        for d in (_resources_dir, _GALAXYOS_PKG, _ENGINE_DIR, _PRIVILEGED_DIR, _THIS_DIR):
+            if d.exists() and str(d) not in sys.path:
                 sys.path.insert(0, str(d))
-        else:
-            # Previously this was a silent skip — if galaxyos/ has
-            # been moved/renamed, the user would get a confusing
-            # "ModuleNotFoundError" 200ms later without any clue
-            # what went wrong. Now we at least surface a warning.
-            _print(f"  WARN: expected path missing: {d}")
-    if not _REPO_ROOT.exists():
-        _print(f"  WARN: repo root missing: {_REPO_ROOT}  "
-               f"(sidecar at {_THIS_DIR})")
-    # Honor explicit override
-    _repo_env = os.environ.get("GALAXYOS_REPO")
-    if _repo_env:
-        if _repo_env not in sys.path:
+
+        # Also give the engine access to config/ and skills/
+        _config_dir = _resources_dir / "config"
+        _skills_dir = _resources_dir / "skills"
+        _scripts_dir = _resources_dir / "scripts"
+        for d in (_config_dir, _skills_dir, _scripts_dir):
+            if d.exists() and str(d) not in sys.path:
+                sys.path.insert(0, str(d))
+
+        # Honor explicit GALAXYOS_REPO override (for custom data dirs)
+        _repo_env = os.environ.get("GALAXYOS_REPO")
+        if _repo_env and _repo_env not in sys.path:
+            sys.path.insert(0, _repo_env)
+
+    else:
+        # ── Dev mode ───────────────────────────────────────────────
+        _REPO_ROOT = _THIS_DIR.parent.parent
+        _ENGINE_DIR = _REPO_ROOT / "galaxyos" / "engine"
+        _PRIVILEGED_DIR = _REPO_ROOT / "galaxyos" / "privileged"
+        _GALAXYOS_PKG = _REPO_ROOT / "galaxyos"
+
+        for d in (_ENGINE_DIR, _PRIVILEGED_DIR, _GALAXYOS_PKG, _REPO_ROOT):
+            if d.exists():
+                if str(d) not in sys.path:
+                    sys.path.insert(0, str(d))
+            else:
+                _print(f"  WARN: expected path missing: {d}")
+        if not _REPO_ROOT.exists():
+            _print(f"  WARN: repo root missing: {_REPO_ROOT}  "
+                   f"(sidecar at {_THIS_DIR})")
+        _repo_env = os.environ.get("GALAXYOS_REPO")
+        if _repo_env and _repo_env not in sys.path:
             sys.path.insert(0, _repo_env)
     if str(_THIS_DIR) not in sys.path:
         sys.path.insert(0, str(_THIS_DIR))

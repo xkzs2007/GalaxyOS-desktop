@@ -23,6 +23,7 @@ import { renderWelcome } from './components/welcome.js';
 import { initInstallWizard, openWizard } from './components/install-wizard.js';
 import { openSettings } from './components/settings-panel.js';
 import { openCommandPalette } from './tokui/polish.js';
+import { renderSetupPage } from './tokui/setup.js';
 import { setTheme } from './tokui/runtime.js';
 import { sessionApi } from './state/session.js';
 
@@ -128,6 +129,25 @@ async function handleCommand(cmdId) {
   }
 }
 
+// ── First-launch setup wizard (TokUI DSL, see tokui/setup.js) ──
+
+async function checkFirstLaunch() {
+  try {
+    const { isFirstLaunch } = await window.galaxy.isFirstLaunch();
+    return isFirstLaunch;
+  } catch {
+    // IPC might not be ready yet; wait and retry once
+    await new Promise((r) => setTimeout(r, 1000));
+    try {
+      const { isFirstLaunch } = await window.galaxy.isFirstLaunch();
+      return isFirstLaunch;
+    } catch {
+      console.warn('[main] isFirstLaunch check failed, assuming not first launch');
+      return false;
+    }
+  }
+}
+
 // ── Welcome feature click → set composer mode + fill placeholder ──
 registerHandler('onWelcomePick', (data) => {
   const value = typeof data === 'string' ? data : data?.value ?? data?.id;
@@ -135,6 +155,15 @@ registerHandler('onWelcomePick', (data) => {
 });
 
 (async () => {
+  // 0. First-launch check — show setup wizard if never run before
+  const isFirst = await checkFirstLaunch();
+  if (isFirst) {
+    await bootTokUI('#tokui-container');
+    renderSetupPage();
+    console.log('[main] GalaxyOS first-launch setup page rendered');
+    return;
+  }
+
   // 1. Boot TokUI
   await bootTokUI('#tokui-container');
 

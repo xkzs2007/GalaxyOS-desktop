@@ -3588,6 +3588,138 @@ def migration_wizard(
     return results
 
 
+def _install_deps(python_exe=None, heavy=False):
+    """安装 GalaxyOS Python 依赖。
+    
+    自动检测 Python 解释器，依次安装 requirements-core.txt，
+    如果 heavy=True 则继续安装 requirements-heavy.txt。
+    所有输出通过 print 发出，供 ZMQ PUB stream 采集。
+    
+    Returns: (ok: bool, message: str)
+    """
+    
+    # 1. 检测 Python
+    if python_exe:
+        py = python_exe
+        if not os.path.isfile(py):
+            # 可能是命令名，用 shutil.which 找
+            resolved = shutil.which(py)
+            if resolved:
+                py = resolved
+    else:
+        py = None
+        for name in ("python3.12", "python3.11", "python3.10", "python3", "python"):
+            resolved = shutil.which(name)
+            if resolved:
+                py = resolved
+                break
+    
+    if not py:
+        return False, "Python 3.11+ not found on this system"
+    
+    # 验证版本
+    try:
+        r = subprocess.run([py, "-c", "import sys; print(sys.version[:4])"],
+                          capture_output=True, text=True, timeout=10)
+        ver = r.stdout.strip()
+        if r.returncode != 0 or ver < "3.11":
+            return False, f"Python {ver} is too old (need 3.11+)"
+        print(f"Python: {py} ({ver})")
+    except Exception as e:
+        return False, f"Failed to verify Python: {e}"
+    
+    # 2. 找 requirements 文件
+    # 优先从脚本所在目录（打包后 resources/scripts/）向上找
+    script_dir = Path(__file__).resolve().parent
+    candidates = [
+        script_dir / ".." / "requirements-core.txt",
+        script_dir / ".." / ".." / "requirements-core.txt",
+        script_dir / "requirements-core.txt",
+    ]
+    req_core = None
+    for p in candidates:
+        if p.exists():
+            req_core = str(p.resolve())
+            break
+    
+    if not req_core:
+        return False, "requirements-core.txt not found in package"
+    
+    print(f"requirements-core: {req_core}")
+    
+    # 3. 安装核心依赖
+    print("Installing core dependencies (~200MB)...")
+    
+    # Build pip install command — handle PEP 668 externally-managed environments
+    pip_base = [py, "-m", "pip", "install", "-r", req_core, "--quiet", "--no-input"]
+    ok_flag = False
+    err_msg = ""
+    
+    for attempt, extra_flags in enumerate(([], ["--break-system-packages"])):
+        cmd = pip_base + extra_flags
+        try:
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+            if r.returncode == 0:
+                ok_flag = True
+                break
+            err_msg = r.stderr[-500:]
+            # If it's not the externally-managed error, don't retry
+            if "externally-managed-environment" not in r.stderr and attempt == 0:
+                break
+        except subprocess.TimeoutExpired:
+            err_msg = "pip install timed out (10 min)"
+            break
+        except Exception as e:
+            err_msg = f"pip install error: {e}"
+            break
+    
+    if not ok_flag:
+        return False, f"pip install failed:\n{err_msg}"
+    print("Core dependencies installed OK")
+    
+    # 4. 可选重型依赖
+    if heavy:
+        candidates_heavy = [
+            script_dir / ".." / "requirements-heavy.txt",
+            script_dir / ".." / ".." / "requirements-heavy.txt",
+            script_dir / "requirements-heavy.txt",
+        ]
+        req_heavy = None
+        for p in candidates_heavy:
+            if p.exists():
+                req_heavy = str(p.resolve())
+                break
+        
+        if req_heavy:
+            print(f"requirements-heavy: {req_heavy}")
+            print("Installing heavy AI components (~3GB, 5-10 min)...")
+            
+            pip_heavy_base = [py, "-m", "pip", "install", "-r", req_heavy, "--quiet", "--no-input"]
+            heavy_ok = False
+            for attempt_h, extra_h in enumerate(([], ["--break-system-packages"])):
+                cmd_h = pip_heavy_base + extra_h
+                try:
+                    r2 = subprocess.run(cmd_h, capture_output=True, text=True, timeout=1200)
+                    if r2.returncode == 0:
+                        heavy_ok = True
+                        break
+                    if "externally-managed-environment" not in r2.stderr and attempt_h == 0:
+                        break
+                except subprocess.TimeoutExpired:
+                    break
+                except Exception:
+                    break
+            
+            if heavy_ok:
+                print("Heavy AI components installed OK")
+            else:
+                print("WARN: heavy deps install failed (continuing)")
+        else:
+            print("INFO: requirements-heavy.txt not found, skipping")
+    
+    return True, f"Dependencies installed successfully (Python: {py})"
+
+
 def main():
     import argparse
     parser = argparse.ArgumentParser(description="GalaxyOS 安装 & 配置向导")
@@ -3599,23 +3731,27 @@ def main():
     parser.add_argument("--kg-test", action="store_true", help="知识图谱功能专项测试")
     parser.add_argument("--all", action="store_true", help="全量模式（体检 + 睡眠测试 + 修复）")
     parser.add_argument("--apply-cspl-patch", action="store_true",
-        help="打 CSPL 安全补丁：修复 xiaoyi-channel steer-inject 攻击链，防记忆泄露和流程劫持")
+        help="打 CSPL 安全补丁：修复 xiaoyi-channel steer-inject 攻击链")
     parser.add_argument("--register-plugin", action="store_true",
-        help="(推荐) 注册 GalaxyOS 插件到 OpenClaw: enable galaxyos + disable memory-core + 重启 Gateway + 验证")
+        help="注册 GalaxyOS 插件到 OpenClaw")
     parser.add_argument("--install-plugin", action="store_true",
-        help="(旧版) 仅检测 GalaxyOS 插件状态，不做操作")
-    parser.add_argument("--fix-torch", action="store_true", help="自动补齐 torch/torch_geometric/hnswlib 等 ML 栈（清华源 + PyG wheel + CPU 索引）")
-    parser.add_argument("--python", default=None, help="显式指定 Python 解释器路径（覆盖自动检测，常用于生产环境/容器固定运行时）")
-    parser.add_argument("--download-lfm", action="store_true", help="从 hf-mirror 下载 LFM2.5-1.2B-Thinking 原始 safetensors 权重（~2.2GB，Python transformers 用）")
-    parser.add_argument("--download-lfm-onnx", action="store_true", help="从 LiquidAI 官方 ONNX 仓库下载 LFM2.5-1.2B-Thinking ONNX 量化权重（默认 Q4 INT4 ~1.2GB，可与 Rust lfm_server.rs 配合）")
-    parser.add_argument("--download-lfm-onnx-quant", default="q4", choices=["q4", "fp16", "all"], help="ONNX 量化方案：q4(~1.2GB,默认) | fp16(~2.4GB) | all(全下)")
-    parser.add_argument("--download-embedding", action="store_true", help="从 hf-mirror 下载 bge-small-zh-v1.5 ONNX 模型（~96MB）")
-    parser.add_argument("--setup-rust", action="store_true", help="安装 Rust 工具链（国内镜像，自动识别 ARM64/x86_64）")
-    parser.add_argument("--update", action="store_true", help="增量更新模式：版本检测 + 仅同步变更文件，保护已有配置")
-    parser.add_argument("--migrate", action="store_true", help="数据迁移向导：检测并迁移历史数据到当前版本")
-    parser.add_argument("--migrate-auto", action="store_true", help="数据迁移（非互动模式）：自动迁移所有可迁移数据")
-    parser.add_argument("--migrate-target", default=None, help="数据迁移目标目录（默认当前 workspace）")
-    parser.add_argument("--openclaw-home", default=None, help="显式指定 OpenClaw 用户配置目录（覆盖 OPENCLAW_HOME 环境变量，覆盖 dev/prod 自动检测）")
+        help="仅检测 GalaxyOS 插件状态")
+    parser.add_argument("--fix-torch", action="store_true", help="自动补齐 torch 等 ML 栈")
+    parser.add_argument("--install-deps", action="store_true",
+        help="首次启动：自动检测 Python 并安装 requirements-core.txt")
+    parser.add_argument("--with-heavy", action="store_true",
+        help="配合 --install-deps：也安装重型 AI 组件（~3GB）")
+    parser.add_argument("--python", default=None, help="显式指定 Python 解释器路径")
+    parser.add_argument("--download-lfm", action="store_true", help="下载 LFM 权重")
+    parser.add_argument("--download-lfm-onnx", action="store_true", help="下载 LFM ONNX")
+    parser.add_argument("--download-lfm-onnx-quant", default="q4", choices=["q4", "fp16", "all"])
+    parser.add_argument("--download-embedding", action="store_true", help="下载 embedding 模型")
+    parser.add_argument("--setup-rust", action="store_true", help="安装 Rust 工具链")
+    parser.add_argument("--update", action="store_true", help="增量更新模式")
+    parser.add_argument("--migrate", action="store_true", help="数据迁移向导")
+    parser.add_argument("--migrate-auto", action="store_true", help="数据迁移（非互动）")
+    parser.add_argument("--migrate-target", default=None)
+    parser.add_argument("--openclaw-home", default=None)
     args = parser.parse_args()
 
     # ── 显式 OpenClaw home 时重新解析全局路径 ──
@@ -3663,6 +3799,18 @@ def main():
     if args.fix_torch:
         rc = fix_torch_stack(python_exe=args.python)
         sys.exit(rc)
+
+    if args.install_deps:
+        ok_flag, msg = _install_deps(
+            python_exe=args.python,
+            heavy=args.with_heavy,
+        )
+        if args.report:
+            import json
+            print(json.dumps({"ok": ok_flag, "message": msg}, ensure_ascii=False))
+        elif not ok_flag:
+            print(f"ERROR: {msg}", file=sys.stderr)
+        sys.exit(0 if ok_flag else 1)
 
     if args.migrate or args.migrate_auto:
         r = migration_wizard(
