@@ -1,0 +1,22 @@
+{
+  "name": "galaxyos-desktop",
+  "version": "1.0.0",
+  "description": "> 为 LLM 提供记忆、检索、推理、验证、自进化的全套认知能力，**自带桌面端 Agent 应用** > > **v9.4** · MultiSlotRouter 5-slot optional（LLM 必填，其余可选）· 脱离 OpenClaw 独立运行",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs",
+    "example": "examples",
+    "test": "tests"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://cnb:3Bxl1b45vzLjGz5sHXqtdJXUSuA@cnb.cool/TIAMO.xianyao/galaxyos-desktop.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs"
+}

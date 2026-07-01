@@ -6,6 +6,7 @@
 
 use base64::Engine;
 use image::{DynamicImage, ImageFormat};
+#[cfg(feature = "python")]
 use std::collections::HashMap;
 
 // ═══════════════════════════════════════════════════════════
@@ -135,6 +136,7 @@ mod python_bindings {
 
     /// 图像缩放（Python 接口）
     #[pyfunction]
+    #[pyo3(signature = (data, width, height, keep_ratio=None, fmt=None))]
     fn resize(data: Vec<u8>, width: u32, height: u32, keep_ratio: Option<bool>, fmt: Option<&str>) -> PyResult<HashMap<String, pyo3::PyObject>> {
         Python::with_gil(|py| {
             let b64 = resize_core(&data, width, height, keep_ratio.unwrap_or(true), fmt.unwrap_or("jpeg"))
@@ -154,6 +156,7 @@ mod python_bindings {
 
     /// 图像增强（Python 接口）
     #[pyfunction]
+    #[pyo3(signature = (data, brightness=None, contrast=None, sharpness=None, fmt=None))]
     fn enhance(data: Vec<u8>, brightness: Option<f32>, contrast: Option<f32>, sharpness: Option<f32>, fmt: Option<&str>) -> PyResult<String> {
         enhance_core(&data, brightness.unwrap_or(1.0), contrast.unwrap_or(1.0), sharpness.unwrap_or(1.0), fmt.unwrap_or("jpeg"))
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e))
@@ -161,6 +164,7 @@ mod python_bindings {
 
     /// OCR 预处理（Python 接口）
     #[pyfunction]
+    #[pyo3(signature = (data, fmt=None))]
     fn ocr_preprocess(data: Vec<u8>, fmt: Option<&str>) -> PyResult<String> {
         ocr_preprocess_core(&data, fmt.unwrap_or("png"))
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e))

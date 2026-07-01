@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self' https://unpkg.com https://esm.sh; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://unpkg.com https://esm.sh; style-src 'self' 'unsafe-inline' https://unpkg.com https://esm.sh; img-src 'self' data:; connect-src 'self' https://esm.sh;" />
+  <title>GalaxyOS Code Editor Test</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #1e1e2e; color: #cdd6f4; }
+    #app { max-width: 960px; margin: 0 auto; padding: 20px; }
+    h1 { font-size: 20px; margin-bottom: 8px; }
+    .subtitle { color: #6c7086; font-size: 13px; margin-bottom: 20px; }
+    #status { background: #181825; border-radius: 8px; padding: 12px 16px; margin-bottom: 16px; font-family: monospace; font-size: 12px; min-height: 40px; }
+    .ok { color: #a6e3a1; }
+    .err { color: #f38ba8; }
+    .info { color: #89b4fa; }
+    #editor-host { border: 1px solid #313244; border-radius: 8px; min-height: 300px; }
+    #editor-host .cm-editor { height: 100%; }
+    #editor-host .cm-editor .cm-scroller { overflow: auto; }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <h1>🔬 Code Editor 测试</h1>
+    <p class="subtitle">TokUI + CodeMirror 6 集成验证</p>
+    <div id="status">
+      <span class="info">…</span> 等待测试开始
+    </div>
+    <div id="editor-host"></div>
+  </div>
+
+  <script type="module">
+    const $s = document.getElementById('status');
+    function log(msg, cls = 'info') {
+      const line = document.createElement('div');
+      line.innerHTML = `<span class="${cls}">[${new Date().toISOString().slice(11,19)}]</span> ${msg}`;
+      $s.appendChild(line);
+      $s.scrollTop = $s.scrollHeight;
+      console.log(`[test] ${msg}`);
+    }
+
+    async function testCodeMirrorImport() {
+      log('1/3 加载 CodeMirror core (codemirror@6.0.2)...');
+      try {
+        const mod = await import('https://esm.sh/codemirror@6.0.2');
+        const keys = Object.keys(mod);
+        log(`  ✓ 导出 ${keys.length} 个: ${keys.join(', ')}`, 'ok');
+
+        if (!mod.EditorView) throw new Error('缺少 EditorView');
+        if (!mod.minimalSetup) throw new Error('缺少 minimalSetup');
+        if (!mod.basicSetup) throw new Error('缺少 basicSetup');
+        log('  ✓ EditorView / minimalSetup / basicSetup 均可用', 'ok');
+        return mod;
+      } catch (e) {
+        log(`  ✗ 加载失败: ${e.message}`, 'err');
+        throw e;
+      }
+    }
+
+    async function testStateImport() {
+      log('2/3 加载 @codemirror/state...');
+      try {
+        const mod = await import('https://esm.sh/@codemirror/state@6.0');
+        if (!mod.EditorState) throw new Error('缺少 EditorState');
+        log('  ✓ EditorState 可用', 'ok');
+        return mod;
+      } catch (e) {
+        log(`  ✗ 加载失败: ${e.message}`, 'err');
+        throw e;
+      }
+    }
+
+    async function testEditorMount(cmMod, stateMod) {
+      log('3/3 挂载 CodeMirror 到 #editor-host...');
+      const host = document.getElementById('editor-host');
+      const { EditorView, minimalSetup } = cmMod;
+      const { EditorState } = stateMod;
+
+      try {
+        const view = new EditorView({
+          doc: '# GalaxyOS Code Editor Test\nprint("Hello from CodeMirror 6!")\n\n# 语法高亮测试\ndef fibonacci(n):\n    if n <= 1:\n        return n\n    return fibonacci(n-1) + fibonacci(n-2)\n',
+          extensions: [minimalSetup],
+          parent: host,
+        });
+
+        // Verify content
+        const text = view.state.doc.toString();
+        if (!text.includes('Hello from CodeMirror 6!')) {
+          throw new Error('编辑器内容不匹配');
+        }
+
+        log('  ✓ CodeMirror 挂载成功', 'ok');
+        log(`  ✓ 文档长度: ${text.length} 字符`, 'ok');
+
+        // Test setting content
+        view.dispatch({
+          changes: { from: 0, to: view.state.doc.length, insert: 'updated!' }
+        });
+        if (view.state.doc.toString() !== 'updated!') {
+          throw new Error('setValue 不工作');
+        }
+        log('  ✓ setValue/getValue 正常', 'ok');
+
+        // Verify DOM
+        const cmEl = host.querySelector('.cm-editor');
+        if (!cmEl) throw new Error('未找到 .cm-editor DOM 元素');
+        log('  ✓ DOM 渲染正常 (.cm-editor 存在)', 'ok');
+
+        log('✅ 所有测试通过！', 'ok');
+        return { view, host };
+      } catch (e) {
+        log(`  ✗ 挂载失败: ${e.message}`, 'err');
+        throw e;
+      }
+    }
+
+    (async () => {
+      try {
+        const cm = await testCodeMirrorImport();
+        const state = await testStateImport();
+        await testEditorMount(cm, state);
+      } catch (e) {
+        log(`❌ 测试失败: ${e.message}`, 'err');
+      }
+    })();
+  </script>
+</body>
+</html>
