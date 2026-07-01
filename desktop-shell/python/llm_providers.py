@@ -118,18 +118,22 @@ _PROVIDER_DEFAULTS: Dict[str, Any] = {
     "ollama": {
         "base_url": "http://127.0.0.1:11434/v1",
         "default_model": "qwen2.5:7b",
+        "models": {},
     },
     "vllm": {
         "base_url": "http://127.0.0.1:8000/v1",
         "default_model": "Qwen/Qwen2.5-7B-Instruct",
+        "models": {},
     },
     "custom": {
         "base_url": "",
         "default_model": "default",
+        "models": {},
     },
     "mock": {
         "base_url": "",
         "default_model": "mock-1",
+        "models": {"mock-1": "Mock（脱机测试）"},
     },
 }
 
@@ -606,27 +610,27 @@ async def _async_sleep_ms(ms: int) -> None:
 MAINSTREAM_PROVIDERS = [
     # (provider_id, display_name, default_model, hint, models_dict)
     ("openai",      "OpenAI",       "gpt-4o-mini",              "GPT-4o / 4o-mini / o1 / o3",
-        _PROVIDER_DEFAULTS["openai"]["models"]),
+        _PROVIDER_DEFAULTS.get("openai", {}).get("models", {})),
     ("deepseek",    "DeepSeek",     "deepseek-v4-flash",        "V4 Flash（快）/ V4 Pro（thinking）— 旧版 7/24 废弃",
-        _PROVIDER_DEFAULTS["deepseek"]["models"]),
+        _PROVIDER_DEFAULTS.get("deepseek", {}).get("models", {})),
     ("qwen",        "Qwen (DashScope)", "qwen-plus",            "qwen-plus / max / coder / turbo",
-        _PROVIDER_DEFAULTS["qwen"]["models"]),
+        _PROVIDER_DEFAULTS.get("qwen", {}).get("models", {})),
     ("anthropic",   "Anthropic",    "claude-sonnet-4-6-20250514", "Sonnet 5 / Fable 5 / Opus 4.8 / Sonnet 4.6 / Haiku 4.5",
-        _PROVIDER_DEFAULTS["anthropic"]["models"]),
+        _PROVIDER_DEFAULTS.get("anthropic", {}).get("models", {})),
     ("google",      "Google Gemini","gemini-2.5-flash",         "Gemini 3 Pro / 3 Flash / 2.5 Pro / 2.5 Flash",
-        _PROVIDER_DEFAULTS["google"]["models"]),
+        _PROVIDER_DEFAULTS.get("google", {}).get("models", {})),
     ("siliconflow", "SiliconFlow",  "Qwen/Qwen2.5-7B-Instruct","硅基流动 — 多模型托管",
-        _PROVIDER_DEFAULTS["siliconflow"]["models"]),
+        _PROVIDER_DEFAULTS.get("siliconflow", {}).get("models", {})),
     ("openrouter",  "OpenRouter",   "anthropic/claude-sonnet-4-6", "OpenRouter — 任意模型路由",
-        _PROVIDER_DEFAULTS["openrouter"]["models"]),
+        _PROVIDER_DEFAULTS.get("openrouter", {}).get("models", {})),
     ("ollama",      "Ollama (本地)", "qwen2.5:7b",               "Ollama 本地推理",
-        _PROVIDER_DEFAULTS["ollama"]["models"]),
+        _PROVIDER_DEFAULTS.get("ollama", {}).get("models", {})),
     ("vllm",        "vLLM (本地)",  "Qwen/Qwen2.5-7B-Instruct", "vLLM OpenAI-compat 服务",
-        _PROVIDER_DEFAULTS["vllm"]["models"]),
+        _PROVIDER_DEFAULTS.get("vllm", {}).get("models", {})),
     ("custom",      "自定义 (OpenAI 兼容)", "default",          "任意 OpenAI 兼容端点",
-        _PROVIDER_DEFAULTS["custom"]["models"]),
+        _PROVIDER_DEFAULTS.get("custom", {}).get("models", {})),
     ("mock",        "Mock (脱机)",   "mock-1",                  "无网络，确定性回声",
-        _PROVIDER_DEFAULTS["mock"]["models"]),
+        _PROVIDER_DEFAULTS.get("mock", {}).get("models", {})),
 ]
 
 
