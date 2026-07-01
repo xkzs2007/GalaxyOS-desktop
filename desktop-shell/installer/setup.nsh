@@ -6,6 +6,7 @@
 
 !include "FileFunc.nsh"
 !include "LogicLib.nsh"
+!include "StrFunc.nsh"
 
 ; ── 查找系统 Python ───────────────────────────────────────────────────
 ; 优先级：注册表 Python 3.12 > 3.11 > 3.10 > PATH 中的 python3/python
