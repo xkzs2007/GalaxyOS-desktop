@@ -82,16 +82,17 @@ export function buildCommandPalette() {
     `  [command__group tt:"会话"]\n` +
     `    [command__item id:cmd-new-session tt:"+ 新对话" desc:"Ctrl+N"]\n` +
     `    [command__item id:cmd-toggle-sidebar tt:"切换侧边栏" desc:"Ctrl+B"]\n` +
-    `    [command__item id:cmd-clear-chat tt:"清空对话" desc:"Ctrl+K"]\n` +
+    `    [command__item id:cmd-toggle-details tt:"切换详情面板" desc:"Ctrl+J"]\n` +
+    `    [command__item id:cmd-clear-chat tt:"清空对话" desc:""]\n` +
     `  [/command__group]\n` +
     `  [command__group tt:"视图"]\n` +
-    `    [command__item id:cmd-dashboard tt:"仪表盘" desc:""]\n` +
-    `    [command__item id:cmd-memories tt:"记忆浏览" desc:""]\n` +
+    `    [command__item id:cmd-dashboard tt:"仪表盘" desc:"系统状态 + 统计"]\n` +
+    `    [command__item id:cmd-memories tt:"记忆浏览" desc:"时间线 + 搜索"]\n` +
     `    [command__item id:cmd-settings tt:"设置" desc:"Ctrl+,"]\n` +
     `  [/command__group]\n` +
     `  [command__group tt:"主题"]\n` +
     `    [command__item id:cmd-theme-dark tt:"Dark 暗色" desc:""]\n` +
-    `    [command__item id:cmd-theme-modern-dark tt:"Modern Dark" desc:""]\n` +
+    `    [command__item id:cmd-theme-modern-dark tt:"Modern Dark" desc:"推荐"]\n` +
     `    [command__item id:cmd-theme-default tt:"Default 默认" desc:""]\n` +
     `    [command__item id:cmd-theme-modern tt:"Modern 亮色" desc:""]\n` +
     `  [/command__group]\n` +

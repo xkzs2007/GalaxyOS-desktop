@@ -31,6 +31,12 @@ function installKeyboardShortcuts() {
     const ctrl = e.ctrlKey || e.metaKey;
     if (ctrl && e.key === 'n') { e.preventDefault(); sessionApi.newSession(); return; }
     if (ctrl && e.key === 'b') { e.preventDefault(); document.querySelector('.sidebar')?.classList.toggle('hidden'); return; }
+    if (ctrl && e.key === 'j') {
+      e.preventDefault();
+      const panel = document.getElementById('details-panel');
+      if (panel) panel.classList.toggle('hidden');
+      return;
+    }
     if (ctrl && e.key === 'k') {
       e.preventDefault();
       openCommandPalette(async (cmdId) => {
@@ -71,6 +77,7 @@ async function handleCommand(cmdId) {
   switch (cmdId) {
     case 'cmd-new-session':     sessionApi.newSession(); break;
     case 'cmd-toggle-sidebar':  document.querySelector('.sidebar')?.classList.toggle('hidden'); break;
+    case 'cmd-toggle-details':  document.getElementById('details-panel')?.classList.toggle('hidden'); break;
     case 'cmd-clear-chat': {
       const c = document.getElementById('tokui-container');
       if (c) while (c.firstChild) c.removeChild(c.firstChild);

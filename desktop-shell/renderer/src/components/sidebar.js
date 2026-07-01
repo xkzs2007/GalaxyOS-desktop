@@ -1,17 +1,15 @@
-// renderer/src/components/sidebar.js — left sidebar (sessions + skills + status).
+// renderer/src/components/sidebar.js — tree-navigation sidebar (v9.5).
 //
-// D 阶段（[upd] 增量更新）：
-//   - 初始渲染保持 [conversations][conv] 全量（含 id 属性）
-//   - 会话切换 / 新建 / 删除 / 重命名用 [upd id:conv-XXX ...] 增量更新
-//   - 连接状态变化用 [upd id:conn-dot/conn-text] 增量更新
-//   - 技能列表变化仍需全量重渲染（list items 动态 id 管理成本高）
-//
-// TokUI 的 [upd] 支持更新：id, v, act, tt, tx, bg, fc 等属性。
+// Sections: Conversations · Memory · Skills · MCP · Settings · Status
+// Each section is a [card] with click-to-expand title bar.
+// Uses [upd] for incremental updates where possible.
 
 import { sessionStore, sessionApi } from '../state/session.js';
 import { skillsStore, loadSkills } from '../state/skills.js';
 import { connectionStore, startHealthCheck } from '../state/connection.js';
+import { settingsStore } from '../state/settings.js';
 import { bootTokUI, registerHandler, getInstance } from '../tokui/runtime.js';
+import { galaxy } from '../ipc/client.js';
 import { escapeDsl } from '../utils.js';
 import notify from '../tokui/notify.js';
 import { fetchAndShowMemories } from '../tokui/memory-browser.js';
@@ -20,199 +18,328 @@ import { buildEmpty } from '../tokui/polish.js';
 
 const $ = (id) => document.getElementById(id);
 
+// ── Section state (which sections are expanded) ────────────────
+let _expanded = {
+  sessions: true,
+  memory: false,
+  skills: false,
+  mcp: false,
+};
+
 // ── Track last known state for diff-based [upd] ──────────────────
 let _lastSessions = [];
 let _lastActiveId = null;
 let _lastConn = { status: '', detail: '' };
 
-// ── DSL builders (full render) ──────────────────────────────────
+// ── Helpers ────────────────────────────────────────────────────
 
-function buildConversationsDSL() {
+function formatTime(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  const now = new Date();
+  const diff = now - d;
+  if (diff < 60000) return '刚刚';
+  if (diff < 3600000) return `${Math.floor(diff / 60000)}m`;
+  if (diff < 86400000) return `${Math.floor(diff / 3600000)}h`;
+  return d.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' });
+}
+
+// ── Section builder ────────────────────────────────────────────
+
+/**
+ * Render a collapsible sidebar section.
+ * @param {string} key - unique section key
+ * @param {string} icon - emoji icon
+ * @param {string} title - section title
+ * @param {string} badge - optional badge text (e.g. "69")
+ * @param {string} contentDSL - content inside the section
+ * @returns {string} TokUI DSL
+ */
+function renderSection(key, icon, title, badge, contentDSL) {
+  const expanded = _expanded[key];
+  const arrow = expanded ? '▾' : '▸';
+  const badgeStr = badge ? ` [tag sm]${badge}[/tag]` : '';
+  const expandAttr = `clk:onSidebarToggle act:${key}`;
+
+  return `[card]\n` +
+    `  [row ${expandAttr}]\n` +
+    `    [span]${arrow} ${icon} ${escapeDsl(title)}${badgeStr}[/span]\n` +
+    `  [/row]\n` +
+    (expanded ? contentDSL : '') +
+    `[/card]`;
+}
+
+// ── Section content builders ───────────────────────────────────
+
+function buildSessionsContent() {
   const s = sessionStore.get();
-  if (!s.order.length) return buildEmpty('暂无会话', '点击「+ 新对话」开始');
+  if (!s.order.length) return `    [p v:muted]暂无会话[/p]\n    [btn tx:"+ 新对话" clk:onConvNew sm][/btn]`;
+
+  _lastSessions = s.order;
+  _lastActiveId = s.activeId;
+
   const items = s.order.map((id) => {
     const sess = s.byId[id];
     if (!sess) return '';
     const active = id === s.activeId ? 'active' : '';
-    return `[conv id:"conv-${id}" tt:"${escapeDsl(sess.title)}" time:"${formatTime(sess.createdAt)}" act:${id} ${active}]`;
-  }).join('\n  ');
-  _lastSessions = s.order;
-  _lastActiveId = s.activeId;
-  return `[conversations clk:onConvSwitch act:conv-list]\n  ${items}\n[/conversations]`;
+    const title = sess.title || '新对话';
+    return `[conv id:"conv-${id}" tt:"${escapeDsl(title)}" time:"${formatTime(sess.createdAt)}" act:${id} ${active}]`;
+  }).join('\n    ');
+
+  return `    [conversations clk:onConvSwitch act:conv-list]\n    ${items}\n    [/conversations]\n` +
+    `    [btn tx:"+ 新对话" clk:onConvNew sm][/btn]`;
 }
 
-function buildSkillListDSL() {
+function buildMemorySection() {
+  return renderSection('memory', '🧠', '记忆', null, buildMemoryContent());
+}
+
+function buildMemoryContent() {
+  return `    [p v:muted sm]浏览长期记忆时间线[/p]\n` +
+    `    [btn tx:"📋 查看时间线" clk:onMemOpenTimeline sm][/btn]\n` +
+    `    [btn tx:"🔍 搜索记忆" clk:onMemSearch sm v:muted][/btn]`;
+}
+
+function buildSkillsSection() {
   const { list, loading } = skillsStore.get();
-  if (loading) return `[p v:muted]加载技能中…[/p]`;
-  if (!list.length) return `[p v:muted]暂无技能[/p]`;
-  const shown = list.slice(0, 12);
-  const items = shown.map((s) =>
-    `[li clk:onSkillOpen act:${s.id}]${escapeDsl(s.name || s.id)}[/li]`
-  ).join('\n  ');
-  return `[card tt:"已加载技能 ${list.length}"]\n  [list sm]\n  ${items}\n  [/list]\n[/card]`;
+  const count = list.length || 69;
+  return renderSection('skills', '🔗', '技能', `${count}`, buildSkillsContent());
+}
+
+function buildSkillsContent() {
+  const { list, loading } = skillsStore.get();
+  if (loading) return `    [p v:muted]加载中…[/p]`;
+  if (!list.length) {
+    // Trigger load if needed
+    loadSkills();
+    return `    [p v:muted]加载中…[/p]`;
+  }
+
+  // Categories
+  const categories = {};
+  for (const s of list) {
+    const cat = guessCategory(s.id, s.description);
+    if (!categories[cat]) categories[cat] = [];
+    categories[cat].push(s);
+  }
+
+  let dsl = `    [input id:sidebar-skill-search ph:"搜索技能…" clk:onSkillSearch sm v:muted][/input]\n`;
+  for (const [cat, skills] of Object.entries(categories)) {
+    dsl += `    [p v:muted sm]${cat} (${skills.length})[/p]\n`;
+    dsl += `    [list sm]\n`;
+    for (const s of skills.slice(0, 6)) {
+      dsl += `      [li clk:onSkillOpen act:${s.id}]${escapeDsl(s.name || s.id)}[/li]\n`;
+    }
+    if (skills.length > 6) dsl += `      [li v:muted]... +${skills.length - 6} 更多[/li]\n`;
+    dsl += `    [/list]\n`;
+  }
+  return dsl;
+}
+
+/** Heuristic: guess skill category from id and description. */
+function guessCategory(id, desc) {
+  const d = (id + ' ' + (desc || '')).toLowerCase();
+  if (/think|reason|cognit|critic|decision|analyz|problem|logic|system|first-princip|feynman|zoom|overall|plan|strate/i.test(d)) return '🧠 推理方法论';
+  if (/code|react|tdd|test|debug|improve|architecture|program|python|javascript|typescript|api/i.test(d)) return '💻 编程开发';
+  if (/pdf|docx|pptx|excel|markdown|markitdown|nano-pdf|read|write|extract|convert/i.test(d)) return '📄 文档处理';
+  if (/search|web|find|investigat|research|deep-search|multi-search/i.test(d)) return '🔍 搜索研究';
+  if (/agent|multi-agent|autonomous|proactive|execution|tool|self-improve/i.test(d)) return '🤖 Agent 自动化';
+  if (/design|prototype|image|gen|seedream|visual|creative|brainstorm/i.test(d)) return '🎨 设计创意';
+  if (/email|imap|smtp|news|communication|handoff/i.test(d)) return '✉️ 通讯';
+  if (/language|translat|chinese|humanize|nlp|natural-language/i.test(d)) return '🌐 语言 NLP';
+  return '📦 其他';
+}
+
+function buildMcpSection() {
+  return renderSection('mcp', '🔧', 'MCP 工具', null, buildMcpContent());
+}
+
+function buildMcpContent() {
+  return `    [p v:muted sm]Model Context Protocol 工具集成[/p]\n` +
+    `    [btn tx:"🔍 发现 MCP 工具" clk:onMcpDiscover sm][/btn]\n` +
+    `    [btn tx:"+ 添加 MCP 服务器" clk:onMcpAdd sm v:muted][/btn]`;
 }
 
 function buildConnectionDSL() {
-  const s = connectionStore.get();
-  _lastConn = { status: s.status, detail: s.detail };
-  const dot = s.status === 'ok' ? 'ok' : s.status === 'error' ? 'err' : '';
-  const text = s.status === 'ok' ? '已连接' : s.status === 'error' ? '连接失败' : '连接中…';
-  return `[row]\n  [dot id:conn-dot ${dot}][span id:conn-text]${text}[/span] ${s.detail ? `[span v:muted sm id:conn-detail]${escapeDsl(s.detail)}[/span]` : ''}\n[/row]`;
+  const conn = connectionStore.get();
+  _lastConn = { status: conn.status, detail: conn.detail };
+
+  const dot = conn.status === 'ok' ? 'ok' : conn.status === 'error' ? 'err' : '';
+  const text = conn.status === 'ok' ? '已连接' : conn.status === 'error' ? '断连' : '连接中…';
+
+  // Get model info from settings
+  const s = settingsStore.get();
+  const llmModel = s.llm?.model || s.api_key ? 'V4 Flash' : '';
+
+  const modelInfo = llmModel ? ` · ${llmModel}` : '';
+  const slotInfo = s.llm?.enabled ? ' · LLM 已启用' : '';
+
+  return `[row]\n  [dot id:conn-dot ${dot}][span id:conn-text sm]${text}${modelInfo}${slotInfo}[/span]\n[/row]`;
 }
 
-/** Full initial render — used on first boot and skill list changes */
-async function renderSidebarFull() {
-  const host = $('sidebar-host');
+// ── Settings entry ─────────────────────────────────────────────
+
+function buildSettingsEntry() {
+  return `[btn tx:"⚙️ 设置" clk:onSettingsOpen sm v:muted][/btn]`;
+}
+
+// ── Full sidebar render ────────────────────────────────────────
+
+export function renderSidebar() {
+  const host = $('#sidebar-host');
   if (!host) return;
-  const ui = await bootTokUI();
-  if (!ui) return;
-  host.innerHTML = '';
-  ui.startStream(host);
-  ui.feed(`[card tt:"GalaxyOS 桌面端" v:highlight]`);
-  ui.feed(buildConversationsDSL());
-  ui.feed(`[/card]`);
-  ui.feed(buildSkillListDSL());
-  ui.feed(`[card tt:"状态"]${buildConnectionDSL()}[/card]`);
-  ui.feed(`[toolbar pos:bottom align:right]`);
-  ui.feed(`  [btn tx:"+ 新对话" v:primary sm clk:onNewChat]`);
-  ui.feed(`  [btn tx:"📊 仪表盘" sm clk:onOpenDashboard]`);
-  ui.feed(`  [btn tx:"🧬 记忆" sm clk:onBrowseMemories]`);
-  ui.feed(`  [btn tx:"⚙️" sm clk:onSettingsOpen]`);
-  ui.feed(`  [btn tx:"📥 下载模型" sm clk:onOpenWizard]`);
-  ui.feed(`[/toolbar]`);
-  ui.endStream();
-}
 
-// ── Incremental update helpers (use [upd]) ─────────────────────
-
-async function feedUpdate(dsl) {
   const ui = getInstance();
   if (!ui) return;
-  const host = $('sidebar-host');
-  if (!host) return;
+
+  // Load skills if not loaded
+  loadSkills();
+
+  host.innerHTML = '';
   ui.startStream(host);
-  ui.feed(dsl);
+
+  // Header
+  ui.feed('[h4]⚡ GalaxyOS Desktop[/h4]');
+
+  // Sessions section
+  ui.feed(renderSection('sessions', '💬', '会话', null, buildSessionsContent()));
+
+  // Memory section
+  ui.feed(buildMemorySection());
+
+  // Skills section
+  ui.feed(buildSkillsSection());
+
+  // MCP section
+  ui.feed(buildMcpSection());
+
+  // Settings + Status
+  ui.feed(buildSettingsEntry());
+  ui.feed(buildConnectionDSL());
+
   ui.endStream();
 }
 
-/** Update connection status using [upd] — no full rebuild */
-function updateConnectionIncr() {
-  const s = connectionStore.get();
-  if (s.status !== _lastConn.status) {
-    const dot = s.status === 'ok' ? 'ok' : s.status === 'error' ? 'err' : '';
-    feedUpdate(`[upd id:conn-dot v:${dot}]`);
-  }
-  if (s.status !== _lastConn.status) {
-    const text = s.status === 'ok' ? '已连接' : s.status === 'error' ? '连接失败' : '连接中…';
-    feedUpdate(`[upd id:conn-text tx:${text}]`);
-  }
-  if (s.detail !== _lastConn.detail) {
-    feedUpdate(`[upd id:conn-detail tx:${escapeDsl(s.detail || '')}]`);
-  }
-  _lastConn = { status: s.status, detail: s.detail };
-}
+// ── Incremental updates ────────────────────────────────────────
 
-/** Incrementally update conversation list */
-function updateSessionsIncr() {
+function updateSidebarSessions() {
   const s = sessionStore.get();
-  const newOrder = s.order;
-  const newActiveId = s.activeId;
-
-  // If sessions were added or removed, do a full rebuild
-  // (simpler & more reliable than manual DOM surgery for list changes)
-  if (newOrder.length !== _lastSessions.length ||
-      !newOrder.every((id, i) => id === _lastSessions[i])) {
-    renderSidebarFull();
-    return;
-  }
-
-  // Only active session changed — use [upd] to toggle 2 elements
-  if (newActiveId !== _lastActiveId) {
-    const updates = [];
-    if (_lastActiveId) updates.push(`[upd id:conv-${_lastActiveId} act:inactive]`);
-    if (newActiveId)   updates.push(`[upd id:conv-${newActiveId} act:active]`);
-    if (updates.length) feedUpdate(updates.join(''));
-  }
-
-  _lastSessions = newOrder;
-  _lastActiveId = newActiveId;
+  if (s.order === _lastSessions && s.activeId === _lastActiveId) return; // no change
+  renderSidebar(); // session list: full re-render is simpler
 }
 
-// ── Event handlers ────────────────────────────────────────────
+function updateSidebarConnection() {
+  const conn = connectionStore.get();
+  if (conn.status === _lastConn.status && conn.detail === _lastConn.detail) return;
+  const host = $('#sidebar-host');
+  if (!host) return;
+  const ui = getInstance();
+  if (!ui) return;
 
-registerHandler('onNewChat', () => {
-  const s = sessionApi.newSession();
-  // Instead of full rebuild, prepend the new [conv] element
-  // by feeding it directly into the conversations container.
-  // (TokUI slotStack: since we're inside the sidebar host's
-  //  streaming session, the [conv] will append to the current
-  //  container — which is the sidebar-host root. That works
-  //  because after initial render, the conversations list is
-  //  already there. For cleanliness, we trigger a full rebuild.)
-  renderSidebarFull();
-  notify.success('已创建新会话', { duration: 2000 });
-});
+  _lastConn = { status: conn.status, detail: conn.detail };
+  const dot = conn.status === 'ok' ? 'ok' : conn.status === 'error' ? 'err' : '';
 
-registerHandler('onOpenWizard', () => {
-  if (typeof window.openWizard === 'function') window.openWizard();
-  else console.warn('[sidebar] window.openWizard not ready');
+  ui.startStream(host);
+  // Use [upd] to update the dot + text in-place
+  ui.feed(`[upd id:conn-dot act:${dot}]`);
+  ui.endStream();
+}
+
+// ── Sidebar toggle for main view ───────────────────────────────
+
+export function toggleSidebar() {
+  document.querySelector('.sidebar')?.classList.toggle('hidden');
+}
+
+// ── Initialize ─────────────────────────────────────────────────
+
+export function initSidebar() {
+  // Subscribe to stores for live updates
+  sessionStore.subscribe(() => updateSidebarSessions());
+  connectionStore.subscribe(() => updateSidebarConnection());
+  skillsStore.subscribe(() => renderSidebar());
+
+  // Start health check
+  startHealthCheck(30000);
+}
+
+// ── Handlers ──────────────────────────────────────────────────
+
+registerHandler('onSidebarToggle', (data) => {
+  const key = typeof data === 'string' ? data : data?.act || data?.value || '';
+  if (!key) return;
+  _expanded[key] = !_expanded[key];
+  renderSidebar();
 });
 
 registerHandler('onConvSwitch', (data) => {
-  const id = typeof data === 'string' ? data : data?.value ?? data?.id;
-  if (id) sessionApi.activate(id);
+  const id = typeof data === 'string' ? data : data?.act || data?.value || '';
+  if (id) sessionApi.switchSession(id);
+});
+
+registerHandler('onConvNew', () => {
+  sessionApi.newSession();
+  renderSidebar();
 });
 
 registerHandler('onSkillOpen', (data) => {
-  const id = typeof data === 'string' ? data : data?.value ?? data?.id;
-  if (id) {
-    window.dispatchEvent(new CustomEvent('skill:open', { detail: { id } }));
-  }
+  const id = typeof data === 'string' ? data : data?.act || data?.value || '';
+  if (!id) return;
+  // Open skill detail in the details panel
+  import('./details.js').then(({ showSkill }) => showSkill?.(id))
+    .catch(() => notify.info(`技能: ${id}`, { duration: 2000 }));
 });
 
-registerHandler('onBrowseMemories', () => {
-  fetchAndShowMemories('details-host', '', 10, 'timeline');
-  // Open the details panel if collapsed
+registerHandler('onSkillSearch', (data) => {
+  // Will be handled by the search input; trigger graph search
+  const query = typeof data === 'string' ? data : data?.value || '';
+  if (!query || query.length < 2) return;
+  galaxy.graphSearch?.(query, 10).then(r => {
+    if (r?.results?.length) {
+      // Show results in details panel
+      const host = $('#details-host');
+      if (!host) return;
+      const ui = getInstance();
+      if (!ui) return;
+      host.innerHTML = '';
+      ui.startStream(host);
+      ui.feed(`[card tt:"技能搜索: ${escapeDsl(query)}"]`);
+      for (const item of r.results.slice(0, 10)) {
+        ui.feed(`[p]${escapeDsl(item.name)} — ${escapeDsl(item.description || '')} (score: ${item.score})[/p]`);
+      }
+      ui.feed('[/card]');
+      ui.endStream();
+      const panel = document.getElementById('details-panel');
+      if (panel) panel.classList.remove('hidden');
+    } else {
+      notify.info(`未找到 "${query}" 相关技能`, { duration: 2000 });
+    }
+  }).catch(() => {});
+});
+
+registerHandler('onMemOpenTimeline', () => {
+  fetchAndShowMemories('details-host', '', 20, 'timeline');
   const panel = document.getElementById('details-panel');
   if (panel) panel.classList.remove('hidden');
-  notify.info('正在加载记忆时间线…', { duration: 2000 });
 });
 
-registerHandler('onOpenDashboard', () => {
-  renderDashboard('details-host');
+registerHandler('onMemSearch', () => {
+  // Simple prompt for memory search
+  const query = prompt('搜索记忆关键词:');
+  if (!query) return;
+  fetchAndShowMemories('details-host', query, 20, 'search');
   const panel = document.getElementById('details-panel');
   if (panel) panel.classList.remove('hidden');
 });
 
-// ── Time formatting ────────────────────────────────────────────
+registerHandler('onMcpDiscover', () => {
+  notify.info('MCP 工具发现 (v9.6)', { duration: 2000 });
+});
 
-function isToday(ts) {
-  const d = new Date(ts);
-  return d.toDateString() === new Date().toDateString();
-}
-function formatTime(ts) {
-  if (isToday(ts)) {
-    return new Date(ts).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
-  }
-  const d = new Date(ts);
-  const days = ['日', '一', '二', '三', '四', '五', '六'];
-  return days[d.getDay()];
-}
+registerHandler('onMcpAdd', () => {
+  notify.info('添加 MCP 服务器 (v9.6)', { duration: 2000 });
+});
 
-export { renderSidebarFull as renderSidebar };
-
-// ── Init ───────────────────────────────────────────────────────
-
-export function initSidebar() {
-  // Session changes: use incremental updates when possible
-  sessionStore.subscribe(updateSessionsIncr);
-  // Skills changes: full rebuild (list items are dynamic)
-  skillsStore.subscribe(renderSidebarFull);
-  // Connection changes: use [upd] for dot + text
-  connectionStore.subscribe(updateConnectionIncr);
-
-  loadSkills();
-  startHealthCheck(30000);
-  // Initial full render
-  renderSidebarFull();
-}
+registerHandler('onSettingsOpen', () => {
+  import('./settings-panel.js').then(({ openSettings }) => openSettings());
+});
