@@ -81,7 +81,7 @@ function makeStandaloneGalaxy() {
         body,
       });
       if (!res.ok) throw new Error(`OCR HTTP ${res.status}`);
-      return { events: [], fragments: [`[p v:danger]OCR 需要 Electron IPC 环境[/p]`] };
+      return { events: [], fragments: [`[callout t:warn tt:"OCR 不可用"]需要 Electron IPC 环境[/callout]`] };
     },
     health: async () => {
       const res = await fetch('http://127.0.0.1:5758/sse/health', { method: 'POST' });

@@ -23,7 +23,7 @@ function renderSkillDetail(skillId) {
     } catch (e) {
       host.innerHTML = '';
       ui.startStream(host);
-      ui.feed(`[card tt:"错误"][p v:danger]${e.message ?? e}[/p][/card]`);
+      ui.feed(`[card tt:"错误"][callout t:danger tt:"加载失败"]${e.message ?? e}[/callout][/card]`);
       ui.endStream();
       return;
     }

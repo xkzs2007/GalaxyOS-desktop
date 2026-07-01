@@ -194,7 +194,7 @@ export async function fetchAndShowMemories(container, query = '', topK = 10, vie
   } catch (e) {
     host.innerHTML = '';
     ui.startStream(host);
-    ui.feed(`[card tt:"记忆加载失败"][p v:danger]${escapeDsl(e.message ?? String(e))}[/p][/card]`);
+    ui.feed(`[card tt:"记忆加载失败"][callout t:danger tt:"错误"]${escapeDsl(e.message ?? String(e))}[/callout][/card]`);
     ui.endStream();
   }
 }

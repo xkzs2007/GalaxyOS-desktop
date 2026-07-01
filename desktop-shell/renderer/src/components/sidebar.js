@@ -164,8 +164,16 @@ function buildConnectionDSL() {
   const conn = connectionStore.get();
   _lastConn = { status: conn.status, detail: conn.detail };
 
-  const dot = conn.status === 'ok' ? 'ok' : conn.status === 'error' ? 'err' : '';
-  const text = conn.status === 'ok' ? '已连接' : conn.status === 'error' ? '断连' : '连接中…';
+  if (conn.status === 'error') {
+    // [callout] is a coloured alert block — perfect for disconnection warnings
+    const detail = conn.detail ? `\n[detail: ${escapeDsl(conn.detail)}]` : '';
+    return `[callout t:danger tt:"⚠ Sidecar 断连"]请确认 Python 进程正在运行${detail}[/callout]\n` +
+      `[row]\n  [dot err][span sm]断连[/span]\n[/row]`;
+  }
+
+  if (conn.status === 'connecting') {
+    return `[callout t:warn tt:"⏳ 连接中"]正在连接 GalaxyOS Sidecar 后端…[/callout]`;
+  }
 
   // Get model info from settings
   const s = settingsStore.get();
@@ -174,7 +182,7 @@ function buildConnectionDSL() {
   const modelInfo = llmModel ? ` · ${llmModel}` : '';
   const slotInfo = s.llm?.enabled ? ' · LLM 已启用' : '';
 
-  return `[row]\n  [dot id:conn-dot ${dot}][span id:conn-text sm]${text}${modelInfo}${slotInfo}[/span]\n[/row]`;
+  return `[row]\n  [dot ok][span sm]已连接${modelInfo}${slotInfo}[/span]\n[/row]`;
 }
 
 // ── Settings entry ─────────────────────────────────────────────
@@ -231,18 +239,8 @@ function updateSidebarSessions() {
 function updateSidebarConnection() {
   const conn = connectionStore.get();
   if (conn.status === _lastConn.status && conn.detail === _lastConn.detail) return;
-  const host = $('#sidebar-host');
-  if (!host) return;
-  const ui = getInstance();
-  if (!ui) return;
-
-  _lastConn = { status: conn.status, detail: conn.detail };
-  const dot = conn.status === 'ok' ? 'ok' : conn.status === 'error' ? 'err' : '';
-
-  ui.startStream(host);
-  // Use [upd] to update the dot + text in-place
-  ui.feed(`[upd id:conn-dot act:${dot}]`);
-  ui.endStream();
+  // Full re-render when connection status changes — [callout] presence depends on status
+  renderSidebar();
 }
 
 // ── Sidebar toggle for main view ───────────────────────────────

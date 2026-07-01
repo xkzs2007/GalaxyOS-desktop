@@ -13,14 +13,13 @@ import { bootTokUI, getInstance } from './runtime.js';
 import { escapeDsl, expandCodeBlocks } from '../utils.js';
 
 let _busy = false;
-let _indicator = null;
 
 export function isStreaming() { return _busy; }
 
 export async function emitUserMessage(text) {
   const ui = await bootTokUI();
   ui.startStream();
-  ui.feed(`[bubble role:user][p]${escapeDsl(text)}[/bubble]`);
+  ui.feed(`[bubble role:user][p]${escapeDsl(text)}[/p][/bubble]`);
   ui.endStream();
 }
 
@@ -28,7 +27,8 @@ export async function startAssistantStream() {
   const ui = await bootTokUI();
   ui.startStream();
   _busy = true;
-  showStreamingIndicator();
+  // TokUI [typing] — animated 3-dot indicator, replaces hand-rolled DOM
+  ui.feed(`[typing text:"AI 思考中…"]`);
   return ui;
 }
 
@@ -41,14 +41,16 @@ export function feed(dsl) {
 export function endAssistantStream() {
   const ui = getInstance();
   if (!ui) return;
+  // Close the [typing] component before ending stream
+  ui.feed(`[/typing]`);
   ui.endStream();
   _busy = false;
-  hideStreamingIndicator();
 }
 
 export async function feedError(message) {
   await startAssistantStream();
-  feed(expandCodeBlocks(`[bubble role:ai model:GalaxyOS time:错误][p v:danger]${escapeDsl(message)}[/p][/bubble]`));
+  // [callout] provides a coloured alert block, semantically better than [p v:danger]
+  feed(`[bubble role:ai model:GalaxyOS time:错误][callout t:danger tt:"错误"]${escapeDsl(message)}[/callout][/bubble]`);
   endAssistantStream();
 }
 
@@ -67,15 +69,4 @@ export async function feedBatch(fragments, { withDelayMs = 0 } = {}) {
   endAssistantStream();
 }
 
-// ── Streaming indicator (3-dot pulse, removed when stream ends) ──
-function showStreamingIndicator() {
-  if (_indicator) return;
-  const composer = document.querySelector('.composer') || document.body;
-  _indicator = document.createElement('div');
-  _indicator.className = 'streaming-indicator';
-  _indicator.innerHTML = '<span class="dot"></span><span class="dot"></span><span class="dot"></span>';
-  composer.appendChild(_indicator);
-}
-function hideStreamingIndicator() {
-  if (_indicator) { _indicator.remove(); _indicator = null; }
-}
+// ── Streaming indicator: now handled by TokUI [typing] in startAssistantStream ──

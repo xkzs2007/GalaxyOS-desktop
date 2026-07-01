@@ -74,8 +74,7 @@ export async function bootTokUI(containerSel = '#tokui-container') {
       theme: _currentTheme,
       onEvent: (type, data) => {
         if (type === 'streamEnd') {
-          // Restore the streaming indicator to "done" state via DOM class
-          document.querySelector('.streaming-indicator')?.remove();
+          // [typing] component handles its own cleanup when [/typing] is fed
         }
       },
     });

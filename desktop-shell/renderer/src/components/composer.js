@@ -175,7 +175,7 @@ async function onComposerSend(text) {
     }
   } catch (e) {
     console.error('[composer] error:', e);
-    feed(`[p v:danger]${escapeDsl(e.message ?? String(e))}[/p]`);
+    feed(`[callout t:danger tt:"请求失败"]${escapeDsl(e.message ?? String(e))}[/callout]`);
     if (chain) {
       updateThinkStep(chain, 0, 'error', `请求失败: ${e.message ?? '未知错误'}`);
     }
