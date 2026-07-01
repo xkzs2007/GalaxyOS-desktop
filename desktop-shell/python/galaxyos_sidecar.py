@@ -256,20 +256,29 @@ class SidecarHandlers:
         # Stage 4: global background layers
         log.info("Booting global MeMo memory layer...")
         from memo_adapter import (
-            MockMeMoAdapter, OnnxMeMoAdapter, load_default_adapter,
+            MockMeMoAdapter, OnnxMeMoAdapter, LlmMeMoAdapter,
+            load_default_adapter,
         )
         from executive_client import MockExecutiveClient
         from memo_stages import MeMoProtocol
         import ac_router as _ac_router_mod  # avoid name shadowing
-        # Probe for real ONNX weights first (LFM2.5 downloaded via
-        # install_wizard --download-lfm-onnx). Falls back to Mock if
-        # weights are missing/corrupt. Cached at module level inside
-        # load_default_adapter so this is a one-time cost.
+
+        # Priority: ONNX (real weights) > LLM (API fallback) > Mock (deterministic)
         try:
             self._memo = load_default_adapter()
             log.info("MeMo backend: %s", self._memo.backend_name())
         except Exception as e:
-            log.warning("load_default_adapter() failed (%s); using Mock", e)
+            log.warning("load_default_adapter() failed (%s); fallback to LLM/Mock", e)
+            self._memo = None
+
+        # If the loaded adapter is Mock and we have an LLM, upgrade to LlmMeMoAdapter
+        if self._memo and isinstance(self._memo, MockMeMoAdapter):
+            _flash = getattr(self._llm, 'llm_flash', None)
+            if _flash:
+                self._memo = LlmMeMoAdapter(llm_client=_flash)
+                log.info("MeMo upgraded: Mock → LLM (llm_flash available)")
+
+        if self._memo is None:
             self._memo = MockMeMoAdapter()
         # _executive is built in _build_executive() AFTER _live_config
         # is initialised (see below)
@@ -291,21 +300,17 @@ class SidecarHandlers:
         log.info("Booting global ACRouter...")
         from ac_router import (
             CAFRouter, HeuristicOrchestrator, Memory,
-            VerifierSignals, default_router,
+            VerifierSignals, default_router, LlmOrchestrator,
         )
         self._acrouter_memory = Memory()
-        self._acrouter = default_router(self._acrouter_executor)
-        from ac_router import (
-            CAFRouter, HeuristicOrchestrator, Memory,
-            VerifierSignals, default_router,
-        )
-        self._acrouter_memory = Memory()
-        self._acrouter = default_router(self._acrouter_executor)
-        # Cache the module for use in inner methods (avoid re-import)
-        self._ac_router_module = _ac_router_mod
+        _llm_client = getattr(self._llm, 'llm_flash', None)
+        self._acrouter = default_router(self._acrouter_executor,
+                                        llm_client=_llm_client)
         log.info("ACRouter ready (orchestrator: %s, memory: %d entries)",
-                 "HeuristicOrchestrator",
+                 self._acrouter.orch.name(),
                  self._acrouter_memory.size())
+
+        self._ac_router_module = _ac_router_mod
 
         # Stage 13: SkillGraph — load from the 76 skills + edges
         log.info("Booting SkillGraph...")
@@ -534,26 +539,32 @@ class SidecarHandlers:
                     loop.close()
             with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
                 trace = ex.submit(_run_memo).result(timeout=15)
+            ans_len = len(trace.answer.final_answer)
+            n_facts = len(trace.answer.supporting_facts)
             return {
                 "answer": trace.answer.final_answer,
                 "signals": self._ac_router_module.VerifierSignals(
                     s_structural=0.95,
                     s_sandbox=0.0,
-                    s_consistency=0.9,
-                    s_judge=0.9,
+                    s_consistency=0.9 if ans_len > 30 else 0.7,
+                    s_judge=0.9 if n_facts > 0 else 0.7,
                 ),
                 "cost": 0.003,
             }
         elif action == "process_5_stage":
             # Full R-CCAM via process()
             result = self.process({"user_input": query, "session_id": ""})
+            ans = result.get("answer", "")
+            ans_len = len(ans) if ans else 0
+            conf = result.get("confidence", 0.5)
+            n_mem = len(result.get("memory_ids", []))
             return {
-                "answer": result.get("answer", ""),
+                "answer": ans,
                 "signals": self._ac_router_module.VerifierSignals(
                     s_structural=0.9,
                     s_sandbox=0.4,
-                    s_consistency=0.7,
-                    s_judge=0.7,
+                    s_consistency=min(0.95, 0.5 + ans_len / 500) if ans_len > 0 else 0.5,
+                    s_judge=min(0.9, conf + 0.1),
                 ),
                 "cost": 0.010,
             }
@@ -562,6 +573,7 @@ class SidecarHandlers:
             # v9.5: previously returned raw recall snippet (zero-LLM).
             # Now calls llm_flash to synthesize answer from memories.
             memories = self._llm.recall(query, top_k=5)
+            n_recall = len(memories) if memories else 0
             if memories and self._llm.llm_flash:
                 # Build context from top memories
                 ctx = "\n---\n".join(
@@ -583,13 +595,18 @@ class SidecarHandlers:
                         temperature=0.5,
                     )
                     answer = rsp.choices[0].message.content.strip()
+                    ans_len = len(answer) if answer else 0
+                    # Real VerifierSignals: computed from actual data
+                    s_structural = 0.9 if n_recall >= 3 else (0.7 if n_recall > 0 else 0.4)
+                    s_consistency = 0.9 if ans_len > 50 else (0.7 if ans_len > 10 else 0.3)
+                    s_judge = 0.85 if n_recall > 0 else 0.5  # grounded vs pure LLM
                     return {
                         "answer": answer,
                         "signals": self._ac_router_module.VerifierSignals(
-                            s_structural=0.85,
+                            s_structural=s_structural,
                             s_sandbox=0.0,
-                            s_consistency=0.75,
-                            s_judge=0.8,
+                            s_consistency=s_consistency,
+                            s_judge=s_judge,
                         ),
                         "cost": 0.002,
                     }
@@ -597,13 +614,18 @@ class SidecarHandlers:
                     log.warning("fast_path LLM synthesis failed: %s; fallback to recall", e)
             # Fallback: return top memory content
             r = self.ask({"question": query, "session_id": ""})
+            answer = r.get("answer", "")
+            ans_len = len(answer)
+            s_structural = 0.7 if n_recall > 0 else 0.3
+            s_consistency = 0.6 if ans_len > 20 else 0.3
+            s_judge = 0.5 if n_recall > 0 else 0.3
             return {
-                "answer": r.get("answer", ""),
+                "answer": answer,
                 "signals": self._ac_router_module.VerifierSignals(
-                    s_structural=0.8,
+                    s_structural=s_structural,
                     s_sandbox=0.0,
-                    s_consistency=0.6,
-                    s_judge=0.7,
+                    s_consistency=s_consistency,
+                    s_judge=s_judge,
                 ),
                 "cost": 0.001,
             }
@@ -1487,7 +1509,8 @@ class SidecarHandlers:
 
     def stream_agent_frag(self, prompt: str, sid: str, stream_id: str = "") -> List[str]:
         from agent_loop import AgentLoop
-        loop = AgentLoop(question=prompt, stream_id=stream_id)
+        loop = AgentLoop(question=prompt, stream_id=stream_id,
+                         llm_client=self._llm.llm_flash)
         import asyncio
         return asyncio.run(loop.run())
 

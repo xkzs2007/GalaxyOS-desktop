@@ -374,13 +374,67 @@ class CAFRouter:
         )
 
 
+class LlmOrchestrator(Orchestrator):
+    """LLM-driven orchestrator (v9.5, replaces heuristic).
+
+    Uses the LLM to classify the user query and pick the best action.
+    Falls back to HeuristicOrchestrator when LLM is unavailable.
+    """
+
+    def __init__(self, llm_client=None):
+        self._llm = llm_client
+        self._heuristic = HeuristicOrchestrator()
+
+    async def decide(
+        self,
+        query: str,
+        task_metadata: Dict[str, Any],
+        k_neighbors: List[Dict[str, Any]],
+    ) -> str:
+        if not self._llm:
+            return await self._heuristic.decide(query, task_metadata, k_neighbors)
+
+        import json as _j
+        system = (
+            "You are an action router. Classify the user query into one action:\n"
+            "- fast_path: simple question, quick answer, no tools needed\n"
+            "- memo_3stage: factual lookup about known entities (GalaxyOS/R-CCAM/MeMo)\n"
+            "- process_5_stage: complex analysis, tool use, multi-step reasoning\n"
+            "- liquid_only: conversational or vague, use liquid network only\n\n"
+            "Reply with ONLY a JSON object: {\"action\": \"<action_name>\", \"reason\": \"...\"}"
+        )
+        try:
+            rsp = self._llm.chat.completions.create(
+                model=getattr(self._llm, '_model_override', None) or 'deepseek-v4-flash',
+                messages=[
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": query[:800]},
+                ],
+                max_tokens=100,
+                temperature=0.2,
+                response_format={"type": "json_object"},
+            )
+            raw = rsp.choices[0].message.content.strip()
+            data = _j.loads(raw)
+            action = data.get("action", "fast_path")
+            if action in ("fast_path", "memo_3stage", "process_5_stage", "liquid_only"):
+                return action
+        except Exception:
+            pass
+        return await self._heuristic.decide(query, task_metadata, k_neighbors)
+
+    def name(self) -> str:
+        return "LlmOrchestrator" if self._llm else "HeuristicOrchestrator(fallback)"
+
+
 # ── Default factory ──────────────────────────────────────────────
 
 from typing import Awaitable
 
-def default_router(executor: Callable[[str, str], Awaitable[Any]]) -> CAFRouter:
+def default_router(executor: Callable[[str, str], Awaitable[Any]],
+                   llm_client=None) -> CAFRouter:
     return CAFRouter(
-        orchestrator=HeuristicOrchestrator(),
+        orchestrator=LlmOrchestrator(llm_client=llm_client),
         memory=Memory(),
         executor=executor,
     )

@@ -205,6 +205,60 @@ class MockMeMoAdapter(MeMoAdapter):
         return self._call_count
 
 
+# ── LLM-powered MeMo fallback (v9.5) ─────────────────────────────
+
+class LlmMeMoAdapter(MeMoAdapter):
+    """Uses an LLM (DeepSeek V4 Flash) to answer MeMo queries.
+
+    This bridges the gap between Mock (deterministic corpus lookup)
+    and ONNX (real parametric memory). The LLM acts as a knowledge
+    base, generating short factual answers in MeMo's expected format.
+
+    Use this when:
+    - ONNX weights are not downloaded
+    - You want better answers than the deterministic mock corpus
+    - You have an API key configured
+    """
+
+    def __init__(self, llm_client=None):
+        self._llm = llm_client
+        self._call_count = 0
+        self._loaded = llm_client is not None
+
+    async def answer(self, question: str, *, max_tokens: int = 96) -> str:
+        self._call_count += 1
+        if not self._llm:
+            return "LLM MeMo backend not available (no API key configured)."
+
+        try:
+            rsp = self._llm.chat.completions.create(
+                model=getattr(self._llm, '_model_override', None) or 'deepseek-v4-flash',
+                messages=[
+                    {"role": "system", "content": (
+                        "You are the Memory half of a MeMo protocol. "
+                        "Answer with ONE short factual sentence — no preamble, "
+                        "no chain-of-thought, no bullet points. Maximum 30 words. "
+                        "Speak in the same language as the question."
+                    )},
+                    {"role": "user", "content": question},
+                ],
+                max_tokens=max_tokens,
+                temperature=0.2,
+            )
+            return rsp.choices[0].message.content.strip()
+        except Exception as e:
+            import logging
+            logging.getLogger("memo_adapter").warning(
+                "LlmMeMoAdapter: LLM call failed: %s", e)
+            return "LLM backend temporarily unavailable."
+
+    async def is_loaded(self) -> bool:
+        return self._loaded
+
+    def backend_name(self) -> str:
+        return f"MeMo (LLM {self._llm._model_override if hasattr(self._llm, '_model_override') and self._llm else 'unknown'} backend)"
+
+
 # ── Optional: real ONNX backend (placeholder) ─────────────────────
 
 class OnnxMeMoAdapter(MeMoAdapter):

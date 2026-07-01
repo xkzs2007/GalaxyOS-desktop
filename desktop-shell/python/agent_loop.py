@@ -103,85 +103,120 @@ def _extract_cmd(text: str) -> Optional[str]:
     return None
 
 
-def decide_tool_chain(question: str) -> List[Dict[str, Any]]:
+def decide_tool_chain(question: str, llm_client=None) -> List[Dict[str, Any]]:
     """Decide a tool-call plan from a natural-language question.
 
-    Returns a list of tool-call specs: each is
-    {name, params, rationale}. The Agent loop executes them in
-    order. If the list is empty, the caller falls back to a pure
-    ask() with no tool use.
+    v9.5: if llm_client is provided, uses LLM for intelligent tool
+    selection. Falls back to heuristic regex matching if LLM is
+    unavailable or fails.
     """
+    if llm_client:
+        try:
+            from openai import OpenAI
+            plan = _llm_decide(llm_client, question)
+            if plan:
+                return plan
+        except Exception as e:
+            import logging
+            logging.getLogger("agent_loop").warning(
+                "LLM tool selection failed: %s; fallback to heuristic", e)
+
+    # ── Heuristic fallback ──────────────────────────────────
     q = question.strip()
     lower = q.lower()
-
-    # ── shell_run ───────────────────────────────────────────
     cmd = _extract_cmd(q)
     if cmd:
-        return [{
-            "name": "shell_run",
-            "params": {"cmd": cmd},
-            "rationale": f"用户请求执行 shell: {cmd!r}",
-        }]
-
-    # ── list_dir ────────────────────────────────────────────
+        return [{"name": "shell_run", "params": {"cmd": cmd},
+                 "rationale": f"用户请求执行 shell: {cmd!r}"}]
     if any(k in lower for k in ("list ", "ls ", "列出", "目录", "files in", "what's in")):
         path = _extract_path(q) or "."
-        return [{
-            "name": "list_dir",
-            "params": {"path": path},
-            "rationale": f"用户请求列出目录: {path!r}",
-        }]
-
-    # ── read_file ───────────────────────────────────────────
+        return [{"name": "list_dir", "params": {"path": path},
+                 "rationale": f"用户请求列出目录: {path!r}"}]
     if any(k in lower for k in ("read ", "cat ", "看", "查看", "content of", "show file")):
         path = _extract_path(q)
         if path:
-            return [{
-                "name": "read_file",
-                "params": {"path": path},
-                "rationale": f"用户请求读取文件: {path!r}",
-            }]
-
-    # ── write_file ──────────────────────────────────────────
+            return [{"name": "read_file", "params": {"path": path},
+                     "rationale": f"用户请求读取文件: {path!r}"}]
     if any(k in lower for k in ("write ", "echo ", "保存", "创建文件", "写")):
-        # Look for "path = content" or "path: content" pattern
         m = re.search(r'([\w./-]+\.[A-Za-z0-9]{1,5})\s*[=:>]\s*(.+)$', q, re.DOTALL)
         if m:
-            return [{
-                "name": "write_file",
-                "params": {"path": m.group(1).strip(),
-                           "content": m.group(2).strip()},
-                "rationale": f"用户请求写文件: {m.group(1)!r}",
-            }]
-
-    # ── grep ─────────────────────────────────────────────────
+            return [{"name": "write_file",
+                     "params": {"path": m.group(1).strip(), "content": m.group(2).strip()},
+                     "rationale": f"用户请求写文件: {m.group(1)!r}"}]
     if any(k in lower for k in ("grep ", "搜索", "find ", "找 ")):
-        # Try to extract pattern + optional path
         m = re.search(r'(?:grep|搜索|find|找)\s+["\']?([\w.*+?{}\[\]\\^$|-]+)["\']?', q)
         pattern = m.group(1) if m else q.split(maxsplit=1)[-1]
         path = _extract_path(q) or "."
-        return [{
-            "name": "grep",
-            "params": {"pattern": pattern, "path": path},
-            "rationale": f"用户搜索: pattern={pattern!r} path={path!r}",
-        }]
-
-    # ── apply_diff ──────────────────────────────────────────
+        return [{"name": "grep", "params": {"pattern": pattern, "path": path},
+                 "rationale": f"用户搜索: pattern={pattern!r} path={path!r}"}]
     if any(k in lower for k in ("diff ", "patch ", "modify ", "replace ", "改 ", "替换")):
-        # Pattern: diff path old→new or modify path "old" to "new"
         path = _extract_path(q)
         if path:
-            # Try to extract old→new
             arrow_m = re.search(r'["\']?(.+?)["\']?\s*(?:→|->|to|改为|换成)\s*["\']?(.+?)["\']?\s*$', q, re.DOTALL)
             if arrow_m:
-                return [{
-                    "name": "apply_diff",
-                    "params": {"path": path, "old": arrow_m.group(1).strip(),
-                               "new": arrow_m.group(2).strip()},
-                    "rationale": f"用户请求修改文件 {path!r}",
-                }]
-
+                return [{"name": "apply_diff",
+                         "params": {"path": path, "old": arrow_m.group(1).strip(),
+                                    "new": arrow_m.group(2).strip()},
+                         "rationale": f"用户请求修改文件 {path!r}"}]
     return []
+
+
+def _llm_decide(llm_client, question: str) -> List[Dict[str, Any]]:
+    """Use LLM to analyze the user request and return a tool-call plan.
+
+    Returns parsed JSON like:
+    [{"name": "shell_run", "params": {"cmd": "ls -la"},
+      "rationale": "list files"}]
+    """
+    system = (
+        "You are a tool-selection agent. Analyze the user request and return "
+        "a JSON array of tool calls to execute. Available tools:\n"
+        "- shell_run: execute shell command (params: cmd)\n"
+        "- read_file: read a file (params: path)\n"
+        "- write_file: write/create a file (params: path, content)\n"
+        "- list_dir: list directory (params: path)\n"
+        "- grep: search file contents (params: pattern, path)\n"
+        "- apply_diff: modify a file with diff (params: path, old, new)\n\n"
+        "Rules:\n"
+        "- Return ONLY valid JSON array, no other text\n"
+        "- If no tool is needed, return empty array []\n"
+        "- For write_file, include both path and content\n"
+        "- For shell_run, use the exact command the user requested\n"
+        "- Extract file paths and patterns from the user's words"
+    )
+    try:
+        rsp = llm_client.chat.completions.create(
+            model=getattr(llm_client, '_model_override', None) or 'deepseek-v4-flash',
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": question},
+            ],
+            max_tokens=400,
+            temperature=0.2,
+            response_format={"type": "json_object"},
+        )
+        raw = rsp.choices[0].message.content.strip()
+        import json
+        # The LLM might wrap the array in {"tools": [...]} or return [...] directly
+        data = json.loads(raw)
+        if isinstance(data, dict):
+            arr = data.get("tools") or data.get("plan") or data.get("actions") or []
+        elif isinstance(data, list):
+            arr = data
+        else:
+            return []
+        # Validate structure
+        valid = []
+        for item in arr:
+            if isinstance(item, dict) and "name" in item:
+                valid.append({
+                    "name": str(item["name"]),
+                    "params": item.get("params", {}),
+                    "rationale": str(item.get("rationale", "")),
+                })
+        return valid
+    except Exception:
+        return []
 
 
 # ── Agent loop ─────────────────────────────────────────────────
@@ -192,10 +227,12 @@ class AgentLoop:
     v9.4: supports stream_id for zmq PUB real-time progress events.
     """
 
-    def __init__(self, question: str, stream_id: str = ""):
+    def __init__(self, question: str, stream_id: str = "",
+                 llm_client=None):
         self.question = question
         self.stream_id = stream_id
-        self.plan = decide_tool_chain(question)
+        self.llm_client = llm_client
+        self.plan = decide_tool_chain(question, llm_client=llm_client)
 
     def _pub(self, event_type: str, detail: str, status: str = "running",
              tool_name: str = "", step_index: int = 0, dur_ms: int = 0):
