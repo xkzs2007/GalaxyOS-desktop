@@ -66,6 +66,10 @@ export type GalaxyApi = {
   onPlanStep(callback: (event: PlanStepEvent) => void): () => void;
   /** Subscribe to real-time agent tool execution events. */
   onAgentTool(callback: (event: AgentToolEvent) => void): () => void;
+  /** Subscribe to real-time DSL fragment events (true streaming). */
+  onDslFragment(callback: (event: { stream_id: string; index: number; tokui: string }) => void): () => void;
+  /** Subscribe to stream lifecycle events (start/done/error). */
+  onStreamEvent(callback: (event: { stream_id: string; status: string; detail?: string }) => void): () => void;
 
   // ── P0: 记忆管理完整闭环 ──
   forget(memoryId: string): Promise<{ ok: boolean; deleted: number; memory_id: string; error?: string }>;
@@ -254,6 +258,16 @@ const api: GalaxyApi = {
     const h = (_e: unknown, payload: AgentToolEvent) => cb(payload);
     ipcRenderer.on('agent:tool', h);
     return () => ipcRenderer.removeListener('agent:tool', h);
+  },
+  onDslFragment: (cb) => {
+    const h = (_e: unknown, payload: { stream_id: string; index: number; tokui: string }) => cb(payload);
+    ipcRenderer.on('dsl:fragment', h);
+    return () => ipcRenderer.removeListener('dsl:fragment', h);
+  },
+  onStreamEvent: (cb) => {
+    const h = (_e: unknown, payload: { stream_id: string; status: string; detail?: string }) => cb(payload);
+    ipcRenderer.on('stream:event', h);
+    return () => ipcRenderer.removeListener('stream:event', h);
   },
 
   // ── P0: 记忆管理完整闭环 ──

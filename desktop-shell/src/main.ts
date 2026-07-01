@@ -572,6 +572,15 @@ function startPubSubscriber(win: BrowserWindow): void {
             mainWindowRef?.webContents.send('plan:step', payload);
           } else if (topicStr.startsWith('agent:')) {
             mainWindowRef?.webContents.send('agent:tool', payload);
+          } else if (topicStr.startsWith('dsl:')) {
+            // v9.6: real-time DSL fragment streaming — the sidecar
+            // publishes each DSL fragment as it's generated, so the
+            // renderer can render progressively instead of waiting
+            // for the full REP response.
+            mainWindowRef?.webContents.send('dsl:fragment', payload);
+          } else if (topicStr.startsWith('stream:')) {
+            // Stream lifecycle events (start/done/error)
+            mainWindowRef?.webContents.send('stream:event', payload);
           }
         } catch (e) {
           // EAGAIN / closed socket — break out if socket is gone
