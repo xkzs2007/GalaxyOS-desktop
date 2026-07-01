@@ -146,18 +146,26 @@ class LocalEmbeddingService:
         self._initialized = True
 
     def _try_uds(self):
-        """尝试连接 LFM UDS backend"""
+        """尝试连接 LFM UDS backend。若 UDS socket 不存在则先 spawn lfm_server。"""
         try:
-            from galaxyos_native import lfm_ping, lfm_embed_text
+            from galaxyos_native import lfm_ping, lfm_embed_text, lfm_start
+            # 1. 检查 LFM binary 是否可用，如果可用但没有 running，自动 spawn
+            try:
+                lfm_start()
+            except Exception:
+                pass  # binary not found or already running — try ping anyway
+            # 2. ping
             pong = lfm_ping()
             if pong == "pong":
                 self._uds_backend = True
                 global _EMBEDDING_DIM
                 _EMBEDDING_DIM = 2048
+                logger.info("LFM UDS backend connected (2048-dim embedding)")
                 return True
         except Exception:
             pass
         self._uds_backend = False
+        logger.info("LFM UDS backend not available, using BGE ONNX (512-dim)")
         return False
 
     # ── ONNX 推理 ──
