@@ -6,7 +6,6 @@
 
 !include "FileFunc.nsh"
 !include "LogicLib.nsh"
-!include "StrFunc.nsh"
 
 ; ── 查找系统 Python ───────────────────────────────────────────────────
 ; 优先级：注册表 Python 3.12 > 3.11 > 3.10 > PATH 中的 python3/python
@@ -108,16 +107,13 @@ Function InstallPythonDeps
   ${If} ${FileExists} "$INSTDIR\resources\requirements-heavy.txt"
     nsExec::ExecToLog '"$R0" -m pip install -r "$INSTDIR\resources\requirements-heavy.txt"'
   ${Else}
-    ; fallback: try to find it next to core requirements
-    StrCpy $2 "$R1"
-    ${StrStr} $3 "$R1" "requirements-core.txt"
-    ${If} $3 != ""
-      StrCpy $2 "$3requirements-heavy.txt"
-      ${If} ${FileExists} "$2"
-        nsExec::ExecToLog '"$R0" -m pip install -r "$2"'
-      ${Else}
-        DetailPrint "警告: requirements-heavy.txt 未找到，跳过重型组件安装"
-      ${EndIf}
+    ; fallback: strip "requirements-core.txt" and append "requirements-heavy.txt"
+    StrCpy $2 "$R1" -23  ; remove last 23 chars ("requirements-core.txt")
+    StrCpy $2 "$2requirements-heavy.txt"
+    ${If} ${FileExists} "$2"
+      nsExec::ExecToLog '"$R0" -m pip install -r "$2"'
+    ${Else}
+      DetailPrint "警告: requirements-heavy.txt 未找到，跳过重型组件安装"
     ${EndIf}
   ${EndIf}
 
