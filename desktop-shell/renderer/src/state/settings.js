@@ -5,7 +5,7 @@
 // TokUI uses the right color scale.
 
 import { createStore } from './store.js';
-import galaxy from '../ipc/client.js';
+import { galaxy } from '../ipc/client.js';
 
 const KEY = 'galaxyos.settings.v1';
 

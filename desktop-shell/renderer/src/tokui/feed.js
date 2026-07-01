@@ -10,6 +10,7 @@
 // 老的 makeStubRenderer 兜底由 runtime.js 提供（TokUI UMD 加载失败时）。
 
 import { bootTokUI, getInstance } from './runtime.js';
+import { escapeDsl, expandCodeBlocks } from '../utils.js';
 
 let _busy = false;
 let _indicator = null;
@@ -47,7 +48,7 @@ export function endAssistantStream() {
 
 export async function feedError(message) {
   await startAssistantStream();
-  feed(`[bubble role:ai model:GalaxyOS time:错误][p v:danger]${escapeDsl(message)}[/p][/bubble]`);
+  feed(expandCodeBlocks(`[bubble role:ai model:GalaxyOS time:错误][p v:danger]${escapeDsl(message)}[/p][/bubble]`));
   endAssistantStream();
 }
 
@@ -60,7 +61,7 @@ export async function feedBatch(fragments, { withDelayMs = 0 } = {}) {
   if (!fragments?.length) return;
   await startAssistantStream();
   for (const dsl of fragments) {
-    feed(dsl);
+    feed(expandCodeBlocks(dsl));
     if (withDelayMs > 0) await new Promise((r) => setTimeout(r, withDelayMs));
   }
   endAssistantStream();
@@ -77,12 +78,4 @@ function showStreamingIndicator() {
 }
 function hideStreamingIndicator() {
   if (_indicator) { _indicator.remove(); _indicator = null; }
-}
-
-// ── DSL escape (handles [ ] in user text) ──────────────────────
-function escapeDsl(s) {
-  if (s.includes('[') || s.includes(']')) {
-    return '"' + String(s).replace(/"/g, '\\"') + '"';
-  }
-  return s;
 }

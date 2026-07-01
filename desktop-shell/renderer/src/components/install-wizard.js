@@ -1,24 +1,16 @@
-// renderer/src/components/install-wizard.js — E 阶段：wire iw-modal 全部交互.
+// renderer/src/components/install-wizard.js — D 阶段（TokUI 深用）.
 //
-// 背景：D 阶段清理了 hidden sidebar fallback，但保留了 iw-modal 弹窗（真实
-// 功能：下载 LFM2.5-1.2B ONNX / BGE-small 等模型）。C 阶段删旧 renderer.js
-// 时把 wire 也一起删了，结果：按钮无 click handler、modal 打不开。
+// 用手写 DOM 的地方替换为 TokUI 内置组件：
+//   - [dialog]    → 弹窗容器（替 iw-modal CSS）
+//   - [progress]  → 进度条（替 iw-progress-fill div）
+//   - [terminal]  → 日志面板（替 iw-log <pre>）
+//   - [tag]       → 阶段标签（替 iw-stage span）
+//   - [upd]       → 运行时增量更新 DOM
 //
-// 职责：
-//   1. 提供 openWizard() 给 sidebar [btn] 调 — 显示 iw-modal
-//   2. closeWizard() 调 — 隐藏 iw-modal
-//   3. iw-start 按钮 → window.galaxy.installWizard(args, onProgress, timeout)
-//   4. onProgress 回调：把 line / elapsed / stage 写入对应 DOM
-//   5. 完成时：恢复按钮文字 + 把 ok / exit_code 写到 iw-status-line
-//
-// 不依赖任何 framework / library；纯 DOM API + window.galaxy.* IPC。
-//
-// 注意：直接读 window.galaxy 而不是 import ipc/client.js。原因是
-// ipc/client.js 顶层 const galaxy = window.galaxy ?? makeStandaloneGalaxy()
-// 只在模块加载时取一次值；如果侧车 / preload 注入 window.galaxy 比 renderer
-// ESM 加载晚，这里就会拿到 null。这里在 click-time 实时取 window.galaxy，
-// preload 总是在 renderer 启动前完成 contextBridge.exposeInMainWorld，所以
-// window.galaxy 永远是真实 API。
+// 核心下载逻辑不变（zmq IPC + install_wizard args），UI 层全面 TokUI 化。
+
+import { bootTokUI, getInstance, registerHandler } from '../tokui/runtime.js';
+import notify from '../tokui/notify.js';
 
 const PRESETS = {
   'lfm-onnx-q4':      ['--download-lfm-onnx', '--download-lfm-onnx-quant', 'q4'],
@@ -28,208 +20,248 @@ const PRESETS = {
   'check':            ['--check'],
 };
 
+const PRESET_LABELS = {
+  'lfm-onnx-q4':     'LFM2.5-1.2B ONNX Q4 (~1.2GB, 推荐)',
+  'lfm-onnx-fp16':   'LFM2.5-1.2B ONNX FP16 (~2.4GB)',
+  'lfm-safetensors': 'LFM2.5-1.2B safetensors (~2.2GB)',
+  'embedding':       'BGE-small-zh ONNX (~96MB)',
+  'check':           '仅系统体检 (--check)',
+};
+
 let _running = false;
 let _t0 = 0;
 let _elapsedTimer = null;
+let _dialogHost = null;
 
-function $(id) { return document.getElementById(id); }
+// ── TokUI DSL builders ─────────────────────────────────────────
 
-function showModal() {
-  const m = $('iw-modal');
-  if (m) m.classList.remove('hidden');
-}
-function hideModal() {
-  const m = $('iw-modal');
-  if (m) m.classList.add('hidden');
-}
-
-function setStatus(text) {
-  const el = $('iw-status-line');
-  if (el) el.textContent = text;
-}
-
-function appendLog(line) {
-  const pre = $('iw-log');
-  if (!pre) return;
-  pre.textContent += line + '\n';
-  // Auto-scroll to bottom
-  pre.scrollTop = pre.scrollHeight;
+function buildDialogDSL(preset) {
+  const options = Object.entries(PRESET_LABELS).map(([k, v]) =>
+    `[picker-option value:${k} ${k === preset ? 'selected' : ''}]${v}[/picker-option]`
+  ).join('\n    ');
+  return `[dialog id:iw-dialog open tt:"📥 下载模型" closable clk:onIWDialogClose]\n` +
+    `  [progress id:iw-progress v:primary w:0 tt:"准备中…" stripe]\n` +
+    `  [row]\n` +
+    `    [tag id:iw-stage v:muted sm]idle[/tag]\n` +
+    `    [span id:iw-elapsed v:muted sm]0.0s[/span]\n` +
+    `  [/row]\n` +
+    `  [terminal id:iw-term v:dark]等待下载…[/terminal]\n` +
+    `  [row align:right]\n` +
+    `    [picker id:iw-preset clk:onIWPresetPick sm]\n    ${options}\n    [/picker]\n` +
+    `    [btn id:iw-start tx:"开始下载" v:primary sm clk:onIWStart]\n` +
+    `  [/row]\n` +
+    `[/dialog]`;
 }
 
-function clearLog() {
-  const pre = $('iw-log');
-  if (pre) pre.textContent = '';
+// ── DOM update helpers (via TokUI [upd]) ──────────────────────
+
+async function feedUpd(dsl) {
+  const ui = getInstance();
+  if (!ui || !_dialogHost) return;
+  ui.startStream(_dialogHost);
+  ui.feed(dsl);
+  ui.endStream();
 }
 
-function setProgress(pct) {
-  const fill = $('iw-progress-fill');
-  if (!fill) return;
+function updProgress(pct) {
   const clamped = Math.max(0, Math.min(100, pct));
-  fill.style.width = `${clamped}%`;
+  feedUpd(`[upd id:iw-progress w:${clamped}]`);
 }
 
-function setStage(stage) {
-  const el = $('iw-stage');
-  if (el) el.textContent = stage;
+function updStage(stage) {
+  feedUpd(`[upd id:iw-stage tx:${stage}]`);
 }
 
-function startElapsedTimer() {
-  _t0 = Date.now();
-  if (_elapsedTimer) clearInterval(_elapsedTimer);
-  const el = $('iw-elapsed');
-  _elapsedTimer = setInterval(() => {
-    if (!el) return;
-    const s = (Date.now() - _t0) / 1000;
-    el.textContent = `${s.toFixed(1)}s`;
-  }, 200);
+function updElapsed(s) {
+  feedUpd(`[upd id:iw-elapsed tx:"${s.toFixed(1)}s"]`);
 }
 
-function stopElapsedTimer() {
-  if (_elapsedTimer) {
-    clearInterval(_elapsedTimer);
-    _elapsedTimer = null;
+function updStatus(text) {
+  // Update progress bar title to show status
+  feedUpd(`[upd id:iw-progress tt:"${text.replace(/"/g, '\\"')}"]`);
+}
+
+function appendTerminal(line) {
+  // TokUI terminal: feed new content; since [terminal] is raw-content,
+  // we need to append by re-rendering. For streaming append, we use
+  // the container directly.
+  if (!_dialogHost) return;
+  const term = _dialogHost.querySelector('.tokui-terminal__content');
+  if (term) {
+    term.textContent += line + '\n';
+    term.scrollTop = term.scrollHeight;
   }
 }
 
-/**
- * Parse a "12% / 5.2MB / 1.2GB" style line and update the progress bar.
- * Returns true if the line matched a known progress pattern (and the
- * bar was updated); false otherwise.
- */
-function maybeUpdateProgressFromLine(line) {
-  // Common install_wizard output patterns:
-  //   "[1.2GB / 2.4GB] 50%"  /  "downloading 50%"  /  "50% complete"
-  const pctMatch = line.match(/(\d{1,3})\s*%/);
-  if (pctMatch) {
-    setProgress(parseInt(pctMatch[1], 10));
-    return true;
-  }
-  return false;
+function clearTerminal() {
+  if (!_dialogHost) return;
+  const term = _dialogHost.querySelector('.tokui-terminal__content');
+  if (term) term.textContent = '';
 }
 
-function setRunning(running) {
-  _running = running;
-  const startBtn = $('iw-start');
-  const presetSel = $('iw-preset');
-  const closeBtn = $('iw-close');
-  if (startBtn) {
-    startBtn.disabled = running;
-    startBtn.textContent = running ? '下载中…' : '开始下载';
+// ── Core wizard logic ──────────────────────────────────────────
+
+async function showDialog() {
+  const host = document.getElementById('iw-dialog-host');
+  if (!host) {
+    // Create a persistent host for the dialog
+    _dialogHost = document.createElement('div');
+    _dialogHost.id = 'iw-dialog-host';
+    document.body.appendChild(_dialogHost);
+  } else {
+    _dialogHost = host;
   }
-  if (presetSel) presetSel.disabled = running;
-  // Allow closing the modal mid-download but warn — user can still
-  // see log lines streaming in (modal just hides).
-  if (closeBtn) closeBtn.disabled = false;
+
+  const ui = await bootTokUI();
+  if (!ui) return;
+
+  // Find last-used preset or default
+  const preset = localStorage.getItem('galaxyos.iwPreset.v1') || 'lfm-onnx-q4';
+
+  _dialogHost.innerHTML = '';
+  ui.startStream(_dialogHost);
+  ui.feed(buildDialogDSL(preset));
+  ui.endStream();
+}
+
+function hideDialog() {
+  // Close via [upd] — set dialog open attribute to false
+  feedUpd('[upd id:iw-dialog act:close]');
+  // Remove dialog DOM after animation
+  setTimeout(() => {
+    if (_dialogHost) _dialogHost.innerHTML = '';
+  }, 300);
 }
 
 async function onStartClick() {
   if (_running) return;
-  const presetSel = $('iw-preset');
-  // Read galaxy from window at click-time (it's injected by preload.ts
-  // after main.ts starts the sidecar; the renderer's ipc/client.js
-  // re-binds to it on every call).
+
+  // Re-read preset from rendered DOM
   const gal = window.galaxy;
   if (!gal?.installWizard) {
-    setStatus('错误：galaxy.installWizard 不可用（sidecar 未启动？）');
+    updStatus('错误：sidecar 未启动');
+    notify.error('sidecar 未启动，无法下载模型');
     return;
   }
-  const preset = presetSel?.value ?? 'lfm-onnx-q4';
+
+  // Get current preset from the picker
+  const presetEl = _dialogHost?.querySelector('[data-tokui-picker]');
+  const preset = localStorage.getItem('galaxyos.iwPreset.v1') || 'lfm-onnx-q4';
   const args = PRESETS[preset] ?? PRESETS['lfm-onnx-q4'];
 
-  clearLog();
-  setProgress(0);
-  setStage('starting');
-  setStatus('准备中…');
-  setRunning(true);
+  clearTerminal();
+  updProgress(0);
+  updStage('starting');
+  updStatus('准备中…');
+  _running = true;
+  updBtnState(true);
   startElapsedTimer();
 
   try {
     const result = await gal.installWizard(args, (evt) => {
       if (evt.event === 'started') {
-        setStatus('启动中…');
-        setStage('started');
+        updStatus('启动中…');
+        updStage('started');
       } else if (evt.event === 'pid') {
-        setStatus(`子进程 pid=${evt.pid}`);
-        setStage('running');
+        updStatus(`子进程 pid=${evt.pid}`);
+        updStage('running');
       } else if (evt.event === 'line') {
-        appendLog(`[${evt.stream ?? 'stdout'}] ${evt.line ?? ''}`);
+        appendTerminal(`[${evt.stream ?? 'stdout'}] ${evt.line ?? ''}`);
         if (evt.line) maybeUpdateProgressFromLine(evt.line);
-        // Look for stage markers
         const line = evt.line ?? '';
-        if (line.includes('downloading') || line.includes('下载')) setStage('downloading');
-        else if (line.includes('extracting') || line.includes('解压')) setStage('extracting');
-        else if (line.includes('verifying') || line.includes('验证')) setStage('verifying');
-        else if (line.includes('linking') || line.includes('链接')) setStage('linking');
+        if (line.includes('downloading') || line.includes('下载')) updStage('downloading');
+        else if (line.includes('extracting') || line.includes('解压')) updStage('extracting');
+        else if (line.includes('verifying') || line.includes('验证')) updStage('verifying');
+        else if (line.includes('linking') || line.includes('链接')) updStage('linking');
       } else if (evt.event === 'done') {
         stopElapsedTimer();
         if (evt.ok) {
-          setStatus(`✓ 完成 (exit=${evt.exit_code}, ${evt.duration_s}s)`);
-          setStage('done');
-          setProgress(100);
+          updStatus(`✓ 完成 (exit=${evt.exit_code}, ${evt.duration_s}s)`);
+          updStage('done');
+          updProgress(100);
+          notify.success('模型下载完成', { duration: 6000 });
         } else {
-          setStatus(`✗ 失败 (exit=${evt.exit_code}, ${evt.duration_s}s)${evt.error ? ' — ' + evt.error : ''}`);
-          setStage('error');
+          updStatus(`✗ 失败 (exit=${evt.exit_code})`);
+          updStage('error');
+          notify.error(`下载失败: exit=${evt.exit_code}`);
         }
       }
     }, 1800);
-    // Final result (returned via zmq REP, after PUB 'done' has already
-    // fired).  Result may carry truncated stdout/stderr; append a
-    // summary line.
+
     stopElapsedTimer();
     if (result?.stderr && !result.ok) {
-      appendLog(`[stderr] ${result.stderr.slice(-2000)}`);
+      appendTerminal(`[stderr] ${result.stderr.slice(-2000)}`);
     }
     if (result && typeof result.exit_code === 'number' && result.exit_code !== 0) {
-      setStatus(`✗ 失败 (exit=${result.exit_code}, ${result.duration_s ?? 0}s)`);
-      setStage('error');
+      updStatus(`✗ 失败 (exit=${result.exit_code})`);
+      updStage('error');
     } else if (result && result.ok) {
-      setStatus(`✓ 完成 (${result.duration_s ?? 0}s)`);
-      setProgress(100);
+      updStatus(`✓ 完成 (${result.duration_s ?? 0}s)`);
+      updProgress(100);
     }
   } catch (e) {
     stopElapsedTimer();
-    setStatus(`✗ 异常: ${e?.message ?? String(e)}`);
-    setStage('error');
-    appendLog(`[error] ${e?.stack ?? String(e)}`);
+    updStatus(`✗ 异常: ${e?.message ?? String(e)}`);
+    updStage('error');
+    appendTerminal(`[error] ${e?.stack ?? String(e)}`);
+    notify.error(`下载异常: ${e?.message ?? ''}`);
   } finally {
-    setRunning(false);
+    _running = false;
+    updBtnState(false);
   }
 }
 
-function onCloseClick() {
-  // Mid-download close is allowed; the subprocess keeps running on the
-  // sidecar. User can reopen the modal to see status.
-  hideModal();
+function updBtnState(running) {
+  feedUpd(`[upd id:iw-start tx:"${running ? '下载中…' : '开始下载'}"]`);
+  if (running) feedUpd('[upd id:iw-start v:muted]');
+  else feedUpd('[upd id:iw-start v:primary]');
 }
 
-export function openWizard() {
-  showModal();
-  setStatus('点击「开始下载」以运行 install_wizard');
-  setStage('idle');
-  setProgress(0);
-  if (!_running) clearLog();
+function maybeUpdateProgressFromLine(line) {
+  const pctMatch = line.match(/(\d{1,3})\s*%/);
+  if (pctMatch) {
+    updProgress(parseInt(pctMatch[1], 10));
+    return true;
+  }
+  return false;
 }
 
-function init() {
-  // close button
-  $('iw-close')?.addEventListener('click', onCloseClick);
-  // click outside modal-content closes
-  const modal = $('iw-modal');
-  modal?.addEventListener('click', (e) => {
-    if (e.target === modal) onCloseClick();
-  });
-  // start button
-  $('iw-start')?.addEventListener('click', onStartClick);
-  // Esc closes when not running
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && !_running) {
-      const m = $('iw-modal');
-      if (m && !m.classList.contains('hidden')) onCloseClick();
-    }
-  });
+function startElapsedTimer() {
+  _t0 = Date.now();
+  if (_elapsedTimer) clearInterval(_elapsedTimer);
+  _elapsedTimer = setInterval(() => {
+    const s = (Date.now() - _t0) / 1000;
+    updElapsed(s);
+  }, 200);
 }
+
+function stopElapsedTimer() {
+  if (_elapsedTimer) { clearInterval(_elapsedTimer); _elapsedTimer = null; }
+}
+
+// ── Exports ────────────────────────────────────────────────────
+
+export async function openWizard() {
+  await showDialog();
+}
+
+// ── Init + handler registration ────────────────────────────────
+
+registerHandler('onIWDialogClose', () => {
+  hideDialog();
+});
+
+registerHandler('onIWStart', () => {
+  onStartClick();
+});
+
+registerHandler('onIWPresetPick', (data) => {
+  const value = typeof data === 'string' ? data : data?.value ?? '';
+  if (value && PRESETS[value]) {
+    localStorage.setItem('galaxyos.iwPreset.v1', value);
+  }
+});
 
 export function initInstallWizard() {
-  init();
-  console.log('[install-wizard] initialised');
+  console.log('[install-wizard] TokUI-powered initialised');
 }

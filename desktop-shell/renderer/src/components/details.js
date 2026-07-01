@@ -9,6 +9,7 @@
 
 import { galaxy } from '../ipc/client.js';
 import { bootTokUI } from '../tokui/runtime.js';
+import { escapeDsl } from '../utils.js';
 
 function renderSkillDetail(skillId) {
   if (!galaxy.skill) return;
@@ -59,13 +60,6 @@ function renderSkillDetail(skillId) {
     ui.feed(`[/card]`);
     ui.endStream();
   });
-}
-
-function escapeDsl(s) {
-  if (s.includes('[') || s.includes(']') || s.includes('"')) {
-    return '"' + String(s ?? '').replace(/"/g, '\\"') + '"';
-  }
-  return s;
 }
 
 export function initDetails() {

@@ -1,9 +1,16 @@
 // renderer/src/components/welcome.js — first-run welcome page.
 //
-// C 阶段：用 [welcome tt: st:][feature ...] 替换手写 hardcoded welcome。
-// 用户点 feature → clk:onWelcomePick → 自动切到对应 mode。
+// D 阶段（TokUI 深用）：
+//   - [welcome][feature] 快速入口
+//   - [think][think-chain] R-CCAM 推理流程示意
+//   - [agent][tool-call] Agent 工具调用示意
+//   - [timeline] 长期记忆时间线示意
+//   - 用户点 feature → clk:onWelcomePick → 自动切到对应 mode
 
 import { bootTokUI } from '../tokui/runtime.js';
+import { buildDemoThinkChain } from '../tokui/think-chain.js';
+import { buildDemoAgent } from '../tokui/tool-call.js';
+import { buildDemoMemoryTimeline } from '../tokui/memory-browser.js';
 
 const FEATURES = [
   { id: 'ask',     icon: '💬', title: 'Ask 模式',      desc: '简单提问，自动路由：MeMo / process / fast_path' },
@@ -16,7 +23,25 @@ function buildWelcomeDSL() {
   const features = FEATURES.map(f =>
     `[feature tt:"${f.icon} ${f.title}" tx:"${f.desc}" i:code clk:onWelcomePick]`
   ).join('\n  ');
-  return `[welcome tt:"欢迎使用 GalaxyOS 桌面端" st:"独立 AI Agent · 76 技能 · 多 LLM"]\n  ${features}\n[/welcome]`;
+
+  // Demo think chain (R-CCAM 5-stage)
+  const rccamDemo = buildDemoThinkChain('rccam');
+
+  // Demo agent tool calls
+  const agentDemo = buildDemoAgent();
+
+  // Demo memory timeline
+  const memoryDemo = buildDemoMemoryTimeline();
+
+  return `[welcome tt:"欢迎使用 GalaxyOS 桌面端" st:"独立 AI Agent · 76 技能 · 多 LLM"]\n  ${features}\n[/welcome]` +
+    `\n${rccamDemo}` +
+    `\n[p v:muted sm]↑ 推理链示意：Process 模式按 5 阶段执行复杂任务[/p]` +
+    `\n[dv]` +
+    `\n${agentDemo}` +
+    `\n[p v:muted sm]↑ Agent 工具调用：Agent 模式执行 shell / 读写文件 / 搜索[/p]` +
+    `\n[dv]` +
+    `\n${memoryDemo}` +
+    `\n[p v:muted sm]↑ 长期记忆时间线：侧边栏「🧬 记忆」可浏览全部记忆条目[/p]`;
 }
 
 /** Render welcome into the chat container. Called by main.js after boot.

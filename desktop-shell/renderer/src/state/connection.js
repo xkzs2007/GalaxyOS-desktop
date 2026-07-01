@@ -4,7 +4,7 @@
 // footer. Backed by galaxy.health() (IPC → zmq).
 
 import { createStore } from './store.js';
-import galaxy from '../ipc/client.js';
+import { galaxy } from '../ipc/client.js';
 
 export const connectionStore = createStore({
   status: 'connecting',   // 'connecting' | 'ok' | 'error'

@@ -10,8 +10,7 @@
 
   所有 UI 渲染都通过 src/main.js → bootTokUI() → TokUI 组件完成。
   本文件只提供挂载点（#sidebar-host / #tokui-container / #composer-host /
-  #details-host）和最小可见的 install-wizard 弹窗（#iw-modal，启动模型
-  下载时由 IPC 触发显示）。
+  #details-host）。弹窗由 TokUI [dialog] 按需创建。
 
   TokUI 加载策略：
     - 默认从 unpkg CDN 加载（开发 / smoke test / 用户没跑 npm install 时）
@@ -21,11 +20,11 @@
     - CSP 在 meta 里允许 https://unpkg.com 拉 UMD + CSS。
 
   D 阶段改动：
-    - 删所有手写 sidebar / composer / settings modal fallback（之前 hidden
-      兜底）。如果 TokUI 加载失败，runtime.js 的 makeStubRenderer 会渲染
+    - 删所有手写 sidebar / composer / settings modal / iw-modal fallback。
+      如果 TokUI 加载失败，runtime.js 的 makeStubRenderer 会渲染
       简单文本回退，不再依赖手写 HTML。
-    - iw-modal 保留（install wizard 是 zmq REP/PUB 直驱，TokUI 接管前
-      是可见的 UI 部件）。
+    - install-wizard 全面 TokUI 化：[dialog] 弹窗 + [progress] 进度条 +
+      [terminal] 日志面板 + [picker] 预设选择 + [upd] 动态更新。
 -->
 <html lang="zh-CN" data-tokui-theme="dark">
 <head>
@@ -56,37 +55,9 @@
 
   </div>
 
-  <!-- Install wizard modal — shown when user clicks "下载模型".
-       Streams progress lines from the sidecar via zmq PUB → webContents.send
-       → ipcRenderer.on('iw:progress'). D 阶段保留手写（TokUI 接管前是
-       唯一可见的安装流）。 -->
-  <div id="iw-modal" class="iw-modal hidden" role="dialog" aria-labelledby="iw-title">
-    <div class="iw-modal-content">
-      <div class="iw-header">
-        <span id="iw-title">📥 下载 LFM2.5-1.2B 模型</span>
-        <button id="iw-close" class="iw-close" aria-label="关闭">×</button>
-      </div>
-      <div class="iw-status">
-        <div id="iw-status-line" class="iw-status-line">准备中…</div>
-        <div class="iw-progress-bar"><div id="iw-progress-fill" class="iw-progress-fill"></div></div>
-        <div class="iw-meta">
-          <span id="iw-elapsed">0.0s</span>
-          <span id="iw-stage">starting</span>
-        </div>
-      </div>
-      <pre id="iw-log" class="iw-log" aria-live="polite"></pre>
-      <div class="iw-actions">
-        <select id="iw-preset" class="iw-preset">
-          <option value="lfm-onnx-q4">LFM2.5-1.2B ONNX Q4 (~1.2GB, 推荐)</option>
-          <option value="lfm-onnx-fp16">LFM2.5-1.2B ONNX FP16 (~2.4GB)</option>
-          <option value="lfm-safetensors">LFM2.5-1.2B safetensors (~2.2GB)</option>
-          <option value="embedding">BGE-small-zh ONNX (~96MB)</option>
-          <option value="check">仅系统体检 (--check)</option>
-        </select>
-        <button id="iw-start" class="iw-start">开始下载</button>
-      </div>
-    </div>
-  </div>
+  <!-- Install wizard dialog — fully rendered by TokUI [dialog] component.
+       install-wizard.js renders [dialog id:iw-dialog] into a dynamic host div
+       (iw-dialog-host, created at runtime). No hand-rolled markup needed. -->
 
   <!-- TokUI UMD. The page also works if the script fails to load — main.js
        falls back to makeStubRenderer() (text-only renderer) after 3s. -->

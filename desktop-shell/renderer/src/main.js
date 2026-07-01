@@ -1,25 +1,27 @@
 // renderer/src/main.js — entry point. Wires every module together.
 //
-// C 阶段：删掉 122 行手写逻辑，改为 ~40 行 TokUI-first boot 流程。
+// D 阶段（TokUI 组件深用）：[code] 代码高亮 / [notification] 通知 /
+// [upd] 增量更新 / [dialog][progress][terminal] install-wizard。
 //
 // 模块图（架构在 A 阶段确立，未变）：
 //   ipc/client        → window.galaxy (IPC bridge to sidecar)
 //   state/*           → pub-sub stores (4 个)
 //   tokui/runtime     → TokUI 适配层（UMD lazy load）
-//   tokui/feed        → 高阶 DSL feed helper
-//   tokui/handlers    → msg-action 回调
-//   components/sidebar / composer / details / welcome
-//                      → 用 TokUI DSL 渲染
+//   tokui/feed        → 高阶 DSL feed helper + code block 转换
+//   tokui/handlers    → msg-action 回调 + notification 反馈
+//   tokui/notify      → 全局 toast 通知系统
+//   components/sidebar / composer / details / welcome / install-wizard
+//                      → 用 TokUI DSL 渲染，[upd] 增量更新
 
-import { bootTokUI, getInstance, registerHandler } from './tokui/runtime.js';
+import { bootTokUI, registerHandler } from './tokui/runtime.js';
 import { registerMsgActionHandlers } from './tokui/handlers.js';
-import { startAssistantStream, feed, endAssistantStream, isStreaming } from './tokui/feed.js';
+import { endAssistantStream, isStreaming } from './tokui/feed.js';
 import { initSidebar, renderSidebar } from './components/sidebar.js';
 import { initComposer, renderComposer, onComposerSend, setMode } from './components/composer.js';
 import { initDetails } from './components/details.js';
 import { renderWelcome } from './components/welcome.js';
 import { initInstallWizard, openWizard } from './components/install-wizard.js';
-import { sessionStore, sessionApi } from './state/session.js';
+import { sessionApi } from './state/session.js';
 
 function installKeyboardShortcuts() {
   document.addEventListener('keydown', (e) => {
@@ -64,8 +66,7 @@ registerHandler('onWelcomePick', (data) => {
 
 (async () => {
   // 1. Boot TokUI
-  const ui = await bootTokUI('#tokui-container');
-  window._tokuiInstance = ui;  // for composer.js to access
+  await bootTokUI('#tokui-container');
 
   // 2. Register all event handlers
   registerMsgActionHandlers();
@@ -93,5 +94,5 @@ registerHandler('onWelcomePick', (data) => {
   // 6. Install keyboard shortcuts
   installKeyboardShortcuts();
 
-  console.log('[main] GalaxyOS renderer ready (TokUI C-stage)');
+  console.log('[main] GalaxyOS renderer ready (TokUI D-stage)');
 })();

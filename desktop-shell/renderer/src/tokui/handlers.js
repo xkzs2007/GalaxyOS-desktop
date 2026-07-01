@@ -1,15 +1,14 @@
 // renderer/src/tokui/handlers.js — TokUI msg-action handlers.
 //
-// C 阶段：适配真实 TokUI 事件总线。
-// TokUI 通过 window.TokUI.registerHandler 注册回调，DSL 里的 clk:xxx
-// 触发对应 handler。handler 接收 (data, evt, formEl) — data 是事件负载。
-//
-// 我们保留 7 个原 handler：copy / regenerate / like / dislike /
-// verify / recall / save，对应 GalaxyOS 现有 msg-action 按钮。
+// D 阶段（TokUI 深用）：
+//   - recall → [timeline] 记忆时间线渲染
+//   - save   → [notification] 通知 + 记忆 ID 展示
+//   - copy/like/dislike/verify 保留原有逻辑
 
 import { registerHandler } from './runtime.js';
 import { galaxy } from '../ipc/client.js';
-import { sessionApi } from '../state/session.js';
+import notify from './notify.js';
+import { renderMemoryTimeline } from './memory-browser.js';
 
 function getBubbleText(evt) {
   // evt.element is the closest bubble DOM node
@@ -27,7 +26,9 @@ function appendNote(bubble, text, color) {
 export function registerMsgActionHandlers() {
   registerHandler('copy', (data, evt) => {
     const text = getBubbleText(evt) ?? data?.text ?? '';
-    navigator.clipboard.writeText(text).catch(() => {});
+    navigator.clipboard.writeText(text).then(() => {
+      notify.success('已复制到剪贴板', { duration: 2000 });
+    }).catch(() => {});
   });
 
   registerHandler('regenerate', () => {
@@ -45,6 +46,7 @@ export function registerMsgActionHandlers() {
     if (galaxy.emitEvent) {
       galaxy.emitEvent('msg_action_like', { text: (getBubbleText(evt) ?? '').slice(0, 200) });
     }
+    notify.info('已标记为有用', { duration: 2000 });
   });
 
   registerHandler('dislike', (data, evt) => {
@@ -69,14 +71,22 @@ export function registerMsgActionHandlers() {
     if (!galaxy.recall) return;
     const text = (getBubbleText(evt) ?? '').slice(0, 100);
     try {
-      const r = await galaxy.recall(text, 3);
-      const box = document.createElement('div');
-      box.style.cssText = 'margin-top:8px;padding:6px 10px;border-radius:4px;background:#4f9dff22;color:#4f9dff;font-size:11px;';
-      const items = (r.results ?? []).map((m, i) =>
-        `<div style="margin-top:4px;opacity:0.85">${i+1}. ${(m.content || m.text || JSON.stringify(m)).slice(0, 80)}…</div>`
-      ).join('');
-      box.innerHTML = `<b>📚 检索到 ${r.count ?? 0} 条相关记忆</b><br>${items}`;
-      evt?.element?.appendChild(box);
+      const r = await galaxy.recall(text, 5);
+      const memories = r?.results ?? [];
+
+      if (!memories.length) {
+        appendNote(evt?.element, '📚 未找到相关记忆', '#4f9dff');
+        return;
+      }
+
+      // Render as a TokUI [timeline] below the bubble
+      const resultHost = document.createElement('div');
+      resultHost.className = 'memory-timeline-host';
+      evt?.element?.appendChild(resultHost);
+
+      renderMemoryTimeline(resultHost, memories, {
+        title: `📚 检索到 ${r.count ?? memories.length} 条相关记忆`,
+      });
     } catch (e) { console.warn('[recall] failed:', e); }
   });
 
@@ -86,6 +96,7 @@ export function registerMsgActionHandlers() {
     try {
       const r = await galaxy.saveMemory(text, { source: 'msg_action_save' });
       appendNote(evt?.element, `💾 已保存到长期记忆 (${r.memory_id?.slice(0, 8) || ''}…)`, '#10b981');
+      notify.success('已保存到长期记忆', { duration: 2500 });
     } catch (e) { console.warn('[save] failed:', e); }
   });
 }

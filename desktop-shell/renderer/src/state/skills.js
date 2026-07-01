@@ -5,7 +5,7 @@
 // demand when the user opens a skill detail.
 
 import { createStore } from './store.js';
-import galaxy from '../ipc/client.js';
+import { galaxy } from '../ipc/client.js';
 
 export const skillsStore = createStore({
   list: [],
