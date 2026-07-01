@@ -18,6 +18,8 @@
     "build:mac": "electron-builder --mac dmg --x64",
     "build:mac:arm64": "electron-builder --mac dmg --arm64",
     "build:linux": "electron-builder --linux AppImage --x64",
+    "ci:dry": "bash ../scripts/ci-dry-run.sh",
+    "ci:dry:full": "bash ../scripts/ci-dry-run.sh --full",
     "build:lfm": "cd ../extensions/galaxyos/native && cargo build --release",
     "build:all": "npm run build:lfm && npm run build:main && npm run build:electron",
     "build:all:frozen": "npm run build:lfm && npm run build:main && npm run build:python && npm run build:electron",
