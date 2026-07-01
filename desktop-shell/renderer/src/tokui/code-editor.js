@@ -36,26 +36,33 @@ const _loadedLangs = new Set();  // already loaded language packages
 // ── Language package lazy-loader ──────────────────────────────
 
 const LANG_PKGS = {
-  python:     () => import('https://esm.sh/@codemirror/lang-python@6'),
-  javascript: () => import('https://esm.sh/@codemirror/lang-javascript@6'),
-  json:       () => import('https://esm.sh/@codemirror/lang-json@6'),
-  markdown:   () => import('https://esm.sh/@codemirror/lang-markdown@6'),
-  html:       () => import('https://esm.sh/@codemirror/lang-html@6'),
-  css:        () => import('https://esm.sh/@codemirror/lang-css@6'),
-  sql:        () => import('https://esm.sh/@codemirror/lang-sql@6'),
-  xml:        () => import('https://esm.sh/@codemirror/lang-xml@6'),
-  yaml:       () => import('https://esm.sh/@codemirror/legacy-modes/mode/yaml@6'),
+  python:     () => import('https://esm.sh/@codemirror/lang-python@6.0'),
+  javascript: () => import('https://esm.sh/@codemirror/lang-javascript@6.0'),
+  json:       () => import('https://esm.sh/@codemirror/lang-json@6.0'),
+  markdown:   () => import('https://esm.sh/@codemirror/lang-markdown@6.0'),
+  html:       () => import('https://esm.sh/@codemirror/lang-html@6.0'),
+  css:        () => import('https://esm.sh/@codemirror/lang-css@6.0'),
+  sql:        () => import('https://esm.sh/@codemirror/lang-sql@6.0'),
+  xml:        () => import('https://esm.sh/@codemirror/lang-xml@6.0'),
+  yaml:       () => import('https://esm.sh/@codemirror/lang-yaml@6.0'),
 };
 
 /** Load CodeMirror core (once) */
 async function loadCodeMirror() {
   if (_cmLoaded) return _cmModules;
   try {
-    const [mod, themeMod] = await Promise.all([
-      import('https://esm.sh/codemirror@6'),
-      import('https://esm.sh/@codemirror/theme-one-dark@6'),
+    const [mod, themeMod, stateMod] = await Promise.all([
+      import('https://esm.sh/codemirror@6.0.2'),
+      import('https://esm.sh/@codemirror/theme-one-dark@6.0'),
+      import('https://esm.sh/@codemirror/state@6.0'),
     ]);
-    _cmModules = { ...mod, oneDark: themeMod?.oneDark };
+    _cmModules = {
+      EditorView: mod.EditorView,
+      minimalSetup: mod.minimalSetup,
+      basicSetup: mod.basicSetup,
+      EditorState: stateMod.EditorState,
+      oneDark: themeMod?.oneDark,
+    };
     _cmLoaded = true;
     return _cmModules;
   } catch (e) {
@@ -90,7 +97,7 @@ function injectCMCSS() {
   const link = document.createElement('link');
   link.id = 'codemirror-css';
   link.rel = 'stylesheet';
-  link.href = 'https://esm.sh/codemirror@6/dist/index.css';
+  link.href = 'https://esm.sh/@codemirror/view@6.0/dist/index.css';
   document.head.appendChild(link);
   _cssInjected = true;
 }
