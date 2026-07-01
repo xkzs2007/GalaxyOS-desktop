@@ -17,12 +17,7 @@ import { escapeDsl } from '../utils.js';
 export function buildSkeleton(type = 'card') {
   switch (type) {
     case 'chat':
-      return `[skeleton v:card]\n` +
-        `  [skeleton__row w:60%]\n` +
-        `  [skeleton__row w:90%]\n` +
-        `  [skeleton__row w:75%]\n` +
-        `  [skeleton__row w:40%]\n` +
-        `[/skeleton]`;
+      return `[shimmer rows:4]\n`;
     case 'card':
     default:
       return `[skeleton v:card]`;

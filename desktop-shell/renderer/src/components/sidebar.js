@@ -95,9 +95,11 @@ function buildMemorySection() {
 }
 
 function buildMemoryContent() {
-  return `    [p v:muted sm]浏览长期记忆时间线[/p]\n` +
+  return `    [badge-box t:info label:"长期记忆" dot]\n` +
+    `    [p v:muted sm]浏览与搜索记忆时间线[/p]\n` +
     `    [btn tx:"📋 查看时间线" clk:onMemOpenTimeline sm][/btn]\n` +
-    `    [btn tx:"🔍 搜索记忆" clk:onMemSearch sm v:muted][/btn]`;
+    `    [btn tx:"🔍 搜索记忆" clk:onMemSearch sm v:muted][/btn]\n` +
+    `    [/badge-box]`;
 }
 
 function buildSkillsSection() {

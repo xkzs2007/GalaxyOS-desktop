@@ -102,11 +102,15 @@ export function endPlan(plan, totalDurationSec, errorMsg) {
 
 // ── Static demo builder (for welcome/help pages) ──────────────
 
+/**
+ * Build a static demo plan with [steps] for welcome/help pages.
+ * v9.6: Uses [steps] / [step] for a cleaner procedural flow visualization.
+ */
 export function buildDemoPlan() {
-  return `[plan tt:"📋 执行计划 (示例)" done]\n` +
+  return `[steps s:md]\n` +
     DEFAULT_STEPS.map((s, i) => {
-      const status = i < 2 ? 'done' : i === 2 ? 'running' : 'pending';
-      return `  [plan-step tt:"${s.label}" tx:"${escapeDsl(s.desc)}" ${status}]`;
+      const status = i < 2 ? 'done' : i === 2 ? 'active' : 'pending';
+      return `  [step tt:"${escapeDsl(s.label)}" status:${status}]${escapeDsl(s.desc)}[/step]`;
     }).join('\n') +
-    `\n[/plan]`;
+    `\n[/steps]`;
 }

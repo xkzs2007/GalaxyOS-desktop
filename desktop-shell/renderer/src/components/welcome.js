@@ -41,7 +41,8 @@ function buildWelcomeDSL() {
   // Demo dashboard
   const dashDemo = buildDemoDashboard();
 
-  return `[welcome tt:"欢迎使用 GalaxyOS 桌面端" st:"独立 AI Agent · 76 技能 · 多 LLM"]\n  ${features}\n[/welcome]` +
+  return `[watermark tx:"GalaxyOS" s:md gap:160 ro]\n` +
+    `[welcome tt:"欢迎使用 GalaxyOS 桌面端" st:"独立 AI Agent · 76 技能 · 多 LLM"]\n  ${features}\n[/welcome]` +
     `\n[card tt:"📊 快速概览" v:highlight]\n` +
     `  [row]\n` +
     `    [stat v:"76" tt:"技能" suf:"个" i:code]\n` +
@@ -64,7 +65,8 @@ function buildWelcomeDSL() {
     `\n[p v:muted sm]↑ Agent 工具调用：Agent 模式执行 shell / 读写文件 / 搜索[/p]` +
     `\n[dv]` +
     `\n${memoryDemo}` +
-    `\n[p v:muted sm]↑ 长期记忆时间线：侧边栏「🧬 记忆」可浏览全部记忆条目[/p]`;
+    `\n[p v:muted sm]↑ 长期记忆时间线：侧边栏「🧬 记忆」可浏览全部记忆条目[/p]\n` +
+    `[/watermark]`;
 }
 
 /** Render welcome into the chat container. Called by main.js after boot.

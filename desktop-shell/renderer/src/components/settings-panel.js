@@ -228,10 +228,10 @@ function buildSettingsDSL(activeTab = 'general') {
     `  [form sub:onSettingsSave]\n` +
     buildGeneralTab() +
     buildSlotsTab() +
-    `    [row]\n` +
+    `    [btngroup]\n` +
     `      [btn tx:"💾 保存" v:primary type:submit]\n` +
     `      [btn tx:"✕ 取消" clk:onSettingsClose]\n` +
-    `    [/row]\n` +
+    `    [/btngroup]\n` +
     `  [/form]\n` +
     `[/drawer]`;
 }

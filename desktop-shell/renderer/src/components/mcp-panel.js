@@ -82,10 +82,10 @@ function buildMcpToolTable(tools) {
 
   // Actions row
   dsl += `  [dv]\n`;
-  dsl += `  [row]\n`;
+  dsl += `  [btngroup]\n`;
   dsl += `    [btn tx:"🔄 刷新" clk:onMcpRefresh sm v:muted]\n`;
   dsl += `    [btn tx:"+ 添加服务器" clk:onMcpShowAddForm sm]\n`;
-  dsl += `  [/row]\n`;
+  dsl += `  [/btngroup]\n`;
 
   dsl += `[/card]`;
   return dsl;
@@ -97,10 +97,10 @@ function buildAddServerForm() {
     `    [input id:mcp-add-name n:name ph:"服务器名称" l:"名称" required]\n` +
     `    [input id:mcp-add-url n:url ph:"http://localhost:3000/sse" l:"SSE URL" required]\n` +
     `    [textarea id:mcp-add-desc n:desc ph:"服务器描述…" l:"说明" rows:2 max:200]\n` +
-    `    [row]\n` +
+    `    [btngroup]\n` +
     `      [btn tx:"✅ 添加" v:primary type:submit]\n` +
     `      [btn tx:"✕ 取消" clk:onMcpHideAddForm]\n` +
-    `    [/row]\n` +
+    `    [/btngroup]\n` +
     `  [/form]\n` +
     `[/card]`;
 }

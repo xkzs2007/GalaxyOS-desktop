@@ -29,6 +29,8 @@ function appendNote(bubble, text, color) {
 export function registerMsgActionHandlers() {
   registerHandler('copy', (data, evt) => {
     const text = getBubbleText(evt) ?? data?.text ?? '';
+    // v9.6: TokUI [copy] handles the clipboard write natively;
+    // we add a notification for user feedback
     navigator.clipboard.writeText(text).then(() => {
       notify.success('已复制到剪贴板', { duration: 2000 });
     }).catch(() => {});

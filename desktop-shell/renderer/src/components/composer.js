@@ -45,6 +45,39 @@ const MODE_LABELS = {
   ocr: 'OCR',
 };
 
+/**
+ * v9.6: Generate contextual follow-up suggestions based on current mode.
+ */
+function getModeSuggestions(mode) {
+  const all = {
+    ask: [
+      { title: '深入分析', desc: '用 Process 模式深度推理' },
+      { title: '查记忆', desc: '搜索相关长期记忆' },
+      { title: '写代码', desc: '切换到 Agent 模式' },
+    ],
+    process: [
+      { title: '执行计划', desc: '用 Plan 模式生成步骤' },
+      { title: '工具调用', desc: '用 Agent 执行操作' },
+      { title: '保存记忆', desc: '结果写入长期记忆' },
+    ],
+    agent: [
+      { title: '查看文件', desc: '浏览 sandbox 目录' },
+      { title: '分析结果', desc: '用 Process 模式总结' },
+      { title: '继续改进', desc: '进一步优化代码' },
+    ],
+    memo: [
+      { title: '常规提问', desc: '切回 Ask 模式' },
+      { title: '复杂推理', desc: '用 Process 模式分析' },
+    ],
+    plan: [
+      { title: '自动执行', desc: '切 Agent 按计划执行' },
+      { title: '调整计划', desc: '重新生成执行计划' },
+      { title: '简单问答', desc: '切回 Ask 模式' },
+    ],
+  };
+  return all[mode] || [];
+}
+
 /** Mode tabs 渲染（用 TokUI [tabs][tab] 组件） */
 function renderModeTabs() {
   const modes = Object.keys(MODE_TO_METHOD);
@@ -192,6 +225,7 @@ async function onComposerSend(text) {
 
     // 3b. Animate visualisation completion
     const totalSec = (performance.now() - t0) / 1000;
+    const totalMs = Math.round(totalSec * 1000);
     if (chain) {
       endThinkChain(chain, totalSec);
     } else if (agentHandle) {
@@ -199,6 +233,18 @@ async function onComposerSend(text) {
     }
     if (planHandle) {
       endPlan(planHandle, totalSec);
+    }
+
+    // v9.6: Post-response enrichments — latency + suggestions
+    feed(`[latency v:${totalMs} t:primary]`);
+    // Add follow-up suggestions based on the mode
+    const suggestions = getModeSuggestions(state.mode);
+    if (suggestions.length) {
+      feed(`[suggestions cols:2 clk:onSuggestionPick]`);
+      for (const s of suggestions) {
+        feed(`  [suggestion tt:"${escapeDsl(s.title)}" tx:"${escapeDsl(s.desc)}" clk:onSuggestionPick]`);
+      }
+      feed(`[/suggestions]`);
     }
   } catch (e) {
     console.error('[composer] error:', e);
@@ -380,6 +426,30 @@ registerHandler('onModeTab', (data) => {
   const value = typeof data === 'string' ? data : data?.value ?? data?.tab;
   if (value && MODE_TO_METHOD[value]) setMode(value);
 });
+
+// v9.6: Handle suggestion clicks — switch mode + fill composer
+registerHandler('onSuggestionPick', (data) => {
+  const title = typeof data === 'string' ? data : data?.tt || data?.tx || '';
+  const mode = guessSuggestionMode(title);
+  if (mode && mode !== state.mode) setMode(mode);
+  // Fill composer with the suggestion text as a prompt hint
+  const inputEl = document.querySelector('#tokui-container [class*="chat-input"] input, #tokui-container [data-tokui-tag="chat-input"] input');
+  if (inputEl) {
+    inputEl.value = title;
+    inputEl.focus();
+  }
+});
+
+/** v9.6: Map suggestion title to a mode. */
+function guessSuggestionMode(title) {
+  const t = (title || '').toLowerCase();
+  if (/process|推理|分析|深度/i.test(t)) return 'process';
+  if (/agent|执行|操作|代码|改/i.test(t)) return 'agent';
+  if (/plan|计划|步骤/i.test(t)) return 'plan';
+  if (/ask|提问|问答/i.test(t)) return 'ask';
+  if (/memo|记忆|保存/i.test(t)) return 'memo';
+  return null;
+}
 
 // Export internals for main.js to wire
 export { onComposerSend, setMode };

@@ -82,6 +82,11 @@ export function renderMemoryTimeline(container, memories, opts = {}) {
   }
 
   ui.feed(`[/timeline]`);
+  // v9.6: pagination for large memory sets
+  if (memories.length > (opts.limit || shown.length)) {
+    const totalPages = Math.ceil(memories.length / (opts.limit || shown.length));
+    ui.feed(`[pagination page:1 total:${totalPages} count:${memories.length} clk:onMemPage sm]`);
+  }
   ui.feed(`[/card]`);
   ui.endStream();
 }

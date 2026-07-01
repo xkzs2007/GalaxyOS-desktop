@@ -359,7 +359,7 @@ const dslInspector = {
     if (!source || !source.trim()) {
       ui.startStream(host);
       ui.feed(`[card tt:"🔍 DSL Inspector" v:highlight]`);
-      ui.feed(`  [row]`);
+      ui.feed(`  [btngroup]`);
       ui.feed(`    [btn tx:"${_active ? '🟢 已启用' : '⚫ 已禁用'}" clk:onDslInspectorToggle sm v:muted]`);
       ui.feed(`    [btn tx:"清除" clk:onDslInspectorClear sm v:muted]`);
       if (_autoScroll) {
@@ -367,7 +367,7 @@ const dslInspector = {
       } else {
         ui.feed(`    [btn tx:"📌 自动滚屏:关" clk:onDslInspectorToggleScroll sm v:muted]`);
       }
-      ui.feed(`  [/row]`);
+      ui.feed(`  [/btngroup]`);
       if (!_active) {
         ui.feed(`  [callout t:info tt:"DSL Inspector"]按 Ctrl+Shift+D 启用 DSL 捕获。发送一条消息后，此处将实时显示接收到的 DSL 碎片（含行号与语法着色）。[/callout]`);
       } else {
@@ -383,7 +383,7 @@ const dslInspector = {
     // Header with stats + controls
     const lineCount = lines.length;
     ui.feed(`[card tt:"🔍 DSL Inspector · ${lineCount} 行" v:highlight]`);
-    ui.feed(`  [row]`);
+    ui.feed(`  [btngroup]`);
     ui.feed(`    [btn tx:"${_active ? '🟢 已启用' : '⚫ 已禁用'}" clk:onDslInspectorToggle sm v:muted]`);
     ui.feed(`    [btn tx:"清除" clk:onDslInspectorClear sm v:muted]`);
     if (_autoScroll) {
@@ -392,7 +392,7 @@ const dslInspector = {
       ui.feed(`    [btn tx:"📌 自动滚屏:关" clk:onDslInspectorToggleScroll sm v:muted]`);
     }
     ui.feed(`    [span sm v:muted]点击行 → 左侧定位组件[/span]`);
-    ui.feed(`  [/row]`);
+    ui.feed(`  [/btngroup]`);
     ui.feed(`  [dv]`);
 
     // ── Render syntax-highlighted DSL lines ──────────────────
