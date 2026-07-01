@@ -163,8 +163,30 @@ struct LFMEngine {
 impl LFMEngine {
     fn new(path: &str) -> Result<Self, String> {
         ort::environment::init().commit();
+
+        // 动态线程数：物理核数的一半，下限 1 上限 8
+        let phys_cores = std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(4);
+        let num_threads = (phys_cores / 2).clamp(1, 8);
+
         let session = Session::builder().map_err(|e| format!("builder: {}", e))?
+            .with_intra_threads(num_threads).map_err(|e| format!("intra_threads: {}", e))?
+            .with_inter_threads(1).map_err(|e| format!("inter_threads: {}", e))?
+            .with_optimization_level(ort::session::GraphOptimizationLevel::Level3)
+            .map_err(|e| format!("opt_level: {}", e))?
             .commit_from_file(path).map_err(|e| format!("load: {}", e))?;
+
+        // GPU 检测
+        let available = ort::session::get_available_providers()
+            .unwrap_or_default();
+        let has_cuda = available.iter().any(|p| p == "CUDAExecutionProvider");
+        if has_cuda {
+            eprintln!("[lfm] CUDA GPU detected — using CUDAExecutionProvider");
+        } else {
+            eprintln!("[lfm] CPU mode — {} threads ({} cores detected)", num_threads, phys_cores);
+        }
+
         let inames: Vec<String> = session.inputs().iter().map(|i| i.name().to_string()).collect();
         let onames: Vec<String> = session.outputs().iter().map(|o| o.name().to_string()).collect();
         Ok(Self {
@@ -368,13 +390,24 @@ fn handle_request(line: &str, eng: &mut LFMEngine) -> String {
 
         "shutdown" => { let _ = mk_ok(req.id, serde_json::json!("ok"), None); std::process::exit(0); }
 
-        "get_info" => mk_ok(req.id, serde_json::json!({
-            "version":"2.0.0","backend":"ort(Q4)","model":"LFM2.5-1.2B","dim":DIM,
-            "conv_layers": CONV_LAYER_IDS, "attn_layers": ATTN_LAYER_IDS,
-            "has_state": eng.has_state, "total_seq_len": eng.total_seq,
-            "platform": if cfg!(windows) { "windows" } else { "unix" },
-            "ipc": if cfg!(windows) { "tcp" } else { "uds" },
-        }), None),
+        "get_info" => {
+            let phys_cores = std::thread::available_parallelism()
+                .map(|n| n.get()).unwrap_or(0);
+            let available = ort::session::get_available_providers()
+                .unwrap_or_default();
+            let has_cuda = available.iter().any(|p| p == "CUDAExecutionProvider");
+            let num_threads = (phys_cores / 2).clamp(1, 8);
+            mk_ok(req.id, serde_json::json!({
+                "version":"2.0.0","backend":"ort(Q4)","model":"LFM2.5-1.2B","dim":DIM,
+                "conv_layers": CONV_LAYER_IDS, "attn_layers": ATTN_LAYER_IDS,
+                "has_state": eng.has_state, "total_seq_len": eng.total_seq,
+                "platform": if cfg!(windows) { "windows" } else { "unix" },
+                "ipc": if cfg!(windows) { "tcp" } else { "uds" },
+                "provider": if has_cuda { "cuda" } else { "cpu" },
+                "num_threads": num_threads,
+                "cpu_cores": phys_cores,
+            }), None)
+        },
 
         "embed_text" => {
             let ids = extract_ids(&req.params);

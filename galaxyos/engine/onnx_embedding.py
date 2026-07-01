@@ -119,12 +119,23 @@ class LocalEmbeddingService:
         self._tok.enable_padding(length=128)
 
         import onnxruntime as ort
+        import multiprocessing
         so = ort.SessionOptions()
         so.enable_cpu_mem_arena = False
         so.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+
+        # 动态线程数
+        phys_cores = multiprocessing.cpu_count() or 4
+        so.intra_op_num_threads = max(1, min(8, phys_cores // 2))
+        so.inter_op_num_threads = 1
+
+        # GPU 检测
+        available = ort.get_available_providers()
+        providers = ["CUDAExecutionProvider"] if "CUDAExecutionProvider" in available else ["CPUExecutionProvider"]
+
         self._sess = ort.InferenceSession(
             onnx_path, so,
-            providers=['CPUExecutionProvider'],
+            providers=providers,
         )
 
         self._load_cache()

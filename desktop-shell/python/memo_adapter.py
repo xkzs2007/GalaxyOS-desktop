@@ -356,14 +356,35 @@ class OnnxMeMoAdapter(MeMoAdapter):
             raise FileNotFoundError(f"Tokenizer not found at {self.tokenizer_path}")
 
         log.info("Loading ONNX model: %s", self.model_path)
-        # CPUExecutionProvider is the only one guaranteed to be present.
-        # CUDAExecutionProvider would need onnxruntime-gpu + a GPU.
+
         sess_opts = ort.SessionOptions()
         sess_opts.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
-        sess_opts.intra_op_num_threads = max(1, os.cpu_count() or 1)
+
+        # 动态线程数：物理核数（不含超线程），避免过度竞争
+        import multiprocessing
+        phys_cores = multiprocessing.cpu_count() or 4
+        # 取物理核数的一半（超线程对 ONNX 推理帮助不大），下限 1 上限 8
+        num_threads = max(1, min(8, phys_cores // 2))
+        sess_opts.intra_op_num_threads = num_threads
+        sess_opts.inter_op_num_threads = 1  # 模型小，inter 线程反而增加开销
+
+        # GPU 检测：优先 CUDA，其次 CPU
+        available = ort.get_available_providers()
+        providers = []
+        if "CUDAExecutionProvider" in available:
+            providers.append(("CUDAExecutionProvider", {
+                "device_id": 0,
+                "arena_extend_strategy": "kSameAsRequested",
+            }))
+            log.info("ONNX providers: CUDA (GPU 加速)")
+        else:
+            providers.append("CPUExecutionProvider")
+            log.info("ONNX providers: CPU (%d threads, %d cores detected)",
+                     num_threads, phys_cores)
+
         self._session = ort.InferenceSession(
             self.model_path, sess_options=sess_opts,
-            providers=["CPUExecutionProvider"],
+            providers=providers,
         )
         self._tokenizer = Tokenizer.from_file(self.tokenizer_path)
 
