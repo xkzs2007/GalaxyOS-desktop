@@ -22,7 +22,7 @@ let _host = null;
 
 function buildSetupDSL() {
   return `[card tt:"🚀 欢迎使用 GalaxyOS" v:highlight]\n` +
-    `  [p v:muted]AI 桌面 Agent · 液态神经记忆 · 76 技能图[/p]\n` +
+    `  [p v:muted]你的桌面 AI 助手 · 开箱即用 69 个技能[/p]\n` +
     `  [callout t:info tt:"首次启动"]首次启动需要安装 Python 依赖库（约 200MB），以启用完整的 AI 认知引擎。[/callout]\n` +
     `  [steps s:md id:setup-steps]\n` +
     `    [step id:step-detect tt:"检测 Python" status:pending]扫描系统中可用的 Python 3.11+ 解释器[/step]\n` +
