@@ -329,15 +329,14 @@ class SidecarHandlers:
         # Live config — updated by set_config() from the renderer
         self._live_config = {
             "api_key": os.environ.get("LLM_API_KEY", os.environ.get("DEEPSEEK_API_KEY", "")),
-            "api_base": os.environ.get("LLM_API_BASE", "https://api.deepseek.com/v1"),
-            "model": "deepseek-chat",
+            "api_base": os.environ.get("LLM_API_BASE", "https://api.deepseek.com"),
+            "model": "deepseek-v4-flash",
             "system_prompt": "",
         }
         # Model name mapping: UI label → actual API model string
         self._model_map = {
-            "Qwen-2.5": "deepseek-chat",
-            "Qwen-3": "deepseek-reasoner",
-            "DeepSeek-V4": "deepseek-chat",
+            "DeepSeek-V4": "deepseek-v4-flash",
+            "DeepSeek-V4-Pro": "deepseek-v4-pro",
             "Gemini-3-Flash": "gemini-3-flash",
             "LFM-2.5-1.2B": "lfm-2.5-1.2b",
         }
@@ -661,11 +660,15 @@ class SidecarHandlers:
 
         v9.2: the renderer calls this to populate the model picker
         and the provider dropdown in the Settings modal.
+        v9.4: each provider now includes a ``models`` dict keyed by
+        model_id → display name, so the Settings UI can render a
+        curated model picker (Chatbox-style).
         """
         from llm_providers import MAINSTREAM_PROVIDERS
         result: Dict[str, Any] = {
             "providers": [
-                {"id": p[0], "name": p[1], "default_model": p[2], "hint": p[3]}
+                {"id": p[0], "name": p[1], "default_model": p[2], "hint": p[3],
+                 "models": p[4] if len(p) > 4 else {}}
                 for p in MAINSTREAM_PROVIDERS
             ],
         }

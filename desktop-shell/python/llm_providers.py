@@ -42,36 +42,78 @@ import httpx
 log = logging.getLogger("galaxyos.llm_providers")
 
 # ── Defaults per provider ──────────────────────────────────────────────
+# Each provider has a curated model list that mirrors what Chatbox-style
+# clients show. Users pick from this list OR type a custom model ID.
+# Format: { "model_id": "Display Name", ... }
 
-_PROVIDER_DEFAULTS: Dict[str, Dict[str, str]] = {
+_PROVIDER_DEFAULTS: Dict[str, Any] = {
     "openai": {
         "base_url": "https://api.openai.com/v1",
         "default_model": "gpt-4o-mini",
+        "models": {
+            "gpt-4o-mini":        "GPT-4o Mini",
+            "gpt-4o":             "GPT-4o",
+            "gpt-4.1":            "GPT-4.1",
+            "o1":                 "o1",
+            "o3":                 "o3",
+            "o3-mini":            "o3 Mini",
+            "o4-mini":            "o4 Mini",
+        },
     },
     "deepseek": {
-        "base_url": "https://api.deepseek.com/v1",
-        "default_model": "deepseek-chat",
+        # deepseek-chat / deepseek-reasoner deprecated 2026-07-24
+        # → replaced by V4: deepseek-v4-pro (thinking) / deepseek-v4-flash (fast)
+        # For now, keep both old + new in the curated list so users can pick
+        "base_url": "https://api.deepseek.com",
+        "default_model": "deepseek-v4-flash",
+        "models": {
+            "deepseek-v4-flash":   "DeepSeek V4 Flash（快，便宜）",
+            "deepseek-v4-pro":     "DeepSeek V4 Pro（强，thinking）",
+            "deepseek-chat":       "DeepSeek V3 Chat（旧版，即将废弃 7/24）",
+            "deepseek-reasoner":   "DeepSeek R1 Reasoner（旧版，即将废弃 7/24）",
+        },
     },
     "qwen": {
-        # DashScope is OpenAI-compat at /compatible-mode/v1
         "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
         "default_model": "qwen-plus",
+        "models": {
+            "qwen-plus":           "Qwen Plus",
+            "qwen-max":            "Qwen Max",
+            "qwen-coder-plus":     "Qwen Coder Plus",
+            "qwen-turbo":          "Qwen Turbo",
+        },
     },
     "anthropic": {
+        # Claude 3.5 retired; current family: Sonnet 5 / Fable 5 / Opus 4.8 / Sonnet 4.6
         "base_url": "https://api.anthropic.com",
-        "default_model": "claude-3-5-sonnet-20241022",
+        "default_model": "claude-sonnet-4-6-20250514",
+        "models": {
+            "claude-sonnet-5-20250630":     "Claude Sonnet 5（最新）",
+            "claude-fable-5-20250609":      "Claude Fable 5（旗舰）",
+            "claude-opus-4-8-20250514":     "Claude Opus 4.8",
+            "claude-sonnet-4-6-20250514":   "Claude Sonnet 4.6（默认）",
+            "claude-haiku-4-5-20250514":    "Claude Haiku 4.5（快）",
+        },
     },
     "google": {
         "base_url": "https://generativelanguage.googleapis.com/v1beta",
-        "default_model": "gemini-1.5-flash",
+        "default_model": "gemini-2.5-flash",
+        "models": {
+            "gemini-3-pro":          "Gemini 3 Pro（旗舰）",
+            "gemini-3-flash":        "Gemini 3 Flash（快）",
+            "gemini-2.5-pro":        "Gemini 2.5 Pro",
+            "gemini-2.5-flash":      "Gemini 2.5 Flash（默认）",
+        },
     },
     "siliconflow": {
         "base_url": "https://api.siliconflow.cn/v1",
         "default_model": "Qwen/Qwen2.5-7B-Instruct",
+        "models": {},
     },
     "openrouter": {
         "base_url": "https://openrouter.ai/api/v1",
-        "default_model": "anthropic/claude-3.5-sonnet",
+        "default_model": "anthropic/claude-sonnet-4-6",
+        "models": {},
     },
     "ollama": {
         "base_url": "http://127.0.0.1:11434/v1",
@@ -92,7 +134,8 @@ _PROVIDER_DEFAULTS: Dict[str, Dict[str, str]] = {
 }
 
 
-def get_provider_defaults(provider: str) -> Dict[str, str]:
+def get_provider_defaults(provider: str) -> Dict[str, Any]:
+    """Return base_url, default_model, and models dict for a provider."""
     return dict(_PROVIDER_DEFAULTS.get(provider.lower(), {}))
 
 
@@ -469,18 +512,29 @@ async def _async_sleep_ms(ms: int) -> None:
 # ── Catalogue of "mainstream providers" for the renderer's UI ─────────
 
 MAINSTREAM_PROVIDERS = [
-    # (provider_id, display_name, default_model, hint)
-    ("openai",      "OpenAI",       "gpt-4o-mini",              "GPT-4o / 4o-mini / o1"),
-    ("deepseek",    "DeepSeek",     "deepseek-chat",            "deepseek-chat / reasoner"),
-    ("qwen",        "Qwen (DashScope)", "qwen-plus",            "qwen-plus / qwen-max / qwen-coder"),
-    ("anthropic",   "Anthropic",    "claude-3-5-sonnet-20241022", "Claude 3.5/3.7 Sonnet/Opus/Haiku"),
-    ("google",      "Google Gemini","gemini-1.5-flash",         "Gemini 1.5/2.0 Flash/Pro"),
-    ("siliconflow", "SiliconFlow",  "Qwen/Qwen2.5-7B-Instruct","硅基流动 — 多模型托管"),
-    ("openrouter",  "OpenRouter",   "anthropic/claude-3.5-sonnet", "OpenRouter — 任意模型路由"),
-    ("ollama",      "Ollama (本地)", "qwen2.5:7b",               "Ollama 本地推理"),
-    ("vllm",        "vLLM (本地)",  "Qwen/Qwen2.5-7B-Instruct", "vLLM OpenAI-compat 服务"),
-    ("custom",      "自定义 (OpenAI 兼容)", "default",          "任意 OpenAI 兼容端点"),
-    ("mock",        "Mock (脱机)",   "mock-1",                  "无网络，确定性回声"),
+    # (provider_id, display_name, default_model, hint, models_dict)
+    ("openai",      "OpenAI",       "gpt-4o-mini",              "GPT-4o / 4o-mini / o1 / o3",
+        _PROVIDER_DEFAULTS["openai"]["models"]),
+    ("deepseek",    "DeepSeek",     "deepseek-v4-flash",        "V4 Flash（快）/ V4 Pro（thinking）— 旧版 7/24 废弃",
+        _PROVIDER_DEFAULTS["deepseek"]["models"]),
+    ("qwen",        "Qwen (DashScope)", "qwen-plus",            "qwen-plus / max / coder / turbo",
+        _PROVIDER_DEFAULTS["qwen"]["models"]),
+    ("anthropic",   "Anthropic",    "claude-sonnet-4-6-20250514", "Sonnet 5 / Fable 5 / Opus 4.8 / Sonnet 4.6 / Haiku 4.5",
+        _PROVIDER_DEFAULTS["anthropic"]["models"]),
+    ("google",      "Google Gemini","gemini-2.5-flash",         "Gemini 3 Pro / 3 Flash / 2.5 Pro / 2.5 Flash",
+        _PROVIDER_DEFAULTS["google"]["models"]),
+    ("siliconflow", "SiliconFlow",  "Qwen/Qwen2.5-7B-Instruct","硅基流动 — 多模型托管",
+        _PROVIDER_DEFAULTS["siliconflow"]["models"]),
+    ("openrouter",  "OpenRouter",   "anthropic/claude-sonnet-4-6", "OpenRouter — 任意模型路由",
+        _PROVIDER_DEFAULTS["openrouter"]["models"]),
+    ("ollama",      "Ollama (本地)", "qwen2.5:7b",               "Ollama 本地推理",
+        _PROVIDER_DEFAULTS["ollama"]["models"]),
+    ("vllm",        "vLLM (本地)",  "Qwen/Qwen2.5-7B-Instruct", "vLLM OpenAI-compat 服务",
+        _PROVIDER_DEFAULTS["vllm"]["models"]),
+    ("custom",      "自定义 (OpenAI 兼容)", "default",          "任意 OpenAI 兼容端点",
+        _PROVIDER_DEFAULTS["custom"]["models"]),
+    ("mock",        "Mock (脱机)",   "mock-1",                  "无网络，确定性回声",
+        _PROVIDER_DEFAULTS["mock"]["models"]),
 ]
 
 

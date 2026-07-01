@@ -42,17 +42,27 @@ async function loadProviders() {
   } catch {
     // offline fallback: hardcoded defaults
     _providers = [
-      { id: 'openai', name: 'OpenAI', default_model: 'gpt-4o-mini', hint: 'GPT-4o / 4o-mini / o1' },
-      { id: 'deepseek', name: 'DeepSeek', default_model: 'deepseek-chat', hint: 'deepseek-chat / reasoner' },
-      { id: 'qwen', name: 'Qwen (DashScope)', default_model: 'qwen-plus', hint: 'qwen-plus / max / coder' },
-      { id: 'anthropic', name: 'Anthropic', default_model: 'claude-3-5-sonnet-20241022', hint: 'Claude 3.5/3.7' },
-      { id: 'google', name: 'Google Gemini', default_model: 'gemini-1.5-flash', hint: 'Gemini 1.5/2.0' },
-      { id: 'siliconflow', name: 'SiliconFlow', default_model: 'Qwen/Qwen2.5-7B-Instruct', hint: '硅基流动' },
-      { id: 'openrouter', name: 'OpenRouter', default_model: 'anthropic/claude-3.5-sonnet', hint: 'OpenRouter' },
-      { id: 'ollama', name: 'Ollama (本地)', default_model: 'qwen2.5:7b', hint: 'Ollama 本地推理' },
-      { id: 'vllm', name: 'vLLM (本地)', default_model: 'Qwen/Qwen2.5-7B-Instruct', hint: 'vLLM' },
-      { id: 'custom', name: '自定义 (OpenAI 兼容)', default_model: 'default', hint: '任意兼容端点' },
-      { id: 'mock', name: 'Mock (脱机)', default_model: 'mock-1', hint: '无网络' },
+      { id: 'openai', name: 'OpenAI', default_model: 'gpt-4o-mini', hint: 'GPT-4o / 4o-mini / o1 / o3', models: {} },
+      { id: 'deepseek', name: 'DeepSeek', default_model: 'deepseek-v4-flash',
+        hint: 'V4 Flash（快）/ V4 Pro（thinking）',
+        models: { 'deepseek-v4-flash': 'DeepSeek V4 Flash', 'deepseek-v4-pro': 'DeepSeek V4 Pro',
+                  'deepseek-chat': 'DeepSeek V3 Chat（即将废弃）', 'deepseek-reasoner': 'DeepSeek R1（即将废弃）' } },
+      { id: 'qwen', name: 'Qwen (DashScope)', default_model: 'qwen-plus', hint: 'qwen-plus / max / coder / turbo',
+        models: { 'qwen-plus': 'Qwen Plus', 'qwen-max': 'Qwen Max', 'qwen-coder-plus': 'Qwen Coder Plus' } },
+      { id: 'anthropic', name: 'Anthropic', default_model: 'claude-sonnet-4-6-20250514',
+        hint: 'Sonnet 5 / Fable 5 / Opus 4.8',
+        models: { 'claude-sonnet-5-20250630': 'Claude Sonnet 5', 'claude-fable-5-20250609': 'Claude Fable 5',
+                  'claude-opus-4-8-20250514': 'Claude Opus 4.8', 'claude-sonnet-4-6-20250514': 'Claude Sonnet 4.6',
+                  'claude-haiku-4-5-20250514': 'Claude Haiku 4.5' } },
+      { id: 'google', name: 'Google Gemini', default_model: 'gemini-2.5-flash', hint: 'Gemini 3 Pro / 2.5 Flash',
+        models: { 'gemini-3-pro': 'Gemini 3 Pro', 'gemini-3-flash': 'Gemini 3 Flash',
+                  'gemini-2.5-pro': 'Gemini 2.5 Pro', 'gemini-2.5-flash': 'Gemini 2.5 Flash' } },
+      { id: 'siliconflow', name: 'SiliconFlow', default_model: 'Qwen/Qwen2.5-7B-Instruct', hint: '硅基流动', models: {} },
+      { id: 'openrouter', name: 'OpenRouter', default_model: 'anthropic/claude-sonnet-4-6', hint: 'OpenRouter', models: {} },
+      { id: 'ollama', name: 'Ollama (本地)', default_model: 'qwen2.5:7b', hint: 'Ollama 本地推理', models: {} },
+      { id: 'vllm', name: 'vLLM (本地)', default_model: 'Qwen/Qwen2.5-7B-Instruct', hint: 'vLLM', models: {} },
+      { id: 'custom', name: '自定义 (OpenAI 兼容)', default_model: 'default', hint: '任意兼容端点', models: {} },
+      { id: 'mock', name: 'Mock (脱机)', default_model: 'mock-1', hint: '无网络', models: { 'mock-1': 'Mock 脱机测试' } },
     ];
   }
 }
@@ -112,10 +122,18 @@ function buildSlotsTab() {
     dsl += `    [picker id:settings-slot-${slot.key}-provider n:${slot.key}__provider l:"Provider" clk:onSettingsSlotChange sm]\n`;
     dsl += `          ${pickerOptions}\n`;
     dsl += `        [/picker]\n`;
+
+    // Model picker: curated list from provider's models dict + custom input
+    const modelsObj = getProviderModels(provider);
+    const modelPickerOptions = buildModelPickerOptions(slot.key, modelsObj, model, provider);
+    dsl += `    [picker id:settings-slot-${slot.key}-model n:${slot.key}__model l:"Model" sm]\n`;
+    dsl += `          ${modelPickerOptions}\n`;
+    dsl += `        [/picker]\n`;
+
     dsl += `    [row]\n`;
-    dsl += `      [input id:settings-slot-${slot.key}-model n:${slot.key}__model ph:"${escapeAttr(getDefaultModel(provider) || 'model name')}" l:"Model" value:"${escapeAttr(model)}"]\n`;
-    dsl += `      [input id:settings-slot-${slot.key}-url n:${slot.key}__base_url ph:"(默认)" l:"Base URL" value:"${escapeAttr(baseUrl)}" v:muted]\n`;
+    dsl += `      [input id:settings-slot-${slot.key}-custom-model n:${slot.key}__custom_model ph:"或输入自定义模型 ID" l:"自定义模型" value:"${escapeAttr(isCustomModel(provider, model) ? model : '')}" v:muted]\n`;
     dsl += `    [/row]\n`;
+    dsl += `    [input id:settings-slot-${slot.key}-url n:${slot.key}__base_url ph:"(默认)" l:"Base URL" value:"${escapeAttr(baseUrl)}" v:muted]\n`;
     dsl += `    [input id:settings-slot-${slot.key}-apikey n:${slot.key}__api_key ph:"(继承通用 API Key)" l:"API Key" value:"${escapeAttr(apiKey)}" type:password v:muted]\n`;
     dsl += `    [div v:${enabled ? 'success' : 'muted'} tt:"${enabled ? '✅ 已启用' : '⏸ 已禁用'}"]\n`;
     dsl += `      [p]状态: ${enabled ? '🟢 已启用' : '⚫ 已禁用（使用本地回退）'}[/p]\n`;
@@ -127,9 +145,56 @@ function buildSlotsTab() {
   return dsl;
 }
 
-function getDefaultModel(providerId) {
+/**
+ * Get the curated model list for a provider from the catalogue.
+ * Returns { modelId: "Display Name", ... } or {}.
+ */
+function getProviderModels(providerId) {
+  const p = _providers.find(pr => pr.id === providerId);
+  return p?.models || {};
+}
+
+/**
+ * Build model picker options from the provider's curated model list.
+ * Includes a "custom" option at the end.
+ */
+function buildModelPickerOptions(slotKey, modelsObj, currentModel, providerId) {
+  const entries = Object.entries(modelsObj);
+  if (entries.length === 0) {
+    // No curated list — just show current value as the only option
+    if (currentModel) {
+      return `[picker-option value:"${escapeAttr(currentModel)}" selected]${escapeLabel(currentModel)} (当前)[/picker-option]`;
+    }
+    const def = getProviderDefaultModel(providerId);
+    return `[picker-option value:"${escapeAttr(def)}" selected]${escapeLabel(def)} (默认)[/picker-option]`;
+  }
+
+  let opts = '';
+  for (const [modelId, label] of entries) {
+    const sel = modelId === currentModel ? 'selected' : '';
+    opts += `[picker-option value:"${escapeAttr(modelId)}" ${sel}]${escapeLabel(label)} (${modelId})[/picker-option]\n          `;
+  }
+  // If current model isn't in the curated list, add it
+  if (currentModel && !(currentModel in modelsObj)) {
+    opts += `[picker-option value:"${escapeAttr(currentModel)}" selected]${escapeLabel(currentModel)} (当前)[/picker-option]\n          `;
+  }
+  return opts;
+}
+
+/** Get the default model for a provider from the catalogue. */
+function getProviderDefaultModel(providerId) {
   const p = _providers.find(pr => pr.id === providerId);
   return p?.default_model || '';
+}
+
+/** Return true if the model is NOT in the provider's curated list. */
+function isCustomModel(providerId, model) {
+  if (!model) return false;
+  const modelsObj = getProviderModels(providerId);
+  const keys = Object.keys(modelsObj);
+  if (keys.length === 0) return true;  // no curated list → all models are custom
+  return !(model in modelsObj);
+}
 }
 
 function buildSettingsDSL(activeTab = 'general') {
@@ -228,7 +293,10 @@ registerHandler('onSettingsSave', async (data, evt, _formEl) => {
   for (const slot of SLOTS) {
     const sk = slot.key;
     const provider = getVal(`settings-slot-${sk}-provider`) || 'mock';
-    const model = getVal(`settings-slot-${sk}-model`);
+    // Model: prefer custom input, fall back to picker value
+    const customModel = getVal(`settings-slot-${sk}-custom-model`);
+    const pickedModel = getVal(`settings-slot-${sk}-model`);
+    const model = customModel || pickedModel || '';
     const slotApiKey = getVal(`settings-slot-${sk}-apikey`);
     const baseUrl = getVal(`settings-slot-${sk}-url`);
 

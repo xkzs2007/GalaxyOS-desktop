@@ -191,7 +191,7 @@ class DeepSeekExecutiveClient(ExecutiveClient):
     ``DEEPSEEK_API_KEY`` in the environment.
     """
 
-    def __init__(self, api_key: str, model: str = "deepseek-chat"):
+    def __init__(self, api_key: str, model: str = "deepseek-v4-flash"):
         self.api_key = api_key
         self.model = model
         self._client = None  # openai.OpenAI, lazy
