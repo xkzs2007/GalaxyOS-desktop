@@ -2,7 +2,7 @@
 //
 // v10: router.js + error-boundary.js + lazy-loading + devtools
 
-import { bootTokUI, registerHandler } from './tokui/runtime.js';
+import { bootTokUI, registerHandler, setTheme } from './tokui/runtime.js';
 import { registerMsgActionHandlers } from './tokui/handlers.js';
 import { endAssistantStream, isStreaming } from './tokui/feed.js';
 import { initSidebar, renderSidebar } from './components/sidebar.js';
@@ -13,7 +13,6 @@ import { initInstallWizard, openWizard } from './components/install-wizard.js';
 import { openSettings } from './components/settings-panel.js';
 import { openCommandPalette } from './tokui/polish.js';
 import { renderSetupPage } from './tokui/setup.js';
-import { setTheme } from './tokui/runtime.js';
 import { sessionApi } from './state/session.js';
 import { register, start, navigate, lookup } from './router.js';
 import { installGlobalHandler } from './error-boundary.js';

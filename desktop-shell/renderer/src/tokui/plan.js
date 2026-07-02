@@ -117,8 +117,6 @@ export function buildDemoPlan() {
 
 // ── P2: Plan 仪表盘 ───────────────────────────────────────
 
-import { getInstance } from './runtime.js';
-
 /** 渲染执行计划摘要面板 */
 export function renderPlanPanel(container) {
   const host = typeof container === 'string' ? document.getElementById(container) : container;
