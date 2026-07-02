@@ -9,6 +9,8 @@
  */
 
 import { ipcMain } from 'electron';
+import { createRequire } from 'node:module';
+const _require = createRequire(typeof __dirname !== 'undefined' ? `${__dirname}/` : import.meta.url);
 
 // ── Method registry ───────────────────────────────────────────────
 //
@@ -129,6 +131,31 @@ function registerWorkerHandlers(galaxyPool) {
   });
 
   registered.push('galaxy:workerStatus');
+
+  // installWizard: pass-through to sidecar's zmq install_wizard RPC
+  // (sidecar spawns install_wizard.py as subprocess; we wait for the
+  // final result via zmq REP).
+  const zmq = _require('zeromq');
+  ipcMain.handle('galaxy:installWizard', async (_event, args) => {
+    let sock;
+    try {
+      sock = new zmq.Request();
+      sock.connect('tcp://127.0.0.1:5757');
+      sock.receiveTimeout = 1800_000; // 30 min max for big downloads
+      await sock.send(JSON.stringify({
+        id: Date.now(),
+        method: 'install_wizard',
+        params: { args: args || [] },
+      }));
+      const [reply] = await sock.receive();
+      return JSON.parse(reply.toString());
+    } catch (e) {
+      return { ok: false, error: e.message };
+    } finally {
+      try { sock?.close(); } catch {}
+    }
+  });
+  registered.push('galaxy:installWizard');
 
   const unregister = () => {
     for (const ch of registered) {
