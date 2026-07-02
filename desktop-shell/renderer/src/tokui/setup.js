@@ -150,37 +150,27 @@ registerHandler('onSetupStart', async () => {
     updStep('step-core', 'done');
     appendLog('核心依赖安装完成！');
 
-    // Phase 2: optionally install heavy AI deps
-    // Use a browser prompt — TokUI has no native confirm dialog component,
-    // but for this one-shot interaction a browser confirm is acceptable.
-    const installHeavy = confirm(
-      '核心依赖安装完成！\n\n是否安装重型 AI 组件？\n(torch/faiss/transformers ~3GB)\n\n这将启用完整的液态神经记忆、知识图谱 GNN 和 CfC 推理能力。'
+    // Phase 2: heavy AI deps (always install — 60s in CI, core to the
+    // liquid neural memory + knowledge graph + CfC reasoning).
+    updStep('step-heavy', 'running');
+    appendLog('安装重型 AI 组件 (torch / faiss / transformers)…');
+
+    const heavyResult = await gal.installWizard(
+      ['--install-deps', '--with-heavy'],
+      (evt) => {
+        if (evt.event === 'line' && evt.line) {
+          const line = evt.line.trim();
+          if (line) appendLog('[AI] ' + line);
+          if (line.includes('Heavy AI components installed OK')) {
+            updStep('step-heavy', 'done');
+          }
+        }
+      },
+      1200
     );
 
-    if (installHeavy) {
-      updStep('step-heavy', 'running');
-      appendLog('开始安装重型 AI 组件…');
-
-      const heavyResult = await gal.installWizard(
-        ['--install-deps', '--with-heavy'],
-        (evt) => {
-          if (evt.event === 'line' && evt.line) {
-            const line = evt.line.trim();
-            if (line) appendLog('[AI] ' + line);
-            if (line.includes('Heavy AI components installed OK')) {
-              updStep('step-heavy', 'done');
-            }
-          }
-        },
-        1800
-      );
-
-      updStep('step-heavy', heavyResult?.ok ? 'done' : 'error');
-      if (!heavyResult?.ok) appendLog('[警告] 重型组件安装失败（继续）');
-    } else {
-      updStep('step-heavy', 'done');
-      appendLog('已跳过重型 AI 组件安装');
-    }
+    updStep('step-heavy', heavyResult?.ok ? 'done' : 'error');
+    if (!heavyResult?.ok) appendLog('[警告] 重型组件安装失败（部分功能受限）');
 
     // Phase 3: restart sidecar
     updStep('step-restart', 'running');

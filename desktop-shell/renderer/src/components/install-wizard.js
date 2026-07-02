@@ -1,13 +1,7 @@
-// renderer/src/components/install-wizard.js — D 阶段（TokUI 深用）.
+// renderer/src/components/install-wizard.js — 模型下载面板 (D 阶段 TokUI).
 //
-// 用手写 DOM 的地方替换为 TokUI 内置组件：
-//   - [dialog]    → 弹窗容器（替 iw-modal CSS）
-//   - [progress]  → 进度条（替 iw-progress-fill div）
-//   - [terminal]  → 日志面板（替 iw-log <pre>）
-//   - [tag]       → 阶段标签（替 iw-stage span）
-//   - [upd]       → 运行时增量更新 DOM
-//
-// 核心下载逻辑不变（zmq IPC + install_wizard args），UI 层全面 TokUI 化。
+// v10 拆分: Python 依赖安装已搬去 setup.js 首启向导，这里只管下载
+// LFM / embedding 模型文件。设置面板也可以打开这个。
 
 import { bootTokUI, getInstance, registerHandler } from '../tokui/runtime.js';
 import notify from '../tokui/notify.js';
@@ -17,7 +11,6 @@ const PRESETS = {
   'lfm-onnx-fp16':    ['--download-lfm-onnx', '--download-lfm-onnx-quant', 'fp16'],
   'lfm-safetensors':  ['--download-lfm'],
   'embedding':        ['--download-embedding'],
-  'check':            ['--check'],
 };
 
 const PRESET_LABELS = {
@@ -25,7 +18,6 @@ const PRESET_LABELS = {
   'lfm-onnx-fp16':   'LFM2.5-1.2B ONNX FP16 (~2.4GB)',
   'lfm-safetensors': 'LFM2.5-1.2B safetensors (~2.2GB)',
   'embedding':       'BGE-small-zh ONNX (~96MB)',
-  'check':           '仅系统体检 (--check)',
 };
 
 let _running = false;
