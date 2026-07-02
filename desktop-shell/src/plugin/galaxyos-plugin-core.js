@@ -23,6 +23,7 @@ import http from "node:http";
 // are built-in globals. The ESM fallback only triggers in dev mode.
 const _cjsRequire = typeof require !== 'undefined' ? require : null;
 const __dir = typeof __dirname !== 'undefined' ? __dirname : process.cwd();
+const TAG = "[galaxyos]";
 const WORKER_SCRIPT = path.join(__dir, "..", "..", "..", "..", "extensions", "galaxyos", "scripts", "claw_worker.py");
 const PIL_WORKER_SCRIPT = path.join(__dir, "..", "..", "..", "..", "extensions", "galaxyos", "scripts", "pil_worker.py");
 
