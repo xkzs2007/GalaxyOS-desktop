@@ -310,6 +310,14 @@ function stopSidecar(): void {
     sidecarReady = false;
   }
 }
+
+function startPubSubscriber(_win: BrowserWindow): void {
+  // Legacy stub: the current worker-pool architecture does not use
+  // the old zmq PUB/SUB subscriber path. Keep this stub so packaged
+  // builds do not crash when createWindow() still calls it.
+  log('startPubSubscriber skipped: worker-pool mode does not use legacy zmq PUB/SUB');
+}
+
 // ── Window ──────────────────────────────────────────────────────────
 function createWindow(): BrowserWindow {
   const win = new BrowserWindow({

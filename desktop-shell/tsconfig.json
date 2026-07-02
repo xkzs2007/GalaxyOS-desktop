@@ -13,6 +13,6 @@
     "types": ["node"],
     "noEmit": true
   },
-  "include": ["src/**/*.ts", "electron/**/*.ts"],
+  "include": ["src/**/*.ts", "src/**/*.d.ts", "electron/**/*.ts"],
   "exclude": ["node_modules", "dist", "renderer", "test"]
 }
