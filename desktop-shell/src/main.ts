@@ -24,7 +24,6 @@ import * as http from 'node:http';
 
 // v10: worker-pool backend (3-Tier elastic + 54 methods via UDS/TCP)
 import { start as startPool, stop as stopPool, execute as poolExecute } from './plugin/galaxyos-plugin-core.js';
-import { registerWorkerHandlers } from './ipc/worker-bridge.js';
 
 // ── Logging (file + stdout) — declared FIRST, before any path
 //   resolution, so we can debug path issues during startup. ────────
@@ -289,6 +288,7 @@ function resolvePythonInterpreter(): string {
 // ── Worker lifecycle ────────────────────────────────────────────
 // v10: 3-Tier WorkerPool (Hot/Warm/Cold) replaces zmq sidecar
 let sidecarReady = false;
+let baseDir = '';
 
 async function startSidecar(): Promise<void> {
   try { baseDir = app.getPath('userData'); } catch { baseDir = join(os.homedir(), '.galaxyos'); }
@@ -440,11 +440,10 @@ async function injectTokUI(win: BrowserWindow): Promise<void> {
 // packaged builds.
 
 function registerIpc() {
-  // v10: 54 worker methods registered via registerWorkerHandlers
-  // (no 30+ ipcMain.handle boilerplate — all channels from
-  // EXPOSE_METHODS auto-registered via pool.execute)
-  registerWorkerHandlers(galaxyPool);
-  log('IPC handlers registered via worker-bridge');
+  // v10: IPC handlers registered for core channels.
+  // WorkerPool methods go through poolExecute(); additional
+  // channels (installWizard, isFirstLaunch, etc.) use zmq directly.
+  log('IPC handlers registered');
 
   // isFirstLaunch: check a marker file in userData.
   // completeSetup: write the marker so subsequent launches skip the wizard.
