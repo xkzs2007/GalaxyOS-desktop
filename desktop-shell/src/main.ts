@@ -443,7 +443,29 @@ function registerIpc() {
   // v10: 54 worker methods registered via registerWorkerHandlers
   // (no 30+ ipcMain.handle boilerplate — all channels from
   // EXPOSE_METHODS auto-registered via pool.execute)
+  registerWorkerHandlers(galaxyPool);
   log('IPC handlers registered via worker-bridge');
+
+  // isFirstLaunch: check a marker file in userData.
+  // completeSetup: write the marker so subsequent launches skip the wizard.
+  const setupMarker = join(app.getPath('userData'), '.setup-complete');
+  ipcMain.handle('galaxy:isFirstLaunch', async () => {
+    return { isFirstLaunch: !existsSync(setupMarker) };
+  });
+  ipcMain.handle('galaxy:completeSetup', async () => {
+    writeFileSync(setupMarker, new Date().toISOString());
+    return { ok: true };
+  });
+  ipcMain.handle('galaxy:restartSidecar', async () => {
+    try {
+      stopSidecar();
+      await startSidecar();
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: (e as Error).message };
+    }
+  });
+  log('First-launch handlers registered');
 }
 // Disable GPU hardware acceleration so PrintWindow / BitBlt can
 // capture the window contents reliably (GPU-composited surfaces
