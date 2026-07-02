@@ -214,17 +214,17 @@ export function renderSidebar() {
   ui.startStream(host);
 
   // Header
-  ui.feed('[h4]⚡ GalaxyOS Desktop[/h4]');
+  ui.feed('[h4]⚡ GalaxyOS 工作台[/h4]');
 
   // Quick actions (workbench-oriented)
-  ui.feed('[card tt:"快速入口"]');
+  ui.feed('[card tt:"工作流入口"]');
   ui.feed('  [row]');
   ui.feed('    [btn tx:"📊 仪表盘" clk:onDashboardOpen sm][/btn]');
   ui.feed('    [btn tx:"🧠 记忆时间线" clk:onMemOpenTimeline sm v:muted][/btn]');
   ui.feed('    [btn tx:"🔧 MCP 面板" clk:onMcpOpenPanel sm v:muted][/btn]');
-  ui.feed('    [btn tx:"演示面板" clk:onDemoOpen sm v:muted][/btn]');
+  ui.feed('    [btn tx:"🧪 运行面板" clk:onDemoOpen sm v:muted][/btn]');
   ui.feed('  [/row]');
-  ui.feed('  [p v:muted sm]快速访问工作区、记忆和工具视图。[/p]');
+  ui.feed('  [p v:muted sm]管理会话、记忆与工具调用，保持执行链条清晰。[/p]');
   ui.feed('[/card]');
 
   // Sessions / Workspaces section

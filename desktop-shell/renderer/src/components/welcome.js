@@ -27,7 +27,7 @@ export function renderWelcome() {
   ).join('\n  ');
 
   ui.startStream(host);
-  ui.feed(`[empty tt:"👋 你好，我是 GalaxyOS" desc:"在下方输入框开始对话，或选择一个模式快速开始" i:sparkles]`);
+  ui.feed(`[empty tt:"👋 你好，我是 GalaxyOS" desc:"把复杂目标拆成可执行步骤，直接在工作台里推进" i:sparkles]`);
   ui.feed(`[row]`);
   ui.feed(`  ${modeCards}`);
   ui.feed(`[/row]`);

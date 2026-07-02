@@ -111,13 +111,13 @@ export function renderComposer() {
   ui.startStream(host);
   // Quick action buttons for a Proma-style workbench (TokUI-driven)
   ui.feed(`[row]`);
-  ui.feed(`  [btn tx:"🧩 执行计划" clk:onModeTab act:plan sm][/btn]`);
-  ui.feed(`  [btn tx:"🤖 运行 Agent" clk:onModeTab act:agent sm][/btn]`);
-  ui.feed(`  [btn tx:"🧠 打开记忆" clk:onMemOpenTimeline sm v:muted][/btn]`);
+  ui.feed(`  [btn tx:"🧩 生成执行计划" clk:onModeTab act:plan sm][/btn]`);
+  ui.feed(`  [btn tx:"🤖 调度 Agent" clk:onModeTab act:agent sm][/btn]`);
+  ui.feed(`  [btn tx:"🧠 检索记忆" clk:onMemOpenTimeline sm v:muted][/btn]`);
   ui.feed(`[/row]`);
 
   ui.feed(renderModeTabs());
-  ui.feed(`[chat-input ph:"在工作区输入命令、问题或选择快速操作，按 Enter 发送" clk:onComposerSend auto rows:2 max:2000][/chat-input]`);
+  ui.feed(`[chat-input ph:"输入任务、命令或问题，GalaxyOS 会按工作流执行" clk:onComposerSend auto rows:2 max:2000][/chat-input]`);
   ui.endStream();
 }
 

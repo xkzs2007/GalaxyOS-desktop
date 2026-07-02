@@ -10,6 +10,7 @@
 import { galaxy } from '../ipc/client.js';
 import { bootTokUI } from '../tokui/runtime.js';
 import { escapeDsl } from '../utils.js';
+import { buildTaskPanel } from '../design-system.js';
 
 function renderSkillDetail(skillId) {
   if (!galaxy.skill) return;
@@ -41,6 +42,11 @@ function renderSkillDetail(skillId) {
 
     host.innerHTML = '';
     ui.startStream(host);
+    ui.feed(buildTaskPanel({
+      title: '执行摘要',
+      summary: '任务步骤与执行状态会在这里持续聚合',
+      steps: ['准备上下文', '调用技能', '返回结果'],
+    }));
     ui.feed(`[card tt:"${escapeDsl(detail.name || skillId)}" v:highlight]`);
     if (detail.description) {
       ui.feed(`[p v:muted]${escapeDsl(detail.description)}[/p]`);

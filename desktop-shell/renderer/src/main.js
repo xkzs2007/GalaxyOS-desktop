@@ -16,6 +16,7 @@ import { renderSetupPage } from './tokui/setup.js';
 import { sessionApi } from './state/session.js';
 import { register, start, navigate, lookup } from './router.js';
 import { installGlobalHandler } from './error-boundary.js';
+import { buildWorkbenchHeader, buildWelcomeHero, buildTaskPanel } from './design-system.js';
 
 // ── v10: Global error handler (install early) ─────────────
 installGlobalHandler();
@@ -176,6 +177,24 @@ registerHandler('onWelcomePick', (data) => {
   renderSidebar();
   renderComposer();
   renderWelcome();
+  const chatHost = document.getElementById('tokui-container');
+  if (chatHost && !chatHost.querySelector('.workspace-toolbar')) {
+    chatHost.insertAdjacentHTML('afterbegin', buildWorkbenchHeader({ title: 'GalaxyOS', subtitle: '本地执行型智能助手', status: '已连接' }));
+    chatHost.insertAdjacentHTML('afterbegin', buildWelcomeHero({ title: '你好，我是 GalaxyOS', subtitle: '把复杂任务拆成可执行步骤，在工作台里直接完成。' }));
+  }
+
+  const detailsHost = document.getElementById('details-host');
+  if (detailsHost && !detailsHost.querySelector('.task-panel')) {
+    detailsHost.insertAdjacentHTML('beforeend', buildTaskPanel({
+      title: '执行面板',
+      summary: '当前任务链路清晰可追踪',
+      steps: [
+        { title: '生成执行计划', tone: 'active', meta: '实时规划' },
+        { title: '调用 Agent', tone: 'pending', meta: '调度工具' },
+        { title: '检索记忆', tone: 'muted', meta: '持续上下文' },
+      ],
+    }));
+  }
 
   // 6. Install keyboard shortcuts
   installKeyboardShortcuts();

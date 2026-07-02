@@ -23,8 +23,9 @@
     "build:lfm": "cd ../extensions/galaxyos/native && cargo build --release",
     "build:all": "npm run build:lfm && npm run build:main && npm run build:electron",
     "build:all:frozen": "npm run build:lfm && npm run build:main && npm run build:python && npm run build:electron",
-    "postinstall": "electron-rebuild -f -w zeromq || true",
+    "postinstall": "node scripts/postinstall.mjs",
     "rebuild:native": "electron-rebuild -f -w zeromq",
+    "postinstall:playwright": "node scripts/postinstall.mjs",
     "test": "node --test test/*.test.mjs",
     "lint": "node scripts/lint.mjs"
   },
