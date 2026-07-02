@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>GalaxyOS Demo Panel (TokUI)</title>
+  <link rel="stylesheet" href="https://unpkg.com/@jboltai/tokui/dist/tokui.css" />
+  <style>
+    body { margin: 0; font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #07090f; color: #e8edf8; }
+    #app { display: grid; grid-template-columns: 1fr 420px; gap: 16px; height: 100vh; padding: 18px; }
+    .main, .details { background: rgba(11,14,21,0.94); border-radius: 16px; border: 1px solid rgba(255,255,255,0.04); overflow: auto; }
+    #tokui-container { padding: 18px; min-height: 0; }
+    #details-host { padding: 18px; min-height: 0; }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <main class="main">
+      <div id="tokui-container"></div>
+    </main>
+    <aside class="details">
+      <div id="details-host"></div>
+    </aside>
+  </div>
+  <div style="position:fixed;left:18px;bottom:18px;z-index:1000">
+    <button id="start-sim" style="padding:8px 12px;border-radius:8px;background:#2b6cff;color:#fff;border:none;cursor:pointer">开始演示</button>
+  </div>
+
+  <script src="https://unpkg.com/@jboltai/tokui/dist/tokui.umd.js"></script>
+  <script type="module">
+    import { bootTokUI } from './src/tokui/runtime.js';
+    import { renderDemoPanel } from './src/tokui/demo-panel.js';
+
+    (async () => {
+      await bootTokUI('#tokui-container');
+      // Render demo panel into the right-hand details host
+      renderDemoPanel('details-host');
+
+      // Hook up the Start Simulation button
+      const btn = document.getElementById('start-sim');
+      if (btn) {
+        btn.addEventListener('click', async () => {
+          const mod = await import('./src/tokui/demo-panel.js');
+          mod.simulateDemo();
+        });
+      }
+    })();
+  </script>
+</body>
+</html>

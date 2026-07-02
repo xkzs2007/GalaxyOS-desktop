@@ -18,6 +18,25 @@ const galaxy = window.galaxy ?? makeStandaloneGalaxy();
  * is back — this code is now live.
  */
 function makeStandaloneGalaxy() {
+  // Local pub-sub for standalone/demo usage
+  const _listeners = {
+    think: [],
+    memo: [],
+    plan: [],
+    agent: [],
+    dsl: [],
+  };
+
+  function addListener(arr, cb) {
+    arr.push(cb);
+    return () => { const i = arr.indexOf(cb); if (i >= 0) arr.splice(i, 1); };
+  }
+
+  function emitTo(arr, ev) {
+    for (const cb of Array.from(arr)) {
+      try { cb(ev); } catch (e) { console.warn('[standalone galaxy] listener error', e); }
+    }
+  }
   async function sseCollect(endpoint, params) {
     const body = new URLSearchParams(params).toString();
     const res = await fetch(`http://127.0.0.1:5758/sse/${endpoint}`, {
@@ -91,12 +110,19 @@ function makeStandaloneGalaxy() {
     skills: async () => ({ skills: [], count: 0 }),
     listProviders: async () => ({ providers: [], router: null }),
     fetchModels: async (_params) => ({ ok: false, provider: '', error: '需要 Electron IPC 环境', source: 'curated' }),
-    // Real-time streaming event listeners (no-ops in standalone mode —
-    // zmq PUB is only available through Electron IPC).
-    onThinkStep: (_cb) => () => {},
-    onMemoStage: (_cb) => () => {},
-    onPlanStep:  (_cb) => () => {},
-    onAgentTool: (_cb) => () => {},
+    // Real-time streaming event listeners (standalone: local pub-sub)
+    onThinkStep: (cb) => addListener(_listeners.think, cb),
+    onMemoStage: (cb) => addListener(_listeners.memo, cb),
+    onPlanStep:  (cb) => addListener(_listeners.plan, cb),
+    onAgentTool: (cb) => addListener(_listeners.agent, cb),
+    onDslFragment: (cb) => addListener(_listeners.dsl, cb),
+
+    // Emit helpers for demos/tests to simulate PUB events
+    emitThinkStep: (ev) => emitTo(_listeners.think, ev),
+    emitMemoStage: (ev) => emitTo(_listeners.memo, ev),
+    emitPlanStep:  (ev) => emitTo(_listeners.plan, ev),
+    emitAgentTool: (ev) => emitTo(_listeners.agent, ev),
+    emitDslFragment: (ev) => emitTo(_listeners.dsl, ev),
   };
 }
 

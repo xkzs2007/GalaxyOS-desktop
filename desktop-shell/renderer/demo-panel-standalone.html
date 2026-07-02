@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>GalaxyOS Demo Panel (Standalone TokUI)</title>
+  <link rel="stylesheet" href="https://unpkg.com/@jboltai/tokui/dist/tokui.css" />
+  <style>
+    body { margin: 0; font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #07090f; color: #e8edf8; }
+    #app { display: grid; grid-template-columns: 1fr 420px; gap: 16px; height: 100vh; padding: 18px; }
+    .main, .details { background: rgba(11,14,21,0.94); border-radius: 16px; border: 1px solid rgba(255,255,255,0.04); overflow: auto; }
+    #tokui-container { padding: 18px; min-height: 0; }
+    #details-host { padding: 18px; min-height: 0; }
+    #start-sim { padding:8px 12px;border-radius:8px;background:#2b6cff;color:#fff;border:none;cursor:pointer }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <main class="main">
+      <div id="tokui-container"></div>
+    </main>
+    <aside class="details">
+      <div id="details-host"></div>
+    </aside>
+  </div>
+
+  <div style="position:fixed;left:18px;bottom:18px;z-index:1000">
+    <button id="start-sim">开始演示</button>
+  </div>
+
+  <script src="https://unpkg.com/@jboltai/tokui/dist/tokui.umd.js"></script>
+  <script>
+    // Wait for TokUI to become available
+    function whenTokUIReady(maxWaitMs = 3000) {
+      return new Promise((resolve) => {
+        if (window.TokUI && window.TokUI.TokUI) return resolve(window.TokUI);
+        const t0 = Date.now();
+        const t = setInterval(() => {
+          if (window.TokUI && window.TokUI.TokUI) { clearInterval(t); resolve(window.TokUI); }
+          else if (Date.now() - t0 > maxWaitMs) { clearInterval(t); resolve(null); }
+        }, 50);
+      });
+    }
+
+    (async () => {
+      const tok = await whenTokUIReady(5000);
+      if (!tok) {
+        document.getElementById('details-host').innerText = 'TokUI 未能加载';
+        return;
+      }
+      const TokUIClass = tok.TokUI;
+      const ui = new TokUIClass({ container: document.getElementById('tokui-container'), theme: 'modern-dark' });
+
+      // Render demo panel into details-host
+      ui.startStream(document.getElementById('details-host'));
+      ui.feed(`[card tt:"演示：计划与执行" v:highlight]`);
+      ui.feed(`  [p v:muted]这是一个 Plan / Agent 演示，展示 plan-step 与 tool-call 的增量更新。[/p]`);
+      ui.feed(`  [plan tt:"部署任务"]`);
+      ui.feed(`    [plan-step id:step-1]准备构建环境[/plan-step]`);
+      ui.feed(`    [plan-step id:step-2]安装依赖[/plan-step]`);
+      ui.feed(`    [plan-step id:step-3]运行测试[/plan-step]`);
+      ui.feed(`    [plan-step id:step-4]打包并发布[/plan-step]`);
+      ui.feed(`  [/plan]`);
+      ui.feed(`[/card]`);
+
+      ui.startStream(document.getElementById('details-host'));
+      ui.feed(`[card tt:"演示：Agent 与工具调用" v:highlight]`);
+      ui.feed(`  [p v:muted]下面的 tool-call 初始为 running/pending 状态，模拟输出会填充 terminal。[/p]`);
+      ui.feed(`  [agent tt:"Demo Agent"]`);
+      ui.feed(`    [tool-call id:tc-1 tt:"git-clone" status:pending][/tool-call]`);
+      ui.feed(`    [tool-call id:tc-2 tt:"build" status:pending][/tool-call]`);
+      ui.feed(`  [/agent]`);
+      ui.feed(`[/card]`);
+      ui.endStream();
+
+      // small stats card
+      ui.startStream(document.getElementById('tokui-container'));
+      ui.feed(`[card tt:"小仪表盘" v:muted]`);
+      ui.feed(`  [row]`);
+      ui.feed(`    [stat v:"3" tt:"未完成" sm]`);
+      ui.feed(`    [stat v:"1200" tt:"今日 Tokens" sm]`);
+      ui.feed(`  [/row]`);
+      ui.feed(`[/card]`);
+      ui.endStream();
+
+      // Simulate function: sends upd and terminal fragments to the details host
+      async function simulateDemo() {
+        const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+        ui.startStream(document.getElementById('details-host'));
+        ui.feed(`[upd id:step-1 act:running]`);
+        ui.endStream();
+        await sleep(800);
+
+        ui.startStream(document.getElementById('details-host'));
+        ui.feed(`[upd id:step-1 act:done]`);
+        ui.endStream();
+        await sleep(400);
+
+        ui.startStream(document.getElementById('details-host'));
+        ui.feed(`[upd id:step-2 act:running]`);
+        ui.feed(`[upd id:tc-1 act:running]`);
+        ui.endStream();
+        await sleep(500);
+
+        ui.startStream(document.getElementById('details-host'));
+        ui.feed(`[upd id:tc-1 act:done]`);
+        ui.feed(`[terminal v:dark]\nCloning into 'repo'...\ndone.\n[/terminal]`);
+        ui.endStream();
+        await sleep(450);
+
+        ui.startStream(document.getElementById('details-host'));
+        ui.feed(`[upd id:step-2 act:done]`);
+        ui.endStream();
+        await sleep(300);
+
+        ui.startStream(document.getElementById('details-host'));
+        ui.feed(`[upd id:step-3 act:running]`);
+        ui.feed(`[upd id:tc-2 act:running]`);
+        ui.endStream();
+        await sleep(700);
+
+        ui.startStream(document.getElementById('details-host'));
+        ui.feed(`[terminal v:dark]\nBuilding...\nCompiled successfully.\n[/terminal]`);
+        ui.feed(`[upd id:tc-2 act:done]`);
+        ui.feed(`[upd id:step-3 act:done]`);
+        ui.endStream();
+        await sleep(400);
+
+        ui.startStream(document.getElementById('details-host'));
+        ui.feed(`[upd id:step-4 act:running]`);
+        ui.endStream();
+        await sleep(600);
+
+        ui.startStream(document.getElementById('details-host'));
+        ui.feed(`[upd id:step-4 act:done]`);
+        ui.endStream();
+      }
+
+      document.getElementById('start-sim').addEventListener('click', simulateDemo);
+    })();
+  </script>
+</body>
+</html>

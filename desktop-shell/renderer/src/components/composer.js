@@ -109,8 +109,15 @@ export function renderComposer() {
   if (!ui) return;
   host.innerHTML = '';
   ui.startStream(host);
+  // Quick action buttons for a Proma-style workbench (TokUI-driven)
+  ui.feed(`[row]`);
+  ui.feed(`  [btn tx:"🧩 执行计划" clk:onModeTab act:plan sm][/btn]`);
+  ui.feed(`  [btn tx:"🤖 运行 Agent" clk:onModeTab act:agent sm][/btn]`);
+  ui.feed(`  [btn tx:"🧠 打开记忆" clk:onMemOpenTimeline sm v:muted][/btn]`);
+  ui.feed(`[/row]`);
+
   ui.feed(renderModeTabs());
-  ui.feed(`[chat-input ph:"输入消息，按 Enter 发送" clk:onComposerSend auto rows:2 max:2000][/chat-input]`);
+  ui.feed(`[chat-input ph:"在工作区输入命令、问题或选择快速操作，按 Enter 发送" clk:onComposerSend auto rows:2 max:2000][/chat-input]`);
   ui.endStream();
 }
 
@@ -119,7 +126,15 @@ async function onComposerSend(text) {
   if (!text?.trim() || isStreaming()) return;
   await startAssistantStream();
   // 1. User bubble
-  feed(`[bubble role:user][p]${escapeDsl(text)}[/bubble]`);
+  // Render user input: keep chat bubble for Ask mode, otherwise use a compact card (Proma 风格)
+  if (state.mode === 'ask') {
+    feed(`[bubble role:user][p]${escapeDsl(text)}[/bubble]`);
+  } else {
+    const title = MODE_LABELS[state.mode] || 'User';
+    feed(`[card tt:"${escapeDsl(title)} · 用户输入" v:muted]`);
+    feed(`[p]${escapeDsl(text)}[/p]`);
+    feed(`[/card]`);
+  }
 
   const m = MODE_TO_METHOD[state.mode] ?? MODE_TO_METHOD.ask;
   const t0 = performance.now();
@@ -233,6 +248,19 @@ async function onComposerSend(text) {
     }
     if (planHandle) {
       endPlan(planHandle, totalSec);
+    }
+
+    // If the sidecar returned no structured fragments but provided a textual reply,
+    // render it using a card (for non-ask modes) or a bubble (for ask mode).
+    if ((!frags || frags.length === 0) && res) {
+      const replyText = res.reply || res.text || res.result || '';
+      if (replyText && replyText.trim()) {
+        if (state.mode === 'ask') {
+          feed(`[bubble role:assistant][p]${escapeDsl(replyText)}[/p][/bubble]`);
+        } else {
+          feed(`[card tt:"助手回复" v:accent][md]\n${escapeDsl(replyText)}\n[/md][/card]`);
+        }
+      }
     }
 
     // v9.6: Post-response enrichments — latency + suggestions
@@ -412,6 +440,21 @@ function maybeWrapToolOutput(dsl) {
     return `[sandbox]\n${escapeDsl(content)}\n[/sandbox]`;
   }
 
+  // Detect explicit tool output markers and attach to tool-call widget
+  // Format e.g. "TOOL:git\n<output>" or "tool: name\noutput"
+  const m = content.match(/^\s*(?:TOOL|tool)\s*[:]\s*([\w-]+)\s*\n([\s\S]*)$/i);
+  if (m) {
+    const toolName = m[1];
+    const output = m[2];
+    try {
+      // feed to tool-call widget if available
+      feedToolOutput(toolName, {}, output);
+      return '';
+    } catch (e) {
+      return `[terminal v:dark]\n${escapeDsl(output)}\n[/terminal]`;
+    }
+  }
+
   return dsl;
 }
 
@@ -426,6 +469,45 @@ registerHandler('onModeTab', (data) => {
   const value = typeof data === 'string' ? data : data?.value ?? data?.tab;
   if (value && MODE_TO_METHOD[value]) setMode(value);
 });
+
+/**
+ * Start a demo stream (used by demo-panel to create subscriptions and a stream_id).
+ * Returns { streamId, chain, agentHandle, planHandle }
+ */
+export function startDemoStream(demoMode = 'plan') {
+  const m = MODE_TO_METHOD[demoMode] ?? MODE_TO_METHOD.plan;
+  const viz = m.viz;
+  const streamId = `${demoMode}-demo-${Date.now().toString(36)}-${Math.random().toString(36).slice(2,6)}`;
+
+  let chain = null;
+  let agentHandle = null;
+  let planHandle = null;
+
+  // subscribe to standalone galaxy pub-sub
+  const unsubs = [];
+  const unsubDsl = galaxy.onDslFragment?.((ev) => { if (ev.stream_id === streamId) feed(expandCodeBlocks(ev.tokui)); });
+  if (unsubDsl) unsubs.push(unsubDsl);
+
+  if (viz === 'think') {
+    const thinkMode = demoMode === 'memo' ? 'memo' : 'rccam';
+    chain = startThinkChain(thinkMode);
+    const u1 = galaxy.onMemoStage?.((ev) => { if (ev.stream_id === streamId) handleLiveMemoEvent(chain, ev); });
+    if (u1) unsubs.push(u1);
+    const u2 = galaxy.onThinkStep?.((ev) => { if (ev.stream_id === streamId) handleLiveThinkEvent(chain, ev); });
+    if (u2) unsubs.push(u2);
+  } else if (viz === 'agent') {
+    agentHandle = startAgent('Demo Agent');
+    const u3 = galaxy.onAgentTool?.((ev) => { if (ev.stream_id === streamId) handleLiveAgentEvent(agentHandle, ev); });
+    if (u3) unsubs.push(u3);
+  }
+  if (demoMode === 'plan') {
+    planHandle = startPlan('演示计划');
+    const u4 = galaxy.onPlanStep?.((ev) => { if (ev.stream_id === streamId) handleLivePlanEvent(planHandle, ev); });
+    if (u4) unsubs.push(u4);
+  }
+
+  return { streamId, chain, agentHandle, planHandle, _unsubs: unsubs };
+}
 
 // v9.6: Handle suggestion clicks — switch mode + fill composer
 registerHandler('onSuggestionPick', (data) => {

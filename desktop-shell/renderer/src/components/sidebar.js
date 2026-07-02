@@ -86,8 +86,8 @@ function buildSessionsContent() {
     return `[conv id:"conv-${id}" tt:"${escapeDsl(title)}" time:"${formatTime(sess.createdAt)}" act:${id} ${active}]`;
   }).join('\n    ');
 
-  return `    [conversations clk:onConvSwitch act:conv-list]\n    ${items}\n    [/conversations]\n` +
-    `    [btn tx:"+ 新对话" clk:onConvNew sm][/btn]`;
+  return `    [list sm]\n${items}\n    [/list]\n` +
+    `    [row]\n      [btn tx:"+ 新工作区" clk:onConvNew sm][/btn]\n    [/row]`;
 }
 
 function buildMemorySection() {
@@ -105,7 +105,7 @@ function buildMemoryContent() {
 function buildSkillsSection() {
   const { list, loading } = skillsStore.get();
   const count = list.length || 69;
-  return renderSection('skills', '🔗', '技能', `${count}`, buildSkillsContent());
+  return renderSection('skills', '🧩', '工具与技能', `${count}`, buildSkillsContent());
 }
 
 function buildSkillsContent() {
@@ -216,8 +216,19 @@ export function renderSidebar() {
   // Header
   ui.feed('[h4]⚡ GalaxyOS Desktop[/h4]');
 
-  // Sessions section
-  ui.feed(renderSection('sessions', '💬', '会话', null, buildSessionsContent()));
+  // Quick actions (workbench-oriented)
+  ui.feed('[card tt:"快速入口"]');
+  ui.feed('  [row]');
+  ui.feed('    [btn tx:"📊 仪表盘" clk:onDashboardOpen sm][/btn]');
+  ui.feed('    [btn tx:"🧠 记忆时间线" clk:onMemOpenTimeline sm v:muted][/btn]');
+  ui.feed('    [btn tx:"🔧 MCP 面板" clk:onMcpOpenPanel sm v:muted][/btn]');
+  ui.feed('    [btn tx:"演示面板" clk:onDemoOpen sm v:muted][/btn]');
+  ui.feed('  [/row]');
+  ui.feed('  [p v:muted sm]快速访问工作区、记忆和工具视图。[/p]');
+  ui.feed('[/card]');
+
+  // Sessions / Workspaces section
+  ui.feed(renderSection('sessions', '📁', '工作区', null, buildSessionsContent()));
 
   // Memory section
   ui.feed(buildMemorySection());
@@ -328,6 +339,12 @@ registerHandler('onMemOpenTimeline', () => {
   if (panel) panel.classList.remove('hidden');
 });
 
+registerHandler('onDashboardOpen', () => {
+  renderDashboard('details-host');
+  const panel = document.getElementById('details-panel');
+  if (panel) panel.classList.remove('hidden');
+});
+
 registerHandler('onMemSearch', () => {
   // Simple prompt for memory search
   const query = prompt('搜索记忆关键词:');
@@ -365,6 +382,13 @@ registerHandler('onMcpShowAddForm', () => {
 
 registerHandler('onMcpOpenPanel', () => {
   import('./mcp-panel.js').then(({ discoverMcpTools }) => discoverMcpTools());
+  const panel = document.getElementById('details-panel');
+  if (panel) panel.classList.remove('hidden');
+});
+
+registerHandler('onDemoOpen', () => {
+  import('../tokui/demo-panel.js').then(({ renderDemoPanel }) => renderDemoPanel('details-host'))
+    .catch(() => {});
   const panel = document.getElementById('details-panel');
   if (panel) panel.classList.remove('hidden');
 });

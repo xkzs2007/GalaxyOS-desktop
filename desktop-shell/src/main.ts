@@ -382,18 +382,18 @@ function createWindow(): BrowserWindow {
  * renderer-side dep.
  */
 async function injectTokUI(win: BrowserWindow): Promise<void> {
-  // Inject the CSS via a <link> tag
+  // Inject the CSS via an inline <style> tag so packaged builds do not
+  // depend on file:// URLs being allowed by CSP.
   if (existsSync(TOKUI_DIST_CSS)) {
-    const cssUrl = `file:///${TOKUI_DIST_CSS.replace(/\\/g, '/')}`;
     try {
+      const cssContent = readFileSync(TOKUI_DIST_CSS, 'utf-8');
       await win.webContents.executeJavaScript(`
         (() => {
-          if (document.querySelector('link[data-tokui-css]')) return;
-          const l = document.createElement('link');
-          l.rel = 'stylesheet';
-          l.href = ${JSON.stringify(cssUrl)};
-          l.setAttribute('data-tokui-css', '1');
-          document.head.appendChild(l);
+          if (document.querySelector('style[data-tokui-css]')) return;
+          const s = document.createElement('style');
+          s.setAttribute('data-tokui-css', '1');
+          s.textContent = ${JSON.stringify(cssContent)};
+          document.head.appendChild(s);
         })();
       `);
       log('TokUI CSS injected');

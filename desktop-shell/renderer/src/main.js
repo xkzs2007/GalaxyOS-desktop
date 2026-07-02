@@ -152,6 +152,7 @@ registerHandler('onWelcomePick', (data) => {
 
   // 1. Boot TokUI
   await bootTokUI('#tokui-container');
+  setTheme('modern-dark');
 
   // 2. Register all event handlers
   registerMsgActionHandlers();
