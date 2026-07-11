@@ -1,0 +1,100 @@
+name: Release Desktop
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to release (e.g. v0.1.4)'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            platform: win
+            ext: .exe
+          - os: macos-latest
+            platform: mac
+            ext: .dmg
+          - os: ubuntu-latest
+            platform: linux
+            ext: .AppImage
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install desktop-shell deps
+        run: cd desktop-shell && npm install
+        continue-on-error: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Python deps
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements-core.txt || true
+          pip install pyinstaller || true
+
+      - name: Build Python kernel (PyInstaller)
+        run: |
+          pyinstaller --onefile --name galaxyos-kernel galaxyos/kernel/mcp_server_entry.py 2>&1 || echo "⚠️ PyInstaller build skipped"
+        continue-on-error: true
+
+      - name: Package release artifact
+        run: |
+          mkdir -p dist
+          TAG="${GITHUB_REF_NAME:-${{ github.event.inputs.tag }}}"
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            7z a "dist/GalaxyOS-${TAG}-${{ matrix.platform }}.zip" README.md VERSION requirements.txt dist/ desktop-shell/ galaxyos/ extensions/ skills/ 2>/dev/null || true
+          else
+            tar czf "dist/GalaxyOS-${TAG}-${{ matrix.platform }}.tar.gz" README.md VERSION requirements.txt desktop-shell/ galaxyos/ extensions/ skills/ 2>/dev/null || true
+          fi
+        shell: bash
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: GalaxyOS-${{ matrix.platform }}
+          path: dist/
+
+  create-release:
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist/
+          merge-multiple: true
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: GalaxyOS Desktop ${{ github.ref_name }}
+          draft: false
+          prerelease: ${{ contains(github.ref_name, 'rc') || contains(github.ref_name, 'beta') }}
+          generate_release_notes: true
+          files: dist/**/*
