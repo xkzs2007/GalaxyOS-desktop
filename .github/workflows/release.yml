@@ -107,9 +107,10 @@ jobs:
 
       - name: Build Studio frontend
         working-directory: agent-studio/frontend
+        shell: bash
         run: |
-          npm ci
-          npm run build
+          npm install
+          npx vite build --mode production
 
       - name: Copy Studio dist for Tauri
         shell: bash
