@@ -14,7 +14,7 @@ RUN pip install --no-cache-dir -r requirements-core.txt
 COPY galaxyos/ ./galaxyos/
 
 COPY skills/ ./skills/
-COPY pyproject.toml .
+COPY pyproject.toml README.md .
 
 RUN if [ "$INSTALL_HEAVY" = "1" ]; then \
         pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu && \
