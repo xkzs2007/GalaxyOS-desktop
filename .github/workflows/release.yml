@@ -22,13 +22,8 @@ jobs:
         include:
           - os: windows-latest
             platform: win
-            ext: .exe
-          - os: macos-latest
-            platform: mac
-            ext: .dmg
           - os: ubuntu-latest
             platform: linux
-            ext: .AppImage
 
     steps:
       - name: Checkout
