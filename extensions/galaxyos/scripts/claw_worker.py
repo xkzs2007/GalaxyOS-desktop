@@ -1041,8 +1041,10 @@ class ClawWorker:
         try:
             if not hasattr(self, '_vlm'):
                 from openai import OpenAI
-                VLM_API_KEY = "YOUR_VLM_API_KEY"
-                VLM_BASE_URL = "https://open.bigmodel.cn/api/paas/v4"
+                VLM_API_KEY = os.environ.get("VLM_API_KEY")
+                VLM_BASE_URL = os.environ.get("VLM_BASE_URL", "https://open.bigmodel.cn/api/paas/v4")
+                if not VLM_API_KEY:
+                    raise RuntimeError("VLM_API_KEY not configured. Set the VLM_API_KEY environment variable.")
                 self._vlm = OpenAI(api_key=VLM_API_KEY, base_url=VLM_BASE_URL)
             
             resp = self._vlm.chat.completions.create(
