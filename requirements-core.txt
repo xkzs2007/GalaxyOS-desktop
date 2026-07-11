@@ -41,7 +41,7 @@ psutil>=5.9.0
 openai>=1.0.0
 
 # === 神经电路策略 ===
-ncps>=1.0.0
+ncps>=1.0.0; python_version >= "3.9" and python_version < "3.13"
 
 # === Tokenizer ===
 tokenizers>=0.20.0

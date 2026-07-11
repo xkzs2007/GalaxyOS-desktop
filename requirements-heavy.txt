@@ -8,8 +8,9 @@
 #   - GPU 版需手动下载：pip install torch --index-url https://download.pytorch.org/whl/cu128
 
 # === Intel 数学库（预编译包，libs/ 中有 x86_64 tar.gz）===
-mkl==2026.0.0
-tbb==2023.0.0
+# mkl 和 tbb 仅在本地有预编译包，CI 中跳过
+# mkl==2026.0.0
+# tbb==2023.0.0
 
 # === 向量检索 ===
 faiss-cpu>=1.7.0
