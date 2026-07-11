@@ -107,6 +107,77 @@ DAG_DB_PATH: str = os.path.join(WORKSPACE, "dag_context")
 CORE_DIR: str = os.path.join(WORKSPACE, "core")
 SKILLS_DIR: str = os.path.join(WORKSPACE, "skills")
 
+# ── Agent Studio 集成环境变量 ──
+
+@lru_cache(maxsize=1)
+def agent_studio_mode() -> str:
+    """运行模式: plugin (Agent Studio 插件) / desktop (独立桌面端)
+
+    优先级链: GALAXYOS_MODE > 自动检测
+    """
+    env = os.environ.get("GALAXYOS_MODE")
+    if env in ("plugin", "desktop"):
+        return env
+    return "plugin"
+
+
+@lru_cache(maxsize=1)
+def mcp_transport() -> str:
+    """MCP 传输协议: stdio / sse / streamable_http
+
+    优先级链: GALAXYOS_MCP_TRANSPORT > 默认 streamable_http
+    """
+    env = os.environ.get("GALAXYOS_MCP_TRANSPORT")
+    if env in ("stdio", "sse", "streamable_http"):
+        return env
+    return "streamable_http"
+
+
+@lru_cache(maxsize=1)
+def mcp_host() -> str:
+    """MCP Server 监听地址（仅 SSE/streamable_http 模式）"""
+    return os.environ.get("GALAXYOS_MCP_HOST", "127.0.0.1")
+
+
+@lru_cache(maxsize=1)
+def mcp_port() -> int:
+    """MCP Server 监听端口（仅 SSE/streamable_http 模式）"""
+    return int(os.environ.get("GALAXYOS_MCP_PORT", "8765"))
+
+
+@lru_cache(maxsize=1)
+def sidecar_host() -> str:
+    """SSE Sidecar 监听地址"""
+    return os.environ.get("GALAXYOS_SIDECAR_HOST", "127.0.0.1")
+
+
+@lru_cache(maxsize=1)
+def sidecar_port() -> int:
+    """SSE Sidecar 监听端口"""
+    return int(os.environ.get("GALAXYOS_SIDECAR_HTTP_PORT", "5758"))
+
+
+@lru_cache(maxsize=1)
+def worker_host() -> str:
+    """Python Worker TCP 地址"""
+    return os.environ.get("GALAXYOS_WORKER_HOST", "127.0.0.1")
+
+
+@lru_cache(maxsize=1)
+def worker_port() -> int:
+    """Python Worker TCP 端口"""
+    return int(os.environ.get("GALAXYOS_WORKER_PORT", "5760"))
+
+
+AGENT_STUDIO_MODE: str = agent_studio_mode()
+MCP_TRANSPORT: str = mcp_transport()
+MCP_HOST: str = mcp_host()
+MCP_PORT: int = mcp_port()
+SIDECAR_HOST: str = sidecar_host()
+SIDECAR_PORT: int = sidecar_port()
+WORKER_HOST: str = worker_host()
+WORKER_PORT: int = worker_port()
+
 # ── Module self-reference (path_resolver_compat) ──
 # Enables: `from galaxyos.shared.paths import path_resolver_compat`
 # then:    `path_resolver_compat.WORKSPACE`, `path_resolver_compat.VECTORS_DB`, etc.

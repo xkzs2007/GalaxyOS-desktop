@@ -1,0 +1,269 @@
+{
+  "name": "galaxyos",
+  "version": "8.6.0",
+  "description": "GalaxyOS 认知增强引擎 — Agent Studio 平台框架 + 液态神经记忆 + R-CCAM 认知循环 + 技能自演化 + 17 层认知架构",
+  "hooks": {
+    "on_plugin_load": "galaxyos.agent_studio.lifecycle:LifecycleHookManager.dispatch_agent_studio_event",
+    "on_plugin_unload": "galaxyos.agent_studio.lifecycle:LifecycleHookManager.dispatch_agent_studio_event",
+    "on_pre_tool_use": "galaxyos.agent_studio.lifecycle:LifecycleHookManager.dispatch_agent_studio_event",
+    "on_post_tool_use": "galaxyos.agent_studio.lifecycle:LifecycleHookManager.dispatch_agent_studio_event",
+    "on_pre_compaction": "galaxyos.agent_studio.lifecycle:LifecycleHookManager.dispatch_agent_studio_event",
+    "on_post_compaction": "galaxyos.agent_studio.lifecycle:LifecycleHookManager.dispatch_agent_studio_event",
+    "on_pre_agent_reply": "galaxyos.agent_studio.lifecycle:LifecycleHookManager.dispatch_agent_studio_event",
+    "on_post_agent_reply": "galaxyos.agent_studio.lifecycle:LifecycleHookManager.dispatch_agent_studio_event",
+    "on_user_prompt_submit": "galaxyos.agent_studio.lifecycle:LifecycleHookManager.dispatch_agent_studio_event"
+  },
+  "commands": [
+    {"name": "install-skills", "description": "Install mattpocock/skills + GalaxyOS skills to workspace"},
+    {"name": "discover-skills", "description": "Discover installed skills (user-invoked / model-invoked)"},
+    {"name": "kernel-status", "description": "Check GalaxyOS Python kernel and cognitive engine status"},
+    {"name": "rccam-status", "description": "Check R-CCAM cognitive cycle status"},
+    {"name": "memory-status", "description": "Check liquid neural memory and DAG context status"},
+    {"name": "cognitive-panel", "description": "Toggle GalaxyOS cognitive panel in Chat view"}
+  ],
+  "skills": [],
+  "mcpServers": {
+    "galaxyos-cognitive": {
+      "command": "python",
+      "args": ["-m", "galaxyos.kernel.mcp_server"],
+      "transport": "streamable_http",
+      "host": "127.0.0.1",
+      "port": 8765,
+      "auth": {
+        "type": "bearer",
+        "token_env": "GALAXYOS_MCP_TOKEN"
+      },
+      "tools": [
+        {
+          "name": "galaxy_pool",
+          "description": "GalaxyPool 全系统运行状态查询",
+          "policy": {"channels": ["dm", "group"], "roles": ["owner", "member"], "rateLimit": "30/min"}
+        },
+        {
+          "name": "claw_rccam_progress",
+          "description": "R-CCAM 认知循环实时进度查询",
+          "policy": {"channels": ["dm", "group"], "roles": ["owner", "member"], "rateLimit": "60/min"}
+        },
+        {
+          "name": "claw_recall",
+          "description": "深度语义记忆检索（CRAG + GraphRAG + RAPTOR + Self-RAG + 液态神经记忆）",
+          "policy": {"channels": ["dm"], "roles": ["owner", "member"], "rateLimit": "60/min"}
+        },
+        {
+          "name": "claw_lobster",
+          "description": "Lobster 管道执行",
+          "policy": {"channels": ["dm"], "roles": ["owner"], "rateLimit": "20/min"}
+        },
+        {
+          "name": "claw_health",
+          "description": "系统健康检查（17 层架构 + Worker Tier + 记忆系统 + R-CCAM）",
+          "policy": {"channels": ["dm", "group"], "roles": ["owner", "member"], "rateLimit": "30/min"}
+        },
+        {
+          "name": "claw_vector_info",
+          "description": "向量计算能力查询",
+          "policy": {"channels": ["dm", "group"], "roles": ["owner", "member"], "rateLimit": "30/min"}
+        },
+        {
+          "name": "claw_events",
+          "description": "事件日志查询（基于 TKG 时序知识图谱）",
+          "policy": {"channels": ["dm"], "roles": ["owner", "member"], "rateLimit": "60/min"}
+        },
+        {
+          "name": "claw_store",
+          "description": "记忆存储（液态神经记忆 + DAG 上下文 + agent-core 上下文双写）",
+          "policy": {"channels": ["dm"], "roles": ["owner"], "rateLimit": "30/min"}
+        },
+        {
+          "name": "claw_verify",
+          "description": "幻觉验证（10 重交叉验证 + 多源证据）",
+          "policy": {"channels": ["dm", "group"], "roles": ["owner", "member"], "rateLimit": "30/min"}
+        },
+        {
+          "name": "claw_rccam",
+          "description": "R-CCAM 认知循环（Retrieval→Cognition→Control→Action→Memory）",
+          "policy": {"channels": ["dm"], "roles": ["owner", "member"], "rateLimit": "20/min"}
+        },
+        {
+          "name": "claw_save_memory",
+          "description": "记忆持久化（记忆巩固 + 艾宾浩斯遗忘曲线）",
+          "policy": {"channels": ["dm"], "roles": ["owner"], "rateLimit": "30/min"}
+        },
+        {
+          "name": "claw_compile_skill",
+          "description": "Skill 编译（SkVM + COSPLAY 技能自演化）",
+          "policy": {"channels": ["dm"], "roles": ["owner"], "rateLimit": "10/min"}
+        },
+        {
+          "name": "claw_asset_search",
+          "description": "KnowledgeAsset 搜索（MemGAS-SkVM 融合系统）",
+          "policy": {"channels": ["dm", "group"], "roles": ["owner", "member"], "rateLimit": "60/min"}
+        },
+        {
+          "name": "claw_asset_register",
+          "description": "KnowledgeAsset 注册",
+          "policy": {"channels": ["dm"], "roles": ["owner"], "rateLimit": "20/min"}
+        },
+        {
+          "name": "claw_node_invoke",
+          "description": "Node 外设调用（拍照/定位/录屏/健康数据）",
+          "policy": {"channels": ["dm"], "roles": ["owner"], "rateLimit": "10/min"}
+        },
+        {
+          "name": "skill_execute",
+          "description": "技能执行（skill_name + parameters + workspace_id + agent_type）",
+          "policy": {"channels": ["dm"], "roles": ["owner", "member"], "rateLimit": "30/min"}
+        },
+        {
+          "name": "skill_install",
+          "description": "技能安装（source + scope + workspace_id）",
+          "policy": {"channels": ["dm"], "roles": ["owner"], "rateLimit": "10/min"}
+        },
+        {
+          "name": "skill_discover",
+          "description": "技能发现（invocation_type + query + workspace_id）",
+          "policy": {"channels": ["dm", "group"], "roles": ["owner", "member"], "rateLimit": "60/min"}
+        },
+        {
+          "name": "memory_write",
+          "description": "记忆写入（液态神经记忆 + DAG 上下文 + agent-core 上下文双写）",
+          "policy": {"channels": ["dm"], "roles": ["owner"], "rateLimit": "30/min"}
+        },
+        {
+          "name": "memory_recall",
+          "description": "记忆检索（液态神经记忆优先 + CRAG + DAG 上下文增强）",
+          "policy": {"channels": ["dm", "group"], "roles": ["owner", "member"], "rateLimit": "60/min"}
+        },
+        {
+          "name": "llm_call",
+          "description": "LLM 调用（经 Agent Studio 模型路由层路由）",
+          "policy": {"channels": ["dm"], "roles": ["owner", "member"], "rateLimit": "60/min"}
+        },
+        {
+          "name": "health_check",
+          "description": "Python 内核健康检查（17 层架构 + Worker Tier + MCP 通信 + 记忆系统 + R-CCAM）",
+          "policy": {"channels": ["dm", "group"], "roles": ["owner", "member"], "rateLimit": "30/min"}
+        },
+        {
+          "name": "agent_status",
+          "description": "Agent 内核运行状态查询",
+          "policy": {"channels": ["dm", "group"], "roles": ["owner", "member"], "rateLimit": "60/min"}
+        },
+        {
+          "name": "tokui_render",
+          "description": "TokUI 结构化 UI 渲染（生成 DSL + SSE 流式推送到前端）",
+          "policy": {"channels": ["dm"], "roles": ["owner", "member"], "rateLimit": "60/min"}
+        }
+      ]
+    }
+  },
+  "settings": {
+    "kernel.pythonPath": {
+      "type": "string",
+      "default": "python",
+      "description": "Python interpreter path for GalaxyOS cognitive engine kernel"
+    },
+    "kernel.mcpTransport": {
+      "type": "string",
+      "default": "streamable_http",
+      "enum": ["stdio", "sse", "streamable_http"],
+      "description": "MCP transport protocol between Agent Studio Gateway and GalaxyOS Python kernel"
+    },
+    "kernel.mcpHost": {
+      "type": "string",
+      "default": "127.0.0.1",
+      "description": "MCP server host (only for SSE/streamable_http transport)"
+    },
+    "kernel.mcpPort": {
+      "type": "number",
+      "default": 8765,
+      "description": "MCP server port (only for SSE/streamable_http transport)"
+    },
+    "kernel.autoRestart": {
+      "type": "boolean",
+      "default": true,
+      "description": "Auto-restart Python kernel on crash (exponential backoff, max 3 retries)"
+    },
+    "contextEngine.maxRecentMessages": {
+      "type": "number",
+      "default": 20,
+      "description": "Max recent messages to keep during context compression"
+    },
+    "contextEngine.recallOnAssemble": {
+      "type": "boolean",
+      "default": true,
+      "description": "Enable memory recall during context assembly"
+    },
+    "contextEngine.dagEnabled": {
+      "type": "boolean",
+      "default": true,
+      "description": "Enable DAG context management (SQLite + summary backtracking)"
+    },
+    "memory.neuralEnabled": {
+      "type": "boolean",
+      "default": true,
+      "description": "Enable liquid neural memory (LTC/CfC/NCP/synapse network)"
+    },
+    "memory.dagEnabled": {
+      "type": "boolean",
+      "default": true,
+      "description": "Enable DAG context for memory (time-decay + summary backtracking)"
+    },
+    "rccam.enabled": {
+      "type": "boolean",
+      "default": true,
+      "description": "Enable R-CCAM cognitive cycle (5-phase: Retrieval→Cognition→Control→Action→Memory)"
+    },
+    "rccam.timeoutMs": {
+      "type": "number",
+      "default": 3000,
+      "description": "R-CCAM cycle timeout in milliseconds (fallback to direct LLM on timeout)"
+    },
+    "routing.defaultModel": {
+      "type": "string",
+      "default": "balanced",
+      "description": "Default model for LLM routing via Agent Studio model router"
+    },
+    "security.injectionScanEnabled": {
+      "type": "boolean",
+      "default": true,
+      "description": "Enable Skill Bank injection scanner (3-level risk detection)"
+    },
+    "security.channelIsolation": {
+      "type": "boolean",
+      "default": true,
+      "description": "Enable channel-aware memory isolation (group chat = read-only)"
+    },
+    "tokui.enabled": {
+      "type": "boolean",
+      "default": true,
+      "description": "Enable TokUI streaming rich UI rendering"
+    },
+    "tokui.autoRenderRCCAM": {
+      "type": "boolean",
+      "default": true,
+      "description": "Auto-render R-CCAM cognitive state as TokUI panels"
+    },
+    "tokui.themeSync": {
+      "type": "boolean",
+      "default": true,
+      "description": "Sync TokUI theme with MUI theme (CSS variables mapping)"
+    },
+    "tokui.maxChunkSize": {
+      "type": "number",
+      "default": 32768,
+      "description": "Max DSL chunk size in bytes for SSE streaming"
+    },
+    "cognitivePanel.defaultOpen": {
+      "type": "boolean",
+      "default": false,
+      "description": "Open cognitive panel by default in Chat view"
+    },
+    "cognitivePanel.position": {
+      "type": "string",
+      "default": "sidebar",
+      "enum": ["sidebar", "inline", "floating"],
+      "description": "Cognitive panel position mode"
+    }
+  }
+}

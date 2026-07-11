@@ -1,74 +1,103 @@
-# 🌌 GalaxyOS — OpenClaw 认知增强引擎
+# GalaxyOS Desktop Agent
 
-> 为 AI Assistant 提供记忆、检索、推理、验证、自进化的全套认知能力
+> 认知增强型桌面 AI Agent — Agent Studio 平台 + GalaxyOS 认知引擎 + TokUI 流式富 UI
 >
-> **v8.6.0** · OpenClaw 深度集成改造（全 4 阶段落地）
+> **v0.1.4** · Desktop Agent 首个完整发布
 
 ---
 
 ## 总览
 
-`GalaxyOS` 是 **OpenClaw 的底层认知增强引擎**。同时占据两个核心插槽：
+GalaxyOS Desktop Agent 将 **GalaxyOS 认知增强引擎**（17 层架构 + 液态神经记忆 + R-CCAM + DAG 上下文）与 **Agent Studio**（openJiuwen Studio）平台框架深度融合，通过 MCP 协议连接，形成生产级桌面 AI Agent 产品。
 
-| 插槽 | 注册 ID | 接管能力 |
-|------|---------|----------|
-| `contextEngine` | `claw-core-engine` | 上下文组装 / 压缩 / 摄入（ownsCompaction=true） |
-| `memory` | `galaxyos` | 记忆检索 / 写入 / flushPlan / publicArtifacts |
+| 层级 | 框架 | 职责 |
+|------|------|------|
+| **平台框架层** | Agent Studio | 前端 React 18 + 后端 FastAPI + 数据库 + 插件系统 + 工作流画布 |
+| **认知增强层** | GalaxyOS v8.6.0 | 17 层架构 + 液态神经记忆 + R-CCAM + DAG 上下文 + 76 技能包 |
+| **连接协议** | MCP (streamable_http) | 24 个工具 + 9 个生命周期钩子 |
+| **流式渲染** | TokUI (@jboltai/tokui) | DSL 流式推送 + 6 自定义认知组件 + SSE Sidecar |
 
 ## 核心能力
 
 | 能力 | 说明 |
 |------|------|
-| **液态神经记忆** | LTC 突触 + CfC 推理 + NCP 神经电路 + 仿生遗忘曲线 |
-| **DAG 上下文** | SQLite 持久化 + 摘要节点回溯 + 时间衰减排序 |
+| **液态神经记忆** | LTC 突触 + CfC 推理 + NCP 神经电路 + 仿生遗忘曲线 + 三层记忆架构 |
+| **DAG 上下文** | SQLite 持久化 + 摘要节点回溯 + 时间衰减排序 + 上下文融合层 |
+| **R-CCAM 认知循环** | Retrieval→Cognition→Control→Action→Memory 五阶段 + TokUI 进度渲染 |
 | **COSPLAY 自演化** | 从执行轨迹学习技能合约 → ProtoSkill → 成熟 Skill |
-| **LFM 技能库** | 5 维评分（质量/复用/合约/一致/探索）+ 合并·拆分·精修·淘汰 |
-| **R-CCAM 认知循环** | Retrieval→Cognition→Control→Action→Memory 五阶段 |
+| **LFM 技能库** | 5 维评分 + 合并·拆分·精修·淘汰 + 76 技能包 |
 | **MultiAgent 协同** | 5 角色 + 公告板 + Judge 蒸馏 + 交叉验证 |
-| **OpenClaw 深度集成** | 9 钩子 + 15 工具（含 policy）+ 跨平台 Rust |
+| **防幻觉 10 重检测** | Self-RAG / CRAG / CoVe + 10 重验证链 |
+| **MCP 工具协议** | 24 个工具（15 核心 + 8 集成 + 1 tokui_render）+ policy 声明 |
+| **TokUI 流式渲染** | DSL 分片推送 + SSE Sidecar + 6 自定义认知面板 + 容错降级 |
+| **双模式运行** | `plugin`（OpenClaw 插件）/ `desktop`（桌面端），环境变量切换 |
 
 ## 快速开始
 
 ```bash
-# 1. 克隆 + 装依赖
-git clone https://cnb.cool/llm-memory-integrat/GalaxyOS.git
-cd GalaxyOS
+# 1. 克隆
+git clone https://github.com/xkzs2007/GalaxyOS-desktop.git
+cd GalaxyOS-desktop
+
+# 2. Python 依赖
 pip install -r requirements.txt
-cd extensions/galaxyos && pnpm install && cd ../..
 
-# 2. ⚠️ 必须：编辑 ~/.openclaw/openclaw.json 指定插槽
-# 见下方"必需配置"
+# 3. 前端依赖（TokUI 组件）
+cd galaxyos/frontend && npm install && cd ../..
 
-# 3. 重启 Gateway
-supervisorctl restart openclaw-gateway
+# 4. 桌面模式启动
+GALAXYOS_MODE=desktop python -m galaxyos.kernel.mcp_server_entry
 
-# 4. 验证
-python3.12 -m galaxyos.scripts.install_wizard --check
-openclaw doctor
+# 5. 验证
+python tests/verify_core_capabilities.py
 ```
 
-## 必需配置
+## 架构
 
-⚠️ **不配 = 不生效**。OpenClaw 的插槽是运行时独占的，GalaxyOS 装了不等于被选中：
-
-```json
-{
-  "plugins": {
-    "slots": {
-      "contextEngine": "claw-core-engine",
-      "memory": "galaxyos"
-    },
-    "entries": {
-      "claw-core-engine": { "enabled": true },
-      "galaxyos": { "enabled": true }
-    }
-  }
-}
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                      Agent Studio Platform                       │
+│  (React 18 + MUI 6 + Zustand + React Flow + FastAPI + Milvus)  │
+└──────────────────────────┬──────────────────────────────────────┘
+                           │ MCP (streamable_http)
+                           ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                GalaxyOS Desktop Agent v0.1.4                     │
+├─────────────────────────────────────────────────────────────────┤
+│  MCP Server (24 tools)          │  Lifecycle Hooks (9)          │
+│  ├─ 15 core tools               │  ├─ gateway_start/stop        │
+│  ├─ 8 integration tools         │  ├─ before/after_tool_call    │
+│  └─ tokui_render                │  ├─ before/after_compaction   │
+│                                  │  ├─ before_agent_reply        │
+│  TokUI SSE Pipeline             │  ├─ agent_end                 │
+│  ├─ PyTokUIBuilder (DSL)        │  └─ before_prompt_build       │
+│  ├─ TokUISSEStreamer            │                                │
+│  ├─ SSESidecar (push)           │  Cognitive Core               │
+│  └─ DegradationManager          │  ├─ LiquidMemoryAdapter       │
+│                                  │  ├─ DAGContextFusion          │
+│  Agent Core Bridge              │  ├─ RCCAMInjector             │
+│  ├─ AgentCoreBridge             │  ├─ MemorySyncBridge          │
+│  ├─ SkillExecutor               │  └─ DualRuntimeManager        │
+│  └─ MCPClient (3 transports)    │                                │
+└─────────────────────────────────────────────────────────────────┘
+                           │
+                           ▼
+┌─────────────────────────────────────────────────────────────────┐
+│              GalaxyOS Engine v8.6.0 — 8 大子系统                   │
+│  1. 液态神经核心  2. DAG 上下文  3. COSPLAY 适配  4. LFM 技能库   │
+│  5. R-CCAM 循环   6. MultiAgent  7. 防幻觉检测   8. Rust 跨平台   │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-默认走 `legacy` + `memory-core`，所有 GalaxyOS 能力不生效。
+## TokUI 流式渲染
 
-详见 [OpenClaw Context Engine 文档](https://docs.openclaw.ai/concepts/context-engine) 和 [Memory 文档](https://docs.openclaw.ai/concepts/memory)。
+GalaxyOS Desktop Agent 集成 `@jboltai/tokui` v0.1.4 实现流式富 UI 渲染：
+
+- **PyTokUIBuilder**：30+ 内置组件 + 6 自定义认知组件 DSL 生成器
+- **TokUISSEStreamer**：DSL 分片推送 + SSE Sidecar
+- **6 自定义组件**：MemoryPanel / RCCAMProgress / DAGTree / MemorySearch / RCCAMControl / DAGNodeExpand
+- **8 事件处理器**：记忆检索 / R-CCAM 控制 / DAG 展开 / 主题切换等
+- **容错降级**：10 种降级策略（纯文本 / 骨架屏 / 缓存回放等）
 
 ## 9 个生命周期钩子
 
@@ -84,146 +113,105 @@ openclaw doctor
 | `agent_end` | Agent 回复后 | L0 日志 + 关键词追踪 + 持久化记忆 |
 | `before_prompt_build` | 提示构建前 | R-CCAM 注入 + 动态锚定 + 记忆验证 |
 
-## 15 个工具
+## 24 个 MCP 工具
 
-所有工具都声明 `policy` 字段（channels / roles / rateLimit）：
+| 类别 | 工具 | 说明 |
+|------|------|------|
+| 核心 | `galaxy_pool` / `claw_rccam_progress` / `claw_recall` / `claw_health` / ... | 15 个核心工具 |
+| 集成 | `agent_studio_query` / `agent_studio_execute` / `memory_search` / ... | 8 个 Agent Studio 集成工具 |
+| TokUI | `tokui_render` | DSL 渲染 + 流式推送 + 自定义组件 |
 
-| 工具 | 用途 | Rate Limit |
-|------|------|-----------|
-| `galaxy_pool` | GalaxyPool 状态查询 | 30/min |
-| `claw_rccam_progress` | R-CCAM 实时进度 | 60/min |
-| `claw_recall` | 深度语义记忆检索 | 60/min |
-| `claw_lobster` | Lobster 管道执行 | 20/min |
-| `claw_health` | 系统健康检查 | 30/min |
-| `claw_vector_info` | 向量计算能力 | 30/min |
-| `claw_events` | 事件日志查询 | 60/min |
-| `claw_store` | 记忆存储 | 30/min |
-| `claw_verify` | 幻觉验证 | 30/min |
-| `claw_rccam` | R-CCAM 认知循环 | 20/min |
-| `claw_save_memory` | 记忆持久化 | 30/min |
-| `claw_compile_skill` | Skill 编译（SkVM） | 10/min |
-| `claw_asset_search` | KnowledgeAsset 搜索 | 60/min |
-| `claw_asset_register` | KnowledgeAsset 注册 | 20/min |
-| `claw_node_invoke` | Node 外设调用 | 10/min |
-
-## 架构
+## 目录结构
 
 ```
-┌────────────────────────────────────────────────────────────┐
-│                    OpenClaw Gateway                         │
-│  (12+ 消息平台 / 7 层纵深防御 / Lane Queue)                  │
-└────────────────────────────────────────────────────────────┘
-                             │
-   ┌─────────────────────────┼─────────────────────────┐
-   ▼                         ▼                         ▼
-┌────────────┐      ┌──────────────┐         ┌──────────────┐
-│contextEngine│     │  memory slot │         │   hooks      │
-│claw-core-eng│     │   galaxyos   │         │ 9 lifecycle  │
-└──────┬─────┘      └──────┬───────┘         └──────┬───────┘
-       └────────────────────┼───────────────────────┘
-                            ▼
-┌────────────────────────────────────────────────────────────┐
-│              GalaxyOS v8.6.0 — 8 大子系统                    │
-├────────────────────────────────────────────────────────────┤
-│  1. 液态神经核心 (LTC/CfC/NCP/SSM)                          │
-│  2. DAG 上下文 (SQLite + 摘要回溯 + 时间衰减)                │
-│  3. COSPLAY 适配 (边界检测 + 合约学习 + 毕业)                │
-│  4. LFM 技能库 (ProtoSkill → Skill + 5 维评分)              │
-│  5. R-CCAM 认知循环 (5 阶段 + 元认知调节)                    │
-│  6. MultiAgent 编排 (5 角色 + 公告板 + 蒸馏)                 │
-│  7. 防幻觉 10 重检测 (Self-RAG/CRAG/CoVe)                    │
-│  8. Rust 跨平台 (Linux/Windows × x64/ARM64)                  │
-└────────────────────────────────────────────────────────────┘
+GalaxyOS-desktop/
+├── extensions/galaxyos/
+│   ├── index.js                    # OpenClaw 插件（5200+ 行，保留）
+│   ├── galaxyos_agent_studio.js    # Agent Studio 插件入口
+│   ├── plugin.json                 # 插件声明（含 tokui_render + 认知面板）
+│   └── plugin_agent_studio.json    # Agent Studio 适配声明
+├── galaxyos/
+│   ├── kernel/                     # 核心内核模块
+│   │   ├── mcp_server.py           # MCP Server（24 工具）
+│   │   ├── mcp_client.py           # MCP Client（3 传输 + 重连）
+│   │   ├── mcp_server_entry.py     # MCP Server 入口
+│   │   ├── agent_core_bridge.py    # 认知增强注入层
+│   │   ├── rccam_injector.py       # R-CCAM 注入器 + TokUI 融合
+│   │   ├── liquid_memory_adapter.py # 液态神经记忆适配器
+│   │   ├── dag_context_fusion.py   # DAG 上下文融合层
+│   │   ├── memory_sync_bridge.py   # 记忆双写桥接层
+│   │   ├── skill_executor.py       # 技能执行器
+│   │   ├── dual_runtime_manager.py # 双运行时进程管理
+│   │   ├── tokui_builder.py        # PyTokUIBuilder DSL 生成器
+│   │   ├── tokui_sse_streamer.py   # TokUI SSE 流式推送
+│   │   └── tokui_degradation.py    # TokUI 容错降级管理
+│   ├── engine/
+│   │   └── sse_sidecar.py          # SSE Sidecar 事件推送服务
+│   ├── agent_studio/
+│   │   ├── adapter.py              # Agent Studio 适配器
+│   │   └── lifecycle.py            # 9 钩子映射管理器
+│   ├── frontend/                   # TokUI React 前端组件
+│   │   ├── components/
+│   │   │   ├── TokUIChatRenderer.tsx
+│   │   │   ├── MessageRenderer.tsx
+│   │   │   ├── CognitivePanel.tsx
+│   │   │   └── tokui/              # 6 自定义组件 + 事件处理器 + 主题桥接
+│   │   └── sse_proxy.js            # Gateway SSE 转发端点
+│   ├── skill_infra/                # 技能基础设施
+│   └── mcp/                        # MCP 钩子适配器
+├── skills/                         # 76 技能包
+├── tests/
+│   ├── verify_core_capabilities.py # 核心能力验证
+│   └── test_integration.py         # 集成测试套件
+├── requirements.txt
+├── pyproject.toml
+└── VERSION
 ```
 
 ## 安全模型
 
 4 层防护：
 
-1. **工具策略** — 14 工具全部声明 channels/roles/rateLimit
+1. **工具策略** — 24 工具全部声明 channels/roles/rateLimit
 2. **Skill Bank 合约扫描** — `injection_scanner.py` 3 级检测（高/中/低风险）
 3. **Channel 感知** — 群聊场景记忆写入降级为只读
 4. **结构化 Session Key** — `workspace:channel:userId` 隔离
 
-## 跨平台 Rust 扩展
+## 跨平台
 
-`lfm_server.rs` 条件编译：
-- **Linux/macOS**：UDS (Unix Domain Socket)
-- **Windows**：TCP localhost（自动分配端口）
-
-4 目标交叉编译：
-```bash
-make native-cross                  # 安装 target
-make native-build-linux-x64        # Linux x86_64
-make native-build-linux-arm64      # Linux ARM64
-make native-build-win-x64          # Windows x86_64
-make native-build-win-arm64        # Windows ARM64
-make native-package                # 打包 4 平台 tar.gz
-make native-install-prebuilt       # 自动检测平台安装
-```
-
-## 目录结构
-
-```
-GalaxyOS/
-├── extensions/galaxyos/
-│   ├── index.js                 # 主插件（~5200 行）— 9 钩子 / 15 工具 / 2 插槽
-│   ├── openclaw.plugin.json     # 插件契约
-│   ├── clawhub.json             # ClawHub 发布清单（9 技能 ≤97 字符）
-│   ├── scripts/                 # Python 脚本
-│   │   ├── injection_scanner.py # Skill Bank 内容扫描器
-│   │   ├── lfm_skill_bank.py    # LFM 技能库
-│   │   ├── multi_agent_orchestrator.py
-│   │   ├── dag_context_manager.py
-│   │   └── ...
-│   └── native/                  # Rust 跨平台原生扩展
-├── galaxyos/                    # 统一 Python 包
-│   ├── engine/
-│   ├── privileged/
-│   │   └── acp_server.py        # 含 3 个调试端点
-│   └── ...
-├── skills/                      # 技能库（60+ 个）
-├── libs/                        # 预编译包
-├── tests/                       # 137 测试用例
-├── requirements.txt
-├── pyproject.toml
-├── Makefile                     # 含跨平台编译目标
-├── SKILL.md
-├── CHANGELOG.md
-└── VERSION                      # 8.6.0
-```
+- **Python**：Windows (winloop) / Linux (uvloop)
+- **Rust 扩展**：Linux/Windows × x64/ARM64 条件编译
+- **双模式**：`GALAXYOS_MODE=plugin`（OpenClaw）/ `GALAXYOS_MODE=desktop`（桌面端）
 
 ## 版本历史
 
+### v0.1.4 (2026-07-11) — Desktop Agent 首发版
+
+**Agent Studio 平台集成**：MCP 协议连接 + 24 工具 + 9 生命周期钩子 + 双运行时管理
+
+**认知增强内核**：液态神经记忆适配器 + DAG 上下文融合 + R-CCAM 注入器 + 记忆双写桥接
+
+**TokUI 流式富 UI**：PyTokUIBuilder + SSE Streamer + 6 自定义认知组件 + 容错降级
+
+**前端组件**：TokUIChatRenderer + MessageRenderer + CognitivePanel + 主题桥接
+
 ### v8.6.0 (2026-06-28) — OpenClaw 深度集成改造
 
-**Phase 1 核心断链修复**：5 个新钩子 + 结构化 session key + 幂等层 + lane 声明
-**Phase 2 安全与隔离加固**：14 工具 policy + 内容扫描器 + 群聊只读降级
-**Phase 3 系统对齐**：SKILL.md 输出 + Heartbeat/Cron + Sub-Agent + ACP 调试端点
-**Phase 4 生态融合**：Node 系统集成 + ClawHub 发布 + progressive disclosure
-
-**Rust 跨平台**：Unix/Windows 条件编译 + 4 目标交叉编译 + 预编译包打包
-
-**安装向导增强**：检查 slots 配置 + 给出完整 openclaw.json 示例
-
-### v8.5.3 (2026-06-25) — MultiAgent P1+P2 全量
-
-### v8.4.2 (2026-06-23) — enhanced_recall 8 阶段 + SkillGraph
+Phase 1-4 全量落地：9 钩子 + 15 工具 + 安全加固 + Rust 跨平台
 
 ## 生态
 
+- **[Agent Studio](https://github.com/openJiuwen/studio)** — AI Agent 平台框架
+- **[TokUI](https://www.npmjs.com/package/@jboltai/tokui)** — 零依赖流式 UI 框架
 - **[OpenClaw](https://github.com/openclaw/openclaw)** — AI Assistant 框架
-- **[ClawHub](https://cnb.cool)** — 技能包市场
 
 ## 开发
 
 | 资源 | 说明 |
 |------|------|
-| [CONTRIBUTING.md](CONTRIBUTING.md) | 贡献指南 |
 | [CHANGELOG.md](CHANGELOG.md) | 版本变更记录 |
-| `make test` | 运行测试 |
-| `make native` | 编译 Rust 扩展 |
-| `python3.12 -m galaxyos.scripts.install_wizard --check` | 自检 |
+| `python tests/verify_core_capabilities.py` | 核心能力自检 |
+| `python tests/test_integration.py` | 集成测试 |
 
 ## 许可证
 

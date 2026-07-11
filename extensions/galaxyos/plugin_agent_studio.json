@@ -1,0 +1,361 @@
+{
+  "id": "galaxyos",
+  "name": "GalaxyOS 认知增强引擎",
+  "description": "将 xiaoyi-claw-omega-final 的 13 层架构（防幻觉、知识图谱、CRAG、投机解码等 144 个模块）注册为 OpenClaw 插件，提供增强记忆检索、防幻觉验证、系统健康检测、R-CCAM 认知循环等能力。支持常驻 Python Worker 进程（零进程开销，硬件加速预热）。v8 新增 DAG 上下文管理器（SQLite 持久化 + 摘要回溯），集成到 ContextEngine 的 ingest/compact 流程。",
+  "version": "8.6.0",
+  "hooks": [
+    {
+      "event": "on_plugin_load",
+      "openclaw_hook": "gateway_start",
+      "degraded": false
+    },
+    {
+      "event": "on_plugin_unload",
+      "openclaw_hook": "gateway_stop",
+      "degraded": false
+    },
+    {
+      "event": "on_pre_tool_use",
+      "openclaw_hook": "before_tool_call",
+      "degraded": false
+    },
+    {
+      "event": "on_post_tool_use",
+      "openclaw_hook": "after_tool_call",
+      "degraded": false
+    },
+    {
+      "event": "on_pre_compaction",
+      "openclaw_hook": "before_compaction",
+      "degraded": true
+    },
+    {
+      "event": "on_post_compaction",
+      "openclaw_hook": "after_compaction",
+      "degraded": true
+    },
+    {
+      "event": "on_pre_agent_reply",
+      "openclaw_hook": "before_agent_reply",
+      "degraded": false
+    },
+    {
+      "event": "on_post_agent_reply",
+      "openclaw_hook": "agent_end",
+      "degraded": false
+    },
+    {
+      "event": "on_user_prompt_submit",
+      "openclaw_hook": "before_prompt_build",
+      "degraded": false
+    }
+  ],
+  "mcpServers": {
+    "galaxyos-cognitive": {
+      "transport": "streamable_http",
+      "host": "127.0.0.1",
+      "port": 8765,
+      "auth": {
+        "type": "bearer",
+        "token_env": "GALAXYOS_MCP_TOKEN"
+      },
+      "tools": [
+        {
+          "name": "galaxy_pool",
+          "description": "GalaxyOS cognitive tool: galaxy_pool",
+          "parameters": {},
+          "policy": {
+            "channels": [
+              "dm",
+              "group"
+            ],
+            "roles": [
+              "owner",
+              "member"
+            ],
+            "rateLimit": "30/min"
+          }
+        },
+        {
+          "name": "claw_rccam_progress",
+          "description": "GalaxyOS cognitive tool: claw_rccam_progress",
+          "parameters": {},
+          "policy": {
+            "channels": [
+              "dm",
+              "group"
+            ],
+            "roles": [
+              "owner",
+              "member"
+            ],
+            "rateLimit": "60/min"
+          }
+        },
+        {
+          "name": "claw_recall",
+          "description": "GalaxyOS cognitive tool: claw_recall",
+          "parameters": {},
+          "policy": {
+            "channels": [
+              "dm"
+            ],
+            "roles": [
+              "owner",
+              "member"
+            ],
+            "rateLimit": "60/min"
+          }
+        },
+        {
+          "name": "claw_lobster",
+          "description": "GalaxyOS cognitive tool: claw_lobster",
+          "parameters": {},
+          "policy": {
+            "channels": [
+              "dm"
+            ],
+            "roles": [
+              "owner"
+            ],
+            "rateLimit": "20/min"
+          }
+        },
+        {
+          "name": "claw_health",
+          "description": "GalaxyOS cognitive tool: claw_health",
+          "parameters": {},
+          "policy": {
+            "channels": [
+              "dm",
+              "group"
+            ],
+            "roles": [
+              "owner",
+              "member"
+            ],
+            "rateLimit": "30/min"
+          }
+        },
+        {
+          "name": "claw_vector_info",
+          "description": "GalaxyOS cognitive tool: claw_vector_info",
+          "parameters": {},
+          "policy": {
+            "channels": [
+              "dm",
+              "group"
+            ],
+            "roles": [
+              "owner",
+              "member"
+            ],
+            "rateLimit": "30/min"
+          }
+        },
+        {
+          "name": "claw_events",
+          "description": "GalaxyOS cognitive tool: claw_events",
+          "parameters": {},
+          "policy": {
+            "channels": [
+              "dm"
+            ],
+            "roles": [
+              "owner",
+              "member"
+            ],
+            "rateLimit": "60/min"
+          }
+        },
+        {
+          "name": "claw_store",
+          "description": "GalaxyOS cognitive tool: claw_store",
+          "parameters": {},
+          "policy": {
+            "channels": [
+              "dm"
+            ],
+            "roles": [
+              "owner"
+            ],
+            "rateLimit": "30/min"
+          }
+        },
+        {
+          "name": "claw_verify",
+          "description": "GalaxyOS cognitive tool: claw_verify",
+          "parameters": {},
+          "policy": {
+            "channels": [
+              "dm",
+              "group"
+            ],
+            "roles": [
+              "owner",
+              "member"
+            ],
+            "rateLimit": "30/min"
+          }
+        },
+        {
+          "name": "claw_rccam",
+          "description": "GalaxyOS cognitive tool: claw_rccam",
+          "parameters": {},
+          "policy": {
+            "channels": [
+              "dm"
+            ],
+            "roles": [
+              "owner",
+              "member"
+            ],
+            "rateLimit": "20/min"
+          }
+        },
+        {
+          "name": "claw_save_memory",
+          "description": "GalaxyOS cognitive tool: claw_save_memory",
+          "parameters": {},
+          "policy": {
+            "channels": [
+              "dm"
+            ],
+            "roles": [
+              "owner"
+            ],
+            "rateLimit": "30/min"
+          }
+        },
+        {
+          "name": "claw_compile_skill",
+          "description": "GalaxyOS cognitive tool: claw_compile_skill",
+          "parameters": {},
+          "policy": {
+            "channels": [
+              "dm"
+            ],
+            "roles": [
+              "owner"
+            ],
+            "rateLimit": "10/min"
+          }
+        },
+        {
+          "name": "claw_asset_search",
+          "description": "GalaxyOS cognitive tool: claw_asset_search",
+          "parameters": {},
+          "policy": {
+            "channels": [
+              "dm",
+              "group"
+            ],
+            "roles": [
+              "owner",
+              "member"
+            ],
+            "rateLimit": "60/min"
+          }
+        },
+        {
+          "name": "claw_asset_register",
+          "description": "GalaxyOS cognitive tool: claw_asset_register",
+          "parameters": {},
+          "policy": {
+            "channels": [
+              "dm"
+            ],
+            "roles": [
+              "owner"
+            ],
+            "rateLimit": "20/min"
+          }
+        }
+      ]
+    }
+  },
+  "skills": [
+    "2nd-brain",
+    "analogical-thinking",
+    "arming-thought",
+    "autonomous-tasks",
+    "backward-thinking",
+    "best-minds",
+    "brainstorming",
+    "bytedance-deer-flow-vercel-deploy-claimable",
+    "calcom-cal.com-web-design-guidelines-1.0.2",
+    "caveman",
+    "concentrate-forces",
+    "contradiction-analysis",
+    "critical-thinking",
+    "criticism-self-criticism",
+    "darwin-skill",
+    "davila7-claude-code-templates-ship-learn-next",
+    "decision-engine",
+    "deep-search-and-insight-synthesize",
+    "diagnose",
+    "docx",
+    "example-skill",
+    "excel-analysis",
+    "execution-chains",
+    "feynman-technique",
+    "find-skills",
+    "first-principles",
+    "grill-me",
+    "grill-with-docs",
+    "handoff",
+    "himalaya",
+    "Humanizer-zh-main",
+    "hz-proactive-agent",
+    "ima-skill",
+    "imap-smtp-email",
+    "improve-codebase-architecture",
+    "investigation-first",
+    "markitdown",
+    "mass-line",
+    "multi-agent-collaboration",
+    "multi-search-engine",
+    "nano-pdf",
+    "natural-language-planner",
+    "news-extractor",
+    "ontology",
+    "openclaw-skills-agent-builder-1.0.3",
+    "openclaw-skills-soulcraft",
+    "overall-planning",
+    "pdf",
+    "pptx",
+    "practice-cognition",
+    "proactive-tasks",
+    "product-thinking",
+    "prototype",
+    "protracted-strategy",
+    "qiqing-liuyu",
+    "react-best-practices",
+    "read-arxiv-paper",
+    "seedream-image_gen",
+    "self-improving-agent",
+    "skill-creator",
+    "skillhub-preference",
+    "spark-prairie-fire",
+    "superdesign",
+    "systems-thinking",
+    "tdd",
+    "weather",
+    "webapp-testing",
+    "workflows",
+    "xiao-gui-agent",
+    "xiaoyi-doc-convert",
+    "xiaoyi-file-upload",
+    "xiaoyi-health",
+    "xiaoyi-image-search",
+    "xiaoyi-image-understanding",
+    "xiaoyi-web-search",
+    "zoom-out"
+  ],
+  "settings": {
+    "contextEngine": {},
+    "memorySlots": {},
+    "communication": {},
+    "worker": {}
+  }
+}

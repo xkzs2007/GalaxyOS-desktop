@@ -1,0 +1,35 @@
+{
+  "productName": "GalaxyOS",
+  "tagline": "AI Agent Productivity System",
+  "logo": "assets/galaxyos-logo.svg",
+  "theme": {
+    "primaryColor": "#6366f1",
+    "secondaryColor": "#8b5cf6",
+    "accentColor": "#06b6d4",
+    "backgroundColor": "#0f172a",
+    "surfaceColor": "#1e293b",
+    "textColor": "#f8fafc",
+    "successColor": "#22c55e",
+    "warningColor": "#f59e0b",
+    "errorColor": "#ef4444"
+  },
+  "welcome": {
+    "title": "Welcome to GalaxyOS",
+    "subtitle": "Fusion of PilotDeck + openJiuwen agent-core + mattpocock/skills",
+    "description": "Your AI Agent productivity system powered by ReActAgent, WorkflowAgent, and 20+ engineering skills."
+  },
+  "about": {
+    "version": "0.1.0",
+    "components": [
+      {"name": "PilotDeck", "description": "Agent Gateway & WorkSpace Management", "license": "MIT"},
+      {"name": "openJiuwen agent-core", "description": "Agent Execution Kernel (ReActAgent + WorkflowAgent)", "license": "Apache-2.0"},
+      {"name": "mattpocock/skills", "description": "Engineering Skill System (20+ skills)", "license": "MIT"}
+    ]
+  },
+  "statusBar": {
+    "kernelRunning": "Agent Kernel Running",
+    "kernelStopped": "Agent Kernel Stopped",
+    "mcpConnected": "MCP Connected",
+    "mcpDisconnected": "MCP Disconnected"
+  }
+}
