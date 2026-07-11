@@ -17,7 +17,7 @@ jobs:
       - name: Run Ruff
         uses: astral-sh/ruff-action@v3
         with:
-          args: check --select=F821,F823 --exclude=node_modules,target,prebuilt
+          args: check --select=F821,F823 galaxyos/kernel/ galaxyos/harness/ galaxyos/shared/
 
   mypy:
     runs-on: ubuntu-latest

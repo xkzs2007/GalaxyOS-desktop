@@ -13,6 +13,7 @@ RCCAMInjector — R-CCAM 五阶段认知循环注入器
 
 from __future__ import annotations
 
+import json
 import logging
 import time
 from dataclasses import dataclass, field

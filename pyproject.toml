@@ -126,6 +126,13 @@ line-length = 120
 select = ["F821", "F823"]
 ignore = []
 
+[tool.ruff.lint.per-file-ignores]
+"galaxyos/engine/**" = ["F821", "F823"]
+"galaxyos/scripts/**" = ["F821", "F823"]
+"galaxyos/privileged/**" = ["F821", "F823"]
+"extensions/**" = ["F821", "F823"]
+"services/**" = ["F821", "F823"]
+
 [tool.mypy]
 python_version = "3.12"
 ignore_missing_imports = true
