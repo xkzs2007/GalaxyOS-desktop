@@ -1,4 +1,4 @@
-import { TokUI } from '@jboltai/tokui';
+import { registerHandler } from '@jboltai/tokui';
 import MemoryPanel from './MemoryPanel';
 import RCCAMProgress from './RCCAMProgress';
 import DAGTree from './DAGTree';
@@ -35,13 +35,15 @@ const COMPONENT_REGISTRY = {
 
 export type GalaxyOSComponentType = keyof typeof COMPONENT_REGISTRY;
 
-export function registerGalaxyOSComponents(tokuiInstance: TokUI): { registered: string[]; failed: string[] } {
+export function registerGalaxyOSComponents(
+  renderer: { register: (type: string, component: React.ComponentType<any>) => void }
+): { registered: string[]; failed: string[] } {
   const registered: string[] = [];
   const failed: string[] = [];
 
   for (const [type, config] of Object.entries(COMPONENT_REGISTRY)) {
     try {
-      tokuiInstance.register(type, config.component as any);
+      renderer.register(type, config.component as React.ComponentType<any>);
       registered.push(type);
     } catch (e) {
       console.warn(`[GalaxyOS] Failed to register TokUI component "${type}":`, e);

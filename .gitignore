@@ -79,3 +79,9 @@ models/**/model_q4.onnx
 extensions/galaxyos/native/target/
 extensions/galaxyos/var/
 workspace/
+
+# ── 临时/开发 ──
+_eval/
+.arts/
+logs/
+_*.py

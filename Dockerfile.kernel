@@ -1,0 +1,16 @@
+FROM python:3.12-bookworm AS kernel
+
+WORKDIR /app
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY galaxyos/ ./galaxyos/
+COPY extensions/ ./extensions/
+
+EXPOSE 8765
+
+HEALTHCHECK --interval=5s --timeout=3s --retries=5 \
+    CMD python -c "import socket; s=socket.socket(); s.connect(('localhost',8765)); s.close()" || exit 1
+
+CMD ["python", "-m", "galaxyos.kernel.mcp_server"]

@@ -42,6 +42,7 @@ class SSESidecar:
 
     async def start(self) -> None:
         self._running = True
+        self._start_time = time.time()
         logger.info(f"SSE Sidecar starting on {self._host}:{self._port}")
 
     async def stop(self) -> None:
