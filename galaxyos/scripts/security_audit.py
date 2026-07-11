@@ -13,7 +13,8 @@ from datetime import datetime
 # 路径配置
 
 # ── Centralized path resolution ──
-import os as _os, sys as _sys
+import os as _os
+import sys as _sys
 from galaxyos.shared.paths import workspace
 _ws_root = workspace()
 for _p in [_ws_root, "/workspace"]:
@@ -26,15 +27,15 @@ CONFIG_PATH = path_resolver.OPENCLAW_CONFIG
 
 class SecurityAuditor:
     """安全审计器"""
-    
+
     def __init__(self):
         self.audit_log = []
-    
+
     def load_log(self):
         """加载现有日志"""
         if AUDIT_LOG.exists():
             self.audit_log = json.loads(AUDIT_LOG.read_text())
-    
+
     def save_log(self):
         """保存日志"""
         AUDIT_LOG.parent.mkdir(parents=True, exist_ok=True)
@@ -42,7 +43,7 @@ class SecurityAuditor:
         if len(self.audit_log) > 500:
             self.audit_log = self.audit_log[-500:]
         AUDIT_LOG.write_text(json.dumps(self.audit_log, indent=2))
-    
+
     def add_event(self, event_type, severity, message, details=None):
         """添加审计事件"""
         event = {
@@ -54,13 +55,13 @@ class SecurityAuditor:
         }
         self.audit_log.append(event)
         return event
-    
+
     def audit_config_integrity(self):
         """审计配置文件完整性"""
         if CONFIG_PATH.exists():
             content = CONFIG_PATH.read_text()
             file_hash = hashlib.sha256(content.encode()).hexdigest()
-            
+
             self.add_event(
                 "config_integrity",
                 "info",
@@ -75,13 +76,13 @@ class SecurityAuditor:
                 "配置文件不存在"
             )
             return False
-    
+
     def audit_plugin_status(self):
         """审计插件状态"""
         try:
             config = json.loads(CONFIG_PATH.read_text())
             plugins = config.get("plugins", {}).get("entries", {})
-            
+
             security_plugins = ["execution-validator-plugin", "memory-tencentdb"]
             for plugin in security_plugins:
                 enabled = plugins.get(plugin, {}).get("enabled", False)
@@ -99,19 +100,19 @@ class SecurityAuditor:
                 f"插件状态检查失败: {e}"
             )
             return False
-    
+
     def audit_file_permissions(self):
         """审计文件权限"""
         sensitive_paths = [
             path_resolver.OPENCLAW_CONFIG,
             Path.home() / ".config" / "ima" / "api_key",
         ]
-        
+
         for path in sensitive_paths:
             if path.exists():
                 stat = path.stat()
                 mode = oct(stat.st_mode)[-3:]
-                
+
                 # 检查是否过于开放
                 if mode in ["777", "666"]:
                     self.add_event(
@@ -127,20 +128,20 @@ class SecurityAuditor:
                         f"文件权限正常: {path.name}",
                         {"mode": mode}
                     )
-        
+
         return True
-    
+
     def run_audit(self):
         """运行完整审计"""
         self.load_log()
-        
+
         self.audit_config_integrity()
         self.audit_plugin_status()
         self.audit_file_permissions()
-        
+
         self.save_log()
         return self.audit_log[-10:]  # 返回最近10条
-    
+
     def print_report(self):
         """打印审计报告"""
         print("=" * 60)
@@ -148,13 +149,13 @@ class SecurityAuditor:
         print("=" * 60)
         print(f"审计时间: {datetime.now().isoformat()}")
         print()
-        
+
         recent = self.audit_log[-10:] if self.audit_log else []
-        
+
         if not recent:
             print("暂无审计记录")
             return
-        
+
         for event in recent:
             severity = event["severity"]
             icon = "🔴" if severity == "critical" else "🟡" if severity == "warning" else "✅"
@@ -162,7 +163,7 @@ class SecurityAuditor:
             if event.get("details"):
                 for k, v in event["details"].items():
                     print(f"   - {k}: {v}")
-        
+
         print()
         print(f"总记录数: {len(self.audit_log)}")
 

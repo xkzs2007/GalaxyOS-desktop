@@ -38,7 +38,7 @@ class SmartForgetter:
     3. 删除过期记忆
     4. 合并重复记忆
     """
-    
+
     # 遗忘策略配置
     DEFAULT_CONFIG = {
         'archive_threshold': 0.3,  # 低于此分数归档
@@ -47,25 +47,25 @@ class SmartForgetter:
         'archive_path': 'archive',
         'dry_run': False,  # 试运行模式
     }
-    
-    def __init__(self, 
+
+    def __init__(self,
                  config: Optional[Dict] = None,
                  storage_path: Optional[str] = None):
         self.config = {**self.DEFAULT_CONFIG, **(config or {})}
-        
+
         if storage_path is None:
             workspace = os.environ.get('OPENCLAW_WORKSPACE',
                                        Path(workspace()))
             storage_path = str(Path(workspace) / 'memory')
-        
+
         self.storage_path = Path(storage_path)
         self.archive_path = self.storage_path / self.config['archive_path']
         self.archive_path.mkdir(parents=True, exist_ok=True)
-        
+
         self.history_path = self.storage_path / 'forget_history.json'
         self.history: List[ForgetAction] = []
         self._load_history()
-        
+
         # 导入评分器
         try:
             from .importance_scorer import ImportanceScorer
@@ -73,15 +73,15 @@ class SmartForgetter:
         except ImportError:
             from importance_scorer import ImportanceScorer
             self.scorer = ImportanceScorer()
-    
+
     def _load_history(self):
         """加载历史记录"""
         if not self.history_path.exists():
             return
-        
+
         with open(self.history_path, 'r', encoding='utf-8') as f:
             data = json.load(f)
-        
+
         for item in data.get('actions', []):
             action = ForgetAction(
                 memory_id=item.get('memory_id', ''),
@@ -91,9 +91,9 @@ class SmartForgetter:
                 timestamp=item.get('timestamp', '')
             )
             self.history.append(action)
-        
+
         logger.info(f"加载遗忘历史: {len(self.history)} 条")
-    
+
     def _save_history(self):
         """保存历史记录"""
         with open(self.history_path, 'w', encoding='utf-8') as f:
@@ -110,7 +110,7 @@ class SmartForgetter:
                 ],
                 'updated_at': datetime.now().isoformat()
             }, f, ensure_ascii=False, indent=2)
-    
+
     def analyze(self, memories: List[Dict]) -> Dict[str, List[ForgetAction]]:
         """
         分析记忆，生成遗忘建议
@@ -126,19 +126,19 @@ class SmartForgetter:
             'archive': [],
             'delete': []
         }
-        
+
         for mem in memories:
             memory_id = mem.get('id', '')
             metadata = mem.get('metadata', {})
             created_at = metadata.get('created_at') or mem.get('created_at')
             entity_count = len(metadata.get('entities', []))
             content_length = len(mem.get('content', ''))
-            
+
             # 计算重要性分数
             score = self.scorer.score(
                 memory_id, metadata, created_at, entity_count, content_length
             )
-            
+
             # 检查年龄
             age_days = 0
             if created_at:
@@ -147,7 +147,7 @@ class SmartForgetter:
                     age_days = (datetime.now(created.tzinfo) - created).days
                 except:
                     pass
-            
+
             # 决定动作
             if score.total_score < self.config['delete_threshold']:
                 action_type = 'delete'
@@ -161,7 +161,7 @@ class SmartForgetter:
             else:
                 action_type = 'keep'
                 reason = f"重要性正常 ({score.total_score:.2f})"
-            
+
             action = ForgetAction(
                 memory_id=memory_id,
                 action=action_type,
@@ -169,12 +169,12 @@ class SmartForgetter:
                 score=score.total_score,
                 timestamp=datetime.now().isoformat()
             )
-            
+
             actions[action_type].append(action)
-        
+
         return actions
-    
-    def execute(self, 
+
+    def execute(self,
                 actions: List[ForgetAction],
                 delete_func: Optional[Callable] = None,
                 archive_func: Optional[Callable] = None) -> Dict[str, int]:
@@ -195,32 +195,32 @@ class SmartForgetter:
             'kept': 0,
             'failed': 0
         }
-        
+
         for action in actions:
             try:
                 if action.action == 'delete':
                     if delete_func:
                         delete_func(action.memory_id)
                     stats['deleted'] += 1
-                    
+
                 elif action.action == 'archive':
                     if archive_func:
                         archive_func(action.memory_id)
                     stats['archived'] += 1
-                    
+
                 else:
                     stats['kept'] += 1
-                
+
                 # 记录历史
                 self.history.append(action)
-                
+
             except Exception as e:
                 logger.error(f"执行遗忘动作失败: {action.memory_id}, {e}")
                 stats['failed'] += 1
-        
+
         self._save_history()
         return stats
-    
+
     def run_cleanup(self,
                     memories: List[Dict],
                     delete_func: Optional[Callable] = None,
@@ -240,7 +240,7 @@ class SmartForgetter:
         """
         # 分析
         actions = self.analyze(memories)
-        
+
         result = {
             'dry_run': dry_run or self.config['dry_run'],
             'analysis': {
@@ -250,14 +250,14 @@ class SmartForgetter:
             },
             'executed': None
         }
-        
+
         # 执行
         if not result['dry_run']:
             all_actions = actions['archive'] + actions['delete']
             result['executed'] = self.execute(all_actions, delete_func, archive_func)
-        
+
         return result
-    
+
     def archive_memory(self, memory_data: Dict) -> str:
         """
         归档记忆
@@ -270,16 +270,16 @@ class SmartForgetter:
         """
         memory_id = memory_data.get('id', '')
         archive_file = self.archive_path / f"{memory_id}.json"
-        
+
         with open(archive_file, 'w', encoding='utf-8') as f:
             json.dump({
                 **memory_data,
                 'archived_at': datetime.now().isoformat()
             }, f, ensure_ascii=False, indent=2)
-        
+
         logger.info(f"归档记忆: {memory_id}")
         return str(archive_file)
-    
+
     def restore_memory(self, memory_id: str) -> Optional[Dict]:
         """
         恢复归档记忆
@@ -291,26 +291,26 @@ class SmartForgetter:
             记忆数据
         """
         archive_file = self.archive_path / f"{memory_id}.json"
-        
+
         if not archive_file.exists():
             return None
-        
+
         with open(archive_file, 'r', encoding='utf-8') as f:
             data = json.load(f)
-        
+
         # 移除归档标记
         data.pop('archived_at', None)
-        
+
         # 删除归档文件
         archive_file.unlink()
-        
+
         logger.info(f"恢复记忆: {memory_id}")
         return data
-    
+
     def get_archive_list(self) -> List[Dict]:
         """获取归档列表"""
         archives = []
-        
+
         for file in self.archive_path.glob('*.json'):
             try:
                 with open(file, 'r', encoding='utf-8') as f:
@@ -323,9 +323,9 @@ class SmartForgetter:
                 })
             except:
                 continue
-        
+
         return archives
-    
+
     def get_stats(self) -> Dict[str, Any]:
         """获取统计信息"""
         return {

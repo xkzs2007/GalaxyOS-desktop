@@ -86,7 +86,7 @@ class SelfRAG:
     2. 质量感知：评估每个环节的输出
     3. 迭代优化：不满意则重新检索或生成
     """
-    
+
     def __init__(
         self,
         retriever: Optional[Callable] = None,
@@ -102,27 +102,27 @@ class SelfRAG:
             config: 配置字典
         """
         self.config = config or {}
-        
+
         # 初始化预测器
         self.isrel_predictor = IsRELPredictor(self.config.get('isrel', {}))
         self.issup_predictor = IsSUPPredictor(self.config.get('issup', {}))
         self.isuse_predictor = IsUSEPredictor(self.config.get('isuse', {}))
-        
+
         # 设置检索器和生成器
         self.retriever = retriever or self._default_retriever
         self.generator = generator or self._default_generator
-        
+
         # 配置参数
         self.max_iterations = self.config.get('max_iterations', 3)
         self.relevance_threshold = self.config.get('relevance_threshold', 0.6)
         self.reliability_threshold = self.config.get('reliability_threshold', 0.65)
-        
+
         # 状态追踪
         self.current_state = RAGState.INIT
         self.steps: List[RAGStep] = []
-        
+
         logger.info("Self-RAG initialized")
-    
+
     def process(self, query: str, context: Optional[str] = None) -> RAGResult:
         """
         处理查询的主入口
@@ -138,37 +138,37 @@ class SelfRAG:
         iteration = 0
         retrieved_contents = []
         sources = []
-        
+
         while iteration < self.max_iterations:
             iteration += 1
             logger.debug(f"Starting iteration {iteration}")
-            
+
             # Step 1: 检索决策
             retrieval_decision = self._step_retrieval_decision(query, context)
-            
+
             if not retrieval_decision.should_retrieve:
                 # 不需要检索，直接生成
                 answer = self._generate_without_retrieval(query, context)
-                
+
                 # 评估生成结果
                 reliability = self._evaluate_generation(query, answer, context)
-                
+
                 if reliability.is_reliable:
                     return self._build_result(
-                        query, answer, reliability, 
+                        query, answer, reliability,
                         False, iteration, sources
                     )
                 else:
                     # 不可靠，尝试检索
                     logger.info("Generation unreliable, attempting retrieval")
                     retrieval_decision.should_retrieve = True
-            
+
             # Step 2: 执行检索
             if retrieval_decision.should_retrieve:
                 new_contents, new_sources = self._step_retrieve(query)
                 retrieved_contents.extend(new_contents)
                 sources.extend(new_sources)
-                
+
                 if not retrieved_contents:
                     # 检索失败，直接生成
                     answer = self._generate_without_retrieval(query, context)
@@ -177,12 +177,12 @@ class SelfRAG:
                         query, answer, reliability,
                         True, iteration, sources
                     )
-            
+
             # Step 3: 评估检索结果
             best_content, support_decision = self._step_evaluate_retrieval(
                 query, retrieved_contents
             )
-            
+
             if support_decision.support_level.value == "not_relevant":
                 # 检索结果不相关
                 if iteration >= self.max_iterations:
@@ -194,25 +194,25 @@ class SelfRAG:
                         True, iteration, sources
                     )
                 continue  # 重新检索
-            
+
             # Step 4: 生成回答
             combined_context = self._combine_context(context, best_content)
             answer = self._step_generate(query, combined_context)
-            
+
             # Step 5: 评估生成结果
             reliability = self._evaluate_generation(query, answer, combined_context)
-            
+
             if reliability.is_reliable:
                 return self._build_result(
                     query, answer, reliability,
                     True, iteration, sources
                 )
-            
+
             # 不可靠，检查是否需要重新检索
             if "缺少外部知识支撑" in reliability.issues:
                 logger.info("Generation lacks grounding, re-retrieving")
                 continue
-            
+
             # 尝试优化生成
             refined_answer = self._refine_answer(
                 query, answer, combined_context, reliability
@@ -220,35 +220,35 @@ class SelfRAG:
             refined_reliability = self._evaluate_generation(
                 query, refined_answer, combined_context
             )
-            
+
             if refined_reliability.is_reliable:
                 return self._build_result(
                     query, refined_answer, refined_reliability,
                     True, iteration, sources
                 )
-        
+
         # 达到最大迭代次数，返回最佳结果
         answer = self._generate_with_context(
-            query, 
+            query,
             self._combine_context(context, retrieved_contents[0] if retrieved_contents else "")
         )
         reliability = self._evaluate_generation(query, answer, context)
-        
+
         return self._build_result(
             query, answer, reliability,
             bool(retrieved_contents), iteration, sources
         )
-    
+
     def _step_retrieval_decision(
-        self, 
-        query: str, 
+        self,
+        query: str,
         context: Optional[str]
     ) -> RetrievalDecision:
         """检索决策步骤"""
         self.current_state = RAGState.RETRIEVAL_DECISION
-        
+
         decision = self.isrel_predictor.predict(query, context)
-        
+
         step = RAGStep(
             state=self.current_state,
             input_data=query,
@@ -257,24 +257,24 @@ class SelfRAG:
             confidence=decision.confidence
         )
         self.steps.append(step)
-        
+
         logger.debug(f"Retrieval decision: {decision.should_retrieve} ({decision.confidence:.2f})")
         return decision
-    
+
     def _step_retrieve(self, query: str) -> Tuple[List[str], List[str]]:
         """执行检索步骤"""
         self.current_state = RAGState.RETRIEVING
-        
+
         try:
             results = self.retriever(query)
-            
+
             # 支持返回带来源的结果
             if isinstance(results, tuple):
                 contents, sources = results
             else:
                 contents = results if isinstance(results, list) else [results]
                 sources = [f"source_{i}" for i in range(len(contents))]
-            
+
             step = RAGStep(
                 state=self.current_state,
                 input_data=query,
@@ -282,10 +282,10 @@ class SelfRAG:
                 metadata={"num_results": len(contents)}
             )
             self.steps.append(step)
-            
+
             logger.debug(f"Retrieved {len(contents)} documents")
             return contents, sources
-            
+
         except Exception as e:
             logger.error(f"Retrieval failed: {e}")
             step = RAGStep(
@@ -296,15 +296,15 @@ class SelfRAG:
             )
             self.steps.append(step)
             return [], []
-    
+
     def _step_evaluate_retrieval(
-        self, 
-        query: str, 
+        self,
+        query: str,
         contents: List[str]
     ) -> Tuple[str, SupportDecision]:
         """评估检索结果步骤"""
         self.current_state = RAGState.EVALUATING_RETRIEVAL
-        
+
         if not contents:
             from issup_predictor import SupportLevel
             return "", SupportDecision(
@@ -317,19 +317,19 @@ class SelfRAG:
                 missing_aspects=[],
                 reasoning="No content to evaluate"
             )
-        
+
         # 评估每个检索结果
         best_content = None
         best_decision = None
         best_score = -1
-        
+
         for content in contents:
             decision = self.issup_predictor.predict(query, content)
             if decision.relevance_score > best_score:
                 best_score = decision.relevance_score
                 best_content = content
                 best_decision = decision
-        
+
         step = RAGStep(
             state=self.current_state,
             input_data=f"{len(contents)} documents",
@@ -338,42 +338,42 @@ class SelfRAG:
             confidence=best_decision.confidence
         )
         self.steps.append(step)
-        
+
         logger.debug(f"Best retrieval score: {best_score:.2f}")
         return best_content, best_decision
-    
+
     def _step_generate(self, query: str, context: str) -> str:
         """生成回答步骤"""
         self.current_state = RAGState.GENERATING
-        
+
         try:
             answer = self.generator(query, context)
-            
+
             step = RAGStep(
                 state=self.current_state,
                 input_data={"query": query, "context_length": len(context)},
                 output_data=answer[:200] + "..." if len(answer) > 200 else answer
             )
             self.steps.append(step)
-            
+
             logger.debug(f"Generated answer: {len(answer)} chars")
             return answer
-            
+
         except Exception as e:
             logger.error(f"Generation failed: {e}")
             return f"抱歉，生成回答时出错: {str(e)}"
-    
+
     def _evaluate_generation(
-        self, 
-        query: str, 
-        answer: str, 
+        self,
+        query: str,
+        answer: str,
         context: Optional[str]
     ) -> ReliabilityDecision:
         """评估生成结果"""
         self.current_state = RAGState.EVALUATING_GENERATION
-        
+
         decision = self.isuse_predictor.predict(answer, query, context)
-        
+
         step = RAGStep(
             state=self.current_state,
             input_data=answer[:100] + "...",
@@ -382,31 +382,31 @@ class SelfRAG:
             confidence=decision.confidence
         )
         self.steps.append(step)
-        
+
         logger.debug(f"Generation reliability: {decision.is_reliable} ({decision.confidence:.2f})")
         return decision
-    
+
     def _refine_answer(
-        self, 
-        query: str, 
-        answer: str, 
+        self,
+        query: str,
+        answer: str,
         context: str,
         reliability: ReliabilityDecision
     ) -> str:
         """优化回答"""
         self.current_state = RAGState.REFINING
-        
+
         # 基于问题生成优化后的回答
         refined = answer
-        
+
         # 添加来源说明（如果有上下文）
         if context and "来源" not in answer:
             refined = f"{answer}\n\n(基于检索资料整理)"
-        
+
         # 添加不确定性声明（如果可靠性较低）
         if reliability.confidence < 0.7:
             refined = f"{refined}\n\n注：以上信息仅供参考，建议进一步核实。"
-        
+
         step = RAGStep(
             state=self.current_state,
             input_data=answer[:100],
@@ -414,17 +414,17 @@ class SelfRAG:
             decision="refined"
         )
         self.steps.append(step)
-        
+
         return refined
-    
+
     def _generate_without_retrieval(self, query: str, context: Optional[str]) -> str:
         """不使用检索直接生成"""
         return self.generator(query, context or "")
-    
+
     def _generate_with_context(self, query: str, context: str) -> str:
         """使用上下文生成"""
         return self.generator(query, context)
-    
+
     def _combine_context(self, base: Optional[str], new: str) -> str:
         """合并上下文"""
         if not base:
@@ -432,7 +432,7 @@ class SelfRAG:
         if not new:
             return base
         return f"{base}\n\n{new}"
-    
+
     def _build_result(
         self,
         query: str,
@@ -444,7 +444,7 @@ class SelfRAG:
     ) -> RAGResult:
         """构建最终结果"""
         self.current_state = RAGState.COMPLETED
-        
+
         return RAGResult(
             query=query,
             answer=answer,
@@ -461,11 +461,11 @@ class SelfRAG:
                 "grounding_score": reliability.grounding_score
             }
         )
-    
+
     def _default_retriever(self, query: str) -> List[str]:
         """默认检索器（占位）"""
         return [f"这是关于 '{query}' 的模拟检索结果。"]
-    
+
     def _default_generator(self, query: str, context: str) -> str:
         """默认生成器（占位）"""
         if context:
@@ -496,31 +496,31 @@ if __name__ == "__main__":
     # 测试示例
     def mock_retriever(query: str):
         return [
-            f"机器学习是人工智能的核心技术，通过算法让计算机从数据中学习。",
-            f"深度学习是机器学习的一个子领域，使用神经网络进行学习。"
+            "机器学习是人工智能的核心技术，通过算法让计算机从数据中学习。",
+            "深度学习是机器学习的一个子领域，使用神经网络进行学习。"
         ]
-    
+
     def mock_generator(query: str, context: str) -> str:
         if context:
             return f"根据资料，{context[:150]}"
         return f"关于{query}，这是一个直接回答。"
-    
+
     rag = SelfRAG(
         retriever=mock_retriever,
         generator=mock_generator,
         config={'max_iterations': 2}
     )
-    
+
     test_queries = [
         "什么是机器学习？",
         "写一首诗",
         "最新的AI发展情况如何？"
     ]
-    
+
     print("=" * 60)
     print("Self-RAG 测试")
     print("=" * 60)
-    
+
     for query in test_queries:
         result = rag.process(query)
         print(f"\n查询: {query}")

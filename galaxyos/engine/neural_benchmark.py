@@ -18,7 +18,13 @@ Author: 小艺 Claw
 Created: 2026-06-05
 """
 
-import json, os, sys, time, re, math, logging
+import json
+import os
+import sys
+import time
+import re
+import math
+import logging
 from pathlib import Path
 from collections import defaultdict
 from typing import List, Dict, Tuple
@@ -308,7 +314,7 @@ def run_traditional_bfs(neurons, synapses, seed_id: str, top_k: int = 8):
 def report(results: List[dict]):
     """打印对比报告"""
     print(f"\n{'='*70}")
-    print(f"全链路基准测试报告")
+    print("全链路基准测试报告")
     print(f"{'='*70}")
 
     # 数据概览

@@ -31,7 +31,8 @@ import threading
 from typing import Dict, List, Optional, Any, Tuple, Set
 from dataclasses import dataclass, field, asdict
 
-import os as _os, sys as _sys
+import os as _os
+import sys as _sys
 from galaxyos.shared.paths import workspace
 _ws_root = workspace()
 for _p in [_ws_root, "/workspace"]:
@@ -546,7 +547,7 @@ class SkillClassifier:
     # 关键词映射
     KEYWORD_MAP = {
         "web_access": [
-            "web", "internet", "搜索", "search", "fetch", "http", "api", 
+            "web", "internet", "搜索", "search", "fetch", "http", "api",
             "scrape", "爬", "网页", "url", "网络",
         ],
         "tool_exec": [

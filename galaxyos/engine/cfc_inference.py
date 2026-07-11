@@ -899,7 +899,7 @@ if __name__ == "__main__":
         print("❌ ncps 未安装，跳过测试")
         exit(1)
 
-    print(f"ncps 可用 ✓")
+    print("ncps 可用 ✓")
     print()
 
     # 测试 1: NCP 拓扑分配
@@ -921,7 +921,7 @@ if __name__ == "__main__":
     wiring = build_ncp_wiring(
         num_sensory=2, num_inter=4, num_command=2, num_motor=1
     )
-    print(f"  NCP Wiring created ✓")
+    print("  NCP Wiring created ✓")
     print(f"  神经元数: {wiring.units}")
     print(f"  突触数(内部): {wiring.synapse_count}")
     print(f"  突触数(感官): {wiring.sensory_synapse_count}")
@@ -948,7 +948,7 @@ if __name__ == "__main__":
 
     # 计算权重
     results = engine.activate_and_propagate("n0", mock_synapses, top_k=3)
-    print(f"  激活传播结果:")
+    print("  激活传播结果:")
     for nid, strength in results:
         print(f"    {nid}: strength={strength:.4f}")
 

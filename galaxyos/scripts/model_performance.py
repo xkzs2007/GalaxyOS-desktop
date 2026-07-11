@@ -14,7 +14,8 @@ from datetime import datetime
 # 路径配置
 
 # ── Centralized path resolution ──
-import os as _os, sys as _sys
+import os as _os
+import sys as _sys
 from galaxyos.shared.paths import workspace
 _ws_root = workspace()
 for _p in [_ws_root, "/workspace"]:
@@ -27,28 +28,28 @@ CONFIG_PATH = path_resolver.OPENCLAW_CONFIG
 
 class ModelPerformanceMonitor:
     """模型性能监控器"""
-    
+
     def __init__(self):
         self.config = self._load_config()
         self.metrics = []
-    
+
     def _load_config(self):
         """加载配置"""
         if CONFIG_PATH.exists():
             return json.loads(CONFIG_PATH.read_text())
         return {}
-    
+
     def get_embedding_config(self):
         """获取 Embedding 配置"""
         plugin = self.config.get("plugins", {}).get("entries", {}).get("memory-tencentdb", {})
         return plugin.get("config", {}).get("embedding", {})
-    
+
     def test_embedding_latency(self):
         """测试 Embedding 延迟"""
         emb_config = self.get_embedding_config()
         if not emb_config.get("apiKey"):
             return None
-        
+
         start = time.time()
         try:
             response = requests.post(
@@ -65,7 +66,7 @@ class ModelPerformanceMonitor:
                 timeout=30
             )
             latency = (time.time() - start) * 1000  # ms
-            
+
             return {
                 "success": response.status_code == 200,
                 "latency_ms": round(latency, 2),
@@ -77,29 +78,29 @@ class ModelPerformanceMonitor:
                 "latency_ms": (time.time() - start) * 1000,
                 "error": str(e)
             }
-    
+
     def save_metrics(self, metric):
         """保存指标"""
         PERF_LOG.parent.mkdir(parents=True, exist_ok=True)
-        
+
         if PERF_LOG.exists():
             metrics = json.loads(PERF_LOG.read_text())
         else:
             metrics = []
-        
+
         metrics.append(metric)
-        
+
         # 保留最近1000条
         if len(metrics) > 1000:
             metrics = metrics[-1000:]
-        
+
         PERF_LOG.write_text(json.dumps(metrics, indent=2))
-    
+
     def run_monitor(self):
         """运行监控"""
         print("测试 Embedding 性能...")
         result = self.test_embedding_latency()
-        
+
         if result:
             metric = {
                 "timestamp": datetime.now().isoformat(),
@@ -109,7 +110,7 @@ class ModelPerformanceMonitor:
             self.save_metrics(metric)
             return metric
         return None
-    
+
     def print_report(self):
         """打印性能报告"""
         print("=" * 60)
@@ -117,7 +118,7 @@ class ModelPerformanceMonitor:
         print("=" * 60)
         print(f"检查时间: {datetime.now().isoformat()}")
         print()
-        
+
         # 测试 Embedding
         result = self.test_embedding_latency()
         if result:
@@ -128,7 +129,7 @@ class ModelPerformanceMonitor:
                 print(f"   - 错误: {result.get('error', 'unknown')}")
         else:
             print("⚠️ Embedding 配置缺失")
-        
+
         # 历史统计
         if PERF_LOG.exists():
             metrics = json.loads(PERF_LOG.read_text())

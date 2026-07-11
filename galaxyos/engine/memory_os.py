@@ -30,7 +30,7 @@ def hybrid_score(text_a: str, text_b: str, emb_a: List[float] = None,
     比纯向量相似度多一个关键词维度，更准确。
     """
     sim = 0.0
-    
+
     # 1. 向量相似度
     if emb_a and emb_b and len(emb_a) == len(emb_b):
         dot = sum(a * b for a, b in zip(emb_a, emb_b))
@@ -45,7 +45,7 @@ def hybrid_score(text_a: str, text_b: str, emb_a: List[float] = None,
             intersection = kw_a & kw_b
             union = kw_a | kw_b
             sim += len(intersection) / len(union)
-    
+
     # 2. Jaccard 关键词相似度
     words_a = set(text_a.lower().split()[:50])
     words_b = set(text_b.lower().split()[:50])
@@ -53,7 +53,7 @@ def hybrid_score(text_a: str, text_b: str, emb_a: List[float] = None,
         inter = words_a & words_b
         un = words_a | words_b
         sim += len(inter) / len(un)
-    
+
     return sim
 
 
@@ -160,12 +160,12 @@ class SegmentedPageOrganizer:
     
     将短期对话按主题分段，合并到中期存储，再提炼长期人格记忆。
     """
-    
+
     def __init__(self, segment_threshold: float = 0.35,
                  max_short_term: int = 50):
         self.segment_threshold = segment_threshold  # 分段合并的相似度阈值
         self.max_short_term = max_short_term         # STM 最大容量
-        
+
         # 三段存储
         self.short_term: List[Dict] = []    # 最近对话页面
         self.mid_term: List[Dict] = []      # 按主题聚合的段落
@@ -175,7 +175,7 @@ class SegmentedPageOrganizer:
             "user_traits": {},
             "agent_traits": {},
         }
-    
+
     def add_page(self, content: str, metadata: dict = None):
         """添加一个对话页面到 STM"""
         page = {
@@ -185,21 +185,21 @@ class SegmentedPageOrganizer:
             "keywords": set(content.lower().split()[:30]),
         }
         self.short_term.append(page)
-        
+
         # STM 满 → 迁移到 MTM
         if len(self.short_term) >= self.max_short_term:
             self._flush_to_mid_term()
-    
+
     def _flush_to_mid_term(self):
         """STM → MTM: FIFO + 主题合并"""
         if not self.short_term:
             return
-        
+
         # 逐页面尝试合并到现有段落
         for page in self.short_term:
             best_segment = None
             best_score = 0.0
-            
+
             for seg in self.mid_term:
                 score = hybrid_score(
                     page["content"], seg.get("summary", "")
@@ -207,7 +207,7 @@ class SegmentedPageOrganizer:
                 if score > best_score:
                     best_score = score
                     best_segment = seg
-            
+
             if best_segment and best_score >= self.segment_threshold:
                 # 合并到现有段落
                 best_segment["pages"].append(page)
@@ -222,9 +222,9 @@ class SegmentedPageOrganizer:
                     "created": time.time(),
                     "last_updated": time.time(),
                 })
-        
+
         self.short_term.clear()
-    
+
     def promote_to_long_term(self, key: str, value: Any):
         """MTM → LPM: 将稳定的用户特征提升到长期人格"""
         if key in self.long_term:
@@ -234,32 +234,32 @@ class SegmentedPageOrganizer:
                 self.long_term[key].update(value)
             else:
                 self.long_term[key] = value
-    
+
     def search(self, query: str, top_k: int = 5) -> List[Dict]:
         """三段搜索"""
         results = []
         q_words = set(query.lower().split())
-        
+
         # STM 搜索
         for p in self.short_term:
             score = hybrid_score(query, p["content"])
             results.append({"source": "stm", "content": p["content"], "score": score})
-        
+
         # MTM 搜索
         for seg in self.mid_term:
             score = hybrid_score(query, seg.get("summary", ""))
             results.append({"source": "mtm", "content": seg.get("summary", ""), "score": score})
-        
+
         # LPM 搜索 - 用户画像
         for k, v in self.long_term.items():
             if isinstance(v, str):
                 score = hybrid_score(query, v)
                 if score > 0.2:
                     results.append({"source": "lpm", "content": f"{k}: {v}", "score": score})
-        
+
         results.sort(key=lambda x: -x["score"])
         return results[:top_k]
-    
+
     def get_status(self) -> dict:
         return {
             "stm_pages": len(self.short_term),

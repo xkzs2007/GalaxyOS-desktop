@@ -13,7 +13,8 @@ from pathlib import Path
 # 路径配置
 
 # ── Centralized path resolution ──
-import os as _os, sys as _sys
+import os as _os
+import sys as _sys
 from galaxyos.shared.paths import workspace
 _ws_root = workspace()
 for _p in [_ws_root, "/workspace"]:
@@ -39,7 +40,7 @@ def write_file(filepath, content):
 def append_to_ontology(entity_type, entity_name, attributes):
     """追加实体到知识图谱"""
     graph_file = ONTOLOGY_DIR / "graph.jsonl"
-    
+
     # 构建实体记录
     entity = {
         "type": entity_type,
@@ -47,11 +48,11 @@ def append_to_ontology(entity_type, entity_name, attributes):
         "attributes": attributes,
         "updated": datetime.now().isoformat()
     }
-    
+
     # 追加到 JSONL 文件
     with open(graph_file, "a", encoding="utf-8") as f:
         f.write(json.dumps(entity, ensure_ascii=False) + "\n")
-    
+
     print(f"✅ 已更新知识图谱: {entity_name}")
 
 def create_brain_entry(category, title, content):
@@ -59,12 +60,12 @@ def create_brain_entry(category, title, content):
     # 确定目录
     category_dir = BRAIN_DIR / category
     category_dir.mkdir(parents=True, exist_ok=True)
-    
+
     # 生成文件名
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     filename = f"{timestamp}_{title.replace(' ', '_')}.md"
     filepath = category_dir / filename
-    
+
     # 构建内容
     entry_content = f"""# {title}
 
@@ -79,7 +80,7 @@ def create_brain_entry(category, title, content):
 
 *此条目由 LLM Memory Integration 自动生成*
 """
-    
+
     write_file(filepath, entry_content)
     print(f"✅ 已创建知识库条目: {filepath}")
 
@@ -89,23 +90,23 @@ def main():
         print("用法: python3 update_l3_profile.py <实体类型> <实体名称> <属性JSON>")
         print("示例: python3 update_l3_profile.py 'Preference' '回复风格' '{\"style\": \"简洁\", \"reason\": \"效率优先\"}'")
         sys.exit(1)
-    
+
     entity_type = sys.argv[1]
     entity_name = sys.argv[2]
     attributes_json = sys.argv[3]
-    
+
     try:
         attributes = json.loads(attributes_json)
     except json.JSONDecodeError:
         attributes = {"raw": attributes_json}
-    
+
     # 更新知识图谱
     append_to_ontology(entity_type, entity_name, attributes)
-    
+
     # 创建 2nd-brain 条目
     category = "preferences" if entity_type == "Preference" else "knowledge"
     create_brain_entry(category, entity_name, json.dumps(attributes, ensure_ascii=False, indent=2))
-    
+
     print("L3 长期画像更新完成")
 
 if __name__ == "__main__":

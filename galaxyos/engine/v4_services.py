@@ -11,7 +11,14 @@ Phase 2/3/4 综合实现
 - Phase 4: IPC 自动选路 + mmap TTL + 硬件降级
 """
 
-import os, json, sqlite3, time, threading, struct, mmap, hashlib
+import os
+import json
+import sqlite3
+import time
+import threading
+import struct
+import mmap
+import hashlib
 from concurrent.futures import ThreadPoolExecutor, Future
 from collections import defaultdict
 from datetime import datetime
@@ -30,14 +37,14 @@ logger = __import__('logging').getLogger(__name__)
 # ========== Phase 4.2: mmap TTL 缓存 ==========
 class TtlMmapCache:
     """带过期时间的 mmap 共享缓存"""
-    
+
     def __init__(self, path: str = MMAP_PATH, size: int = MMAP_SIZE, ttl: int = 60):
         self.path = path
         self.size = size
         self.ttl = ttl  # 默认 60 秒过期
         self._mm = None
         self._lock = threading.Lock()
-    
+
     def start(self):
         try:
             fd = os.open(self.path, os.O_CREAT | os.O_RDWR, 0o644)
@@ -46,7 +53,7 @@ class TtlMmapCache:
             os.close(fd)
         except Exception as e:
             logger.warning(f"mmap start: {e}")
-    
+
     def write(self, key: str, data: Any):
         if self._mm is None: return False
         with self._lock:
@@ -59,7 +66,7 @@ class TtlMmapCache:
                 self._mm.write(payload)
                 return True
             except Exception: return False
-    
+
     def read(self, key_hint: str = None) -> Optional[dict]:
         """读取缓存，TTL 过期的返回 None"""
         if self._mm is None: return None
@@ -78,7 +85,7 @@ class TtlMmapCache:
                 return None  # key 不匹配
             return payload
         except Exception: return None
-    
+
     def stop(self):
         try: self._mm.close()
         except Exception: pass
@@ -103,18 +110,18 @@ def auto_route(method: str, params: dict, payload_size: int = 0) -> str:
 # ========== Phase 4.3: 硬件加速降级 ==========
 class HardwareFallback:
     """硬件加速检测 + 自动降级"""
-    
+
     def __init__(self):
         self._mkl = None
         self._avx512 = False
         self._detected = False
-    
+
     def detect(self) -> dict:
         if self._detected:
             return self._status()
         self._detected = True
         status = {"mkl": False, "avx512": False, "fma": False, "fallback": True}
-        
+
         # 检测 MKL
         try:
             import ctypes
@@ -126,7 +133,7 @@ class HardwareFallback:
                 pass
         except Exception:
             pass
-        
+
         # 检测 AVX-512
         try:
             with open("/proc/cpuinfo") as f:
@@ -135,13 +142,13 @@ class HardwareFallback:
                 status["avx512"] = True
         except Exception:
             pass
-        
+
         self._mkl = status
         return status
-    
+
     def _status(self) -> dict:
         return self._mkl or {"mkl": False, "fallback": True}
-    
+
     def embed(self, texts: list) -> Optional[list]:
         """embedding 时自动选最优路径"""
         status = self.detect()
@@ -162,16 +169,16 @@ _hw = HardwareFallback()
 
 class MemoryService:  # L1 记忆核心层
     """独立线程池，专属 MKL embedding"""
-    
+
     def __init__(self):
         self._pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix="L1-mem")
         self._entry = None
-    
+
     def _ensure(self):
         if self._entry: return
         from unified_entry import UnifiedEntry
         self._entry = UnifiedEntry()
-    
+
     def recall(self, query: str, top_k: int = 5) -> dict:
         self._ensure()
         future = self._pool.submit(self._entry.recall, query, top_k)
@@ -182,16 +189,16 @@ class MemoryService:  # L1 记忆核心层
 
 class RetrievalService:  # L3 检索增强层
     """混合检索 + 重排序，独享线程"""
-    
+
     def __init__(self):
         self._pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix="L3-ret")
         self._entry = None
-    
+
     def _ensure(self):
         if self._entry: return
         from unified_entry import UnifiedEntry
         self._entry = UnifiedEntry()
-    
+
     def search(self, query: str, top_k: int = 5) -> dict:
         self._ensure()
         # dense + sparse 并行
@@ -207,25 +214,25 @@ class RetrievalService:  # L3 检索增强层
                 return []
             except Exception:
                 return []
-        
+
         dense_future = self._pool.submit(_dense)
         sparse_future = self._pool.submit(_sparse)
         dense = dense_future.result()
         sparse = sparse_future.result()
-        
+
         # RRF 融合
         return {"dense": dense, "sparse": sparse, "channel": "L3-ret"}
 
 
 class HardwareService:  # L6 硬件优化层
     """硬件状态 + 加速调度"""
-    
+
     def __init__(self):
         self._pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="L6-hw")
-    
+
     def status(self) -> dict:
         return self._pool.submit(_hw.detect).result()
-    
+
     def accelerate(self, component: str, data: Any = None) -> dict:
         """根据组件名返回加速建议"""
         status = _hw.detect()
@@ -246,10 +253,10 @@ class HardwareService:  # L6 硬件优化层
 
 class SessionService:  # L9 会话管理层
     """DAG 上下文管理"""
-    
+
     def __init__(self):
         self._pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="L9-sess")
-    
+
     def get_context(self, session_key: str = "default") -> dict:
         if not os.path.exists(DAG_DB):
             return {"context": ""}
@@ -269,10 +276,10 @@ class SessionService:  # L9 会话管理层
 
 class ThinkingService:  # L11 思考/NLP 层
     """NLP 分析 + 思考技能分配"""
-    
+
     def __init__(self):
         self._pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix="L11-think")
-    
+
     def analyze(self, text: str) -> dict:
         result = {"entities": [], "keywords": [], "sentiment": "neutral"}
         try:
@@ -285,7 +292,7 @@ class ThinkingService:  # L11 思考/NLP 层
         except Exception:
             pass
         return result
-    
+
     def route(self, query: str) -> dict:
         """思考技能路由"""
         try:
@@ -299,25 +306,25 @@ class ThinkingService:  # L11 思考/NLP 层
 
 class ParallelWorkflowEngine:
     """工作流引擎 IPC 并行版 — 替代串行 execute_workflow()"""
-    
+
     def __init__(self):
         self._pool = ThreadPoolExecutor(max_workers=4, thread_name_prefix="wf")
         self._services = {}
         self._entry = None
-    
+
     def _ensure(self):
         if self._entry: return
         from unified_entry import UnifiedEntry
         self._entry = UnifiedEntry()
-    
+
     def register(self, name: str, service):
         self._services[name] = service
-    
+
     def run(self, workflow: str, params: dict) -> dict:
         """工作流调度——步骤并行"""
         t0 = time.time()
         self._ensure()
-        
+
         if workflow == "enhanced_recall":
             return self._enhanced_recall(params, t0)
         elif workflow == "fast_generation":
@@ -330,16 +337,16 @@ class ParallelWorkflowEngine:
             # 兜底：走老路
             result = self._entry.execute_workflow(workflow, params.get("input"))
             return {"workflow": workflow, "results": result, "took_ms": round((time.time()-t0)*1000, 1)}
-    
+
     def _enhanced_recall(self, params: dict, t0: float) -> dict:
         """增强检索——三步并行"""
         query = params.get("query", "")
         top_k = params.get("top_k", 5)
-        
+
         mem = self._services.get("L1-memory")
         ret = self._services.get("L3-retrieval")
         sess = self._services.get("L9-session")
-        
+
         futures = {}
         if mem:
             futures["memories"] = self._pool.submit(mem.recall, query, top_k)
@@ -349,35 +356,35 @@ class ParallelWorkflowEngine:
             futures["search"] = self._pool.submit(ret.search, query, top_k)
         if sess:
             futures["context"] = self._pool.submit(sess.get_context)
-        
+
         results = {k: v.result() for k, v in futures.items()}
         took_ms = round((time.time() - t0) * 1000, 1)
-        
+
         _mmap.write("enhanced_recall", results)
         return {"workflow": "enhanced_recall", "results": results, "took_ms": took_ms}
-    
+
     def _fast_generation(self, params: dict, t0: float) -> dict:
         """快速生成——缓存检索(speculative_hybrid.py 已移除)"""
         query = params.get("query", "")
         top_k = params.get("top_k", 3)
-        
+
         results = self._entry.recall(query, top_k)
         took_ms = round((time.time() - t0) * 1000, 1)
         return {"workflow": "fast_generation", "results": results, "took_ms": took_ms}
-    
+
     def _safe_generation(self, params: dict, t0: float) -> dict:
         """安全生成——防幻觉 + 验证并行"""
         query = params.get("query", "")
-        
+
         guard_future = self._pool.submit(self._entry.health_check)
         recall_future = self._pool.submit(self._entry.recall, query, 3)
-        
+
         guard = guard_future.result()
         results = recall_future.result()
-        
+
         took_ms = round((time.time() - t0) * 1000, 1)
         return {"workflow": "safe_generation", "results": results, "guard": guard, "took_ms": took_ms}
-    
+
     def _smart_recall(self, params: dict, t0: float) -> dict:
         """智能检索——多源并行"""
         return self._enhanced_recall(params, t0)
@@ -391,25 +398,25 @@ _workflow_engine = None
 def init_v4_services():
     """初始化所有服务层"""
     global _services, _workflow_engine
-    
+
     # mmap
     _mmap.start()
-    
+
     # 硬件检测
     _hw.detect()
-    
+
     # 服务注册
     _services["L1-memory"] = MemoryService()
     _services["L3-retrieval"] = RetrievalService()
     _services["L6-hardware"] = HardwareService()
     _services["L9-session"] = SessionService()
     _services["L11-thinking"] = ThinkingService()
-    
+
     # 工作流引擎
     _workflow_engine = ParallelWorkflowEngine()
     for name, svc in _services.items():
         _workflow_engine.register(name, svc)
-    
+
     return {"services": list(_services.keys()), "hw": _hw.detect()}
 
 def get_workflow_engine():

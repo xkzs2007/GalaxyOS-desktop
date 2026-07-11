@@ -485,7 +485,7 @@ class DepCapability(Capability):
                 "cuda_version": None,
                 "degraded": False,
             }
-        
+
         result = {
             "variant": "cpu",
             "install_cmd": "pip install torch --index-url https://download.pytorch.org/whl/cpu",
@@ -646,7 +646,7 @@ class DepCapability(Capability):
                 "degraded": False,
                 "blas_backend": _profile_blas,
             }
-        
+
         machine = platform.machine().lower()
         system = platform.system().lower()
 
@@ -1491,7 +1491,8 @@ class DepCapability(Capability):
         - Windows/Linux无GPU -> onnxruntime (CPU)
         - Android -> onnxruntime+NNAPI delegate
         """
-        import sys, platform
+        import sys
+        import platform
         gpu_info = ctx.env_profile.get("gpu", {})
         system = platform.system().lower()
 
@@ -1594,7 +1595,8 @@ class DepCapability(Capability):
         - 中文环境(LANG/zh_CN) -> jieba + snownlp
         - 非中文环境 -> 可选安装
         """
-        import os, locale
+        import os
+        import locale
 
         # 检测中文环境
         lang = os.environ.get("LANG", "") or os.environ.get("LC_ALL", "") or ""

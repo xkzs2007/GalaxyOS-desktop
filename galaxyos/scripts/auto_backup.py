@@ -14,7 +14,8 @@ from datetime import datetime
 # 路径配置
 
 # ── Centralized path resolution ──
-import os as _os, sys as _sys
+import os as _os
+import sys as _sys
 from galaxyos.shared.paths import workspace
 _ws_root = workspace()
 for _p in [_ws_root, "/workspace"]:
@@ -31,21 +32,21 @@ def create_backup():
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     backup_path = BACKUP_DIR / timestamp
     backup_path.mkdir(parents=True, exist_ok=True)
-    
+
     print(f"创建备份: {backup_path}")
-    
+
     # 1. 备份向量数据库
     vectors_db = MEMORY_TDai / "vectors.db"
     if vectors_db.exists():
         shutil.copy2(vectors_db, backup_path / "vectors.db")
         print(f"  ✅ vectors.db ({vectors_db.stat().st_size // 1024 // 1024}MB)")
-    
+
     # 2. 备份 TF-IDF 数据库
     tfidf_db = TFIDF_STORAGE / "tfidf.db"
     if tfidf_db.exists():
         shutil.copy2(tfidf_db, backup_path / "tfidf.db")
         print(f"  ✅ tfidf.db ({tfidf_db.stat().st_size // 1024}KB)")
-    
+
     # 3. 备份配置文件
     config_files = [
         ("openclaw.json", path_resolver.OPENCLAW_CONFIG),
@@ -54,12 +55,12 @@ def create_backup():
         ("SOUL.md", WORKSPACE / "SOUL.md"),
         ("persona.md", WORKSPACE / "persona.md"),
     ]
-    
+
     for name, path in config_files:
         if path.exists():
             shutil.copy2(path, backup_path / name)
             print(f"  ✅ {name}")
-    
+
     # 4. 备份记忆数据目录
     for subdir in ["records", "scene_blocks", ".metadata"]:
         src = MEMORY_TDai / subdir
@@ -67,7 +68,7 @@ def create_backup():
             dst = backup_path / subdir
             shutil.copytree(src, dst)
             print(f"  ✅ {subdir}/")
-    
+
     # 5. 创建备份信息文件
     info = {
         "timestamp": timestamp,
@@ -77,7 +78,7 @@ def create_backup():
             "tfidf.db": (backup_path / "tfidf.db").exists(),
         }
     }
-    
+
     # 获取数据库统计
     if (backup_path / "vectors.db").exists():
         conn = sqlite3.connect(str(backup_path / "vectors.db"))
@@ -87,17 +88,17 @@ def create_backup():
         cursor.execute("SELECT COUNT(*) FROM l1_records")
         info["l1_records"] = cursor.fetchone()[0]
         conn.close()
-    
+
     (backup_path / "BACKUP_INFO.json").write_text(json.dumps(info, indent=2))
-    print(f"  ✅ BACKUP_INFO.json")
-    
+    print("  ✅ BACKUP_INFO.json")
+
     # 6. 清理旧备份（保留最近7个）
     backups = sorted(BACKUP_DIR.iterdir(), key=lambda x: x.name, reverse=True)
     if len(backups) > 7:
         for old in backups[7:]:
             shutil.rmtree(old)
             print(f"  🗑️ 清理旧备份: {old.name}")
-    
+
     print(f"\n✅ 备份完成: {backup_path}")
     return backup_path
 

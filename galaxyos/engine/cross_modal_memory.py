@@ -317,7 +317,7 @@ if __name__ == "__main__":
 
     # ── Engram 感知 embedding ──
 
-    def text_to_embedding_with_engram(self, text: str, 
+    def text_to_embedding_with_engram(self, text: str,
                                        engram_memory=None) -> np.ndarray:
         """文本→embedding，优先用 Engram 命中
         
@@ -329,7 +329,7 @@ if __name__ == "__main__":
             (2048,) 向量
         """
         import numpy as np
-        
+
         # Engram 查找
         if engram_memory is not None:
             try:
@@ -338,11 +338,11 @@ if __name__ == "__main__":
                     return engram_emb.astype(np.float32)
             except Exception:
                 pass
-        
+
         # 降级到 LFM
         return self.text_to_embedding(text) or self._fallback_embedding(text)
-    
-    def blend_embeddings(self, lfm_emb: np.ndarray, 
+
+    def blend_embeddings(self, lfm_emb: np.ndarray,
                           engram_emb: np.ndarray,
                           alpha: float = 0.5) -> np.ndarray:
         """加权融合 LFM + Engram 的 embedding

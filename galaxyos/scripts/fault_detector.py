@@ -13,7 +13,8 @@ from datetime import datetime
 # 路径配置
 
 # ── Centralized path resolution ──
-import os as _os, sys as _sys
+import os as _os
+import sys as _sys
 from galaxyos.shared.paths import workspace
 _ws_root = workspace()
 for _p in [_ws_root, "/workspace"]:
@@ -28,10 +29,10 @@ LOG_FILE = WORKSPACE / "memory" / "fault_log.json"
 
 class FaultDetector:
     """故障检测器"""
-    
+
     def __init__(self):
         self.faults = []
-    
+
     def check_database_connection(self):
         """检查数据库连接"""
         try:
@@ -48,7 +49,7 @@ class FaultDetector:
                 "timestamp": datetime.now().isoformat()
             })
             return False
-    
+
     def check_database_integrity(self):
         """检查数据库完整性"""
         try:
@@ -57,7 +58,7 @@ class FaultDetector:
             cursor.execute("PRAGMA integrity_check")
             result = cursor.fetchone()[0]
             conn.close()
-            
+
             if result != "ok":
                 self.faults.append({
                     "type": "database_integrity",
@@ -75,20 +76,20 @@ class FaultDetector:
                 "timestamp": datetime.now().isoformat()
             })
             return False
-    
+
     def check_vector_coverage(self):
         """检查向量覆盖率"""
         try:
             conn = sqlite3.connect(str(VECTORS_DB))
             cursor = conn.cursor()
-            
+
             cursor.execute("SELECT COUNT(*) FROM l0_conversations")
             l0_total = cursor.fetchone()[0]
             cursor.execute("SELECT COUNT(*) FROM l0_vec_rowids")
             l0_vec = cursor.fetchone()[0]
-            
+
             conn.close()
-            
+
             if l0_total > 0:
                 coverage = l0_vec / l0_total
                 if coverage < 0.8:
@@ -108,13 +109,13 @@ class FaultDetector:
                 "timestamp": datetime.now().isoformat()
             })
             return False
-    
+
     def check_disk_space(self):
         """检查磁盘空间"""
         try:
             stat = os.statvfs(str(Path.home()))
             free_gb = stat.f_bavail * stat.f_frsize / (1024 * 1024 * 1024)
-            
+
             if free_gb < 1:
                 self.faults.append({
                     "type": "disk_space",
@@ -139,7 +140,7 @@ class FaultDetector:
                 "timestamp": datetime.now().isoformat()
             })
             return False
-    
+
     def run_checks(self):
         """运行所有检查"""
         self.check_database_connection()
@@ -147,27 +148,27 @@ class FaultDetector:
         self.check_vector_coverage()
         self.check_disk_space()
         return self.faults
-    
+
     def save_log(self):
         """保存故障日志"""
         if self.faults:
             LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
-            
+
             # 读取现有日志
             if LOG_FILE.exists():
                 logs = json.loads(LOG_FILE.read_text())
             else:
                 logs = []
-            
+
             # 添加新故障
             logs.extend(self.faults)
-            
+
             # 保留最近100条
             if len(logs) > 100:
                 logs = logs[-100:]
-            
+
             LOG_FILE.write_text(json.dumps(logs, indent=2))
-    
+
     def print_report(self):
         """打印故障报告"""
         print("=" * 60)
@@ -175,24 +176,24 @@ class FaultDetector:
         print("=" * 60)
         print(f"检测时间: {datetime.now().isoformat()}")
         print()
-        
+
         if not self.faults:
             print("✅ 未检测到故障")
         else:
             critical = [f for f in self.faults if f["severity"] == "critical"]
             warning = [f for f in self.faults if f["severity"] == "warning"]
-            
+
             if critical:
                 print(f"🔴 严重故障 ({len(critical)}):")
                 for f in critical:
                     print(f"   [{f['type']}] {f['message']}")
                 print()
-            
+
             if warning:
                 print(f"🟡 警告 ({len(warning)}):")
                 for f in warning:
                     print(f"   [{f['type']}] {f['message']}")
-            
+
             print()
             print(f"总计: {len(self.faults)} 个问题")
 

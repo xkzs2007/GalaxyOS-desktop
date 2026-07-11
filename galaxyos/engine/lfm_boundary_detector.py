@@ -43,36 +43,36 @@ logger = logging.getLogger("lfm_boundary_detector")
 @dataclass
 class BoundaryDetectorConfig:
     """边界检测器全部配置参数"""
-    
+
     # ── Changepoint Detection ──
     cp_method: str = "cusum"                # cusum / sliding_window
     cp_drift: float = 0.05                  # CUSUM drift 参数（越小越敏感）
     cp_window: int = 10                     # Sliding window 半窗口大小
-    
+
     # ── Trigger 生成 ──
     merge_radius: int = 5                   # 候选合并半径（timesteps）
     window_half_width: int = 2              # 候选窗口半宽
-    
+
     # ── Surprisal —─
     surprisal_std_factor: float = 2.0
     surprisal_local_radius: int = 3
-    
+
     # ── Intention Tag ──
     tag_min_segment_len: int = 2            # 标签最小段长度
     tag_completion_bonus: float = 1.5       # 完成标签的权重
-    
+
     # ── NLP 增强 ──
     nlp_max_keywords_per_node: int = 5
     nlp_min_keyword_len: int = 2
     enable_ner: bool = True                 # 启用 NER 作为 predicate
     enable_keywords: bool = True            # 启用关键词作为 predicate
     enable_sentiment: bool = True           # 启用情感作为 predicate
-    
+
     # ── 最小边界密度 ──
     target_segment_length: int = 5          # 目标段长度（步骤数）
     target_segment_count: int = 12          # 目标段数
     min_boundaries_enabled: bool = True
-    
+
     # ── 持久化 ──
     workspace: str = ""
 
@@ -88,10 +88,10 @@ class BoundaryCandidate:
     half_window: int = 0                    # 允许的边界窗口半宽
     source: str = "unknown"                 # 信号来源
     confidence: float = 1.0                 # 置信度
-    
+
     def to_dict(self) -> dict:
         return asdict(self)
-    
+
     @classmethod
     def from_dict(cls, d: dict) -> BoundaryCandidate:
         return cls(**d)
@@ -107,10 +107,10 @@ class SegmentBoundary:
     confidence: float = 1.0                 # 置信度
     predicates: Dict[str, float] = field(default_factory=dict)  # 该段 predicate 摘要
     keywords: List[str] = field(default_factory=list)           # 该段关键词
-    
+
     def to_dict(self) -> dict:
         return asdict(self)
-    
+
     @classmethod
     def from_dict(cls, d: dict) -> SegmentBoundary:
         d = dict(d)
@@ -155,7 +155,7 @@ def sliding_window_divergence(
     norms = np.linalg.norm(embeddings, axis=1, keepdims=True)
     norms = np.clip(norms, 1e-9, None)
     normed = embeddings / norms
-    
+
     scores = np.zeros(T, dtype=np.float64)
     w = window_size
     for t in range(w, T - w):
@@ -219,11 +219,11 @@ def _triggers_from_intent_tags(
     T = len(intent_tags)
     if T < 2:
         return out
-    
+
     for t in range(1, T):
         if intent_tags[t] and intent_tags[t] != intent_tags[t - 1]:
             out.append((t, "intent_tag", 1.0))
-    
+
     return out
 
 
@@ -236,18 +236,18 @@ def _triggers_from_nlp_features(
     T = len(features)
     if T < 2:
         return out
-    
+
     for t in range(1, T):
         prev = features[t - 1]
         curr = features[t]
-        
+
         # 情感极性变化
         if config.enable_sentiment:
             p_sent = prev.get("sentiment_polarity", 0.0)
             c_sent = curr.get("sentiment_polarity", 0.0)
             if abs(c_sent - p_sent) > 0.5:
                 out.append((t, "sentiment_shift", abs(c_sent - p_sent)))
-        
+
         # 实体类型变化
         if config.enable_ner:
             p_entities = set(prev.get("entities", {}).keys())
@@ -256,7 +256,7 @@ def _triggers_from_nlp_features(
                 jac = len(p_entities & c_entities) / len(p_entities | c_entities)
                 if jac < 0.3:
                     out.append((t, "entity_shift", 1.0 - jac))
-    
+
     return out
 
 
@@ -275,14 +275,14 @@ def _merge_and_window(
     """合并附近候选点 → BoundaryCandidate 列表"""
     if not triggers:
         return []
-    
+
     triggers = sorted(triggers, key=lambda x: x[0])
     merged: List[Tuple[int, List[str], List[float]]] = []
     group_anchor = triggers[0][0]
     group_times = [triggers[0][0]]
     group_sources = [triggers[0][1]]
     group_confs = [triggers[0][2]]
-    
+
     for t, src, conf in triggers[1:]:
         if t <= group_anchor + merge_radius:
             group_times.append(t)
@@ -295,10 +295,10 @@ def _merge_and_window(
             group_times = [t]
             group_sources = [src]
             group_confs = [conf]
-    
+
     center = group_times[len(group_times) // 2]
     merged.append((center, list(dict.fromkeys(group_sources)), group_confs))
-    
+
     return [
         BoundaryCandidate(
             center=c,
@@ -323,11 +323,11 @@ class NLPPredicateExtractor:
       - 情感   → sentiment.polarity predicate
       - 意图   → intent.{label} predicate（从上下文推断）
     """
-    
+
     def __init__(self, config: Optional[BoundaryDetectorConfig] = None):
         self.config = config or BoundaryDetectorConfig()
         self._nlp = None
-    
+
     def _get_nlp(self):
         if self._nlp is None:
             try:
@@ -337,12 +337,12 @@ class NLPPredicateExtractor:
                 logger.warning(f"NLP not available: {e}")
                 self._nlp = False
         return self._nlp if self._nlp is not False else None
-    
+
     def extract(self, texts: List[str]) -> List[Dict[str, Any]]:
         """批量提取 NLP features"""
         features: List[Dict[str, Any]] = []
         nlp = self._get_nlp()
-        
+
         for text in texts:
             feat: Dict[str, Any] = {
                 "keywords": [],
@@ -350,18 +350,18 @@ class NLPPredicateExtractor:
                 "sentiment_polarity": 0.0,
                 "intent_label": "",
             }
-            
+
             if not text or not text.strip():
                 features.append(feat)
                 continue
-            
+
             if nlp:
                 try:
                     # 关键词
                     if self.config.enable_keywords:
                         kwds = nlp.extract_keywords(text, top_k=self.config.nlp_max_keywords_per_node)
                         feat["keywords"] = kwds if isinstance(kwds, list) else [str(kwds)]
-                    
+
                     # NER
                     if self.config.enable_ner:
                         entities = nlp.recognize_entities(text)
@@ -372,7 +372,7 @@ class NLPPredicateExtractor:
                                     feat["entities"][f"{ent_type}.{ent_name}"] = 1.0
                                 elif isinstance(ent, str):
                                     feat["entities"][ent] = 1.0
-                    
+
                     # 情感
                     if self.config.enable_sentiment:
                         sentiment = nlp.sentiment_analysis(text)
@@ -382,15 +382,15 @@ class NLPPredicateExtractor:
                             feat["sentiment_polarity"] = float(sentiment)
                 except Exception as e:
                     logger.debug(f"NLP extraction failed: {e}")
-            
+
             # 兜底关键词提取
             if not feat["keywords"]:
                 feat["keywords"] = self._simple_extract_keywords(text)
-            
+
             features.append(feat)
-        
+
         return features
-    
+
     def _simple_extract_keywords(self, text: str) -> List[str]:
         """简单关键词提取（NLP 不可用时的兜底）"""
         # 英文单词
@@ -406,7 +406,7 @@ class NLPPredicateExtractor:
                     gram = chunk[j:j+2]
                     if len(gram) == 2:
                         cn_words.append(gram)
-        
+
         tokens = en_words + cn_words
         stopwords = {"the", "and", "for", "was", "are", "has", "had", "but",
                      "not", "this", "that", "with", "from", "可以", "这个",
@@ -416,23 +416,23 @@ class NLPPredicateExtractor:
         return [t for t, c in counter.most_common(self.config.nlp_max_keywords_per_node * 2)
                 if t not in stopwords and len(t) >= self.config.nlp_min_keyword_len
                ][:self.config.nlp_max_keywords_per_node]
-    
+
     def extract_predicates(self, texts: List[str]) -> List[Dict[str, float]]:
         """提取结构化 predicates（供 Skill Bank Contract 使用）"""
         features = self.extract(texts)
         predicates_list: List[Dict[str, float]] = []
-        
+
         for feat in features:
             preds: Dict[str, float] = {}
-            
+
             # 关键词 → state.{kw}
             for kw in feat.get("keywords", []):
                 preds[f"state.{kw}"] = 1.0
-            
+
             # 实体 → entity.{type}.{name}
             for ent_key in feat.get("entities", {}):
                 preds[ent_key] = 1.0
-            
+
             # 情感
             if self.config.enable_sentiment:
                 sp = feat.get("sentiment_polarity", 0.0)
@@ -442,9 +442,9 @@ class NLPPredicateExtractor:
                     preds["sentiment.negative"] = abs(sp)
                 else:
                     preds["sentiment.neutral"] = 1.0 - abs(sp)
-            
+
             predicates_list.append(preds)
-        
+
         return predicates_list
 
 
@@ -458,7 +458,7 @@ class DAGIntentClassifier:
     为每条节点内容推断意图标签（如 search / analyze / code / memory / chat）
     基于关键词 + 来源 + 简单的模式匹配
     """
-    
+
     # 意图 → 关键词映射
     INTENT_PATTERNS: Dict[str, List[str]] = {
         "search": ["搜索", "查找", "查询", "search", "find", "lookup", "检索"],
@@ -472,24 +472,24 @@ class DAGIntentClassifier:
         "error": ["错误", "失败", "bug", "error", "fail", "exception", "崩溃"],
         "config": ["配置", "设置", "config", "setting", "修改", "update", "install"],
     }
-    
+
     def classify(self, text: str, source: str = "") -> str:
         if not text:
             return "unknown"
         text_lower = text.lower()
-        
+
         # 按来源
         if "system" in source.lower():
             return "system"
         if "tool" in source.lower():
             return "tool"
-        
+
         scores: Dict[str, int] = {}
         for intent, patterns in self.INTENT_PATTERNS.items():
             score = sum(1 for p in patterns if p in text_lower)
             if score > 0:
                 scores[intent] = score
-        
+
         if scores:
             return max(scores, key=scores.get)
         return "general"
@@ -511,12 +511,12 @@ class LfmBoundaryDetector:
       3. 多信号生成 trigger 候选
       4. 合并 + 窗口化 → SegmentBoundary[]
     """
-    
+
     def __init__(self, config: Optional[BoundaryDetectorConfig] = None):
         self.config = config or BoundaryDetectorConfig()
         self._nlp_extractor = NLPPredicateExtractor(self.config)
         self._intent_classifier = DAGIntentClassifier()
-    
+
     def detect(
         self,
         nodes: List[Dict[str, Any]],
@@ -546,24 +546,24 @@ class LfmBoundaryDetector:
                 start_node_index=0,
                 end_node_index=N - 1,
             )]
-        
+
         # 1. 提取内容列表
         texts = [n.get("content", "") or "" for n in nodes]
         sources = [n.get("source", "") or "" for n in nodes]
-        
+
         # 2. 提取 NLP features + predicates
         nlp_features = self._nlp_extractor.extract(texts)
         predicates = self._nlp_extractor.extract_predicates(texts)
-        
+
         # 3. 推断意图标签
         intent_tags = []
         for i, (text, source) in enumerate(zip(texts, sources)):
             tag = self._intent_classifier.classify(text, source)
             intent_tags.append(tag)
-        
+
         # 4. 生成 trigger
         triggers: List[Tuple[int, str, float]] = []
-        
+
         # Changepoint
         if embeddings is not None and len(embeddings) >= 3:
             cp_scores = compute_changepoint_scores(
@@ -573,24 +573,24 @@ class LfmBoundaryDetector:
                 window_size=self.config.cp_window,
             )
             triggers.extend(_triggers_from_changepoint(cp_scores, self.config))
-        
+
         # Intent tag 变化
         triggers.extend(_triggers_from_intent_tags(intent_tags, self.config))
-        
+
         # NLP 特征变化
         triggers.extend(_triggers_from_nlp_features(nlp_features, self.config))
-        
+
         # 硬事件
         if hard_event_indices:
             triggers.extend(_triggers_from_hard_events(hard_event_indices))
-        
+
         # 5. 合并候选
         candidates = _merge_and_window(
             triggers,
             self.config.merge_radius,
             self.config.window_half_width,
         )
-        
+
         # 6. 最小边界密度
         if self.config.min_boundaries_enabled and self.config.target_segment_length > 0:
             min_boundaries = max(1, N // self.config.target_segment_length - 1)
@@ -607,20 +607,20 @@ class LfmBoundaryDetector:
                             source="uniform_fallback",
                             confidence=0.5,
                         ))
-        
+
         # 7. 按中心排序
         candidates.sort(key=lambda c: c.center)
-        
+
         # 8. 构建 SegmentBoundary 列表
         cut_indices = sorted(set([0] + [c.center for c in candidates] + [N - 1]))
         segments: List[SegmentBoundary] = []
-        
+
         for i in range(len(cut_indices) - 1):
             start = cut_indices[i]
             end = cut_indices[i + 1]
             if end <= start:
                 continue
-            
+
             # 取该段关键词聚合
             seg_keywords: List[str] = []
             seg_preds: Dict[str, float] = {}
@@ -629,17 +629,17 @@ class LfmBoundaryDetector:
                     seg_keywords.extend(nlp_features[j].get("keywords", []))
                 if j < len(predicates):
                     seg_preds.update(predicates[j])
-            
+
             # 去重关键词
             seg_keywords = list(dict.fromkeys(seg_keywords))[:10]
-            
+
             # 意图标签（取该段最常见的）
             if start < len(intent_tags):
                 tag_counter = Counter(intent_tags[start:min(end + 1, len(intent_tags))])
                 intent_label = tag_counter.most_common(1)[0][0] if tag_counter else "unknown"
             else:
                 intent_label = "unknown"
-            
+
             segment = SegmentBoundary(
                 segment_id=f"seg_{i}",
                 start_node_index=start,
@@ -650,9 +650,9 @@ class LfmBoundaryDetector:
                 confidence=1.0,
             )
             segments.append(segment)
-        
+
         return segments
-    
+
     def detect_from_dag(self, dag, session_key: str) -> List[SegmentBoundary]:
         """从 DAG 实例检测边界
         
@@ -663,13 +663,13 @@ class LfmBoundaryDetector:
         except Exception as e:
             logger.warning(f"get_session_nodes failed: {e}")
             return []
-        
+
         node_dicts = []
         for n in nodes:
             nd = {"content": getattr(n, "content", "") or "",
                   "source": getattr(n, "node_type", "") or getattr(n, "source", "") or ""}
             node_dicts.append(nd)
-        
+
         return self.detect(node_dicts)
 
 
@@ -688,10 +688,10 @@ class RCCAMFeedbackBridge:
     集成入口：
       XiaoYiClawLLM.process() 的 Action 阶段末尾
     """
-    
+
     def __init__(self, skill_bank=None):
         self._skill_bank = skill_bank
-    
+
     def feed_action_to_skill_bank(
         self,
         action_info: Dict[str, Any],
@@ -718,13 +718,13 @@ class RCCAMFeedbackBridge:
             LfmSkillBankConfig, LfmSegmentRecord,
             get_skill_bank, feed_memory_to_skill_bank,
         )
-        
+
         bank = self._skill_bank or get_skill_bank()
-        
+
         tool_name = action_info.get("tool_name", action_info.get("action", "unknown"))
         strategy = action_info.get("strategy", "unknown")
         params = str(action_info.get("params", {}))
-        
+
         # 构建记忆记录
         memories = [
             {
@@ -753,10 +753,10 @@ class RCCAMFeedbackBridge:
                 },
             },
         ]
-        
+
         result = feed_memory_to_skill_bank(memories)
         return result
-    
+
     def feed_cycle_result(
         self,
         cycle_info: Dict[str, Any],
@@ -770,12 +770,12 @@ class RCCAMFeedbackBridge:
         """
         from lfm_skill_bank import get_skill_bank, LfmSegmentRecord
         bank = self._skill_bank or get_skill_bank()
-        
+
         strategy = cycle_info.get("strategy", "unknown")
         answer = cycle_info.get("answer", "")
         confidence = cycle_info.get("confidence", 0.0)
         tool_used = cycle_info.get("action", {}).get("tool_name", "unknown")
-        
+
         # 构建记忆
         memories = [
             {
@@ -806,7 +806,7 @@ class RCCAMFeedbackBridge:
                 },
             },
         ]
-        
+
         from lfm_skill_bank import feed_memory_to_skill_bank
         result = feed_memory_to_skill_bank(memories)
         return result
@@ -829,9 +829,9 @@ def run_boundary_detection_cycle(
         检测结果摘要
     """
     detector = LfmBoundaryDetector(config or BoundaryDetectorConfig())
-    
+
     result: Dict[str, Any] = {}
-    
+
     if dag and session_key:
         try:
             segments = detector.detect_from_dag(dag, session_key)
@@ -848,7 +848,7 @@ def run_boundary_detection_cycle(
             result["error"] = str(e)[:200]
     else:
         result["error"] = "dag or session_key not provided"
-    
+
     return result
 
 
@@ -865,9 +865,9 @@ def run_full_cosplay_cycle(
     """
     config = BoundaryDetectorConfig()
     detector = LfmBoundaryDetector(config)
-    
+
     result: Dict[str, Any] = {}
-    
+
     # 1. Boundary Detection
     if dag and session_key:
         try:
@@ -882,7 +882,7 @@ def run_full_cosplay_cycle(
             result["boundary"] = {"error": str(e)[:200]}
     else:
         result["boundary"] = {"skipped": "dag/session_key missing"}
-    
+
     # 2. R-CCAM → Skill Bank 反馈
     if rccam_cycle_info:
         try:
@@ -896,7 +896,7 @@ def run_full_cosplay_cycle(
             result["skill_bank_feedback"] = {"error": str(e)[:200]}
     else:
         result["skill_bank_feedback"] = {"skipped": "no cycle info"}
-    
+
     return result
 
 
@@ -907,14 +907,14 @@ def run_full_cosplay_cycle(
 def main():
     import sys
     workspace = sys.argv[1] if len(sys.argv) > 1 else str(Path(workspace()))
-    
+
     print(f"LFM Boundary Detector — workspace: {workspace}")
     print()
-    
+
     config = BoundaryDetectorConfig(workspace=workspace)
     detector = LfmBoundaryDetector(config)
     nlp_ext = NLPPredicateExtractor(config)
-    
+
     # 测试 NLP extraction
     test_texts = [
         "搜索一下今天的天气情况",
@@ -923,10 +923,10 @@ def main():
         "执行一个系统健康检查",
         "你好，今天有什么新闻",
     ]
-    
+
     features = nlp_ext.extract(test_texts)
     predicates = nlp_ext.extract_predicates(test_texts)
-    
+
     print("=== NLP Predicate 提取测试 ===")
     for i, (text, feat, preds) in enumerate(zip(test_texts, features, predicates)):
         print(f"  [{i}] {text}")
@@ -935,7 +935,7 @@ def main():
         print(f"       sentiment: {feat['sentiment_polarity']:.3f}")
         print(f"       predicates: {dict(list(preds.items())[:5])}")
     print()
-    
+
     # 测试 Boundary Detection
     print("=== 模拟 DAG 节点 → 边界检测 ===")
     mock_nodes = [
@@ -949,13 +949,13 @@ def main():
         {"content": "调用记忆存储工具", "source": "tool_call"},
         {"content": "记忆已存储", "source": "tool_result"},
     ]
-    
+
     segments = detector.detect(mock_nodes)
     print(f"  检测到 {len(segments)} 个 segment:")
     for s in segments:
         print(f"    {s.segment_id}: nodes [{s.start_node_index}→{s.end_node_index}] "
               f"intent={s.intent_label} kw={s.keywords[:3]}")
-    
+
     print()
     print("✅ 全部测试通过")
 

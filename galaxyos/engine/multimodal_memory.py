@@ -42,31 +42,31 @@ class MultimodalMemoryStore:
     3. 图像记忆检索
     4. 图像与实体关联
     """
-    
+
     def __init__(self, storage_path: Optional[str] = None):
         if storage_path is None:
             workspace = os.environ.get('OPENCLAW_WORKSPACE',
                                        Path(workspace()))
             storage_path = str(Path(workspace) / 'memory' / 'multimodal')
-        
+
         self.storage_path = Path(storage_path)
         self.storage_path.mkdir(parents=True, exist_ok=True)
-        
+
         self.index_path = self.storage_path / 'image_index.json'
         self.images_path = self.storage_path / 'images'
         self.images_path.mkdir(exist_ok=True)
-        
+
         self.index: Dict[str, ImageMemory] = {}
         self._load_index()
-    
+
     def _load_index(self):
         """加载索引"""
         if not self.index_path.exists():
             return
-        
+
         with open(self.index_path, 'r', encoding='utf-8') as f:
             data = json.load(f)
-        
+
         for item in data.get('images', []):
             memory = ImageMemory(
                 id=item.get('id', ''),
@@ -79,9 +79,9 @@ class MultimodalMemoryStore:
                 created_at=item.get('created_at', '')
             )
             self.index[memory.id] = memory
-        
+
         logger.info(f"加载图像记忆索引: {len(self.index)} 条")
-    
+
     def _save_index(self):
         """保存索引"""
         data = {
@@ -101,15 +101,15 @@ class MultimodalMemoryStore:
                 for m in self.index.values()
             ]
         }
-        
+
         with open(self.index_path, 'w', encoding='utf-8') as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
-    
+
     def _generate_id(self, image_data: bytes) -> str:
         """生成图像 ID"""
         hash_val = hashlib.md5(image_data).hexdigest()[:12]
         return f"img_{hash_val}_{datetime.now().strftime('%Y%m%d%H%M%S')}"
-    
+
     def store_image(self,
                     image_data: bytes,
                     description: str,
@@ -133,14 +133,14 @@ class MultimodalMemoryStore:
         """
         # 生成 ID
         image_id = self._generate_id(image_data)
-        
+
         # 保存图像文件
         filename = f"{image_id}.jpg"
         image_path = self.images_path / filename
-        
+
         with open(image_path, 'wb') as f:
             f.write(image_data)
-        
+
         # 创建记忆记录
         memory = ImageMemory(
             id=image_id,
@@ -152,13 +152,13 @@ class MultimodalMemoryStore:
             metadata=metadata or {},
             created_at=datetime.now().isoformat()
         )
-        
+
         self.index[image_id] = memory
         self._save_index()
-        
+
         logger.info(f"存储图像记忆: {image_id}")
         return image_id
-    
+
     def store_from_url(self,
                        image_url: str,
                        description: str,
@@ -181,7 +181,7 @@ class MultimodalMemoryStore:
             图像记忆 ID
         """
         import urllib.request
-        
+
         try:
             with urllib.request.urlopen(image_url, timeout=30) as response:
                 image_data = response.read()
@@ -202,9 +202,9 @@ class MultimodalMemoryStore:
             self.index[image_id] = memory
             self._save_index()
             return image_id
-        
+
         return self.store_image(image_data, description, tags, entities, embedding, metadata)
-    
+
     def store_from_understanding(self,
                                  understanding_result: Dict,
                                  source_path: Optional[str] = None) -> str:
@@ -222,13 +222,13 @@ class MultimodalMemoryStore:
         tags = understanding_result.get('tags', [])
         entities = understanding_result.get('entities', [])
         embedding = understanding_result.get('embedding')
-        
+
         metadata = {
             'source': 'xiaoyi-image-understanding',
             'source_path': source_path,
             'raw_result': understanding_result
         }
-        
+
         if source_path and Path(source_path).exists():
             with open(source_path, 'rb') as f:
                 image_data = f.read()
@@ -249,8 +249,8 @@ class MultimodalMemoryStore:
             self.index[image_id] = memory
             self._save_index()
             return image_id
-    
-    def search(self, 
+
+    def search(self,
                query: str,
                top_k: int = 10,
                tag_filter: Optional[str] = None) -> List[Dict]:
@@ -267,29 +267,29 @@ class MultimodalMemoryStore:
         """
         results = []
         query_lower = query.lower()
-        
+
         for memory in self.index.values():
             # 标签过滤
             if tag_filter and tag_filter not in memory.tags:
                 continue
-            
+
             # 计算匹配分数
             score = 0.0
-            
+
             # 描述匹配
             if query_lower in memory.description.lower():
                 score += 0.5
-            
+
             # 标签匹配
             for tag in memory.tags:
                 if query_lower in tag.lower():
                     score += 0.3
-            
+
             # 实体匹配
             for entity in memory.entities:
                 if query_lower in entity.lower():
                     score += 0.2
-            
+
             if score > 0:
                 results.append({
                     'id': memory.id,
@@ -300,11 +300,11 @@ class MultimodalMemoryStore:
                     'score': score,
                     'created_at': memory.created_at
                 })
-        
+
         # 排序
         results.sort(key=lambda x: x['score'], reverse=True)
         return results[:top_k]
-    
+
     def search_by_embedding(self,
                             query_embedding: List[float],
                             top_k: int = 10) -> List[Dict]:
@@ -319,23 +319,23 @@ class MultimodalMemoryStore:
             搜索结果列表
         """
         import numpy as np
-        
+
         results = []
         query_vec = np.array(query_embedding)
         query_norm = np.linalg.norm(query_vec)
-        
+
         for memory in self.index.values():
             if not memory.embedding:
                 continue
-            
+
             mem_vec = np.array(memory.embedding)
             mem_norm = np.linalg.norm(mem_vec)
-            
+
             if query_norm > 0 and mem_norm > 0:
                 similarity = np.dot(query_vec, mem_vec) / (query_norm * mem_norm)
             else:
                 similarity = 0.0
-            
+
             if similarity > 0.1:  # 阈值
                 results.append({
                     'id': memory.id,
@@ -346,16 +346,16 @@ class MultimodalMemoryStore:
                     'score': float(similarity),
                     'created_at': memory.created_at
                 })
-        
+
         results.sort(key=lambda x: x['score'], reverse=True)
         return results[:top_k]
-    
+
     def get(self, image_id: str) -> Optional[Dict]:
         """获取图像记忆"""
         memory = self.index.get(image_id)
         if not memory:
             return None
-        
+
         return {
             'id': memory.id,
             'image_path': memory.image_path,
@@ -365,32 +365,32 @@ class MultimodalMemoryStore:
             'metadata': memory.metadata,
             'created_at': memory.created_at
         }
-    
+
     def delete(self, image_id: str) -> bool:
         """删除图像记忆"""
         memory = self.index.get(image_id)
         if not memory:
             return False
-        
+
         # 删除图像文件
         if memory.image_path and Path(memory.image_path).exists():
             Path(memory.image_path).unlink()
-        
+
         # 从索引删除
         del self.index[image_id]
         self._save_index()
-        
+
         return True
-    
+
     def get_stats(self) -> Dict[str, Any]:
         """获取统计信息"""
         total_tags = set()
         total_entities = set()
-        
+
         for memory in self.index.values():
             total_tags.update(memory.tags)
             total_entities.update(memory.entities)
-        
+
         return {
             'total_images': len(self.index),
             'total_tags': len(total_tags),
@@ -410,7 +410,7 @@ def get_multimodal_store() -> MultimodalMemoryStore:
     return _store
 
 
-def store_image_memory(description: str, 
+def store_image_memory(description: str,
                        image_data: Optional[bytes] = None,
                        tags: Optional[List[str]] = None,
                        entities: Optional[List[str]] = None) -> str:

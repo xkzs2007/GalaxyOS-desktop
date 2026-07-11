@@ -19,7 +19,9 @@ Author: 小艺 Claw
 Version: 2.0.0 (R-CCAM 统一路由)
 """
 
-import sys, json, os
+import sys
+import json
+import os
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 
@@ -225,8 +227,8 @@ class SmartProcessor:
 
         context = "\n".join([f"- {r['content'][:200]}" for r in results[:5]])
         _persona = persona or self.persona_context
-        prompt = (f"请根据以下检索结果，总结核心要点回答用户问题。"
-                  f"保持信息准确，不做无根据补充。")
+        prompt = ("请根据以下检索结果，总结核心要点回答用户问题。"
+                  "保持信息准确，不做无根据补充。")
         messages = [{"role": "user",
                      "content": f"用户问题: {query}\n检索结果:\n{context}\n总结:"}]
         try:

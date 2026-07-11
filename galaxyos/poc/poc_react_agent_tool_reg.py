@@ -37,7 +37,7 @@ async def verify_tool_registration():
         from openjiuwen.core.application.llm_agent.llm_agent import LLMAgent
         methods = [m for m in dir(LLMAgent) if not m.startswith('_')]
         tool_methods = [m for m in methods if 'tool' in m.lower()]
-        print(f"  ✅ LLMAgent 可导入")
+        print("  ✅ LLMAgent 可导入")
         print(f"     工具相关方法: {tool_methods}")
         results['llm_agent_tools'] = 'add_tools' in methods
         print(f"     add_tools 存在: {results['llm_agent_tools']}")
@@ -51,7 +51,7 @@ async def verify_tool_registration():
         from openjiuwen.core.single_agent.legacy import ControllerAgent
         methods = [m for m in dir(ControllerAgent) if not m.startswith('_')]
         tool_methods = [m for m in methods if 'tool' in m.lower()]
-        print(f"  ✅ ControllerAgent 可导入")
+        print("  ✅ ControllerAgent 可导入")
         print(f"     工具相关方法: {tool_methods}")
         results['controller_tools'] = 'add_tools' in methods
         print(f"     add_tools 存在: {results['controller_tools']}")
@@ -101,7 +101,7 @@ async def verify_tool_registration():
         def test_mcp_tool(query: str) -> str:
             return f"MCP tool result: {query}"
 
-        print(f"  ✅ @mcp.tool() 装饰器可用")
+        print("  ✅ @mcp.tool() 装饰器可用")
         results['fastmcp'] = True
     except Exception as e:
         print(f"  ❌ fastmcp 验证失败: {e}")

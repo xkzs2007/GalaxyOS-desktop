@@ -9,7 +9,11 @@ DAG 上下文管理器 Shim — claw-bootstrap hook 调用入口
   python3 dag_shim.py summarize --session <key>
 """
 
-import sys, os, json, time, argparse
+import sys
+import os
+import json
+import time
+import argparse
 from pathlib import Path
 from galaxyos.shared.paths import workspace
 

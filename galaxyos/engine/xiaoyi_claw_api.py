@@ -860,7 +860,8 @@ class XiaoYiClawLLM:
         """RCI 三通道发布: ThreadPool -> mmap + ZMQ 异步"""
         _RCI_MMAP = _resolve_rci_mmap()
         try:
-            import struct as _s, tempfile as _tf
+            import struct as _s
+            import tempfile as _tf
             _raw = json.dumps(results, ensure_ascii=False).encode("utf-8")
             with _tf.NamedTemporaryFile(dir=os.path.dirname(_RCI_MMAP), delete=False, suffix=".tmp") as _tmpf:
                 _tmpf.write(_s.pack("<I", len(_raw)))
@@ -1852,7 +1853,7 @@ class XiaoYiClawLLM:
             synapse_state = SynapseState(weight=float(synapse_state))
         return self._get_optimization_integration().optimize_memory_synapse(synapse_state, operation)
 
-    
+
     def _recall_memory_unified(self, query: str, max_results: int = 10) -> List[Dict]:
         """
         统一记忆召回(读取本地 memory/ 目录下的每日记忆文件)
@@ -2218,9 +2219,9 @@ class XiaoYiClawLLM:
             state.strategy = "direct_answer_oblivion"
             state.stop_reason = "oblivion_skip_retrieval"
             state.should_stop = True
-            logger.info(f"Oblivion: 跳过检索, 直接答题")
+            logger.info("Oblivion: 跳过检索, 直接答题")
             return state
-        
+
         # ═══ 语义熵不确定性评估 ═══
         try:
             if getattr(self, '_paper_int', None) and self.llm_flash:
@@ -2731,7 +2732,7 @@ class XiaoYiClawLLM:
             state.needs_more_info = False
             state.thinking_skills_used = []
             state.analysis['cognitive_budget'] = _budget
-            
+
             # ═══ CodeAware 代码感知推理分析 ═══
             try:
                 if getattr(self, '_engine_int', None):
@@ -2762,7 +2763,7 @@ class XiaoYiClawLLM:
             _skills_result = trigger.detect_thinking_needs(query, top_k=3)
             state.thinking_skills_content = []
             state.thinking_skills_used = []
-            
+
             _skill_name_map = {
                 ThinkingSkill.FIRST_PRINCIPLES: "第一性原理",
                 ThinkingSkill.SYSTEMS_THINKING: "系统思维",
@@ -2811,7 +2812,7 @@ class XiaoYiClawLLM:
                     _sp = trigger.ALL_SKILL_PATHS.get(_skill)
                 except AttributeError:
                     _sp = None
-                
+
                 _skill_text = ""
                 if _sp:
                     _fp = f"{_ws_path}/skills/{_sp}"
@@ -2826,13 +2827,13 @@ class XiaoYiClawLLM:
                         state.thinking_skills_content.append(f"【{_cn_name}】")
                 else:
                     state.thinking_skills_content.append(f"【{_cn_name}】")
-                
+
                 # ── MemGAS: SkillCompiler 编译 + AssetRegistry 存储 ──
                 if _skill_text and len(_skill_text) > 50:
                     try:
                         from skill_compiler import SkillCompiler, compile_skill
                         from knowledge_asset import get_asset_registry, create_skill_asset
-                        
+
                         _reg = get_asset_registry()
                         _compiled = compile_skill(
                             _skill_text,
@@ -2843,7 +2844,7 @@ class XiaoYiClawLLM:
                             state.thinking_skills_content[-1] = (
                                 f"【{_cn_name}·编译优化】\n{_compiled.optimized_text[:2000]}"
                             )
-                        
+
                         # 存储到 AssetRegistry
                         _asset = create_skill_asset(
                             skill_id=f"skill_compiled_{_skill.value if hasattr(_skill, 'value') else ''}_{int(time.time())}",
@@ -2885,7 +2886,7 @@ class XiaoYiClawLLM:
         query = getattr(state, 'user_input', '')
         if any(kw in query.lower() for kw in realtime_keywords):
             state.needs_more_info = True
-            logger.debug(f"实时信息查询,强制 needs_more_info=True")
+            logger.debug("实时信息查询,强制 needs_more_info=True")
 
         # ═══ Time History Query: 时间感知事件日志 ═══
         _time_kw = ["之前", "刚才", "早上", "下午", "晚上", "昨天", "前天",
@@ -2895,7 +2896,8 @@ class XiaoYiClawLLM:
         _is_time_query = any(kw in query for kw in _time_kw)
         if _is_time_query:
             try:
-                import sqlite3 as _sq, os as _os
+                import sqlite3 as _sq
+                import os as _os
                 _db = _os.path.expanduser("~/.openclaw/workspace/temporal_kg.db")
                 if _os.path.exists(_db):
                     _conn = _sq.connect(_db)
@@ -3331,7 +3333,7 @@ class XiaoYiClawLLM:
             if condition:
                 state.strategy = strategy
                 break
-        
+
         # ═══ HyperRouter + AdaptiveClassifier 策略选择 ═══
         try:
             if getattr(self, '_paper_int', None):
@@ -3510,7 +3512,8 @@ class XiaoYiClawLLM:
 
                 if is_weather:
                     try:
-                        import urllib.request, urllib.parse
+                        import urllib.request
+                        import urllib.parse
                         encoded_query = urllib.parse.quote(query)
                         url = f"https://wttr.in/{encoded_query}?format=4&lang=zh"
                         req = urllib.request.Request(url, headers={"User-Agent": "curl/7.88.1"})
@@ -4213,8 +4216,8 @@ class XiaoYiClawLLM:
             }
         return {"activated": False}
 
-    def process(self, 
-                user_input: str, 
+    def process(self,
+                user_input: str,
                 max_cycles: int = 1,
                 store_memory: bool = True,
                 has_image: bool = False,
@@ -4803,7 +4806,8 @@ class XiaoYiClawLLM:
             import os as _os
             import sqlite3 as _sq
             import time as _t
-            import hashlib as _hl, random as _rd
+            import hashlib as _hl
+            import random as _rd
 
             _db_path = _os.path.expanduser("~/.openclaw/workspace/temporal_kg.db")
             _conn = _sq.connect(_db_path)
@@ -4854,7 +4858,12 @@ def get_xiaoyi_claw(config: Optional[Dict] = None) -> XiaoYiClawLLM:
 # ── RCI 异步批评函数(供 ThreadPoolExecutor submit 使用) ──
 def _rci_async_criticism(self, state):
     """Background thread: run criticism/consistency, publish via mmap + ZMQ"""
-    import time as _t, os as _os, json as _j, struct as _s, tempfile as _tf, sys as _rci_sys
+    import time as _t
+    import os as _os
+    import json as _j
+    import struct as _s
+    import tempfile as _tf
+    import sys as _rci_sys
     _rci_session = getattr(self, '_kv_session_id', 'xiaoyi-claw-main')
     _rci_results = {
         "session_id": _rci_session,

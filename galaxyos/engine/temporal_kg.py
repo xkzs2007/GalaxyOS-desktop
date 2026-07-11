@@ -86,7 +86,8 @@ def _now() -> float:
 
 
 def _generate_id(prefix: str = "tkg") -> str:
-    import hashlib, random
+    import hashlib
+    import random
     raw = f"{prefix}_{_now()}_{random.random()}"
     return f"{prefix}_{hashlib.md5(raw.encode()).hexdigest()[:12]}"
 

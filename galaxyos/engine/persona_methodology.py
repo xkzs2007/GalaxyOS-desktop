@@ -30,7 +30,8 @@ from enum import Enum
 
 
 # ── Centralized path resolution ──
-import os as _os, sys as _sys
+import os as _os
+import sys as _sys
 from galaxyos.shared.paths import workspace
 _ws_root = workspace()
 for _p in [_ws_root, "/workspace"]:
@@ -91,7 +92,7 @@ class SceneType(Enum):
     def detect(cls, query: str) -> "SceneType":
         """从查询文本检测场景类型"""
         q = query.lower().strip()
-        
+
         # 优先匹配精确场景
         scene_patterns = [
             (cls.ARCHITECTURE, [r'架构', r'分层', r'模块.*设计', r'system.?design', r'架构设计',
@@ -111,12 +112,12 @@ class SceneType(Enum):
             (cls.RESEARCH, [r'调查', r'研究', r'分析', r'对比', r'比较',
                             r'原理', r'本质', r'为什么', r'根本原因']),
         ]
-        
+
         for scene, patterns in scene_patterns:
             for pat in patterns:
                 if re.search(pat, q):
                     return scene
-        
+
         return cls.CONVERSATION
 
 

@@ -15,7 +15,8 @@ import numpy as np
 from typing import List, Optional, Dict, Any, Callable
 import re
 
-import os as _os, sys as _sys
+import os as _os
+import sys as _sys
 from galaxyos.shared.paths import galaxyos_home, workspace
 _ws_root = workspace()
 for _p in [_ws_root, "/workspace"]:

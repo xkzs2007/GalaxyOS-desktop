@@ -18,7 +18,16 @@
 五路检索（KG + local + DAG + synapse + paper），web 可选，并行执行后 RRF 融合排序。
 """
 
-import os, sys, json, logging, time, re, sqlite3, subprocess, threading, math
+import os
+import sys
+import json
+import logging
+import time
+import re
+import sqlite3
+import subprocess
+import threading
+import math
 from typing import List, Dict, Optional
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from galaxyos.shared.paths import workspace
@@ -112,43 +121,43 @@ class HNSW_MN_Index:
     小索引：DAG ingest 时实时追加，超过阈值或超时后合并到主索引
     搜索：双索引并行查，结果去重合并
     """
-    
+
     def __init__(self, index_path: str, dim: int = 1024):
         self.dim = dim
         self.index_path = index_path
         self.session_index_path = index_path.replace('.idx', '_session.idx')
-        
+
         # 主索引
         self.main = None          # hnswlib.Index
         self.main_nodes = []      # list[dict]
         self.main_ready = False
-        
+
         # 小索引
         self.mini = None          # hnswlib.Index
         self.mini_nodes = []
         self.mini_ready = False
-        
+
         # Session 级索引
         self.session_idx = None   # hnswlib.Index
         self.session_nodes = []   # list[dict]
         self.session_ready = False
-        
+
         # 状态
         self.last_rebuild = 0
         self.last_merge = time.time()
         self.last_db_check = 0
         self.total_nodes_db = 0
         self.lock = threading.Lock()
-        
+
         # Embedding 客户端（懒加载）
         self._emb_client = None
         self._emb_model = None
         self._emb_dim = dim
-        
+
         # 待追加队列
         self._pending = []        # list[dict {content, source, phase, importance, timestamp}]
         self._pending_session = []  # list[dict {session_text, cycle_id, timestamp}]
-    
+
     def init_embedding(self):
         """懒加载 embedding 客户端"""
         if self._emb_client is not None:
@@ -172,7 +181,7 @@ class HNSW_MN_Index:
         except Exception as e:
             logger.debug(f"MN-RU embedding 初始化跳过: {e}")
         return False
-    
+
     def embed(self, texts: list) -> list:
         """批量 embedding（1 次 API 调用）"""
         if not self._emb_client:
@@ -198,59 +207,59 @@ class HNSW_MN_Index:
                     return []
             logger.warning(f"MN-RU embedding 失败: {e}")
             return []
-    
+
     # ── 主索引管理 ──
-    
+
     def rebuild_main(self, all_nodes: list):
         """全量重建主索引（从 DB 全量读后调用）"""
         if not all_nodes:
             return False
-        
+
         texts = [n['content'] for n in all_nodes]
         vectors = self.embed(texts)
         if not vectors or len(vectors) != len(texts):
             return False
-        
+
         import hnswlib as _hnsw
         dim = len(vectors[0])
-        
+
         idx = _hnsw.Index(space='ip', dim=dim)
         idx.init_index(max_elements=max(len(vectors), 10000), ef_construction=200, M=16)
         idx.add_items(vectors, [i for i in range(len(vectors))])
-        
+
         try:
             idx.save_index(self.index_path)
         except Exception:
             pass
-        
+
         self.main = idx
         self.main_nodes = all_nodes
         self.main_ready = True
         self.last_rebuild = time.time()
         logger.info(f"MN-RU 主索引重建: {len(all_nodes)} 节点")
         return True
-    
+
     # ── 小索引（增量） ──
-    
+
     def push_pending(self, node: dict):
         """添加待索引节点（不阻塞，合并时统一 embedding）"""
         with self.lock:
             self._pending.append(node)
-    
+
     def push_pending_batch(self, nodes: list):
         """批量添加待索引节点"""
         with self.lock:
             self._pending.extend(nodes)
-    
+
     def flush_mini(self):
         """将待处理节点批量 embedding 后追加到小索引"""
         with self.lock:
             pending = list(self._pending)
             self._pending.clear()
-        
+
         if not pending:
             return 0
-        
+
         texts = [n['content'] for n in pending]
         vectors = self.embed(texts)
         if not vectors or len(vectors) != len(texts):
@@ -258,77 +267,77 @@ class HNSW_MN_Index:
             with self.lock:
                 self._pending[:0] = pending
             return 0
-        
+
         import hnswlib as _hnsw
-        
+
         if not self.mini_ready:
             # 初始化小索引
             dim = len(vectors[0])
             self.mini = _hnsw.Index(space='ip', dim=dim)
             self.mini.init_index(max_elements=max(len(pending), 10000), ef_construction=100, M=16)
             self.mini_ready = True
-        
+
         start = len(self.mini_nodes)
         total_add = len(pending)
         max_elem = self.mini.max_elements
-        
+
         if start + total_add > max_elem:
             # 扩容
             self.mini.resize_index(start + total_add + 1000)
-        
+
         self.mini.add_items(vectors, [start + i for i in range(total_add)])
         self.mini_nodes.extend(pending)
-        
+
         logger.info(f"MN-RU 小索引追加: {total_add} 节点 (总 {len(self.mini_nodes)})")
         return total_add
-    
+
     def flush_session(self):
         """将待处理的 session 节点批量编码后追加到 session 索引"""
         with self.lock:
             pending = list(self._pending_session)
             self._pending_session.clear()
-        
+
         if not pending:
             return 0
-        
+
         texts = [n['session_text'] for n in pending]
         vectors = self.embed(texts)
         if not vectors or len(vectors) != len(texts):
             with self.lock:
                 self._pending_session[:0] = pending
             return 0
-        
+
         import hnswlib as _hnsw
-        
+
         if not self.session_ready:
             dim = len(vectors[0])
             self.session_idx = _hnsw.Index(space='ip', dim=dim)
             self.session_idx.init_index(max_elements=max(len(pending), 5000), ef_construction=200, M=16)
             self.session_ready = True
-        
+
         start = len(self.session_nodes)
         total_add = len(pending)
         max_elem = self.session_idx.max_elements
-        
+
         if start + total_add > max_elem:
             self.session_idx.resize_index(start + total_add + 500)
-        
+
         self.session_idx.add_items(vectors, [start + i for i in range(total_add)])
         self.session_nodes.extend(pending)
-        
+
         logger.info(f"MN-RU Session 索引追加: {total_add} 节点 (总 {len(self.session_nodes)})")
         return total_add
-    
+
     # ── 合并 ──
-    
+
     def merge_mini_to_main(self):
         """小索引合并到主索引"""
         if not self.mini_nodes or not self.main_ready:
             return False
-        
+
         all_nodes = self.main_nodes + self.mini_nodes
         ok = self.rebuild_main(all_nodes)
-        
+
         if ok:
             # 清空小索引
             import hnswlib as _hnsw
@@ -338,9 +347,9 @@ class HNSW_MN_Index:
             self.mini_nodes = []
             self.last_merge = time.time()
             logger.info(f"MN-RU 合并完成: {len(all_nodes)} 节点")
-        
+
         return ok
-    
+
     def _should_merge(self) -> bool:
         """检查是否需要合并"""
         now = time.time()
@@ -348,9 +357,9 @@ class HNSW_MN_Index:
             len(self.mini_nodes) >= HNMW_MINI_THRESHOLD or
             (len(self.mini_nodes) > 0 and now - self.last_merge > HNMW_MERGE_INTERVAL)
         )
-    
+
     # ── 搜索 ──
-    
+
     def search(self, query_vec: list, top_k: int = 10) -> list:
         """
         三通道搜索：主索引 + 小索引 + session 索引，结果去重合并
@@ -360,7 +369,7 @@ class HNSW_MN_Index:
         """
         results = []
         seen = set()
-        
+
         # 通道 A：主索引
         if self.main_ready and self.main_nodes:
             try:
@@ -378,7 +387,7 @@ class HNSW_MN_Index:
                             results.append(node)
             except Exception as e:
                 logger.debug(f"MN-RU 主索引搜索失败: {e}")
-        
+
         # 通道 B：小索引
         if self.mini_ready and self.mini_nodes:
             try:
@@ -397,7 +406,7 @@ class HNSW_MN_Index:
                             results.append(node)
             except Exception as e:
                 logger.debug(f"MN-RU 小索引搜索失败: {e}")
-        
+
         # 通道 C：session 索引
         if self.session_ready and self.session_nodes:
             try:
@@ -420,9 +429,9 @@ class HNSW_MN_Index:
                             })
             except Exception as e:
                 logger.debug(f"MN-RU Session 索引搜索失败: {e}")
-        
+
         return results
-    
+
 
 # ── 全局单例 ──
 _HNSW_MN = None
@@ -468,20 +477,20 @@ def _get_denoised_context(query: str, session_id: str = "") -> str:
     """
     if not session_id or session_id not in _SESSION_HISTORY_CACHE:
         return ""
-    
+
     turns = _SESSION_HISTORY_CACHE[session_id]
     if not turns:
         return ""
-    
+
     # 用 jieba 分词（无 jieba 时用正则）
     try:
         import jieba
         query_words = set(jieba.lcut(query.lower()))
     except ImportError:
         query_words = set(re.findall(r'[\w\u4e00-\u9fff]+', query.lower()))
-    
+
     query_entities = _extract_entities_from_text(query)
-    
+
     useful_turns = []
     for turn in turns[-12:]:  # 最多看最近 12 轮
         turn_text = turn.get('user_input', '') + ' ' + turn.get('answer', '')
@@ -489,22 +498,22 @@ def _get_denoised_context(query: str, session_id: str = "") -> str:
             turn_words = set(jieba.lcut(turn_text.lower()))
         except ImportError:
             turn_words = set(re.findall(r'[\w\u4e00-\u9fff]+', turn_text.lower()))
-        
+
         # 关键词重叠度
         overlap = len(query_words & turn_words)
         relevance = overlap / max(len(query_words | turn_words), 1)
-        
+
         # 实体重叠
         turn_entities = _extract_entities_from_text(turn_text)
         entity_overlap = len(set(query_entities) & set(turn_entities))
-        
+
         if relevance > 0.15 or entity_overlap > 0:
             useful_turns.append({
                 'text': turn_text[:500],
                 'relevance': relevance,
                 'timestamp': turn.get('timestamp', 0),
             })
-    
+
     if not useful_turns:
         # 兜底：取最近 2 轮
         for turn in turns[-2:]:
@@ -515,20 +524,20 @@ def _get_denoised_context(query: str, session_id: str = "") -> str:
                     'relevance': 0.1,
                     'timestamp': turn.get('timestamp', 0),
                 })
-    
+
     if not useful_turns:
         return ""
-    
+
     # 按相关度排序取 top-3
     useful_turns.sort(key=lambda x: -x['relevance'])
     useful_turns = useful_turns[:3]
-    
+
     # 同时返回最新的轮次（保证时序）
     # 混合策略：top-3 相关 + 最后 1 轮最新
     context_parts = []
     for ut in useful_turns:
         context_parts.append(ut['text'])
-    
+
     if context_parts:
         result = "\n".join(context_parts)
         return result[:2000]
@@ -538,28 +547,28 @@ def _get_denoised_context(query: str, session_id: str = "") -> str:
 def _extract_entities_from_text(text: str) -> list:
     """简易实体提取（大写术语 + 特定模式）"""
     entities = set()
-    
+
     # 驼峰/大写组合词：ContextEngine, R-CCAM, HNSW 等
     for m in re.finditer(r'\b[A-Z][a-z]+(?:[A-Z][a-z]*)+\b', text):
         entities.add(m.group())
-    
+
     # 连字符词：context-denoised, system-prompt 等
     for m in re.finditer(r'\b[a-z]+(?:-[a-z]+)+\b', text.lower()):
         entities.add(m.group())
-    
+
     # 带下划线的：systemPromptAddition, _rccamCache 等
     for m in re.finditer(r'\b[a-z_][a-zA-Z_]+\b', text):
         w = m.group()
         if '_' in w or any(c.isupper() for c in w[1:]):
             entities.add(w)
-    
+
     # 技术短语
     tech_phrases = ['HNSW', 'DAG', 'KG', 'RRF', 'R-CCAM', 'CRAG', 'embedding',
                     'reranker', 'hnswlib', 'MN-RU', 'HAConvDR', 'ChatRetriever']
     for phrase in tech_phrases:
         if phrase.lower() in text.lower():
             entities.add(phrase)
-    
+
     return list(entities)
 
 
@@ -574,14 +583,14 @@ def _expand_query(query: str) -> list:
     """
     expansions = [query]
     seen = {query.lower().strip()}
-    
+
     for word, syns in TERM_EXPANSION_MAP.items():
         if word in query.lower():
             for syn in syns:
                 if syn.lower() not in seen:
                     seen.add(syn.lower())
                     expansions.append(syn)
-    
+
     # 同义词扩展（scripts_core 可用时）
     try:
         from scripts_core.rewriter import QueryRewriter
@@ -592,7 +601,7 @@ def _expand_query(query: str) -> list:
                 expansions.append(e)
     except Exception:
         pass
-    
+
     return expansions[:5]  # 最多 5 个
 
 
@@ -684,7 +693,7 @@ def _rrf_merge(all_results: List[List[Dict]], k: int = 10) -> List[Dict]:
     - 其他: ×1.0
     """
     session_start = _get_session_start_time()
-    
+
     WEIGHT_MAP = {
         'dag_session': SESSION_BOOST_SESSION,
         'dag_mini': DAG_MINI_BOOST,
@@ -692,11 +701,11 @@ def _rrf_merge(all_results: List[List[Dict]], k: int = 10) -> List[Dict]:
         'dag_msg': DAG_BOOST,
         'dag_fallback': DAG_BOOST * 0.6,
     }
-    
+
     rrf_scores = {}
     item_map = {}
     raw_scores = {}  # 保留原始相似度
-    
+
     for results in all_results:
         for i, r in enumerate(results):
             rid = r.get('content', r.get('id', str(i)))[:200]
@@ -706,10 +715,10 @@ def _rrf_merge(all_results: List[List[Dict]], k: int = 10) -> List[Dict]:
                 rrf_scores[rid] = 0.0
                 item_map[rid] = r
                 raw_scores[rid] = []
-            
+
             src = r.get('source', 'unknown')
             weight = WEIGHT_MAP.get(src, 1.0)
-            
+
             # 当前会话提权
             ts = r.get('timestamp', 0)
             if ts and session_start > 0 and float(ts) >= session_start:
@@ -718,9 +727,9 @@ def _rrf_merge(all_results: List[List[Dict]], k: int = 10) -> List[Dict]:
                 mn_src = r.get('_mn_source', '')
                 if mn_src in ('mini', 'session'):
                     weight *= 1.5
-            
+
             rrf_scores[rid] += weight / (k + i + 1)
-            
+
             # GAT 注意力权重增强：synapse_seed → ×10 替代 RRF，synapse_cfc → ×(1+gw)
             _gw = r.get('gat_weight', 0)
             if _gw > 0:
@@ -728,16 +737,16 @@ def _rrf_merge(all_results: List[List[Dict]], k: int = 10) -> List[Dict]:
                     rrf_scores[rid] += _gw * 10.0
                 elif src in ('synapse_cfc', 'synapse_pred'):
                     rrf_scores[rid] += _gw * 1.5
-            
+
             # 收集原始相似度（来自各源的 score 字段）
             inner_score = r.get('score', r.get('_mn_score', 0))
             if isinstance(inner_score, (int, float)):
                 raw_scores[rid].append(inner_score)
-            
+
             if 'sources' not in item_map[rid]:
                 item_map[rid]['sources'] = set()
             item_map[rid]['sources'].add(src)
-    
+
     # 混合分数
     max_rrf = max(rrf_scores.values()) if rrf_scores else 1.0
     merged = []
@@ -758,7 +767,7 @@ def _rrf_merge(all_results: List[List[Dict]], k: int = 10) -> List[Dict]:
         item.pop('_mn_score', None)
         item.pop('_mn_source', None)
         merged.append(item)
-    
+
     merged.sort(key=lambda x: -x['rrf_score'])
     return merged
 
@@ -870,17 +879,17 @@ def _build_all_indexes():
     mn = _get_hnsw_mn()
     if not mn.init_embedding():
         return False
-    
+
     dag_db = os.path.expanduser("~/.openclaw/dag_context.db")
     if not os.path.exists(dag_db):
         return False
-    
+
     conn = sqlite3.connect(dag_db)
-    
+
     # 读取所有可索引节点
     nodes = []
     seen_content = set()
-    
+
     # rccam_nodes：非 cycle_summary
     cur = conn.execute(
         "SELECT node_id, phase_name, content, importance_score, node_type, timestamp "
@@ -908,7 +917,7 @@ def _build_all_indexes():
             'importance': imp or 0.5,
             'timestamp': ts or 0,
         })
-    
+
     # rccam_nodes：cycle_summary
     cur2 = conn.execute(
         "SELECT node_id, phase_name, content, importance_score, node_type, timestamp "
@@ -934,7 +943,7 @@ def _build_all_indexes():
             'importance': imp or 0.5,
             'timestamp': ts or 0,
         })
-    
+
     # dag_nodes：MESSAGE / cognitive_summary
     cur3 = conn.execute(
         "SELECT node_id, node_type, content, importance_score, timestamp "
@@ -960,17 +969,17 @@ def _build_all_indexes():
             'importance': imp or 0.5,
             'timestamp': ts or 0,
         })
-    
+
     conn.close()
-    
+
     if not nodes:
         return False
-    
+
     # 重建主索引
     ok = mn.rebuild_main(nodes)
     if ok:
         logger.info(f"DAG 全量索引构建: {len(nodes)} 节点")
-    
+
     return ok
 
 
@@ -986,7 +995,7 @@ def _do_dag(query: str, top_k: int, session_id: str = "") -> list:
     mn = _get_hnsw_mn()
     if not mn.init_embedding():
         return _do_dag_fallback(query, top_k)
-    
+
     # 检查是否需要全量重建或合并
     now = time.time()
     if not mn.main_ready:
@@ -1005,7 +1014,7 @@ def _do_dag(query: str, top_k: int, session_id: str = "") -> list:
                 if total != mn.total_nodes_db:
                     _build_all_indexes()
         threading.Thread(target=_rebg, daemon=True).start()
-    
+
     if mn._should_merge() and mn.mini_nodes:
         def _merge_bg():
             try:
@@ -1013,17 +1022,17 @@ def _do_dag(query: str, top_k: int, session_id: str = "") -> list:
             except Exception:
                 pass
         threading.Thread(target=_merge_bg, daemon=True).start()
-    
+
     # 增量 flush：待处理节点写入小索引
     if mn._pending:
         mn.flush_mini()
     if mn._pending_session:
         mn.flush_session()
-    
+
     try:
         # Query Expansion：多条查询分别 embedding，取最优结果
         expansions = _expand_query(query)
-        
+
         # Context-Denoised 上下文
         denoised_ctx = _get_denoised_context(query, session_id)
         if denoised_ctx:
@@ -1031,35 +1040,35 @@ def _do_dag(query: str, top_k: int, session_id: str = "") -> list:
             merged_query = f"{query} {' '.join(expansions[1:4])}"[:500]
         else:
             merged_query = query
-        
+
         # 1 次 embedding API 调用（使用 mn.embed 的 fallback 逻辑）
         _emb_result = mn.embed([merged_query])
         if not _emb_result:
             logger.warning("  dag(mn-ru) embed 失败，降级到 fallback")
             return _do_dag_fallback(query, top_k)
         q_vec = _emb_result[0]
-        
+
         # 三通道搜索
         all_results = mn.search(q_vec, top_k=top_k * 2)  # 多取一些确保 mini/session 能排上来
-        
+
         # 按相似度排序（让 mini/session 高相关结果排到前面）
         all_results.sort(key=lambda x: -x.get('_mn_score', 0))
-        
+
         # 评分排序
         _r = []
         for item in all_results:
             sim_score = item.get('_mn_score', 0.5)
             importance = item.get('importance', 0.5)
             score = sim_score * 0.8 + importance * 0.2
-            
+
             # 当前会话提权
             ts = item.get('timestamp', 0)
             if ts and ts > (time.time() - CURRENT_SESSION_WINDOW):
                 score *= 1.3
-            
+
             if score < 0.15:
                 continue
-            
+
             _r.append({
                 'content': item['content'][:1500],
                 'score': round(score, 3),
@@ -1070,10 +1079,10 @@ def _do_dag(query: str, top_k: int, session_id: str = "") -> list:
             })
             if len(_r) >= top_k:
                 break
-        
+
         logger.info(f"  dag(mn-ru): {len(_r)} results (main={len(mn.main_nodes)}, mini={len(mn.mini_nodes)}, session={len(mn.session_nodes)})")
         return _r
-        
+
     except Exception as e:
         logger.warning(f"  dag(mn-ru) failed: {e}")
         return _do_dag_fallback(query, top_k)
@@ -1502,7 +1511,7 @@ def _do_paper(query: str, top_k: int) -> list:
             fa.raptor.build_tree()
         if not _stat.get('graphrag_entities'):
             fa.graphrag.extract_from_dag()
-        
+
         # fa.search 用 .split() 切中文不生效，直接取内部数据匹配
         # RAPTOR
         q_words = set(re.findall(r'[\w\u4e00-\u9fff]+', query.lower()))
@@ -1515,7 +1524,7 @@ def _do_paper(query: str, top_k: int) -> list:
                         "score": 0.7,
                         "source": "raptor_tree"
                     })
-        
+
         # GraphRAG
         if fa.graphrag._entities:
             for entity_name, entity_info in list(fa.graphrag._entities.items())[:10]:
@@ -1527,7 +1536,7 @@ def _do_paper(query: str, top_k: int) -> list:
                         "score": 0.65,
                         "source": "graphrag"
                     })
-        
+
         # Reflection
         if fa.reflection._reflections:
             for ref in fa.reflection._reflections[-10:][::-1]:
@@ -1539,7 +1548,7 @@ def _do_paper(query: str, top_k: int) -> list:
                         "score": 0.6,
                         "source": "reflection"
                     })
-        
+
         # Toolformer
         tool_match = fa.toolformer.route(query)
         if tool_match and tool_match.get('tool') and tool_match['tool'] != 'general':
@@ -1548,7 +1557,7 @@ def _do_paper(query: str, top_k: int) -> list:
                 "score": 0.5,
                 "source": "toolformer"
             })
-        
+
         _r = _r[:top_k]
         logger.info(f"  paper engines: {len(_r)} results")
     except Exception as e:
@@ -1649,7 +1658,7 @@ def _verify_local_with_web(
             "confidence_delta": 0.0,
             "reason": "无验证数据",
         }
-    
+
     # 提取本地 top-3 内容摘要
     merged_text = " ".join(
         r.get('content', '')[:300] for r in merged_results[:3] if r.get('content')
@@ -1658,7 +1667,7 @@ def _verify_local_with_web(
     web_text = " ".join(
         r.get('content', '')[:300] for r in web_results[:3] if r.get('content')
     )
-    
+
     if not merged_text or not web_text:
         return {
             "verified": False,
@@ -1666,19 +1675,19 @@ def _verify_local_with_web(
             "confidence_delta": 0.0,
             "reason": "内容不足",
         }
-    
+
     # 关键词重叠验证
     merged_words = set(re.findall(r'[\w\u4e00-\u9fff]+', merged_text.lower()))
     web_words = set(re.findall(r'[\w\u4e00-\u9fff]+', web_text.lower()))
-    
+
     overlap = len(merged_words & web_words)
     total = max(len(merged_words), len(web_words), 1)
     jaccard = overlap / total
-    
+
     # 本地独有词比例高 → 可能是内部知识 web 搜不到，不一定是错的
     merged_only = len(merged_words - web_words)
     local_ratio = merged_only / max(len(merged_words), 1)
-    
+
     # 判断
     if jaccard > 0.4:
         verified = True
@@ -1697,7 +1706,7 @@ def _verify_local_with_web(
         verified = False
         confidence_delta = -min(0.3, (0.2 - jaccard) * 0.5)
         reason = "存在差异"
-    
+
     return {
         "verified": verified,
         "agreement": round(jaccard, 4),
@@ -1728,7 +1737,7 @@ def _assess_retrieval_quality(
             base = {"judgment": "ambiguous", "confidence": top_score, "top_score": top_score}
         else:
             base = {"judgment": "incorrect", "confidence": top_score, "top_score": top_score}
-    
+
     # 叠加 web 验证修正
     if web_verification and web_verification.get("agreement", 0) > 0:
         delta = web_verification.get("confidence_delta", 0)
@@ -1743,7 +1752,7 @@ def _assess_retrieval_quality(
         # 如果 web 验证有差异且本地分数本就不高 → 降级
         if delta < 0 and base["judgment"] == "correct" and base["confidence"] < 0.5:
             base["judgment"] = "ambiguous"
-    
+
     return base
 
 

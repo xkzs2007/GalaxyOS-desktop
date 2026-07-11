@@ -113,7 +113,7 @@ class MetaOptimizer:
             crag_trend = impact.get_trend(session_id, "crag")
             if crag_trend == "down":
                 # 检索一直差 → 可能需要别的策略而非单纯降阈
-                logger.info(f"[metaopt] CoEvolve 检测失败但检索趋势向下 → 追加 multi_search")
+                logger.info("[metaopt] CoEvolve 检测失败但检索趋势向下 → 追加 multi_search")
                 params["coevolve_strategy"] = "multi_search"
             else:
                 params["coevolve_strategy"] = "continue"

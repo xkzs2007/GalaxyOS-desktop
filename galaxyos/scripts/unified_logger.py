@@ -12,7 +12,8 @@ from datetime import datetime
 # 日志目录
 
 # ── Centralized path resolution ──
-import os as _os, sys as _sys
+import os as _os
+import sys as _sys
 from galaxyos.shared.paths import workspace
 _ws_root = workspace()
 for _p in [_ws_root, "/workspace"]:
@@ -38,20 +39,20 @@ def setup_logger(name: str, level: int = logging.INFO) -> logging.Logger:
         配置好的日志器
     """
     logger = logging.getLogger(name)
-    
+
     # 避免重复配置
     if logger.handlers:
         return logger
-    
+
     logger.setLevel(level)
-    
+
     # 控制台处理器
     console_handler = logging.StreamHandler(sys.stdout)
     console_handler.setLevel(level)
     console_formatter = logging.Formatter(LOG_FORMAT, DATE_FORMAT)
     console_handler.setFormatter(console_formatter)
     logger.addHandler(console_handler)
-    
+
     # 文件处理器
     log_file = LOG_DIR / f"{name}.log"
     file_handler = logging.FileHandler(log_file, encoding='utf-8')
@@ -59,7 +60,7 @@ def setup_logger(name: str, level: int = logging.INFO) -> logging.Logger:
     file_formatter = logging.Formatter(LOG_FORMAT, DATE_FORMAT)
     file_handler.setFormatter(file_formatter)
     logger.addHandler(file_handler)
-    
+
     return logger
 
 # 全局日志器

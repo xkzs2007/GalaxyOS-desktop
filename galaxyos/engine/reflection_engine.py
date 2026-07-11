@@ -41,10 +41,10 @@ class ReflectionConfig:
     min_memories_for_reflection: int = 10  # 最少记忆数才触发
     reflection_interval_hours: float = 24.0  # 反思间隔（小时）
     importance_threshold: float = 5.0  # 重要性阈值
-    
+
     # 检索参数
     memories_per_reflection: int = 100  # 每次反思处理的记忆数
-    
+
     # LLM 配置
     llm_model: str = "default"
     max_insights: int = 5  # 每次反思最多生成的洞察数
@@ -67,7 +67,7 @@ class Insight:
     created_at: datetime
     confidence: float  # 置信度 0-1
     tags: List[str] = field(default_factory=list)
-    
+
     def to_dict(self) -> Dict:
         return {
             "id": self.id,
@@ -91,7 +91,7 @@ class ReflectionEngine:
     3. 使用 LLM 生成洞察
     4. 将洞察存回记忆流
     """
-    
+
     def __init__(
         self,
         memory_stream: MemoryStream,
@@ -110,12 +110,12 @@ class ReflectionEngine:
         self.config = config or ReflectionConfig()
         self.llm_client = llm_client
         self.retriever = MemoryRetriever()
-        
+
         # 状态追踪
         self._last_reflection_time: Optional[datetime] = None
         self._reflection_count: int = 0
         self._pending_reflection: bool = False
-    
+
     def should_reflect(self) -> Tuple[bool, ReflectionTrigger]:
         """
         检查是否应该触发反思
@@ -125,7 +125,7 @@ class ReflectionEngine:
         """
         now = datetime.now(timezone.utc)
         memories = self.memory_stream.get_all()
-        
+
         # 1. 检查定时触发
         if self._last_reflection_time:
             elapsed = (now - self._last_reflection_time).total_seconds() / 3600
@@ -135,14 +135,14 @@ class ReflectionEngine:
             # 首次运行，如果记忆数足够则触发
             if len(memories) >= self.config.min_memories_for_reflection:
                 return True, ReflectionTrigger.THRESHOLD
-        
+
         # 2. 检查阈值触发
         if len(memories) >= self.config.min_memories_for_reflection:
             # 检查是否有足够多的未反思记忆
             unreflected = [m for m in memories if m.memory_type != MemoryType.REFLECTION]
             if len(unreflected) >= self.config.min_memories_for_reflection * 2:
                 return True, ReflectionTrigger.THRESHOLD
-        
+
         # 3. 检查高重要性事件
         important_memories = self.memory_stream.get_important(self.config.importance_threshold)
         recent_important = [
@@ -151,9 +151,9 @@ class ReflectionEngine:
         ]
         if len(recent_important) >= 3:
             return True, ReflectionTrigger.IMPORTANCE
-        
+
         return False, ReflectionTrigger.MANUAL
-    
+
     def reflect(
         self,
         trigger: ReflectionTrigger = ReflectionTrigger.MANUAL,
@@ -171,13 +171,13 @@ class ReflectionEngine:
         """
         # 检索用于反思的记忆
         memories = self._retrieve_memories_for_reflection(focus_query)
-        
+
         if not memories:
             return []
-        
+
         # 生成洞察
         insights = self._generate_insights(memories, trigger)
-        
+
         # 将洞察存入记忆流
         for insight in insights:
             self.memory_stream.add(
@@ -191,14 +191,14 @@ class ReflectionEngine:
                     "trigger": trigger.value
                 }
             )
-        
+
         # 更新状态
         self._last_reflection_time = datetime.now(timezone.utc)
         self._reflection_count += 1
         self._pending_reflection = False
-        
+
         return insights
-    
+
     def get_reflection_questions(self, memories: List[Memory]) -> List[str]:
         """
         生成反思问题
@@ -207,7 +207,7 @@ class ReflectionEngine:
         """
         # 提取记忆主题
         topics = self._extract_topics(memories)
-        
+
         questions = [
             "从这些经历中，我学到了什么重要的教训？",
             "这些事件之间有什么共同的模式或规律？",
@@ -215,7 +215,7 @@ class ReflectionEngine:
             "哪些决策是正确的，哪些需要改进？",
             "我对自己的认识有什么新的理解？"
         ]
-        
+
         # 根据主题添加特定问题
         if "学习" in topics:
             questions.append("我的学习方法是否有效？如何改进？")
@@ -223,13 +223,13 @@ class ReflectionEngine:
             questions.append("我的工作效率如何？有什么可以优化的地方？")
         if "错误" in topics or "失败" in topics:
             questions.append("从这些错误中，我能学到什么？")
-        
+
         return questions
-    
+
     def get_status(self) -> Dict[str, Any]:
         """获取反思引擎状态"""
         should, trigger = self.should_reflect()
-        
+
         return {
             "last_reflection": self._last_reflection_time.isoformat() if self._last_reflection_time else None,
             "reflection_count": self._reflection_count,
@@ -241,22 +241,22 @@ class ReflectionEngine:
                 "min_memories": self.config.min_memories_for_reflection
             }
         }
-    
+
     # ==================== 私有方法 ====================
-    
+
     def _retrieve_memories_for_reflection(
         self,
         focus_query: Optional[str] = None
     ) -> List[Memory]:
         """检索用于反思的记忆"""
         all_memories = self.memory_stream.get_all()
-        
+
         # 排除已有的反思记忆（避免循环反思）
         non_reflection_memories = [
             m for m in all_memories
             if m.memory_type != MemoryType.REFLECTION
         ]
-        
+
         if focus_query:
             # 有聚焦查询，使用相关性检索
             return self.retriever.retrieve_for_planning(
@@ -270,7 +270,7 @@ class ReflectionEngine:
                 non_reflection_memories,
                 top_k=self.config.memories_per_reflection
             )
-    
+
     def _generate_insights(
         self,
         memories: List[Memory],
@@ -282,13 +282,13 @@ class ReflectionEngine:
             f"- [{m.memory_type.value}] {m.content}"
             for m in memories[:50]  # 限制数量避免过长
         ]
-        
+
         # 生成反思问题
         questions = self.get_reflection_questions(memories)
-        
+
         # 构建提示词
         prompt = self._build_reflection_prompt(memory_summaries, questions, trigger)
-        
+
         # 调用 LLM
         if self.llm_client:
             response = self._call_llm(prompt)
@@ -296,9 +296,9 @@ class ReflectionEngine:
         else:
             # 无 LLM 时使用规则生成
             insights = self._rule_based_insights(memories)
-        
+
         return insights[:self.config.max_insights]
-    
+
     def _build_reflection_prompt(
         self,
         memory_summaries: List[str],
@@ -324,7 +324,7 @@ class ReflectionEngine:
 本次反思由 {trigger.value} 触发。
 
 请输出你的反思结果："""
-    
+
     def _call_llm(self, prompt: str) -> str:
         """调用 LLM"""
         if hasattr(self.llm_client, 'generate'):
@@ -335,7 +335,7 @@ class ReflectionEngine:
             return self.llm_client(prompt)
         else:
             raise ValueError("Invalid LLM client")
-    
+
     def _parse_llm_response(
         self,
         response: str,
@@ -348,7 +348,7 @@ class ReflectionEngine:
             if json_match:
                 data = json.loads(json_match.group())
                 insights_data = data.get("insights", [])
-                
+
                 insights = []
                 for i, item in enumerate(insights_data):
                     insight = Insight(
@@ -360,23 +360,23 @@ class ReflectionEngine:
                         tags=item.get("tags", [])
                     )
                     insights.append(insight)
-                
+
                 return insights
         except Exception as e:
             print(f"[ReflectionEngine] 解析 LLM 响应失败: {e}")
-        
+
         # 解析失败，使用规则生成
         return self._rule_based_insights(source_memories)
-    
+
     def _rule_based_insights(self, memories: List[Memory]) -> List[Insight]:
         """基于规则的洞察生成（无 LLM 时的后备方案）"""
         insights = []
-        
+
         # 分析记忆类型分布
         type_counts = {}
         for m in memories:
             type_counts[m.memory_type.value] = type_counts.get(m.memory_type.value, 0) + 1
-        
+
         # 生成洞察
         if type_counts.get("action", 0) > 5:
             insights.append(Insight(
@@ -387,7 +387,7 @@ class ReflectionEngine:
                 confidence=0.6,
                 tags=["行动分析"]
             ))
-        
+
         # 分析重要性分布
         high_importance = [m for m in memories if m.importance >= 7.0]
         if len(high_importance) > 3:
@@ -399,7 +399,7 @@ class ReflectionEngine:
                 confidence=0.7,
                 tags=["重要性分析"]
             ))
-        
+
         # 默认洞察
         if not insights:
             insights.append(Insight(
@@ -410,9 +410,9 @@ class ReflectionEngine:
                 confidence=0.5,
                 tags=["默认"]
             ))
-        
+
         return insights
-    
+
     def _extract_topics(self, memories: List[Memory]) -> List[str]:
         """提取记忆主题"""
         topics = []
@@ -422,13 +422,13 @@ class ReflectionEngine:
             "错误": ["错误", "失败", "问题", "bug", "异常"],
             "计划": ["计划", "打算", "准备", "安排", "目标"]
         }
-        
+
         for topic, kws in keywords.items():
             for m in memories:
                 if any(kw in m.content for kw in kws):
                     topics.append(topic)
                     break
-        
+
         return topics
 
 
@@ -460,33 +460,33 @@ def reflect(
     stream = MemoryStream()
     for m in recent_memories:
         stream.memories[m.id] = m
-    
+
     # 创建反思引擎
     engine = ReflectionEngine(stream, llm_client=llm_client)
-    
+
     # 执行反思
     insights = engine.reflect()
-    
+
     return [i.content for i in insights]
 
 
 if __name__ == "__main__":
     # 测试代码
     stream = MemoryStream()
-    
+
     # 添加测试记忆
     stream.add("完成了 Python 项目开发", MemoryType.ACTION, importance=7.0)
     stream.add("学习了异步编程模式", MemoryType.OBSERVATION, importance=6.0)
     stream.add("修复了一个关键 bug", MemoryType.ACTION, importance=8.0)
     stream.add("代码审查发现了几个问题", MemoryType.OBSERVATION, importance=5.0)
-    
+
     # 创建反思引擎
     engine = ReflectionEngine(stream)
-    
+
     # 检查是否应该反思
     should, trigger = engine.should_reflect()
     print(f"应该反思: {should}, 触发类型: {trigger.value}")
-    
+
     # 执行反思
     insights = engine.reflect()
     print(f"\n生成了 {len(insights)} 个洞察:")

@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
 """回溯填充旧 DAG 节点的 scene_trace"""
 
-import sys, os, json, sqlite3, time
+import sys
+import os
+import json
+import sqlite3
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__)))
@@ -55,31 +59,31 @@ def backfill_db(db_path: str, label: str):
     if not os.path.exists(db_path):
         print(f"  {label}: DB 不存在，跳过")
         return 0, 0
-    
+
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
-    
+
     # 检查 scene_trace 列是否存在
     cols = [r[1] for r in conn.execute("PRAGMA table_info(dag_nodes)").fetchall()]
     if 'scene_trace' not in cols:
         conn.execute("ALTER TABLE dag_nodes ADD COLUMN scene_trace TEXT DEFAULT ''")
         conn.commit()
         print(f"  {label}: 添加 scene_trace 列")
-    
+
     # 找出需要回溯的节点（有内容、非摘要、scene_trace 为空）
     rows = conn.execute(
         "SELECT node_id, content, length(content) as clen FROM dag_nodes "
         "WHERE (scene_trace IS NULL OR scene_trace = '') AND length(content) >= 20 "
         "AND is_summary = 0 ORDER BY timestamp ASC"
     ).fetchall()
-    
+
     if not rows:
         print(f"  {label}: 没有需要回溯的节点 ✅")
         conn.close()
         return 0, 0
-    
+
     print(f"  {label}: 找到 {len(rows)} 个需要回溯的节点")
-    
+
     def process(row):
         node_id = row["node_id"]
         content = row["content"]
@@ -91,10 +95,10 @@ def backfill_db(db_path: str, label: str):
             conn.close()
             return node_id, trace
         return node_id, ""
-    
+
     success = 0
     total = len(rows)
-    
+
     # 分批并发
     for i in range(0, total, BATCH_SIZE):
         batch = rows[i:i+BATCH_SIZE]
@@ -111,7 +115,7 @@ def backfill_db(db_path: str, label: str):
                 except Exception as e:
                     print(f"    ❌ 异常: {e}")
         time.sleep(RATE_LIMIT_SLEEP)
-    
+
     conn.close()
     return success, total
 
@@ -119,12 +123,12 @@ if __name__ == "__main__":
     print("=" * 60)
     print("scene_trace 回溯填充")
     print("=" * 60)
-    
+
     # 回溯两个 DB
     for db_path, label in [(DB_PATH, "workspace DB"), (OLD_DB_PATH, "old DB")]:
         s, t = backfill_db(db_path, label)
         print(f"  {label}: 成功 {s}/{t}")
-    
+
     print("=" * 60)
     print("完成 ✅")
     print(f"注意: 共触发 {t} 次 DeepSeek Flash API 调用，注意查看用量")

@@ -80,17 +80,17 @@ class KnowledgeArticle:
     def to_markdown(self, backlink_articles: List[str]) -> str:
         """渲染为 Obsidian 兼容 markdown"""
         lines = [
-            f"---",
+            "---",
             f"title: {self.title}",
             f"tags: [{', '.join(self.tags)}]",
             f"created: {datetime.datetime.fromtimestamp(self.created_at).strftime('%Y-%m-%d %H:%M')}",
             f"updated: {datetime.datetime.fromtimestamp(self.updated_at).strftime('%Y-%m-%d %H:%M')}",
-            f"---",
-            f"",
+            "---",
+            "",
             f"{self.content}",
-            f"",
-            f"---",
-            f"## 关联",
+            "",
+            "---",
+            "## 关联",
         ]
         for bl in self.backlinks:
             if bl in backlink_articles:
@@ -377,24 +377,24 @@ class KnowledgeCompiler:
     def _template_synthesize(self, title, contents, sources, fragments, topic) -> KnowledgeArticle:
         """模板降级合成"""
         lines = [
-            f"## 概述",
-            f"",
+            "## 概述",
+            "",
             f"本文档由 {len(fragments)} 条碎片合成，覆盖主题 \"{topic}\"。",
-            f"",
-            f"## 核心内容",
-            f"",
+            "",
+            "## 核心内容",
+            "",
         ]
         for i, c in enumerate(contents[:5]):
             lines.append(f"### 片段 {i+1}")
-            lines.append(f"")
+            lines.append("")
             lines.append(c)
-            lines.append(f"")
+            lines.append("")
 
-        lines.append(f"## 来源")
-        lines.append(f"")
+        lines.append("## 来源")
+        lines.append("")
         for s in set(sources):
             lines.append(f"- {s}")
-        lines.append(f"")
+        lines.append("")
 
         tags = list(set(frag.source for frag in fragments[:5]))
         backlinks = [f.source_id for f in fragments[:5] if f.source_id]
@@ -445,16 +445,16 @@ class KnowledgeCompiler:
         articles.sort(key=lambda a: -a.updated_at)
 
         lines = [
-            f"---",
-            f"title: 知识库索引",
-            f"tags: [index, knowledge]",
+            "---",
+            "title: 知识库索引",
+            "tags: [index, knowledge]",
             f"created: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')}",
-            f"---",
-            f"",
-            f"# 知识库索引",
-            f"",
+            "---",
+            "",
+            "# 知识库索引",
+            "",
             f"共 {len(articles)} 篇文章",
-            f"",
+            "",
         ]
 
         for a in articles:

@@ -12,7 +12,8 @@ from pathlib import Path
 # 添加 core 目录到路径
 
 # ── Centralized path resolution ──
-import os as _os, sys as _sys
+import os as _os
+import sys as _sys
 from galaxyos.shared.paths import workspace
 _ws_root = workspace()
 for _p in [_ws_root, "/workspace"]:
@@ -51,7 +52,7 @@ def get_embedding(text, config):
     if not config["api_key"]:
         print("❌ Embedding API Key 未配置")
         return None
-    
+
     try:
         response = requests.post(
             f"{config['base_url']}/embeddings",
@@ -65,7 +66,7 @@ def get_embedding(text, config):
             },
             timeout=30
         )
-        
+
         if response.status_code == 200:
             data = response.json()
             return data["data"][0]["embedding"]
@@ -82,39 +83,39 @@ def check_status():
         conn = connect(str(VECTORS_DB))
     else:
         conn = sqlite3.connect(str(VECTORS_DB))
-    
+
     cursor = conn.cursor()
-    
+
     cursor.execute("SELECT COUNT(*) FROM l0_conversations")
     total = cursor.fetchone()[0]
-    
+
     cursor.execute("SELECT COUNT(*) FROM l0_vec_rowids")
     vectorized = cursor.fetchone()[0]
-    
+
     cursor.execute("SELECT COUNT(*) FROM l1_records")
     l1_total = cursor.fetchone()[0]
-    
+
     cursor.execute("SELECT COUNT(*) FROM l1_vec_rowids")
     l1_vectorized = cursor.fetchone()[0]
-    
+
     conn.close()
-    
+
     print("=" * 50)
     print("   向量化状态报告")
     print("=" * 50)
-    
+
     if USE_PYSQLITE3 and is_vec_available():
         print(f"sqlite-vec 版本: {get_vec_version()}")
-    
-    print(f"\nL0 对话层:")
+
+    print("\nL0 对话层:")
     print(f"  总数: {total}")
     print(f"  已向量化: {vectorized}")
     print(f"  未向量化: {total - vectorized}")
     if total > 0:
         coverage = vectorized * 100 / total
         print(f"  覆盖率: {coverage:.1f}%")
-    
-    print(f"\nL1 记忆层:")
+
+    print("\nL1 记忆层:")
     print(f"  总数: {l1_total}")
     print(f"  已向量化: {l1_vectorized}")
     if l1_total > 0:
@@ -127,13 +128,13 @@ def fix_vectorization():
         print("❌ 需要安装 pysqlite3-binary 才能执行向量化")
         print("   运行: pip install pysqlite3-binary")
         return
-    
+
     config = get_embedding_config()
     print(f"Embedding 配置: {config['provider']}/{config['model']} ({config['dimensions']}D)")
-    
+
     conn = connect(str(VECTORS_DB))
     cursor = conn.cursor()
-    
+
     # 获取未向量化的对话
     cursor.execute("""
         SELECT record_id, message_text 
@@ -142,43 +143,43 @@ def fix_vectorization():
         ORDER BY timestamp DESC
     """)
     unvectorized = cursor.fetchall()
-    
+
     print(f"\n发现 {len(unvectorized)} 条未向量化的对话")
-    
+
     if len(unvectorized) == 0:
         print("✅ 所有对话已向量化")
         conn.close()
         return
-    
+
     success_count = 0
     for record_id, message_text in unvectorized:
         print(f"\n处理: {record_id[:50]}...")
-        
+
         # 获取向量
         embedding = get_embedding(message_text, config)
-        
+
         if embedding:
             try:
                 # 将向量转换为 blob
                 import struct
                 vector_blob = struct.pack(f'{len(embedding)}f', *embedding)
-                
+
                 cursor.execute("""
                     INSERT OR REPLACE INTO l0_vec (record_id, embedding, recorded_at)
                     VALUES (?, ?, datetime('now'))
                 """, (record_id, vector_blob))
-                
+
                 conn.commit()
-                print(f"  ✅ 向量化成功")
+                print("  ✅ 向量化成功")
                 success_count += 1
             except Exception as e:
                 print(f"  ❌ 存储失败: {e}")
         else:
-            print(f"  ⏭️ 跳过")
-    
+            print("  ⏭️ 跳过")
+
     conn.close()
-    
-    print(f"\n========================================")
+
+    print("\n========================================")
     print(f"向量化完成: {success_count}/{len(unvectorized)} 条成功")
 
 if __name__ == "__main__":

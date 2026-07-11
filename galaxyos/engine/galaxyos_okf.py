@@ -301,7 +301,7 @@ def export_bundle(bundle_name="galaxyos-system", output_dir=None,
     # 生成 index.md
     index_lines = [
         "---",
-        f"type: BundleIndex",
+        "type: BundleIndex",
         f"title: {bundle_name}",
         f"description: GalaxyOS 系统 Knowledge Bundle（自动生成 {datetime.now(TZ).isoformat()}）",
         "tags: [galaxyos, system, okf]",
@@ -343,7 +343,7 @@ def export_bundle(bundle_name="galaxyos-system", output_dir=None,
 
     print(f"\n✅ Bundle 导出完成: {output_path}")
     print(f"   concepts: {len(concepts)}")
-    print(f"   目录结构:")
+    print("   目录结构:")
     _print_tree(output_path)
     return True
 
@@ -476,7 +476,7 @@ def ingest_bundle(bundle_path, index_dir=None, register_module=True, compile_ski
     for c in concepts:
         by_type.setdefault(c["type"], []).append(c)
 
-    print(f"\n   类型分布:")
+    print("\n   类型分布:")
     for t, clist in sorted(by_type.items(), key=lambda x: -len(x[1])):
         print(f"     {t}: {len(clist)}")
 
@@ -682,7 +682,7 @@ def generate_module_concepts(output_dir, force=False):
         # layer index.md
         index_lines = [
             "---",
-            f"type: ModuleLayerIndex",
+            "type: ModuleLayerIndex",
             f"title: Layer {layer}",
             f"description: 共 {len(layer_concepts)} 个模块",
             "---",

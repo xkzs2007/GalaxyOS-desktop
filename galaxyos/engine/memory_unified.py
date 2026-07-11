@@ -17,10 +17,10 @@ from galaxyos.shared.paths import workspace
 
 class UnifiedMemory:
     """统一记忆接口（桥接至 XiaoYiClawLLM）"""
-    
+
     def __init__(self):
         self._claw = None
-    
+
     def _get_claw(self):
         """懒加载 XiaoYiClawLLM 实例"""
         if self._claw is None:
@@ -30,11 +30,11 @@ class UnifiedMemory:
             from xiaoyi_claw_api import get_xiaoyi_claw
             self._claw = get_xiaoyi_claw()
         return self._claw
-    
+
     def recall(self, query: str, max_results: int = 10) -> List[Dict]:
         """统一召回（桥接至 XiaoYiClawLLM.recall）"""
         return self._get_claw().recall(query, top_k=max_results)
-    
+
     def store(self, content: str, memory_type: str = "info", importance: str = "normal") -> bool:
         """统一存储（桥接至 XiaoYiClawLLM.remember）"""
         memory_id = self._get_claw().remember(
@@ -47,11 +47,11 @@ class UnifiedMemory:
             source="user"
         )
         return bool(memory_id)
-    
+
     def classify_knowledge(self, content: str) -> Dict:
         """知识分类（桥接至 XiaoYiClawLLM.classify_knowledge）"""
         return self._get_claw().classify_knowledge(content)
-    
+
     def detect_conflicts(self, new_memory: Dict) -> List[Dict]:
         """冲突检测（桥接至 XiaoYiClawLLM.learn + 简单检查）"""
         # 通过 learn 接口检测记忆冲突
@@ -66,7 +66,7 @@ class UnifiedMemory:
             except Exception:
                 pass
         return []
-    
+
     def push_notification(self, title: str, content: str, channel: str = "today-task"):
         """推送通知（保持原有实现，不桥接）"""
         try:
@@ -80,7 +80,7 @@ class UnifiedMemory:
                     subprocess.run(["python3", str(push_script), "--data", str(temp_json)], capture_output=True, timeout=10)
         except Exception as e:
             print(f"推送失败: {e}")
-    
+
     def health_check(self) -> Dict:
         """健康检查（桥接至 XiaoYiClawLLM.health_check）"""
         return self._get_claw().health_check()
@@ -114,9 +114,9 @@ if __name__ == "__main__":
         print("用法: python memory_unified.py <command> [args]")
         print("命令: recall, store, health")
         sys.exit(1)
-    
+
     cmd = sys.argv[1]
-    
+
     if cmd == "recall":
         query = sys.argv[2] if len(sys.argv) > 2 else "测试"
         results = recall(query)

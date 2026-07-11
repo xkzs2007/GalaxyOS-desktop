@@ -353,7 +353,7 @@ class DAGContextManager:
             except Exception as e:
                 logger.error(f"添加节点失败: {e}")
                 return False
-    
+
     # ── MemGAS: add_node 后，对长内容创建 KnowledgeAsset ──
     def _create_asset_for_node(self, node: DAGNode, content: str):
         """
@@ -364,17 +364,17 @@ class DAGContextManager:
         try:
             from knowledge_asset import get_asset_registry, create_memory_asset, AssociationEdge
             from multi_granularity import MultiGranularityExtractor, GMMAssociator
-            
+
             _reg = get_asset_registry()
             _ext = MultiGranularityExtractor()
             _assoc = GMMAssociator(n_components=5)
-            
+
             # 检查是否已创建过
             _existing = _reg.search(content[:100], top_k=1, type_filter=None)
             for _ex in _existing:
                 if _ex.raw_content[:100] == content[:100]:
                     return  # 已注册
-            
+
             # 创建资产
             _asset = create_memory_asset(
                 memory_id=node.node_id,
@@ -383,10 +383,10 @@ class DAGContextManager:
                 category=node.node_type if hasattr(node, 'node_type') else 'dag',
                 source=f"dag_{node.node_type if hasattr(node, 'node_type') else 'unknown'}",
             )
-            
+
             # 多粒度
             _asset.multi_granularity = _ext.extract(content)
-            
+
             # GMM 关联（与已有资产）
             _existing_texts = [a.raw_content[:500] for a in _reg.list_ids()[:100] if _reg.get(a)]
             if _existing_texts:
@@ -410,7 +410,7 @@ class DAGContextManager:
                                 weight=_weight,
                             )
                         )
-            
+
             _reg.register(_asset)
 
             # ── 同步到突触网络（双向桥接） ──
@@ -582,8 +582,8 @@ class DAGContextManager:
         critical_nodes = [n for n in all_nodes if n.priority == PriorityLevel.CRITICAL]
         high_nodes = [n for n in all_nodes if n.priority == PriorityLevel.HIGH]
         # 过滤已淘汰的摘要（被更高级摘要替代）
-        summary_nodes = [n for n in all_nodes 
-                        if n.is_summary and not n.is_evicted 
+        summary_nodes = [n for n in all_nodes
+                        if n.is_summary and not n.is_evicted
                         and n.priority <= PriorityLevel.NORMAL]
         message_nodes = [n for n in all_nodes if not n.is_summary and n.priority >= PriorityLevel.NORMAL]
 
@@ -1386,7 +1386,9 @@ class DAGContextManager:
 
     def write_capability_node(self, capability: dict, session_key: str):
         """将自进化检测到的稳定模式写为 evolved_capability 节点到 rccam_nodes"""
-        import json, time, uuid
+        import json
+        import time
+        import uuid
         node_id = f"cap_{capability.get('name','pattern')[:30]}_{int(time.time())}"
         content = json.dumps(capability, ensure_ascii=False)
         with self._lock:

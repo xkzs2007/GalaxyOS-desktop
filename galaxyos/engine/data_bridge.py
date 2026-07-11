@@ -6,7 +6,11 @@
 同时更新十亿云集成模块，新增 smart_processor 智能处理层。
 """
 
-import sys, json, sqlite3, time, numpy as np
+import sys
+import json
+import sqlite3
+import time
+import numpy as np
 from pathlib import Path
 
 CORE = Path.home() / ".openclaw/workspace/skills/xiaoyi-claw-omega-final/skills/llm-memory-integration/core"
@@ -109,7 +113,7 @@ def sync():
     print()
 
     after = store.count()
-    print(f"\n✅ 同步完成:")
+    print("\n✅ 同步完成:")
     print(f"  成功写入: {total_added} 条")
     print(f"  UnifiedVectorStore 总数: {before} → {after} 条")
 

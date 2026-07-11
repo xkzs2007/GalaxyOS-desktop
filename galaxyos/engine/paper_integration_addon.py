@@ -38,35 +38,35 @@ class PaperIntegrationAddon:
     - SKILL0: skill_curriculum_step / skill_curriculum_status UDS 方法
     - MemoryOS: memory_os_* UDS 方法（热度和分段）
     """
-    
+
     def __init__(self, worker=None, methods_map=None):
         self.worker = worker
         self._methods_map = methods_map  # 可选的 UDS 方法表
-        
+
         # RLM
         self.rlm_processor = None
         self.fast_rlm = FastRLMProcessor()
-        
+
         # SKILL0
         self.skill_curriculum = None
         self.validation_bridge = SkillValidationBridge()
-        
+
         # MemoryOS
         self.heat_tracker = HeatTracker()
         self.page_organizer = SegmentedPageOrganizer()
-        
+
         # 是否已注册
         self._registered = False
-    
+
     def register_all(self, methods_map=None):
         """注册所有 UDS 方法和 hooks"""
         if self._registered:
             return
-        
+
         if not self.worker:
             logger.warning("Worker 未提供，跳过 UDS 注册")
             return
-        
+
         # 方法表来源优先级: 参数 > self._methods_map > getattr(worker, '_METHODS') > 模块级 _METHODS
         methods = methods_map or self._methods_map
         if methods is None:
@@ -83,24 +83,24 @@ class PaperIntegrationAddon:
                     from claw_worker import _METHODS
                 except ImportError:
                     pass
-        
+
         if methods is None:
             logger.warning("找不到 _METHODS 表，UDS 注册跳过")
             return
-        
+
         # 获取 LLM 引用
         llm_flash = getattr(self.worker, 'llm_flash', None)
         llm_pro = getattr(self.worker, 'llm_pro', None)
-        
+
         # 初始化 RLM
         self.rlm_processor = RLMProcessor(llm_flash=llm_flash, llm_pro=llm_pro)
-        
+
         # 初始化 SKILL0 课程（自动加载历史状态）
         self.skill_curriculum = SkillCurriculum()
         catalog = build_default_skill_catalog()
         if not self.skill_curriculum._is_internalizing:
             self.skill_curriculum.initialize(catalog)
-        
+
         # 注册 UDS 方法
         methods["rlm_process"] = self._uds_rlm_process
         methods["rlm_fast_process"] = self._uds_rlm_fast_process
@@ -110,32 +110,32 @@ class PaperIntegrationAddon:
         methods["memory_os_search"] = self._uds_memory_os_search
         methods["memory_os_hybrid_score"] = self._uds_hybrid_score
         logger.info("三论文集成: 7 个 UDS 方法已注册")
-        
+
         self._registered = True
         logger.info("✅ 论文集成完成: RLM + SKILL0 + MemoryOS")
-    
+
     # ── RLM UDS 方法 ──
-    
+
     def _uds_rlm_process(self, p: dict) -> dict:
         """RLM 递归处理超长 prompt"""
         prompt = p.get("prompt", "")
         if not prompt:
             return {"ok": False, "error": "prompt required"}
-        
+
         try:
             result = self.rlm_processor.process(prompt)
             return {"ok": True, "result": result, "len": len(result)}
         except Exception as e:
             logger.error(f"RLM 处理失败: {e}")
             return {"ok": False, "error": str(e)}
-    
+
     def _uds_rlm_fast_process(self, p: dict) -> dict:
         """快速 RLM（无 LLM 调用，仅切片分段）"""
         text = p.get("text", "")
         chunk_size = p.get("chunk_size", 6000)
         if not text:
             return {"ok": False, "error": "text required"}
-        
+
         try:
             self.fast_rlm.chunk_size = chunk_size
             chunks = self.fast_rlm.process(text)
@@ -147,9 +147,9 @@ class PaperIntegrationAddon:
             }
         except Exception as e:
             return {"ok": False, "error": str(e)}
-    
+
     # ── SKILL0 UDS 方法 ──
-    
+
     def _uds_skill_step(self, p: dict) -> dict:
         """SKILL0 课程步进"""
         try:
@@ -159,7 +159,7 @@ class PaperIntegrationAddon:
             return {"ok": True, **status}
         except Exception as e:
             return {"ok": False, "error": str(e)}
-    
+
     def _uds_skill_status(self, p: dict) -> dict:
         """SKILL0 课程状态"""
         try:
@@ -167,9 +167,9 @@ class PaperIntegrationAddon:
             return {"ok": True, **status}
         except Exception as e:
             return {"ok": False, "error": str(e)}
-    
+
     # ── MemoryOS UDS 方法 ──
-    
+
     def _uds_heat_status(self, p: dict) -> dict:
         """热度跟踪器状态"""
         try:
@@ -177,27 +177,27 @@ class PaperIntegrationAddon:
             return {"ok": True, **status}
         except Exception as e:
             return {"ok": False, "error": str(e)}
-    
+
     def _uds_memory_os_search(self, p: dict) -> dict:
         """MemoryOS 三段搜索"""
         query = p.get("query", "")
         top_k = p.get("top_k", 5)
         if not query:
             return {"ok": False, "error": "query required"}
-        
+
         try:
             results = self.page_organizer.search(query, top_k=top_k)
             return {"ok": True, "results": results, "count": len(results)}
         except Exception as e:
             return {"ok": False, "error": str(e)}
-    
+
     def _uds_hybrid_score(self, p: dict) -> dict:
         """MemoryOS 混合评分"""
         text_a = p.get("text_a", "")
         text_b = p.get("text_b", "")
         if not text_a or not text_b:
             return {"ok": False, "error": "text_a and text_b required"}
-        
+
         try:
             score = hybrid_score(text_a, text_b)
             return {"ok": True, "score": score}
@@ -230,12 +230,12 @@ def patch_worker_init(worker_cls):
     用于 _init_methods 之前自动注册。
     """
     orig_init = worker_cls.__init__
-    
+
     def patched_init(self, *args, **kwargs):
         orig_init(self, *args, **kwargs)
         # 自动注册
         from galaxyos.engine.paper_integration_addon import integrate_into_worker
         self._paper_addon = integrate_into_worker(self)
-    
+
     worker_cls.__init__ = patched_init
     return worker_cls

@@ -42,14 +42,14 @@ class RetrievalWeights:
 class RetrievalConfig:
     """检索配置"""
     weights: RetrievalWeights = field(default_factory=RetrievalWeights)
-    
+
     # 时间衰减参数
     decay_hours: float = 24.0  # 半衰期（小时）
     max_decay: float = 0.99    # 最大衰减值
-    
+
     # 相关性阈值
     relevance_threshold: float = 0.3  # 最低相关性
-    
+
     # 返回数量
     top_k: int = 10
 
@@ -77,13 +77,13 @@ def calculate_recency(
     """
     if reference_time is None:
         reference_time = datetime.now(timezone.utc)
-    
+
     # 计算时间差（小时）
     time_diff = (reference_time - memory.created_at).total_seconds() / 3600
-    
+
     # 指数衰减
     recency = math.exp(-time_diff / decay_hours)
-    
+
     return min(1.0, max(0.0, recency))
 
 
@@ -137,14 +137,14 @@ def cosine_similarity(vec1: List[float], vec2: List[float]) -> float:
     """计算余弦相似度"""
     if not vec1 or not vec2 or len(vec1) != len(vec2):
         return 0.0
-    
+
     dot_product = sum(a * b for a, b in zip(vec1, vec2))
     norm1 = math.sqrt(sum(a * a for a in vec1))
     norm2 = math.sqrt(sum(b * b for b in vec2))
-    
+
     if norm1 == 0 or norm2 == 0:
         return 0.0
-    
+
     return dot_product / (norm1 * norm2)
 
 
@@ -161,31 +161,31 @@ def keyword_relevance(content: str, query: str) -> float:
     """
     # 分词（简单按空格和标点分割）
     import re
-    
+
     def tokenize(text: str) -> set:
         # 中文按字符，英文按单词
         chinese_chars = set(re.findall(r'[\u4e00-\u9fff]', text))
         english_words = set(w.lower() for w in re.findall(r'[a-zA-Z]+', text))
         return chinese_chars | english_words
-    
+
     content_tokens = tokenize(content)
     query_tokens = tokenize(query)
-    
+
     if not query_tokens:
         return 0.0
-    
+
     # Jaccard 相似度
     intersection = len(content_tokens & query_tokens)
     union = len(content_tokens | query_tokens)
-    
+
     if union == 0:
         return 0.0
-    
+
     jaccard = intersection / union
-    
+
     # 考虑查询词覆盖率
     coverage = intersection / len(query_tokens) if query_tokens else 0
-    
+
     # 综合得分
     return 0.5 * jaccard + 0.5 * coverage
 
@@ -199,7 +199,7 @@ class MemoryRetriever:
     实现论文中的检索公式：
     score = w_r * recency + w_e * relevance + w_i * importance
     """
-    
+
     def __init__(self, config: Optional[RetrievalConfig] = None):
         """
         初始化检索器
@@ -209,11 +209,11 @@ class MemoryRetriever:
         """
         self.config = config or RetrievalConfig()
         self.embedding_func = None
-    
+
     def set_embedding_func(self, func: callable):
         """设置向量嵌入函数"""
         self.embedding_func = func
-    
+
     def retrieve(
         self,
         memories: List[Memory],
@@ -237,26 +237,26 @@ class MemoryRetriever:
         """
         if top_k is None:
             top_k = self.config.top_k
-        
+
         # 过滤类型
         if memory_types:
             memories = [m for m in memories if m.memory_type in memory_types]
-        
+
         # 计算得分
         scored_memories = []
         reference_time = datetime.now(timezone.utc)
-        
+
         for memory in memories:
             scores = self._calculate_scores(memory, query, reference_time)
             total = scores["total"]
-            
+
             if total >= min_score:
                 scored_memories.append((memory, total, scores))
-        
+
         # 排序并返回 top_k
         scored_memories.sort(key=lambda x: x[1], reverse=True)
         return scored_memories[:top_k]
-    
+
     def retrieve_for_reflection(
         self,
         memories: List[Memory],
@@ -276,10 +276,10 @@ class MemoryRetriever:
             relevance=0.5,
             importance=2.0
         )
-        
+
         old_weights = self.config.weights
         self.config.weights = reflection_weights
-        
+
         # 使用空查询（主要靠时效性和重要性）
         results = self.retrieve(
             memories,
@@ -287,11 +287,11 @@ class MemoryRetriever:
             top_k=top_k,
             min_score=0.1
         )
-        
+
         self.config.weights = old_weights
-        
+
         return [m for m, _, _ in results]
-    
+
     def retrieve_for_planning(
         self,
         memories: List[Memory],
@@ -312,20 +312,20 @@ class MemoryRetriever:
             relevance=2.0,
             importance=1.0
         )
-        
+
         old_weights = self.config.weights
         self.config.weights = planning_weights
-        
+
         results = self.retrieve(
             memories,
             query=context,
             top_k=top_k
         )
-        
+
         self.config.weights = old_weights
-        
+
         return [m for m, _, _ in results]
-    
+
     def _calculate_scores(
         self,
         memory: Memory,
@@ -334,27 +334,27 @@ class MemoryRetriever:
     ) -> Dict[str, float]:
         """计算各项得分"""
         w = self.config.weights
-        
+
         recency = calculate_recency(
-            memory, 
-            reference_time, 
+            memory,
+            reference_time,
             self.config.decay_hours
         )
-        
+
         relevance = calculate_relevance(
-            memory, 
-            query, 
+            memory,
+            query,
             self.embedding_func
         ) if query else 0.5  # 无查询时给中等相关性
-        
+
         importance = calculate_importance(memory)
-        
+
         total = (
             w.recency * recency +
             w.relevance * relevance +
             w.importance * importance
         ) / (w.recency + w.relevance + w.importance)
-        
+
         return {
             "recency": recency,
             "relevance": relevance,
@@ -379,19 +379,19 @@ def retrieve_memories(
 if __name__ == "__main__":
     # 测试代码
     from .memory_stream import MemoryStream, MemoryType
-    
+
     stream = MemoryStream()
-    
+
     # 添加测试记忆
     stream.add("今天学习了 Python 异步编程", MemoryType.OBSERVATION, importance=7.0)
     stream.add("异步编程的关键是理解事件循环", MemoryType.REFLECTION, importance=8.5)
     stream.add("明天要复习 asyncio 模块", MemoryType.PLAN, importance=6.0)
     stream.add("Python 是一门优雅的语言", MemoryType.OBSERVATION, importance=5.0)
-    
+
     # 检索
     retriever = MemoryRetriever()
     results = retriever.retrieve(stream.get_all(), "Python 编程")
-    
+
     print("检索结果:")
     for memory, score, breakdown in results:
         print(f"  [{score:.3f}] {memory.content[:50]}...")

@@ -123,8 +123,8 @@ target-version = "py312"
 line-length = 120
 
 [tool.ruff.lint]
-select = ["E", "F", "W"]
-ignore = ["E501", "E402"]
+select = ["F821", "F823"]
+ignore = []
 
 [tool.mypy]
 python_version = "3.12"

@@ -725,7 +725,7 @@ if __name__ == "__main__":
 
     pipe = GranularityPipeline()
     result = pipe.process(texts)
-    print(f"\n── Pipeline ──")
+    print("\n── Pipeline ──")
     print(f"  Clusters: {result['clusters']}")
     print(f"  Edges: {len(result['edges'])}")
     for e in result['edges'][:5]:

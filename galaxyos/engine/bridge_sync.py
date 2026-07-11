@@ -6,7 +6,11 @@
 通过 unified_entry.py store 逐条写入。
 """
 
-import json, sqlite3, subprocess, sys, time
+import json
+import sqlite3
+import subprocess
+import sys
+import time
 from pathlib import Path
 from galaxyos.shared.paths import galaxyos_home, workspace
 
@@ -43,7 +47,7 @@ def store(content, source="memory-tdai"):
 def sync_batch(rows, batch_size=3):
     success, failed = 0, 0
     total = len(rows)
-    
+
     for i in range(0, total, batch_size):
         batch = rows[i:i+batch_size]
         for item in batch:
@@ -54,13 +58,13 @@ def sync_batch(rows, batch_size=3):
                 failed += 1
             time.sleep(0.2)  # 限速
         print(f"\r  进度: {min((i+batch_size)/total*100, 100):.0f}% ({success+failed}/{total})", end="")
-    
+
     print()
     return success, failed
 
 def main():
     dry_run = "--dry-run" in sys.argv
-    
+
     # 读取 L1 数据
     conn = sqlite3.connect(str(VECTORS_DB))
     rows = conn.execute("""
@@ -69,20 +73,20 @@ def main():
         ORDER BY priority DESC
     """).fetchall()
     conn.close()
-    
+
     items = [{"record_id": r[0], "content": r[1], "type": r[2], "priority": r[3]} for r in rows]
-    
+
     before = get_unified_count()
     print(f"同步前 UnifiedVectorStore: {before} 条")
     print(f"待同步 L1 记录: {len(items)} 条")
-    
+
     if dry_run:
         print(f"预览最高优先级: {items[0]['content'][:60]}...")
         print("✅ Dry run, 未写入")
         return
-    
+
     success, failed = sync_batch(items)
-    
+
     after = get_unified_count()
     print(f"\n同步后 UnifiedVectorStore: {after} 条")
     print(f"成功: {success} | 失败: {failed} | 新增: {after - before}")

@@ -169,7 +169,7 @@ class GatewayClient:
                 dealer.connect(_GATEWAY_ZMQ_DEALER)
                 _zmq_dealer = dealer
                 import sys
-                sys.stderr.write(f"[gateway-client] ZMQ DEALER connected :5560\n")
+                sys.stderr.write("[gateway-client] ZMQ DEALER connected :5560\n")
                 return True
             except Exception as e:
                 import sys

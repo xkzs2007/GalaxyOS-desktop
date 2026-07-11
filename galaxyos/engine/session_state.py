@@ -167,22 +167,22 @@ def cmd_recall(args):
         print(f"\n📌 话题：{topic}")
 
     if active_files:
-        print(f"\n📄 涉及文件：")
+        print("\n📄 涉及文件：")
         for f in active_files:
             print(f"  • {f}")
 
     if pending:
-        print(f"\n🤔 待决策项：")
+        print("\n🤔 待决策项：")
         for p in pending:
             print(f"  • {p}")
 
     if reasoning:
-        print(f"\n🧠 已有推理结论：")
+        print("\n🧠 已有推理结论：")
         for r in reasoning:
             print(f"  • {r}")
 
     if unresolved:
-        print(f"\n❓ 未解决事项：")
+        print("\n❓ 未解决事项：")
         for u in unresolved:
             print(f"  • {u}")
 

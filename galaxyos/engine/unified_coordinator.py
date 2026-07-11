@@ -40,17 +40,17 @@ class ModuleType(Enum):
     EMOTION_MEMORY = "emotion_memory"
     ADAPTIVE_MEMORY = "adaptive_memory"
     HALLUCINATION_GUARD = "hallucination_guard"
-    
+
     # Layer 1.5: 新增核心模块
     MEMGPT_MEMORY = "memgpt_memory"
     GENERATIVE_AGENTS = "generative_agents"
     SELF_RAG = "self_rag"
     KNOWLEDGE_GRAPH_GNN = "knowledge_graph_gnn"
-    
+
     # Layer 1.7: NLP 处理层
     NLP_PROCESSOR = "nlp_processor"
     NLP_INTEGRATION = "nlp_integration"
-    
+
     # Layer 1.6: 集成与管理模块
     RULES_MANAGER = "rules_manager"
     AUTONOMOUS_INTEGRATOR = "autonomous_integrator"
@@ -59,7 +59,7 @@ class ModuleType(Enum):
     OPTIMIZATION_INTEGRATION = "optimization_integration"
     HEARTBEAT_EXECUTOR = "heartbeat_executor"
     ENHANCED_HALLUCINATION = "enhanced_hallucination"
-    
+
     # Layer 2: 检索增强层
     CRAG_PIPELINE = "crag_pipeline"
     HYBRID_SEARCH = "hybrid_search"
@@ -72,14 +72,14 @@ class ModuleType(Enum):
     MULTIMODAL_SEARCH = "multimodal_search"
     MULTIRESOLUTION_SEARCH = "multiresolution_search"
     CROSS_LINGUAL = "cross_lingual"
-    
+
     # Layer 3: 向量优化层
     ANN_SELECTOR = "ann_selector"
     SPARSE_ANNS = "sparse_anns"
     OPQ_QUANTIZATION = "opq_quantization"
     VECTOR_QUANTIZATION = "vector_quantization"
     VECTOR_API = "vector_api"
-    
+
     # Layer 4: LLM 优化层
     SPECULATIVE_DECODER = "speculative_decoder"
     STREAMING_LLM = "streaming_llm"
@@ -87,7 +87,7 @@ class ModuleType(Enum):
     LLM_STREAMING = "llm_streaming"
     MODEL_ROUTER = "model_router"
     MODEL_PERFORMANCE = "model_performance"
-    
+
     # Layer 5: 缓存管理层
     CACHE_ALLOCATOR = "cache_allocator"
     CACHE_AWARE_SCHEDULER = "cache_aware_scheduler"
@@ -95,7 +95,7 @@ class ModuleType(Enum):
     UNIFIED_CACHE = "unified_cache"
     SEMANTIC_CACHE = "semantic_cache"
     COMPUTATIONAL_STORAGE = "computational_storage"
-    
+
     # Layer 6: 硬件优化层
     GPU_OPTIMIZER = "gpu_optimizer"
     NUMA_OPTIMIZER = "numa_optimizer"
@@ -110,39 +110,39 @@ class ModuleType(Enum):
     REALTIME_SCHEDULER = "realtime_scheduler"
     IRQ_ISOLATOR = "irq_isolator"
     ZRAM_DETECTOR = "zram_detector"
-    
+
     # Layer 7: 模块协调层
     MODULE_COORDINATOR = "module_coordinator"
     RESOURCE_ORCHESTRATOR = "resource_orchestrator"
     TOOLS_REGISTRY = "tools_registry"
     AUTO_TUNER = "auto_tuner"
-    
+
     # Layer 8: 系统可靠性层
     FAILOVER = "failover"
     FULL_RECOVERY = "full_recovery"
     SANDBOX_MANAGER = "sandbox_manager"
     SAFETY_ALIGNMENT = "safety_alignment"
     EXCEPTIONS = "exceptions"
-    
+
     # Layer 9: 会话管理层
     DAG_CONTEXT_MANAGER = "dag_context_manager"
     CONVERSATION = "conversation"
     CONTEXT_COMPRESSOR = "context_compressor"
     ACP_SERVER = "acp_server"
-    
+
     # Layer 10: Persona 管理层
     AUTO_UPDATE_PERSONA = "auto_update_persona"
     UPDATE_PERSONA = "update_persona"
     UPDATE_L3_PROFILE = "update_l3_profile"
     SMART_MEMORY_UPDATE = "smart_memory_update"
-    
+
     # Layer 11: 思考技能
     THINKING_SKILLS = "thinking_skills"
-    
+
     # Layer 12: 工程与效率技能（Matt Pocock Skills 适配）
     ENGINEERING_SKILLS = "engineering_skills"
     PRODUCTIVITY_SKILLS = "productivity_skills"
-    
+
     # Layer 新增类型
     INTELLIGENT_THINKING = "intelligent_thinking"
     RESILIENCE_SYSTEM = "resilience_system"
@@ -235,7 +235,7 @@ MODULE_REGISTRY: Dict[str, ModuleInfo] = {
         script_path=str(CORE_DIR / "hallucination_guard.py"),
         layer=1
     ),
-    
+
     # ==================== Layer 1.5: 新增核心模块 ====================
     "memgpt_memory": ModuleInfo(
         name="memgpt_memory",
@@ -273,7 +273,7 @@ MODULE_REGISTRY: Dict[str, ModuleInfo] = {
         layer=1,
         dependencies=["graph_constructor", "graphsage_layer", "gat_layer", "relation_predictor"]
     ),
-    
+
     # ==================== Layer 1.6: 集成与管理模块 ====================
     "rules_manager": ModuleInfo(
         name="rules_manager",
@@ -335,7 +335,7 @@ MODULE_REGISTRY: Dict[str, ModuleInfo] = {
         script_path=str(CORE_DIR / "optimization_integration.py"),
         layer=1,
     ),
-    
+
     # ==================== Layer 1.7: NLP 处理层 ====================
     "nlp_processor": ModuleInfo(
         name="nlp_processor",
@@ -382,7 +382,7 @@ MODULE_REGISTRY: Dict[str, ModuleInfo] = {
         layer=1,
         dependencies=["hallucination_guard", "skill_coordinator"]
     ),
-    
+
     # ==================== Layer 2: 检索增强层 ====================
     "crag_pipeline": ModuleInfo(
         name="crag_pipeline",
@@ -473,7 +473,7 @@ MODULE_REGISTRY: Dict[str, ModuleInfo] = {
         script_path=str(PRIVILEGED_DIR / "cross_lingual.py"),
         layer=2
     ),
-    
+
     # ==================== Layer 3: 向量优化层 ====================
     "ann_selector": ModuleInfo(
         name="ann_selector",
@@ -515,7 +515,7 @@ MODULE_REGISTRY: Dict[str, ModuleInfo] = {
         script_path=str(PRIVILEGED_DIR / "vector_api.py"),
         layer=3
     ),
-    
+
     # ==================== Layer 4: LLM 优化层 ====================
     "speculative_decoder": ModuleInfo(
         name="speculative_decoder",
@@ -565,7 +565,7 @@ MODULE_REGISTRY: Dict[str, ModuleInfo] = {
         script_path=str(PRIVILEGED_DIR / "model_performance.py"),
         layer=4
     ),
-    
+
     # ==================== Layer 5: 缓存管理层 ====================
     "cache_allocator": ModuleInfo(
         name="cache_allocator",
@@ -615,7 +615,7 @@ MODULE_REGISTRY: Dict[str, ModuleInfo] = {
         script_path=str(PRIVILEGED_DIR / "computational_storage.py"),
         layer=5
     ),
-    
+
     # ==================== Layer 6: 硬件优化层 ====================
     "gpu_optimizer": ModuleInfo(
         name="gpu_optimizer",
@@ -721,7 +721,7 @@ MODULE_REGISTRY: Dict[str, ModuleInfo] = {
         script_path=str(PRIVILEGED_DIR / "zram_detector.py"),
         layer=6
     ),
-    
+
     # ==================== Layer 7: 模块协调层 ====================
     "module_coordinator": ModuleInfo(
         name="module_coordinator",
@@ -755,7 +755,7 @@ MODULE_REGISTRY: Dict[str, ModuleInfo] = {
         script_path=str(PRIVILEGED_DIR / "auto_tuner.py"),
         layer=7
     ),
-    
+
     # ==================== Layer 8: 系统可靠性层 ====================
     "failover": ModuleInfo(
         name="failover",
@@ -797,7 +797,7 @@ MODULE_REGISTRY: Dict[str, ModuleInfo] = {
         script_path=str(PRIVILEGED_DIR / "exceptions.py"),
         layer=8
     ),
-    
+
     # ==================== Layer 9: 会话管理层 ====================
     "dag_context_manager": ModuleInfo(
         name="dag_context_manager",
@@ -832,7 +832,7 @@ MODULE_REGISTRY: Dict[str, ModuleInfo] = {
         script_path=str(PRIVILEGED_DIR / "acp_server.py"),
         layer=9
     ),
-    
+
     # ==================== Layer 10: Persona 管理层 ====================
     "auto_update_persona": ModuleInfo(
         name="auto_update_persona",
@@ -866,7 +866,7 @@ MODULE_REGISTRY: Dict[str, ModuleInfo] = {
         script_path=str(PRIVILEGED_DIR / "smart_memory_update.py"),
         layer=10
     ),
-    
+
     # ==================== Layer 11: 思考技能 ====================
     "skill_coordinator": ModuleInfo(
         name="skill_coordinator",
@@ -876,9 +876,9 @@ MODULE_REGISTRY: Dict[str, ModuleInfo] = {
         script_path=str(CORE_DIR / "skill_coordinator.py"),
         layer=11
     ),
-    
+
     # ==================== Layer 12: 核心组件（补充注册）====================
-    
+
     # 防幻觉相关
     "adaptive_hallucination_params": ModuleInfo(
         name="adaptive_hallucination_params",
@@ -920,7 +920,7 @@ MODULE_REGISTRY: Dict[str, ModuleInfo] = {
         script_path=str(CORE_DIR / "hallucination_integration.py"),
         layer=1
     ),
-    
+
     # 检索增强
     "crag": ModuleInfo(
         name="crag",
@@ -986,7 +986,7 @@ MODULE_REGISTRY: Dict[str, ModuleInfo] = {
         script_path=str(CORE_DIR / "retrieval_evaluator.py"),
         layer=2
     ),
-    
+
     # 知识图谱
     "graph_constructor": ModuleInfo(
         name="graph_constructor",
@@ -1020,9 +1020,9 @@ MODULE_REGISTRY: Dict[str, ModuleInfo] = {
         script_path=str(CORE_DIR / "relation_predictor.py"),
         layer=1
     ),
-    
 
-    
+
+
     # 记忆核心
     "memory_bank": ModuleInfo(
         name="memory_bank",
@@ -1080,7 +1080,7 @@ MODULE_REGISTRY: Dict[str, ModuleInfo] = {
         script_path=str(CORE_DIR / "multimodal_memory.py"),
         layer=1
     ),
-    
+
     # 视觉生成
     "visual_generation": ModuleInfo(
         name="visual_generation",
@@ -1090,7 +1090,7 @@ MODULE_REGISTRY: Dict[str, ModuleInfo] = {
         script_path=str(CORE_DIR / "visual_generation.py"),
         layer=1
     ),
-    
+
     # 反思/规划
     "reflection_engine": ModuleInfo(
         name="reflection_engine",
@@ -1108,7 +1108,7 @@ MODULE_REGISTRY: Dict[str, ModuleInfo] = {
         script_path=str(CORE_DIR / "planning_engine.py"),
         layer=1
     ),
-    
+
     # 向量存储
     "unified_vector_store": ModuleInfo(
         name="unified_vector_store",
@@ -1126,7 +1126,7 @@ MODULE_REGISTRY: Dict[str, ModuleInfo] = {
         script_path=str(CORE_DIR / "vector_api.py"),
         layer=3
     ),
-    
+
     # 其他重要模块
     "importance_scorer": ModuleInfo(
         name="importance_scorer",
@@ -1225,24 +1225,24 @@ class UnifiedCoordinator:
     
     整合所有 78 个模块，提供统一的调用接口。
     """
-    
+
     def __init__(self, workspace_path: str = None):
-        self.workspace_path = Path(workspace_path or 
+        self.workspace_path = Path(workspace_path or
             workspace())
         self.modules = MODULE_REGISTRY
         self._loaded_modules: Dict[str, Any] = {}
         self._layer_cache: Dict[int, List[str]] = {}
         self._workflows: Dict[str, List[Tuple[str, str]]] = {}
-        
+
         logger.info(f"统一协调器 V2 初始化完成，共 {len(self.modules)} 个模块")
-    
+
     @property
     def workflows(self) -> Dict[str, List[Tuple[str, str]]]:
         """获取所有工作流"""
         if not self._workflows:
             self._workflows = self._build_workflows()
         return self._workflows
-    
+
     def _load_module(self, module_name: str) -> Optional[Any]:
         """懒加载模块"""
         if module_name in self._loaded_modules:
@@ -1295,45 +1295,45 @@ class UnifiedCoordinator:
             return None
 
         return None
-    
+
     def get_modules_by_layer(self, layer: int) -> List[str]:
         """获取指定层的所有模块"""
         if layer in self._layer_cache:
             return self._layer_cache[layer]
-        
+
         modules = [
             name for name, info in self.modules.items()
             if info.layer == layer
         ]
         self._layer_cache[layer] = modules
         return modules
-    
+
     def detect_module(self, user_message: str) -> List[Tuple[str, float]]:
         """检测用户意图，返回匹配的模块列表"""
         matches = []
         message_lower = user_message.lower()
-        
+
         for module_name, module_info in self.modules.items():
             if not module_info.enabled:
                 continue
-            
+
             score = 0.0
             for trigger in module_info.triggers:
                 if trigger in message_lower:
                     score += 0.3
-            
+
             if score > 0:
                 matches.append((module_name, min(score, 1.0)))
-        
+
         matches.sort(key=lambda x: x[1], reverse=True)
         return matches
-    
+
     def get_integrated_workflow(self, scenario: str) -> List[Tuple[str, str]]:
         """获取集成工作流"""
         if not self._workflows:
             self._workflows = self._build_workflows()
         return self._workflows.get(scenario, [])
-    
+
     def _build_workflows(self) -> Dict[str, List[Tuple[str, str]]]:
         """构建工作流字典"""
         return {
@@ -1365,7 +1365,7 @@ class UnifiedCoordinator:
                 ("hallucination_guard", "输出验证"),
                 ("hallucination_guard", "不确定性表达"),
             ],
-            
+
             # 新增工作流 - 检索增强
             "enhanced_recall": [
                 ("crag_pipeline", "CRAG 纠错检索"),
@@ -1378,7 +1378,7 @@ class UnifiedCoordinator:
                 ("rag_failure_detector", "失败检测"),
                 ("rag_optimizer", "检索优化"),
             ],
-            
+
             # 新增工作流 - LLM 优化
             "fast_generation": [
                 ("speculative_decoder", "投机解码"),
@@ -1391,42 +1391,42 @@ class UnifiedCoordinator:
                 ("model_performance", "性能监控"),
             ],
 
-            
+
             # 新增工作流 - 缓存优化
             "smart_caching": [
                 ("semantic_cache", "语义缓存"),
                 ("unified_cache", "统一缓存"),
                 ("cache_allocator", "缓存分配"),
             ],
-            
+
             # 新增工作流 - 硬件优化
             "hardware_acceleration": [
                 ("hardware_optimize", "硬件检测"),
                 ("numa_optimizer", "NUMA 优化"),
                 ("mkl_accelerator", "MKL 加速"),
             ],
-            
+
             # 新增工作流 - 系统可靠性
             "self_healing": [
                 ("failover", "故障检测"),
                 ("full_recovery", "自动恢复"),
                 ("safety_alignment", "安全检查"),
             ],
-            
+
             # 新增工作流 - 会话管理
             "long_conversation": [
                 ("conversation", "会话管理"),
                 ("context_compressor", "上下文压缩"),
                 ("rag_cache", "知识缓存"),
             ],
-            
+
             # 新增工作流 - Persona 更新
             "auto_learning": [
                 ("auto_update_persona", "自动学习"),
                 ("smart_memory_update", "智能更新"),
                 ("memory_reflector", "反思改进"),
             ],
-            
+
             # 新增工作流 - MemGPT 三级内存
             "memgpt_recall": [
                 ("memgpt_memory", "Core Memory 检索"),
@@ -1438,7 +1438,7 @@ class UnifiedCoordinator:
                 ("memgpt_memory", "自动分级存储"),
                 ("memgpt_memory", "上下文更新"),
             ],
-            
+
             # 新增工作流 - Generative Agents 反思
             "reflection_cycle": [
                 ("generative_agents", "记忆流收集"),
@@ -1451,7 +1451,7 @@ class UnifiedCoordinator:
                 ("generative_agents", "重要性加权"),
                 ("generative_agents", "时效性衰减"),
             ],
-            
+
             # 新增工作流 - Self-RAG
             "self_rag_query": [
                 ("self_rag", "IsREL 检索必要性预测"),
@@ -1465,7 +1465,7 @@ class UnifiedCoordinator:
                 ("self_rag", "检索策略选择"),
                 ("self_rag", "迭代优化"),
             ],
-            
+
             # 新增工作流 - Knowledge Graph GNN
             "gnn_reasoning": [
                 ("knowledge_graph_gnn", "实体识别"),
@@ -1478,7 +1478,7 @@ class UnifiedCoordinator:
                 ("knowledge_graph_gnn", "链接预测"),
                 ("knowledge_graph_gnn", "图谱补全"),
             ],
-            
+
             # ==================== 跨模块协同工作流 ====================
             # 完整认知闭环：检索 → 推理 → 反思 → 存储
             "cognitive_loop": [
@@ -1492,7 +1492,7 @@ class UnifiedCoordinator:
                 ("self_rag", "IsUSE 验证生成可靠性"),
                 ("memgpt_memory", "新记忆分级存储"),
             ],
-            
+
             # 智能问答流程
             "smart_qa": [
                 ("self_rag", "查询分析与检索决策"),
@@ -1501,7 +1501,7 @@ class UnifiedCoordinator:
                 ("self_rag", "检索结果评估与精炼"),
                 ("self_rag", "生成与可靠性验证"),
             ],
-            
+
             # 深度反思流程
             "deep_reflection": [
                 ("generative_agents", "收集近期记忆流"),
@@ -1511,7 +1511,7 @@ class UnifiedCoordinator:
                 ("knowledge_graph_gnn", "实体关系分析"),
                 ("memgpt_memory", "洞察存入 Core Memory"),
             ],
-            
+
             # 知识演化流程
             "knowledge_evolution": [
                 ("memgpt_memory", "Archival Memory 检索相关记忆"),
@@ -1521,7 +1521,7 @@ class UnifiedCoordinator:
                 ("memgpt_memory", "更新 Core Memory 关键知识"),
                 ("generative_agents", "触发反思提取新洞察"),
             ],
-            
+
             # 记忆巩固流程（睡眠时执行）
             "memory_consolidation": [
                 ("memgpt_memory", "Working Memory 压缩"),
@@ -1531,7 +1531,7 @@ class UnifiedCoordinator:
                 ("memgpt_memory", "Core Memory 驱逐低优先级"),
                 ("memgpt_memory", "Archival Memory 整理索引"),
             ],
-            
+
             # 自我改进流程
             "self_improvement_v2": [
                 ("generative_agents", "分析近期错误模式"),
@@ -1540,7 +1540,7 @@ class UnifiedCoordinator:
                 ("self_rag", "检索补充知识"),
                 ("memgpt_memory", "存储改进规则到 Core"),
             ],
-            
+
             # 多跳推理流程
             "multi_hop_reasoning": [
                 ("self_rag", "初始查询分析"),
@@ -1550,7 +1550,7 @@ class UnifiedCoordinator:
                 ("self_rag", "多跳结果验证"),
                 ("memgpt_memory", "推理链存储"),
             ],
-            
+
             # ==================== Layer 1.6 集成模块工作流 ====================
             # 规则管理
             "rule_management": [
@@ -1563,7 +1563,7 @@ class UnifiedCoordinator:
                 ("rules_manager", "同步规则到协调器"),
                 ("rules_manager", "更新触发词"),
             ],
-            
+
             # 自主任务集成
             "autonomous_execution": [
                 ("autonomous_integrator", "检查主动任务"),
@@ -1571,7 +1571,7 @@ class UnifiedCoordinator:
                 ("autonomous_integrator", "更新任务状态"),
                 ("heartbeat_task_executor", "记录执行结果"),
             ],
-            
+
             # 完整集成流程
             "full_integrated_recall": [
                 ("crag", "CRAG 纠错检索"),
@@ -1580,7 +1580,7 @@ class UnifiedCoordinator:
                 ("autonomous_integrator", "自主任务检查"),
                 ("xiaoyi_memory", "向量记忆优化"),
             ],
-            
+
             # 统一入口
             "smart_recall_flow": [
                 ("xiaoyi_memory_v2", "smart_recall 入口"),
@@ -1595,7 +1595,7 @@ class UnifiedCoordinator:
                 ("enhanced_hallucination_guard", "多源验证"),
                 ("self_rag", "IsUSE 可靠性验证"),
             ],
-            
+
             # 优化集成
             "adaptive_optimization": [
                 ("optimization_integration", "防幻觉参数自适应"),
@@ -1604,7 +1604,7 @@ class UnifiedCoordinator:
                 ("optimization_integration", "RRF 融合权重调整"),
                 ("optimization_integration", "思考技能智能触发"),
             ],
-            
+
             # 心跳任务
             "heartbeat_execution": [
                 ("heartbeat_task_executor", "主动任务检查"),
@@ -1613,7 +1613,7 @@ class UnifiedCoordinator:
                 ("heartbeat_task_executor", "技能更新检查"),
                 ("heartbeat_task_executor", "备份检查"),
             ],
-            
+
             # 增强防幻觉
             "enhanced_verification": [
                 ("enhanced_hallucination_guard", "多源交叉验证"),
@@ -1621,7 +1621,7 @@ class UnifiedCoordinator:
                 ("enhanced_hallucination_guard", "渐进式验证"),
                 ("enhanced_hallucination_guard", "共识判断"),
             ],
-            
+
             # ==================== Layer 2-3 检索增强工作流 ====================
             "advanced_retrieval": [
                 ("late_chunking", "上下文感知分块"),
@@ -1637,7 +1637,7 @@ class UnifiedCoordinator:
                 ("vector_quantization", "INT8/FP16 量化"),
                 ("vector_api", "统一向量操作"),
             ],
-            
+
             # ==================== Layer 4-5 LLM 与缓存工作流 ====================
             "llm_optimization": [
                 ("llm_client", "统一 LLM 调用"),
@@ -1651,7 +1651,7 @@ class UnifiedCoordinator:
                 ("approximate_cache", "LSH 近似查找"),
                 ("unified_cache", "统一缓存管理"),
             ],
-            
+
             # ==================== Layer 6 硬件优化工作流 ====================
             "hardware_full_optimization": [
                 ("hardware_optimize", "硬件检测"),
@@ -1670,7 +1670,7 @@ class UnifiedCoordinator:
                 ("power_manager", "电源管理"),
                 ("zram_detector", "ZRAM 检测"),
             ],
-            
+
             # ==================== Layer 7-8 协调与可靠性工作流 ====================
             "module_coordination": [
                 ("module_coordinator", "进程管理"),
@@ -1685,7 +1685,7 @@ class UnifiedCoordinator:
                 ("safety_alignment", "安全对齐"),
                 ("exceptions", "异常处理"),
             ],
-            
+
             # ==================== Layer 9-10 会话与 Persona 工作流 ====================
             "session_management": [
                 ("conversation", "会话管理"),
@@ -1710,7 +1710,7 @@ class UnifiedCoordinator:
                 ("update_l3_profile", "长期记忆更新"),
                 ("smart_memory_update", "智能更新"),
             ],
-            
+
             # ==================== 补充工作流 - 覆盖剩余模块 ====================
             # Layer 1 记忆核心补充
             "memory_core_full": [
@@ -1720,7 +1720,7 @@ class UnifiedCoordinator:
                 ("adaptive_memory", "自适应优化"),
                 ("hallucination_guard", "防幻觉检查"),
             ],
-            
+
             # Layer 2 RAG 完整流程
             "rag_full_pipeline": [
                 ("crag_pipeline", "CRAG 纠错检索"),
@@ -1730,7 +1730,7 @@ class UnifiedCoordinator:
                 ("rag_failure_detector", "失败检测"),
                 ("rag_optimizer", "检索优化"),
             ],
-            
+
             # Layer 4-5 性能优化补充
             "performance_boost": [
                 ("speculative_decoder", "投机解码"),
@@ -1738,7 +1738,7 @@ class UnifiedCoordinator:
                 ("cache_allocator", "缓存分配"),
                 ("semantic_cache", "语义缓存"),
             ],
-            
+
             # Layer 11 思考技能
             "thinking_skills": [
                 ("skill_coordinator", "技能协调"),
@@ -1866,9 +1866,9 @@ class UnifiedCoordinator:
                 ("progressive_setup", "渐进式设置"),
             ],
         }
-        
+
         return workflows.get(scenario, [])
-    
+
     def execute_workflow(
         self,
         scenario: str,
@@ -1887,10 +1887,10 @@ class UnifiedCoordinator:
         workflow = self.get_integrated_workflow(scenario)
         if not workflow:
             return {"error": f"未找到场景: {scenario}"}
-        
+
         results = []
         current_input = initial_input
-        
+
         for module_name, action in workflow:
             module = self._load_module(module_name)
             if not module:
@@ -1901,7 +1901,7 @@ class UnifiedCoordinator:
                     "error": "模块加载失败"
                 })
                 continue
-            
+
             try:
                 # 将中文 action 映射为实际方法调用
                 action_method_map = {
@@ -1924,7 +1924,7 @@ class UnifiedCoordinator:
                     "规则管理": ("get_rules_summary", False),
                     "增强防幻觉": ("verify_with_cross_validation", False),
                 }
-                
+
                 result_value = None
                 if module_name in action_method_map or action in [v[0] for v in action_method_map.values()]:
                     # 优先通过 action 查找
@@ -1944,7 +1944,7 @@ class UnifiedCoordinator:
                             result_value = method() if callable(method) else method
                         if hasattr(result_value, 'results'):
                             result_value = result_value.results
-                
+
                 results.append({
                     "module": module_name,
                     "action": action,
@@ -1959,14 +1959,14 @@ class UnifiedCoordinator:
                     "status": "failed",
                     "error": str(e)
                 })
-        
+
         return {
             "scenario": scenario,
             "results": results,
             "total_steps": len(workflow),
             "success_count": sum(1 for r in results if r["status"] == "success")
         }
-    
+
     def cognitive_recall(self, query: str, context: str = None) -> Dict[str, Any]:
         """
         认知检索 - 跨模块协同的高级检索
@@ -1986,7 +1986,7 @@ class UnifiedCoordinator:
             "final_answer": None,
             "confidence": 0.0
         }
-        
+
         # Step 1: Self-RAG 判断是否需要检索
         self_rag = self._load_module("self_rag")
         if self_rag:
@@ -2004,7 +2004,7 @@ class UnifiedCoordinator:
                     "step": "isrel_prediction",
                     "error": str(e)
                 })
-        
+
         # Step 2: MemGPT 三级内存检索
         memgpt = self._load_module("memgpt_memory")
         if memgpt:
@@ -2022,7 +2022,7 @@ class UnifiedCoordinator:
                     "step": "memgpt_recall",
                     "error": str(e)
                 })
-        
+
         # Step 3: Knowledge Graph GNN 实体查询
         kg = self._load_module("knowledge_graph_gnn")
         if kg:
@@ -2040,9 +2040,9 @@ class UnifiedCoordinator:
                     "step": "kg_query",
                     "error": str(e)
                 })
-        
+
         return results
-    
+
     def deep_reflect(self, recent_hours: int = 24) -> Dict[str, Any]:
         """
         深度反思 - 跨模块协同的反思流程
@@ -2060,17 +2060,17 @@ class UnifiedCoordinator:
             "steps": [],
             "insights": []
         }
-        
+
         # Step 1: 收集记忆流
         ga = self._load_module("generative_agents")
         if ga:
             try:
                 from memory_stream import MemoryStream
                 from reflection_engine import ReflectionEngine
-                
+
                 stream = MemoryStream()
                 engine = ReflectionEngine(stream)
-                
+
                 # 检查是否应该反思
                 should, trigger = engine.should_reflect()
                 results["steps"].append({
@@ -2078,7 +2078,7 @@ class UnifiedCoordinator:
                     "should_reflect": should,
                     "trigger": trigger.value if hasattr(trigger, 'value') else str(trigger)
                 })
-                
+
                 # 执行反思
                 if should:
                     insights = engine.reflect()
@@ -2092,9 +2092,9 @@ class UnifiedCoordinator:
                     "step": "reflection",
                     "error": str(e)
                 })
-        
+
         return results
-    
+
     def get_cross_module_workflows(self) -> Dict[str, str]:
         """获取跨模块协同工作流列表"""
         return {
@@ -2106,7 +2106,7 @@ class UnifiedCoordinator:
             "memory_consolidation": "记忆巩固流程（睡眠时执行）",
             "self_improvement_v2": "自我改进流程",
             "multi_hop_reasoning": "多跳推理流程",
-            
+
             # Layer 1.6 集成模块工作流
             "rule_management": "规则管理：加载/验证/摘要",
             "rule_sync": "规则同步：检测变更/同步/更新触发词",
@@ -2117,38 +2117,38 @@ class UnifiedCoordinator:
             "adaptive_optimization": "自适应优化：防幻觉/CRAG/LTP-LTD/RRF/思考触发",
             "heartbeat_execution": "心跳执行：主动任务/记忆维护/健康检查/技能更新/备份",
             "enhanced_verification": "增强验证：多源交叉验证/思考增强/渐进式验证",
-            
+
             # Layer 2-3 检索增强工作流
             "advanced_retrieval": "高级检索：分块/多分辨率/分布式/跨语言/多模态",
             "vector_optimization": "向量优化：ANN选择/OPQ量化/稀疏索引/INT8量化",
-            
+
             # Layer 4-5 LLM 与缓存工作流
             "llm_optimization": "LLM优化：统一调用/流式生成/模型路由/性能监控",
             "cache_optimization": "缓存优化：NUMA调度/KV管理/LSH近似/统一缓存",
-            
+
             # Layer 6 硬件优化工作流
             "hardware_full_optimization": "硬件全优化：GPU/NUMA/MKL/大页/IO",
             "advanced_hardware": "高级硬件：CXL/FMA/鲲鹏/实时调度/IRQ/电源",
-            
+
             # Layer 7-8 协调与可靠性工作流
             "module_coordination": "模块协调：进程管理/资源编排/工具注册/自动调优",
             "system_reliability": "系统可靠性：故障检测/自动恢复/沙箱/安全对齐",
-            
+
             # Layer 9-10 会话与 Persona 工作流
             "session_management": "会话管理：会话/上下文压缩/ACP通信",
             "persona_management": "Persona管理：自动学习/手动更新/长期记忆/智能更新",
-            
+
             # 补充工作流
             "memory_core_full": "记忆核心完整：反思/突触/情感/自适应/防幻觉",
             "rag_full_pipeline": "RAG完整流程：CRAG/混合/命题/缓存/检测/优化",
             "performance_boost": "性能提升：投机解码/流式生成/缓存分配/语义缓存",
             "thinking_skills": "思考技能：技能协调/第一性原理/系统思维/批判性思维",
         }
-    
+
     def get_module_status(self) -> Dict[str, Any]:
         """获取所有模块状态"""
         status = {}
-        
+
         for module_name, module_info in self.modules.items():
             status[module_name] = {
                 "name": module_info.name,
@@ -2159,23 +2159,23 @@ class UnifiedCoordinator:
                 "enabled": module_info.enabled,
                 "dependencies": module_info.dependencies
             }
-        
+
         return status
-    
+
     def get_layer_summary(self) -> Dict[int, Dict]:
         """获取各层模块摘要"""
         summary = {}
-        
+
         for layer in range(1, 12):
             modules = self.get_modules_by_layer(layer)
             loaded = sum(1 for m in modules if m in self._loaded_modules)
-            
+
             summary[layer] = {
                 "total": len(modules),
                 "loaded": loaded,
                 "modules": modules
             }
-        
+
         return summary
 
 
@@ -2183,20 +2183,20 @@ class UnifiedCoordinator:
 def main():
     """命令行接口"""
     import argparse
-    
+
     parser = argparse.ArgumentParser(description="统一协调器 V2")
     parser.add_argument("command", choices=["status", "layers", "workflow", "detect"])
     parser.add_argument("--scenario", help="场景名称")
     parser.add_argument("--message", help="用户消息")
-    
+
     args = parser.parse_args()
-    
+
     coordinator = UnifiedCoordinator()
-    
+
     if args.command == "status":
         status = coordinator.get_module_status()
         print(f"模块状态 (共 {len(status)} 个):")
-        
+
         # 按层分组显示
         layers = {}
         for name, info in status.items():
@@ -2204,25 +2204,25 @@ def main():
             if layer not in layers:
                 layers[layer] = []
             layers[layer].append((name, info))
-        
+
         for layer in sorted(layers.keys()):
             print(f"\nLayer {layer}:")
             for name, info in layers[layer]:
                 loaded = "✅" if info["loaded"] else "⏸️"
                 enabled = "🟢" if info["enabled"] else "🔴"
                 print(f"  {loaded}{enabled} {name}")
-    
+
     elif args.command == "layers":
         summary = coordinator.get_layer_summary()
         print("各层模块摘要:")
         for layer, info in summary.items():
             print(f"\nLayer {layer}: {info['loaded']}/{info['total']} 已加载")
-    
+
     elif args.command == "workflow":
         if not args.scenario:
             print("错误: 需要提供 --scenario")
             return
-        
+
         workflow = coordinator.get_integrated_workflow(args.scenario)
         if workflow:
             print(f"工作流: {args.scenario}")
@@ -2230,14 +2230,14 @@ def main():
                 print(f"  {i}. {module}: {action}")
         else:
             print(f"未找到场景: {args.scenario}")
-    
+
     elif args.command == "detect":
         if not args.message:
             print("错误: 需要提供 --message")
             return
-        
+
         matches = coordinator.detect_module(args.message)
-        print(f"检测到的模块:")
+        print("检测到的模块:")
         for name, score in matches:
             info = coordinator.modules[name]
             print(f"  - {name} (Layer {info.layer}): {score:.2f}")
@@ -2300,17 +2300,17 @@ def safe_call(component_id: str, method: str, *args, **kwargs) -> Any:
     try:
         from resilience_system import get_resilience_system
         system = get_resilience_system()
-        
+
         # 获取组件实例
         instance = system.get_instance(component_id)
         if instance is None:
             logger.warning(f"组件 {component_id} 不可用")
             return None
-        
+
         # 调用方法
         method_func = getattr(instance, method)
         return method_func(*args, **kwargs)
-        
+
     except Exception as e:
         logger.error(f"安全调用失败: {component_id}.{method} - {e}")
         return None
@@ -2704,7 +2704,7 @@ INTEGRATED_WORKFLOWS = {
         ("emotion_memory", "情感权重更新"),
         ("adaptive_memory", "参数自适应")
     ],
-    
+
     # ==================== MemGPT 风格工作流 ====================
     "memgpt_recall": [
         ("memgpt_memory", "核心记忆检索"),
@@ -2717,7 +2717,7 @@ INTEGRATED_WORKFLOWS = {
         ("memory_bank", "归档存储"),
         ("context_compressor", "压缩核心记忆")
     ],
-    
+
     # ==================== Generative Agents 工作流 ====================
     "agent_reflect": [
         ("memory_stream", "检索相关记忆"),
@@ -2730,7 +2730,7 @@ INTEGRATED_WORKFLOWS = {
         ("reflection_engine", "分析现状"),
         ("planning_engine", "制定计划")
     ],
-    
+
     # ==================== Self-RAG 工作流 ====================
     "self_rag_query": [
         ("isrel_predictor", "预测检索必要性"),
@@ -2744,7 +2744,7 @@ INTEGRATED_WORKFLOWS = {
         ("knowledge_augmentor", "知识补充"),
         ("knowledge_refiner", "知识精炼")
     ],
-    
+
     # ==================== 知识图谱工作流 ====================
     "kg_build": [
         ("graph_constructor", "构建图谱"),
@@ -2757,7 +2757,7 @@ INTEGRATED_WORKFLOWS = {
         ("gat_layer", "注意力检索"),
         ("relation_predictor", "关系推理")
     ],
-    
+
     # ==================== 检索增强工作流 ====================
     "recall": [
         ("synapse_network", "激活相关记忆"),
@@ -2800,7 +2800,7 @@ INTEGRATED_WORKFLOWS = {
         ("hybrid_search", "混合检索"),
         ("adaptive_rrf", "结果融合")
     ],
-    
+
     # ==================== 向量优化工作流 ====================
     "vector_index": [
         ("ann_selector", "选择ANN算法"),
@@ -2813,7 +2813,7 @@ INTEGRATED_WORKFLOWS = {
         ("approximate_cache", "近似缓存"),
         ("vector_api", "向量检索")
     ],
-    
+
     # ==================== LLM 优化工作流 ====================
     "fast_generation": [
         ("rag_cache", "检查缓存"),
@@ -2832,7 +2832,7 @@ INTEGRATED_WORKFLOWS = {
         ("semantic_cache", "缓存响应"),
         ("model_performance", "记录性能")
     ],
-    
+
     # ==================== 缓存工作流 ====================
     "cache_warmup": [
         ("rag_cache", "预热RAG缓存"),
@@ -2845,7 +2845,7 @@ INTEGRATED_WORKFLOWS = {
         ("cache_aware_scheduler", "缓存调度"),
         ("unified_cache", "统一缓存管理")
     ],
-    
+
     # ==================== 硬件优化工作流 ====================
     "hardware_detect": [
         ("hardware_optimize", "硬件检测"),
@@ -2865,7 +2865,7 @@ INTEGRATED_WORKFLOWS = {
         ("irq_isolator", "IRQ隔离"),
         ("cache_allocator", "缓存分配")
     ],
-    
+
     # ==================== 系统可靠性工作流 ====================
     "health_check": [
         ("failover", "故障检测"),
@@ -2878,7 +2878,7 @@ INTEGRATED_WORKFLOWS = {
         ("full_recovery", "完整恢复"),
         ("module_coordinator", "模块重启")
     ],
-    
+
     # ==================== 会话管理工作流 ====================
     "long_conversation": [
         ("conversation", "加载对话历史"),
@@ -2891,7 +2891,7 @@ INTEGRATED_WORKFLOWS = {
         ("context_compressor", "上下文压缩"),
         ("acp_server", "ACP协作")
     ],
-    
+
     # ==================== Persona 工作流 ====================
     "persona_update": [
         ("auto_update_persona", "自动更新"),
@@ -2905,7 +2905,7 @@ INTEGRATED_WORKFLOWS = {
         ("smart_forgetter", "智能遗忘"),
         ("update_persona", "更新偏好")
     ],
-    
+
     # ==================== NLP 工作流 ====================
     "nlp_process": [
         ("nlp_processor", "NLP处理"),
@@ -2917,7 +2917,7 @@ INTEGRATED_WORKFLOWS = {
         ("emotion_memory", "情感分析"),
         ("importance_scorer", "重要性评分")
     ],
-    
+
     # ==================== 集成工作流 ====================
     "knowledge_sync": [
         ("brain_memory_sync", "同步知识库"),
@@ -2932,7 +2932,7 @@ INTEGRATED_WORKFLOWS = {
         ("skill_coordinator", "技能协调"),
         ("adaptive_rrf", "结果融合")
     ],
-    
+
     # ==================== 优化工作流 ====================
     "optimization_run": [
         ("optimization_integration", "优化集成"),
@@ -2948,7 +2948,7 @@ INTEGRATED_WORKFLOWS = {
         ("rules_manager", "规则管理"),
         ("enhanced_hallucination_guard", "增强防幻觉")
     ],
-    
+
     # ==================== 多模态工作流 ====================
     "multi_modal_recall": [
         ("synapse_network", "关联检索"),
@@ -2961,14 +2961,14 @@ INTEGRATED_WORKFLOWS = {
         ("multimodal_search", "多模态检索"),
         ("visual_generation", "可视化")
     ],
-    
+
     # ==================== 分布式工作流 ====================
     "distributed_recall": [
         ("distributed_search", "分布式检索"),
         ("multiresolution_search", "多分辨率"),
         ("adaptive_rrf", "结果融合")
     ],
-    
+
     # ==================== 工具注册工作流 ====================
     "tool_register": [
         ("tools_registry", "注册工具"),

@@ -382,7 +382,7 @@ class ReActEngine:
 
     def format_trajectory(self, plan: ReActPlan) -> str:
         """将推理轨迹格式化为可读文本（用于 DAG 存储或展示）"""
-        lines = [f"## ReAct 推理轨迹"]
+        lines = ["## ReAct 推理轨迹"]
         lines.append(f"原始问题: {plan.original_query}")
         lines.append(f"总步数: {plan.total_steps}/{plan.max_steps}")
         lines.append(f"总耗时: {plan.total_duration_ms:.0f}ms")

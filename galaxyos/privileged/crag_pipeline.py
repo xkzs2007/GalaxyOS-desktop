@@ -770,7 +770,7 @@ class CRAGPipeline:
                             documents = self.reranker.rerank(
                                 query, documents + web_docs, top_k=self.rerank_top_k
                             )
-                            corrections.append(f"Web 搜索补充后重排")
+                            corrections.append("Web 搜索补充后重排")
                     except Exception:
                         pass
 

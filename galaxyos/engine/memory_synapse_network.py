@@ -252,14 +252,14 @@ class Synapse:
     target_id: str  # 目标神经元 ID
     weight: float = 0.5  # 突触权重 (0.0 - 1.0)
     type: SynapseType = SynapseType.EXCITATORY
-    
+
     created_at: str = ""
     last_reinforced: str = ""
     reinforcement_count: int = 0
-    
+
     # LTC 参数（序列化为 JSON 字符串）
     ltc_params: str = ""  # LTCConfig.to_json()
-    
+
     def _get_ltc(self) -> Optional[LTCConfig]:
         if not self.ltc_params:
             return None
@@ -267,10 +267,10 @@ class Synapse:
             return LTCConfig.from_dict(json.loads(self.ltc_params))
         except Exception:
             return None
-    
+
     def _set_ltc(self, cfg: LTCConfig):
         self.ltc_params = json.dumps(cfg.to_dict())
-    
+
     def compute_ltc_weight(self, src_hidden: float = 0.5,
                            dst_hidden: float = 0.5) -> float:
         """
@@ -293,12 +293,12 @@ class Synapse:
         # 神经元活跃度调制
         modulation = (src_hidden + dst_hidden) / 2.0
         return base * (0.5 + 0.5 * modulation)
-    
+
     def to_dict(self) -> Dict:
         result = asdict(self)
         result["type"] = self.type.value
         return result
-    
+
     @classmethod
     def from_dict(cls, data: Dict) -> 'Synapse':
         data["type"] = SynapseType(data["type"])
@@ -309,65 +309,65 @@ class Synapse:
 
 class SynapseNetwork:
     """突触网络管理器"""
-    
+
     def __init__(self, workspace_path: str = None):
         self.workspace_path = Path(workspace_path or workspace())
         self.network_path = self.workspace_path / ".learnings" / "synapse_network"
-        
+
         # 数据文件
         self.neurons_path = self.network_path / "neurons.jsonl"
         self.synapses_path = self.network_path / "synapses.jsonl"
         self.ltc_params_path = self.network_path / "ltc_params.jsonl"
-        
+
         # 确保目录存在
         self.network_path.mkdir(parents=True, exist_ok=True)
-        
+
         # 初始化文件
         for path in [self.neurons_path, self.synapses_path, self.ltc_params_path]:
             if not path.exists():
                 path.touch()
-        
+
         # 缓存
         self._neurons_cache: Dict[str, MemoryNeuron] = {}
         self._synapses_cache: Dict[str, Synapse] = {}
         self._loaded = False
         # 自动加载已有数据
         self._load()
-    
+
     def _load(self):
         """加载数据到缓存"""
         if self._loaded:
             return
-        
+
         # 加载神经元
         with open(self.neurons_path, "r", encoding="utf-8") as f:
             for line in f:
                 if line.strip():
                     neuron = MemoryNeuron.from_dict(json.loads(line))
                     self._neurons_cache[neuron.id] = neuron
-        
+
         # 加载突触
         with open(self.synapses_path, "r", encoding="utf-8") as f:
             for line in f:
                 if line.strip():
                     synapse = Synapse.from_dict(json.loads(line))
                     self._synapses_cache[synapse.id] = synapse
-        
+
         self._loaded = True
-    
+
     def _save_neuron(self, neuron: MemoryNeuron):
         """保存神经元"""
         with open(self.neurons_path, "a", encoding="utf-8") as f:
             f.write(json.dumps(neuron.to_dict(), ensure_ascii=False) + "\n")
-    
+
     def _save_synapse(self, synapse: Synapse):
         """保存突触"""
         with open(self.synapses_path, "a", encoding="utf-8") as f:
             f.write(json.dumps(synapse.to_dict(), ensure_ascii=False) + "\n")
-    
+
     def _get_timestamp(self) -> str:
         return datetime.now(timezone.utc).isoformat()
-    
+
     def _generate_id(self, prefix: str) -> str:
         timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
         random_suffix = hashlib.md5(str(datetime.now().timestamp()).encode()).hexdigest()[:8]
@@ -378,10 +378,10 @@ class SynapseNetwork:
 
 class NeuronManager:
     """神经元管理器"""
-    
+
     def __init__(self, network: SynapseNetwork):
         self.network = network
-    
+
     # ==================== NLP 特征提取 ====================
 
     @staticmethod
@@ -498,7 +498,7 @@ class NeuronManager:
         """获取神经元"""
         self.network._load()
         return self.network._neurons_cache.get(neuron_id)
-    
+
     def activate_neuron(self, neuron_id: str) -> Optional[MemoryNeuron]:
         """激活神经元（更新 LTC 状态）"""
         neuron = self.get_neuron(neuron_id)
@@ -512,7 +512,7 @@ class NeuronManager:
         neuron.apply_activation_signal(strength=1.0)
 
         return neuron
-    
+
     def find_neuron_by_content(self, content: str) -> Optional[MemoryNeuron]:
         """根据内容查找神经元（NLP 语义级匹配兜底）"""
         self.network._load()
@@ -535,7 +535,7 @@ class NeuronManager:
                     return neuron
 
         return None
-    
+
     def get_all_neurons(self) -> List[MemoryNeuron]:
         """获取所有神经元"""
         self.network._load()
@@ -546,18 +546,18 @@ class NeuronManager:
 
 class SynapseManager:
     """突触管理器"""
-    
+
     # LTP/LTD 参数（fallback 模式，LTC 优先）
     LTP_STRENGTH = 0.1
     LTD_RATE = 0.01
     MIN_WEIGHT = 0.0
     MAX_WEIGHT = 1.0
     DECAY_THRESHOLD_DAYS = 7
-    
+
     def __init__(self, network: SynapseNetwork, use_ltc: bool = True):
         self.network = network
         self.use_ltc = use_ltc
-    
+
     def create_synapse(
         self,
         source_id: str,
@@ -570,7 +570,7 @@ class SynapseManager:
     ) -> Synapse:
         """创建突触（NLP 语义相似度→初始权重）"""
         self.network._load()
-        
+
         # 检查是否已存在
         existing = self.get_synapse(source_id, target_id)
         if existing:
@@ -601,13 +601,13 @@ class SynapseManager:
                 weight = min(1.0, max(0.1, weight))
             except Exception:
                 pass
-        
+
         ltc_str = ""
         if ltc_preset and ltc_preset in PRESETS:
             ltc_str = json.dumps(PRESETS[ltc_preset].to_dict())
         elif self.use_ltc:
             ltc_str = json.dumps(PRESETS["classic"].to_dict())
-        
+
         synapse = Synapse(
             id=self.network._generate_id("SYN"),
             source_id=source_id,
@@ -619,40 +619,40 @@ class SynapseManager:
             reinforcement_count=1,
             ltc_params=ltc_str
         )
-        
+
         self.network._synapses_cache[synapse.id] = synapse
         self.network._save_synapse(synapse)
-        
+
         return synapse
-    
+
     def get_synapse(self, source_id: str, target_id: str) -> Optional[Synapse]:
         """获取突触"""
         self.network._load()
-        
+
         for synapse in self.network._synapses_cache.values():
             if synapse.source_id == source_id and synapse.target_id == target_id:
                 return synapse
-        
+
         return None
-    
+
     def get_outgoing_synapses(self, neuron_id: str) -> List[Synapse]:
         """获取神经元的所有输出突触"""
         self.network._load()
-        
+
         return [
             s for s in self.network._synapses_cache.values()
             if s.source_id == neuron_id
         ]
-    
+
     def get_incoming_synapses(self, neuron_id: str) -> List[Synapse]:
         """获取神经元的所有输入突触"""
         self.network._load()
-        
+
         return [
             s for s in self.network._synapses_cache.values()
             if s.target_id == neuron_id
         ]
-    
+
     def ltp(self, synapse: Synapse, strength: float = None) -> Synapse:
         """
         长时程增强 (Long-Term Potentiation)
@@ -677,7 +677,7 @@ class SynapseManager:
             synapse.weight = min(self.MAX_WEIGHT, synapse.weight + strength)
 
         return synapse
-    
+
     def ltd(self, synapse: Synapse, decay_rate: float = None) -> Synapse:
         """
         长时程抑制 (Long-Term Depression)
@@ -693,15 +693,15 @@ class SynapseManager:
             if days_unused > self.DECAY_THRESHOLD_DAYS:
                 decay_amount = decay_rate * (days_unused - self.DECAY_THRESHOLD_DAYS)
                 synapse.weight = max(self.MIN_WEIGHT, synapse.weight - decay_amount)
-        
+
         return synapse
-    
+
     def apply_decay_to_all(self):
         """对所有突触应用衰减"""
         self.network._load()
         for synapse in self.network._synapses_cache.values():
             self.ltd(synapse)
-    
+
     def get_synapse_with_ltc_weight(self, syn_id: str,
                                        src_hidden: float = 0.5,
                                        dst_hidden: float = 0.5) -> Tuple[Optional[Synapse], float]:
@@ -711,15 +711,15 @@ class SynapseManager:
         if syn is None:
             return None, 0.0
         return syn, syn.compute_ltc_weight(src_hidden, dst_hidden) if syn.ltc_params else syn.weight
-    
+
     def batch_optimize_ltc(self, epochs: int = 100, verbose: bool = False) -> int:
         """对全量 LTC 突触进行批量参数优化"""
         self.network._load()
-        
+
         ltc_synapses = [s for s in self.network._synapses_cache.values() if s.ltc_params]
         if not ltc_synapses:
             return 0
-        
+
         # 收集训练数据
         training_data = []
         for s in ltc_synapses:
@@ -730,14 +730,14 @@ class SynapseManager:
                 "total_uses": s.reinforcement_count,
                 "current_weight": s.compute_ltc_weight(),
             })
-        
+
         trainer = LTCBatchOptimizer(lr=0.01, epochs=epochs, verbose=verbose)
         results = trainer.fit(training_data)
-        
+
         # 写回优化后的参数
         for syn, cfg in zip(ltc_synapses, results):
             syn._set_ltc(cfg)
-        
+
         if verbose:
             print(f"[LTC] 批量优化完成: {len(ltc_synapses)} 条突触")
         return len(ltc_synapses)
@@ -747,15 +747,15 @@ class SynapseManager:
 
 class ActivationSpreader:
     """激活传播器"""
-    
+
     DEFAULT_THRESHOLD = 0.3
     MAX_DEPTH = 3  # 最大传播深度
-    
+
     def __init__(self, network: SynapseNetwork, use_ltc: bool = True):
         self.network = network
         self.synapse_manager = SynapseManager(network, use_ltc)
         self.neuron_manager = NeuronManager(network)
-    
+
     def spread_activation(
         self,
         neuron_id: str,
@@ -823,7 +823,7 @@ class ActivationSpreader:
                     queue.append((synapse.target_id, propagated_strength, depth + 1))
 
         return activated
-    
+
     def find_associated_memories(
         self,
         neuron_id: str,
@@ -840,13 +840,13 @@ class ActivationSpreader:
             [(神经元, 关联强度), ...]
         """
         activated = self.spread_activation(neuron_id)
-        
+
         # 排除起始神经元
         activated = [(n, s) for n, s in activated if n.id != neuron_id]
-        
+
         # 按强度排序
         activated.sort(key=lambda x: x[1], reverse=True)
-        
+
         return activated[:top_k]
 
 
@@ -871,18 +871,18 @@ class MemorySynapseNetwork:
         for neuron, strength in associated:
             print(f"{neuron.content}: {strength}")
     """
-    
+
     def __init__(self, workspace_path: str = None, use_ltc: bool = True):
         self.network = SynapseNetwork(workspace_path)
         self.neuron_manager = NeuronManager(self.network)
         self.synapse_manager = SynapseManager(self.network, use_ltc)
         self.activation_spreader = ActivationSpreader(self.network)
         self.use_ltc = use_ltc
-    
+
     def create_neuron(self, content: str, embedding: List[float] = None) -> MemoryNeuron:
         """创建记忆神经元"""
         return self.neuron_manager.create_neuron(content, embedding)
-    
+
     def create_synapse(
         self,
         source_id: str,
@@ -899,15 +899,15 @@ class MemorySynapseNetwork:
             src_content=src_content,
             dst_content=dst_content,
         )
-    
+
     def activate(self, neuron_id: str) -> List[Tuple[MemoryNeuron, float]]:
         """激活神经元并传播"""
         return self.activation_spreader.spread_activation(neuron_id)
-    
+
     def find_associated(self, neuron_id: str, top_k: int = 5) -> List[Tuple[MemoryNeuron, float]]:
         """查找关联记忆"""
         return self.activation_spreader.find_associated_memories(neuron_id, top_k)
-    
+
     def _load(self):
         """加载所有神经元和突触（委托内部 SynapseNetwork）"""
         self.network._load()
@@ -931,31 +931,31 @@ class MemorySynapseNetwork:
     def apply_decay(self):
         """应用突触衰减"""
         self.synapse_manager.apply_decay_to_all()
-    
+
     def batch_optimize(self, epochs: int = 100):
         """批量优化 LTC 参数"""
         return self.synapse_manager.batch_optimize_ltc(epochs=epochs)
-    
+
     def get_stats(self) -> Dict[str, Any]:
         """获取网络统计"""
         self.network._load()
-        
+
         neurons = self.network._neurons_cache
         synapses = self.network._synapses_cache
-        
+
         avg_activation = sum(n.activation_count for n in neurons.values()) / len(neurons) if neurons else 0
-        
+
         # 统计 LTC vs 传统
         ltc_count = sum(1 for s in synapses.values() if s.ltc_params)
-        
+
         # LTC 模式：用当前时间实时计算的权重
         if self.use_ltc:
             live_weights = [s.compute_ltc_weight() for s in synapses.values() if s.ltc_params]
         else:
             live_weights = [s.weight for s in synapses.values()]
-        
+
         avg_weight = sum(live_weights) / len(live_weights) if live_weights else 0
-        
+
         return {
             "total_neurons": len(neurons),
             "total_synapses": len(synapses),
@@ -973,7 +973,7 @@ class MemorySynapseNetwork:
 def main():
     """命令行接口"""
     import argparse
-    
+
     parser = argparse.ArgumentParser(description="记忆突触网络")
     parser.add_argument("command", choices=["create-neuron", "create-synapse", "activate", "stats"])
     parser.add_argument("--content", help="神经元内容")
@@ -981,25 +981,25 @@ def main():
     parser.add_argument("--target", help="目标神经元 ID")
     parser.add_argument("--neuron", help="神经元 ID")
     parser.add_argument("--weight", type=float, default=0.5, help="突触权重")
-    
+
     args = parser.parse_args()
-    
+
     network = MemorySynapseNetwork()
-    
+
     if args.command == "create-neuron":
         if not args.content:
             print("错误: 需要提供 --content")
             return
         neuron = network.create_neuron(args.content)
         print(f"创建神经元: {neuron.id}")
-    
+
     elif args.command == "create-synapse":
         if not args.source or not args.target:
             print("错误: 需要提供 --source 和 --target")
             return
         synapse = network.create_synapse(args.source, args.target, args.weight)
         print(f"创建突触: {synapse.id} (权重: {synapse.weight})")
-    
+
     elif args.command == "activate":
         if not args.neuron:
             print("错误: 需要提供 --neuron")
@@ -1008,7 +1008,7 @@ def main():
         print(f"关联记忆 ({len(associated)} 个):")
         for neuron, strength in associated:
             print(f"  - {neuron.content[:50]}... (强度: {strength:.3f})")
-    
+
     elif args.command == "stats":
         stats = network.get_stats()
         print(json.dumps(stats, indent=2, ensure_ascii=False))
@@ -1027,26 +1027,26 @@ class AdaptiveSynapsePruner:
     动态保留分数 = f(weight, access_freq, recency, emotional_valence, nlp_importance)
     修剪阈值根据全量突触的保留分数分布自适应调整（mean - k * std）
     """
-    
+
     # 特征权重
     W_WEIGHT = 0.30
     W_FREQ = 0.25
     W_RECENCY = 0.20
     W_EMOTION = 0.10
     W_IMPORTANCE = 0.15
-    
+
     # 自适应阈值系数：保留分数低于 mean - k * std 的修剪
     THRESHOLD_K = 0.5
     # 下限保留分数绝对阈值
     MIN_RETENTION = 0.15
-    
+
     def __init__(self, network: 'MemorySynapseNetwork', config: Optional[Dict] = None):
         self.network = network
         if config:
             for k, v in config.items():
                 if hasattr(self, k.upper()):
                     setattr(self, k.upper(), v)
-    
+
     def compute_retention_score(self, synapse: 'Synapse',
                                 src_neuron: Optional['MemoryNeuron'] = None,
                                 now: Optional[datetime] = None) -> float:
@@ -1061,13 +1061,13 @@ class AdaptiveSynapsePruner:
         - 重要度因子：源神经元 NLP 重要度
         """
         now = now or datetime.now(timezone.utc)
-        
+
         # 1. 权重因子 [0, 1]
         w_weight = synapse.weight
-        
+
         # 2. 频率因子 [0, 1]：log 归一化
         w_freq = min(1.0, math.log10(synapse.reinforcement_count + 1) / 3.0)
-        
+
         # 3. 时效因子 [0, 1]：指数衰减，7天半衰期
         try:
             last = datetime.fromisoformat(synapse.last_reinforced)
@@ -1075,7 +1075,7 @@ class AdaptiveSynapsePruner:
         except Exception:
             days = 365.0
         w_recency = math.exp(-days * math.log(2) / 7.0)  # 7天半衰期
-        
+
         # 4. 情感因子 [0, 1]：从源神经元的 nlp_sentiment 提取
         w_emotion = 0.5
         if src_neuron and src_neuron.nlp_sentiment:
@@ -1084,10 +1084,10 @@ class AdaptiveSynapsePruner:
                 w_emotion = sentiment.get("score", 0.5)
             except Exception:
                 pass
-        
+
         # 5. 重要度因子 [0, 1]：源神经元 NLP 重要度
         w_importance = src_neuron.nlp_importance if src_neuron else 0.5
-        
+
         # 综合保留分数
         retention = (
             self.W_WEIGHT * w_weight +
@@ -1097,7 +1097,7 @@ class AdaptiveSynapsePruner:
             self.W_IMPORTANCE * w_importance
         )
         return round(max(0.0, min(1.0, retention)), 4)
-    
+
     def compute_adaptive_threshold(self, retention_scores: List[float]) -> float:
         """
         自适应修剪阈值
@@ -1107,15 +1107,15 @@ class AdaptiveSynapsePruner:
         """
         if not retention_scores:
             return self.MIN_RETENTION
-        
+
         n = len(retention_scores)
         mean = sum(retention_scores) / n
         variance = sum((s - mean) ** 2 for s in retention_scores) / n
         std = math.sqrt(variance)
-        
+
         threshold = max(mean - self.THRESHOLD_K * std, self.MIN_RETENTION)
         return round(threshold, 4)
-    
+
     def get_prune_candidates(self, threshold: Optional[float] = None) -> List[Tuple[str, float, float]]:
         """
         获取待修剪的突触候选列表
@@ -1127,25 +1127,25 @@ class AdaptiveSynapsePruner:
         now = datetime.now(timezone.utc)
         neurons = self.network._neurons_cache
         synapses = self.network._synapses_cache
-        
+
         # 计算每条突触的保留分数
         scored = []
         for s_id, s in synapses.items():
             src = neurons.get(s.source_id)
             score = self.compute_retention_score(s, src_neuron=src, now=now)
             scored.append((s_id, score, s.weight))
-        
+
         # 排序按保留分数升序
         scored.sort(key=lambda x: x[1])
-        
+
         # 计算自适应阈值
         scores_only = [x[1] for x in scored]
         cutoff = threshold if threshold is not None else self.compute_adaptive_threshold(scores_only)
-        
+
         # 低于阈值的候选
         candidates = [(sid, sc, w) for sid, sc, w in scored if sc < cutoff]
         return candidates
-    
+
     def run_prune(self, dry_run: bool = False) -> Dict[str, Any]:
         """
         执行一次自适应修剪
@@ -1162,7 +1162,7 @@ class AdaptiveSynapsePruner:
                                               self.network._synapses_cache[s].source_id))
              for s in self.network._synapses_cache] if self.network._synapses_cache else []
         )
-        
+
         result = {
             "total_synapses": len(self.network._synapses_cache),
             "prune_candidates": len(candidates),
@@ -1170,7 +1170,7 @@ class AdaptiveSynapsePruner:
             "dry_run": dry_run,
             "pruned": [],
         }
-        
+
         if not dry_run:
             for sid, score, weight in candidates:
                 synapse = self.network._synapses_cache.pop(sid, None)
@@ -1180,7 +1180,7 @@ class AdaptiveSynapsePruner:
                         "source_id": synapse.source_id, "target_id": synapse.target_id,
                         "reinforcement_count": synapse.reinforcement_count
                     })
-            
+
             # 重写突触文件（保留未被修剪的）
             if result["pruned"]:
                 kept_ids = set(self.network._synapses_cache.keys())
@@ -1197,28 +1197,28 @@ class AdaptiveSynapsePruner:
                         except Exception:
                             pass
                 tmp_path.replace(self.network.synapses_path)
-        
+
         if result["pruned"]:
             result["avg_retention_of_pruned"] = round(
                 sum(p["retention_score"] for p in result["pruned"]) / len(result["pruned"]), 4
             )
-        
+
         return result
-    
+
     def get_stats(self) -> Dict[str, Any]:
         """获取修剪统计信息"""
         self.network._load()
         synapses = self.network._synapses_cache
         neurons = self.network._neurons_cache
-        
+
         now = datetime.now(timezone.utc)
         retention_scores = []
         for s in synapses.values():
             src = neurons.get(s.source_id)
             retention_scores.append(self.compute_retention_score(s, src_neuron=src, now=now))
-        
+
         threshold = self.compute_adaptive_threshold(retention_scores) if retention_scores else 0
-        
+
         return {
             "total_synapses": len(synapses),
             "total_neurons": len(neurons),

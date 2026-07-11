@@ -13,7 +13,8 @@ from pathlib import Path
 # 路径配置
 
 # ── Centralized path resolution ──
-import os as _os, sys as _sys
+import os as _os
+import sys as _sys
 from galaxyos.shared.paths import workspace
 _ws_root = workspace()
 for _p in [_ws_root, "/workspace"]:
@@ -40,10 +41,10 @@ def write_file(filepath, content):
 def append_to_persona(preferences):
     """追加用户偏好到 persona.md"""
     existing = read_file(PERSONA_FILE)
-    
+
     # 添加时间戳
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    
+
     # 构建新内容
     new_section = f"""
 
@@ -53,15 +54,15 @@ def append_to_persona(preferences):
 
 {preferences}
 """
-    
+
     # 追加到文件末尾
     write_file(PERSONA_FILE, existing + new_section)
-    print(f"✅ 已更新 persona.md")
+    print("✅ 已更新 persona.md")
 
 def update_memory_md(preferences):
     """更新 MEMORY.md 用户画像部分"""
     existing = read_file(MEMORY_FILE)
-    
+
     # 查找用户画像部分
     if "## 用户画像" in existing:
         # 在用户画像部分后追加
@@ -69,7 +70,7 @@ def update_memory_md(preferences):
         new_lines = []
         in_persona = False
         added = False
-        
+
         for line in lines:
             new_lines.append(line)
             if "## 用户画像" in line:
@@ -78,10 +79,10 @@ def update_memory_md(preferences):
                 # 在下一个章节前插入
                 new_lines.insert(-1, f"\n### 更新 {datetime.now().strftime('%Y-%m-%d')}\n{preferences}\n")
                 added = True
-        
+
         if not added:
             new_lines.append(f"\n### 更新 {datetime.now().strftime('%Y-%m-%d')}\n{preferences}\n")
-        
+
         write_file(MEMORY_FILE, "\n".join(new_lines))
     else:
         # 添加用户画像部分
@@ -93,23 +94,23 @@ def update_memory_md(preferences):
 {preferences}
 """
         write_file(MEMORY_FILE, existing + persona_section)
-    
-    print(f"✅ 已更新 MEMORY.md")
+
+    print("✅ 已更新 MEMORY.md")
 
 def main():
     """主函数"""
     if len(sys.argv) < 2:
         print("用法: python3 update_persona.py '<偏好内容>'")
         sys.exit(1)
-    
+
     preferences = sys.argv[1]
-    
+
     # 更新 persona.md
     append_to_persona(preferences)
-    
+
     # 更新 MEMORY.md
     update_memory_md(preferences)
-    
+
     print("用户画像更新完成")
 
 if __name__ == "__main__":

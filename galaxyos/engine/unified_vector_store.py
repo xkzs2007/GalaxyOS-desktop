@@ -30,23 +30,23 @@ class VectorRecord:
 
 class VectorStoreBackend(ABC):
     """向量存储后端抽象类"""
-    
+
     @abstractmethod
     def add(self, records: List[VectorRecord]) -> int:
         """添加向量记录"""
         pass
-    
+
     @abstractmethod
-    def search(self, query_vector: List[float], top_k: int = 10, 
+    def search(self, query_vector: List[float], top_k: int = 10,
                filters: Optional[Dict] = None) -> List[Tuple[VectorRecord, float]]:
         """搜索相似向量"""
         pass
-    
+
     @abstractmethod
     def delete(self, ids: List[str]) -> int:
         """删除向量记录"""
         pass
-    
+
     @abstractmethod
     def count(self) -> int:
         """获取记录总数"""
@@ -55,21 +55,21 @@ class VectorStoreBackend(ABC):
 
 class SQLiteVecBackend(VectorStoreBackend):
     """sqlite-vec 后端"""
-    
+
     def __init__(self, db_path: str, dim: int = 1024):
         self.db_path = db_path
         self.dim = dim
         self._init_db()
-    
+
     def _init_db(self):
         """初始化数据库"""
         Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
-        
+
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
-        
+
         # 创建向量表
-        cursor.execute(f'''
+        cursor.execute('''
             CREATE TABLE IF NOT EXISTS vectors (
                 id TEXT PRIMARY KEY,
                 content TEXT,
@@ -78,17 +78,17 @@ class SQLiteVecBackend(VectorStoreBackend):
                 embedding BLOB
             )
         ''')
-        
+
         conn.commit()
         conn.close()
-    
+
     def add(self, records: List[VectorRecord]) -> int:
         """添加向量记录"""
         import numpy as np
-        
+
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
-        
+
         count = 0
         for record in records:
             try:
@@ -104,36 +104,36 @@ class SQLiteVecBackend(VectorStoreBackend):
                 cursor.execute('''
                     INSERT OR REPLACE INTO vectors (id, content, metadata, source, embedding)
                     VALUES (?, ?, ?, ?, ?)
-                ''', (record.id, record.content, json.dumps(record.metadata), 
+                ''', (record.id, record.content, json.dumps(record.metadata),
                       record.source, vector_bytes))
                 count += 1
             except Exception as e:
                 logger.error(f"添加向量失败: {record.id}, {e}")
-        
+
         conn.commit()
         conn.close()
         return count
-    
+
     def search(self, query_vector: List[float], top_k: int = 10,
                filters: Optional[Dict] = None) -> List[Tuple[VectorRecord, float]]:
         """搜索相似向量（暴力搜索，适合小规模数据）"""
         import numpy as np
-        
+
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
-        
+
         # 构建查询
         query = "SELECT id, content, metadata, source, embedding FROM vectors"
         params = []
-        
+
         if filters and 'source' in filters:
             query += " WHERE source = ?"
             params.append(filters['source'])
-        
+
         cursor.execute(query, params)
         rows = cursor.fetchall()
         conn.close()
-        
+
         # 如果查询向量维度小于存储维度，补零对齐
         query_vec = np.array(query_vector, dtype=np.float32)
         if len(query_vec) < self.dim:
@@ -141,21 +141,21 @@ class SQLiteVecBackend(VectorStoreBackend):
             padded[:len(query_vec)] = query_vec
             query_vec = padded
         query_norm = np.linalg.norm(query_vec)
-        
+
         results = []
         for row in rows:
             id_, content, metadata, source, embedding_bytes = row
             vec = np.frombuffer(embedding_bytes, dtype=np.float32) if (embedding_bytes and len(embedding_bytes) > 0) else None
-            
+
             if vec is None or len(vec) != self.dim:
                 continue
-            
+
             vec_norm = np.linalg.norm(vec)
             if query_norm > 0 and vec_norm > 0:
                 similarity = np.dot(query_vec, vec) / (query_norm * vec_norm)
             else:
                 similarity = 0.0
-            
+
             record = VectorRecord(
                 id=id_,
                 vector=vec.tolist(),
@@ -164,24 +164,24 @@ class SQLiteVecBackend(VectorStoreBackend):
                 source=source
             )
             results.append((record, float(similarity)))
-        
+
         # 排序并返回 top_k
         results.sort(key=lambda x: x[1], reverse=True)
         return results[:top_k]
-    
+
     def delete(self, ids: List[str]) -> int:
         """删除向量记录"""
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
-        
+
         placeholders = ','.join('?' * len(ids))
         cursor.execute(f"DELETE FROM vectors WHERE id IN ({placeholders})", ids)
         count = cursor.rowcount
-        
+
         conn.commit()
         conn.close()
         return count
-    
+
     def count(self) -> int:
         """获取记录总数"""
         conn = sqlite3.connect(self.db_path)
@@ -530,8 +530,8 @@ class UnifiedVectorStore:
     
     整合多个后端，提供统一的向量存储和检索能力。
     """
-    
-    def __init__(self, 
+
+    def __init__(self,
                  backend: str = 'hnswlib',
                  db_path: Optional[str] = None,
                  index_path: Optional[str] = None,
@@ -546,14 +546,14 @@ class UnifiedVectorStore:
             dim: 向量维度
         """
         self.dim = dim
-        
+
         # 默认路径
         openclaw_home = os.environ.get('OPENCLAW_HOME', Path(galaxyos_home()))
         if db_path is None:
             db_path = str(Path(openclaw_home) / 'memory-tdai' / 'unified_vectors.db')
         if index_path is None:
             index_path = str(Path(openclaw_home) / 'memory-tdai' / 'unified_vectors.faiss')
-        
+
         # 初始化后端
         if backend == 'hnswlib':
             try:
@@ -571,11 +571,11 @@ class UnifiedVectorStore:
                 self.backend = SQLiteVecBackend(db_path, dim)
         else:
             self.backend = SQLiteVecBackend(db_path, dim)
-        
+
         logger.info(f"统一向量存储初始化完成: backend={type(self.backend).__name__}, dim={dim}")
-    
-    def add_vectors(self, 
-                    vectors: List[List[float]], 
+
+    def add_vectors(self,
+                    vectors: List[List[float]],
                     contents: List[str],
                     metadatas: Optional[List[Dict]] = None,
                     ids: Optional[List[str]] = None,
@@ -594,12 +594,12 @@ class UnifiedVectorStore:
             添加的记录数
         """
         import uuid
-        
+
         if metadatas is None:
             metadatas = [{}] * len(vectors)
         if ids is None:
             ids = [str(uuid.uuid4()) for _ in vectors]
-        
+
         records = []
         for i, (vec, content, metadata, id_) in enumerate(zip(vectors, contents, metadatas, ids)):
             records.append(VectorRecord(
@@ -609,11 +609,11 @@ class UnifiedVectorStore:
                 content=content,
                 source=source
             ))
-        
+
         return self.backend.add(records)
-    
-    def search(self, 
-               query_vector: List[float], 
+
+    def search(self,
+               query_vector: List[float],
                top_k: int = 10,
                source_filter: Optional[str] = None) -> List[Dict]:
         """
@@ -629,7 +629,7 @@ class UnifiedVectorStore:
         """
         filters = {'source': source_filter} if source_filter else None
         results = self.backend.search(query_vector, top_k, filters)
-        
+
         return [
             {
                 'id': record.id,
@@ -640,15 +640,15 @@ class UnifiedVectorStore:
             }
             for record, score in results
         ]
-    
+
     def delete(self, ids: List[str]) -> int:
         """删除向量"""
         return self.backend.delete(ids)
-    
+
     def count(self) -> int:
         """获取记录总数"""
         return self.backend.count()
-    
+
     def get_stats(self) -> Dict[str, Any]:
         """获取统计信息"""
         return {
@@ -669,7 +669,7 @@ def get_vector_store() -> UnifiedVectorStore:
     return _default_store
 
 
-def add_memory_vectors(vectors: List[List[float]], 
+def add_memory_vectors(vectors: List[List[float]],
                        contents: List[str],
                        metadatas: Optional[List[Dict]] = None,
                        source: str = 'memory-tdai') -> int:

@@ -1104,7 +1104,7 @@ if __name__ == "__main__":
 
     elif args.cycle:
         result = eng.detect_temporal_cycle()
-        print(f"📈 周期检测结果:")
+        print("📈 周期检测结果:")
         print(json.dumps(result, indent=2, ensure_ascii=False))
 
     elif args.patterns:
@@ -1140,14 +1140,14 @@ if __name__ == "__main__":
     else:
         # 默认全显示
         print(f"{'='*60}")
-        print(f"🧠 KoRa v2 — 行为模式引擎")
+        print("🧠 KoRa v2 — 行为模式引擎")
         print(f"{'='*60}")
         print(eng.get_pattern_summary())
         print()
-        print(f"--- 快速命令 ---")
-        print(f"  --analyze 24   分析 24 小时")
-        print(f"  --cycle        检测周期")
-        print(f"  --cognition    cognition 注入文本")
-        print(f"  --recommend    策略推荐")
-        print(f"  --patterns     模式库")
-        print(f"  --discover     模式发现")
+        print("--- 快速命令 ---")
+        print("  --analyze 24   分析 24 小时")
+        print("  --cycle        检测周期")
+        print("  --cognition    cognition 注入文本")
+        print("  --recommend    策略推荐")
+        print("  --patterns     模式库")
+        print("  --discover     模式发现")

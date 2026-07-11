@@ -57,10 +57,10 @@ class AdaptiveHallucinationParams:
     2. 根据置信度动态选择纠正策略
     3. 领域和用户历史影响阈值选择
     """
-    
+
     # 基础阈值
     BASE_THRESHOLDS = AdaptiveThresholds()
-    
+
     # 查询类型调整因子
     QUERY_TYPE_FACTORS = {
         QueryType.FACTUAL: {"threshold_delta": 0.1, "stricter": True},
@@ -69,7 +69,7 @@ class AdaptiveHallucinationParams:
         QueryType.ANALYTICAL: {"threshold_delta": 0.0, "stricter": False},
         QueryType.CONVERSATIONAL: {"threshold_delta": -0.05, "stricter": False},
     }
-    
+
     # 领域调整因子
     DOMAIN_FACTORS = {
         DomainType.GENERAL: {"threshold_delta": 0.0},
@@ -78,7 +78,7 @@ class AdaptiveHallucinationParams:
         DomainType.TECHNICAL: {"threshold_delta": 0.1, "stricter": True},
         DomainType.FINANCIAL: {"threshold_delta": 0.15, "stricter": True},
     }
-    
+
     def __init__(self, user_history: Optional[Dict] = None):
         """
         初始化自适应参数调整器
@@ -88,7 +88,7 @@ class AdaptiveHallucinationParams:
         """
         self.user_history = user_history or {}
         self.adjustment_log = []
-    
+
     def classify_query(self, query: str) -> QueryType:
         """
         分类查询类型
@@ -100,33 +100,33 @@ class AdaptiveHallucinationParams:
             查询类型
         """
         query_lower = query.lower()
-        
+
         # 事实查询特征
-        factual_keywords = ["是什么", "什么是", "多少", "什么时候", "谁", "哪里", 
+        factual_keywords = ["是什么", "什么是", "多少", "什么时候", "谁", "哪里",
                           "what is", "how many", "when", "who", "where"]
         if any(kw in query_lower for kw in factual_keywords):
             return QueryType.FACTUAL
-        
+
         # 创意查询特征
         creative_keywords = ["想象", "创造", "设计", "构思", "假如", "如果",
                            "imagine", "create", "design", "what if"]
         if any(kw in query_lower for kw in creative_keywords):
             return QueryType.CREATIVE
-        
+
         # 流程查询特征
         procedural_keywords = ["如何", "怎么", "步骤", "方法", "怎样",
                              "how to", "steps", "method"]
         if any(kw in query_lower for kw in procedural_keywords):
             return QueryType.PROCEDURAL
-        
+
         # 分析查询特征
         analytical_keywords = ["分析", "比较", "评估", "为什么", "原因",
                              "analyze", "compare", "evaluate", "why"]
         if any(kw in query_lower for kw in analytical_keywords):
             return QueryType.ANALYTICAL
-        
+
         return QueryType.CONVERSATIONAL
-    
+
     def detect_domain(self, query: str, context: Optional[str] = None) -> DomainType:
         """
         检测查询领域
@@ -139,33 +139,33 @@ class AdaptiveHallucinationParams:
             领域类型
         """
         text = (query + " " + (context or "")).lower()
-        
+
         # 医疗领域
         medical_keywords = ["症状", "疾病", "药物", "治疗", "医院", "医生",
                           "symptom", "disease", "medicine", "treatment"]
         if any(kw in text for kw in medical_keywords):
             return DomainType.MEDICAL
-        
+
         # 法律领域
         legal_keywords = ["法律", "法规", "合同", "诉讼", "律师", "条款",
                          "law", "legal", "contract", "lawsuit"]
         if any(kw in text for kw in legal_keywords):
             return DomainType.LEGAL
-        
+
         # 技术领域
         technical_keywords = ["代码", "编程", "算法", "系统", "软件", "硬件",
                             "code", "programming", "algorithm", "system"]
         if any(kw in text for kw in technical_keywords):
             return DomainType.TECHNICAL
-        
+
         # 金融领域
         financial_keywords = ["投资", "股票", "基金", "财务", "银行", "贷款",
                             "investment", "stock", "fund", "finance"]
         if any(kw in text for kw in financial_keywords):
             return DomainType.FINANCIAL
-        
+
         return DomainType.GENERAL
-    
+
     def adjust_thresholds(
         self,
         query: str,
@@ -190,25 +190,25 @@ class AdaptiveHallucinationParams:
             query_type = self.classify_query(query)
         if domain is None:
             domain = self.detect_domain(query, context)
-        
+
         # 基础阈值
         thresholds = AdaptiveThresholds()
-        
+
         # 查询类型调整
         query_factor = self.QUERY_TYPE_FACTORS.get(query_type, {})
         threshold_delta = query_factor.get("threshold_delta", 0)
         thresholds.familiarity_threshold += threshold_delta
-        
+
         # 领域调整
         domain_factor = self.DOMAIN_FACTORS.get(domain, {})
         threshold_delta = domain_factor.get("threshold_delta", 0)
         thresholds.familiarity_threshold += threshold_delta
-        
+
         # 专业领域提高来源权重要求
         if domain in [DomainType.MEDICAL, DomainType.LEGAL, DomainType.FINANCIAL]:
             thresholds.source_weight_internal = 0.85
             thresholds.source_weight_kg = 0.90
-        
+
         # 用户历史调整
         correction_rate = self.user_history.get("correction_rate", 0)
         if correction_rate > 0.3:
@@ -218,10 +218,10 @@ class AdaptiveHallucinationParams:
         elif correction_rate < 0.1:
             # 用户很少纠正，可以适当放宽
             thresholds.familiarity_threshold -= 0.05
-        
+
         # 确保阈值在合理范围内
         thresholds.familiarity_threshold = max(0.2, min(0.8, thresholds.familiarity_threshold))
-        
+
         # 记录调整日志
         self.adjustment_log.append({
             "query": query[:50],
@@ -229,9 +229,9 @@ class AdaptiveHallucinationParams:
             "domain": domain.value,
             "final_threshold": thresholds.familiarity_threshold
         })
-        
+
         return thresholds
-    
+
     def get_verification_level(self, confidence: float, thresholds: AdaptiveThresholds) -> str:
         """
         根据置信度和阈值确定验证级别
@@ -253,25 +253,25 @@ class AdaptiveHallucinationParams:
             return "DEEP"
         else:
             return "EXHAUSTIVE"
-    
+
     def get_adjustment_stats(self) -> Dict[str, Any]:
         """获取调整统计"""
         if not self.adjustment_log:
             return {"total_adjustments": 0}
-        
+
         query_types = {}
         domains = {}
         thresholds = []
-        
+
         for log in self.adjustment_log:
             qt = log["query_type"]
             d = log["domain"]
             t = log["final_threshold"]
-            
+
             query_types[qt] = query_types.get(qt, 0) + 1
             domains[d] = domains.get(d, 0) + 1
             thresholds.append(t)
-        
+
         return {
             "total_adjustments": len(self.adjustment_log),
             "query_type_distribution": query_types,
@@ -302,7 +302,7 @@ def get_adaptive_thresholds(query: str, context: str = None, user_history: dict 
 if __name__ == "__main__":
     # 测试
     adjuster = AdaptiveHallucinationParams({"correction_rate": 0.2})
-    
+
     test_queries = [
         "什么是机器学习？",
         "如何设计一个登录系统？",
@@ -310,16 +310,16 @@ if __name__ == "__main__":
         "阿司匹林的副作用有哪些？",
         "合同违约如何起诉？"
     ]
-    
+
     print("=" * 60)
     print("防幻觉参数自适应测试")
     print("=" * 60)
-    
+
     for query in test_queries:
         thresholds = adjuster.adjust_thresholds(query)
         query_type = adjuster.classify_query(query)
         domain = adjuster.detect_domain(query)
-        
+
         print(f"\n查询: {query}")
         print(f"  类型: {query_type.value}")
         print(f"  领域: {domain.value}")

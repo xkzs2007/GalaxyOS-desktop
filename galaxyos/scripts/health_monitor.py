@@ -13,7 +13,8 @@ from datetime import datetime
 # 路径配置
 
 # ── Centralized path resolution ──
-import os as _os, sys as _sys
+import os as _os
+import sys as _sys
 from galaxyos.shared.paths import workspace
 _ws_root = workspace()
 for _p in [_ws_root, "/workspace"]:
@@ -29,10 +30,10 @@ CONFIG_PATH = path_resolver.OPENCLAW_CONFIG
 
 class HealthMonitor:
     """健康监控器"""
-    
+
     def __init__(self):
         self.results = {}
-    
+
     def check_database(self):
         """检查数据库健康"""
         result = {"status": "unknown", "details": {}}
@@ -40,11 +41,11 @@ class HealthMonitor:
             if VECTORS_DB.exists():
                 conn = sqlite3.connect(str(VECTORS_DB))
                 cursor = conn.cursor()
-                
+
                 # 检查表完整性
                 cursor.execute("PRAGMA integrity_check")
                 integrity = cursor.fetchone()[0]
-                
+
                 # 获取统计
                 cursor.execute("SELECT COUNT(*) FROM l0_conversations")
                 l0_count = cursor.fetchone()[0]
@@ -54,9 +55,9 @@ class HealthMonitor:
                 l1_count = cursor.fetchone()[0]
                 cursor.execute("SELECT COUNT(*) FROM l1_vec_rowids")
                 l1_vec = cursor.fetchone()[0]
-                
+
                 conn.close()
-                
+
                 result["status"] = "healthy" if integrity == "ok" else "warning"
                 result["details"] = {
                     "integrity": integrity,
@@ -74,9 +75,9 @@ class HealthMonitor:
         except Exception as e:
             result["status"] = "error"
             result["details"]["error"] = str(e)
-        
+
         return result
-    
+
     def check_tfidf(self):
         """检查 TF-IDF 引擎"""
         result = {"status": "unknown", "details": {}}
@@ -84,14 +85,14 @@ class HealthMonitor:
             if TFIDF_DB.exists():
                 conn = sqlite3.connect(str(TFIDF_DB))
                 cursor = conn.cursor()
-                
+
                 cursor.execute("SELECT COUNT(*) FROM documents")
                 doc_count = cursor.fetchone()[0]
                 cursor.execute("SELECT COUNT(*) FROM vocabulary")
                 vocab_count = cursor.fetchone()[0]
-                
+
                 conn.close()
-                
+
                 result["status"] = "healthy"
                 result["details"] = {
                     "documents": doc_count,
@@ -104,9 +105,9 @@ class HealthMonitor:
         except Exception as e:
             result["status"] = "error"
             result["details"]["error"] = str(e)
-        
+
         return result
-    
+
     def check_qdrant(self):
         """检查 Qdrant 引擎"""
         result = {"status": "unknown", "details": {}}
@@ -131,9 +132,9 @@ class HealthMonitor:
         except Exception as e:
             result["status"] = "error"
             result["details"]["error"] = str(e)
-        
+
         return result
-    
+
     def check_config(self):
         """检查配置文件"""
         result = {"status": "unknown", "details": {}}
@@ -141,7 +142,7 @@ class HealthMonitor:
             if CONFIG_PATH.exists():
                 config = json.loads(CONFIG_PATH.read_text())
                 plugins = config.get("plugins", {}).get("entries", {})
-                
+
                 result["status"] = "healthy"
                 result["details"] = {
                     "memory_tencentdb": plugins.get("memory-tencentdb", {}).get("enabled", False),
@@ -154,9 +155,9 @@ class HealthMonitor:
         except Exception as e:
             result["status"] = "error"
             result["details"]["error"] = str(e)
-        
+
         return result
-    
+
     def run_checks(self):
         """运行所有检查"""
         self.results = {
@@ -167,7 +168,7 @@ class HealthMonitor:
             "config": self.check_config()
         }
         return self.results
-    
+
     def print_report(self):
         """打印健康报告"""
         print("=" * 60)
@@ -175,14 +176,14 @@ class HealthMonitor:
         print("=" * 60)
         print(f"检查时间: {self.results['timestamp']}")
         print()
-        
+
         components = [
             ("向量数据库", self.results["database"]),
             ("TF-IDF 引擎", self.results["tfidf"]),
             ("Qdrant 引擎", self.results["qdrant"]),
             ("配置文件", self.results["config"])
         ]
-        
+
         healthy_count = 0
         for name, result in components:
             status = result["status"]
@@ -192,13 +193,13 @@ class HealthMonitor:
                 for key, value in result["details"].items():
                     print(f"   - {key}: {value}")
             print()
-            
+
             if status in ["healthy", "available"]:
                 healthy_count += 1
-        
+
         print("-" * 60)
         print(f"健康度: {healthy_count}/{len(components)}")
-        
+
         if healthy_count == len(components):
             print("状态: 🟢 全部健康")
         elif healthy_count >= len(components) * 0.7:

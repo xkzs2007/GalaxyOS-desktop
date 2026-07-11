@@ -26,7 +26,13 @@
   - query embedding 实时计算，不做缓存
 """
 
-import os, json, logging, time, gc, numpy as np, threading
+import os
+import json
+import logging
+import time
+import gc
+import numpy as np
+import threading
 
 logger = logging.getLogger("onnx_embedding")
 
@@ -161,10 +167,10 @@ class LocalEmbeddingService:
             return np.empty((0, _EMBEDDING_DIM), dtype=np.float32)
         if not self._initialized:
             self.initialize()
-        
+
         if self._uds_backend:
             return self._embed_uds(texts)
-        
+
         # bge ONNX 路径
         all_embs = []
         for i in range(0, len(texts), _BATCH_SIZE):
@@ -181,11 +187,11 @@ class LocalEmbeddingService:
             emb = emb / norms
             all_embs.append(emb)
         return np.vstack(all_embs).astype(np.float32)
-    
+
     def _embed_uds(self, texts: list) -> np.ndarray:
         """UDS 后端：调 lfm_embed_text 拿 2048 维 embedding"""
         from galaxyos_native import lfm_embed_text
-        
+
         # 简单 tokenize：取前 128 个字符的 Unicode 码点做 token ID
         # 实际 LFM 需要真实 tokenizer，但 embed_text 接受任意 int 序列
         embs = []
@@ -200,7 +206,7 @@ class LocalEmbeddingService:
             if norm > 0:
                 emb_arr = emb_arr / norm
             embs.append(emb_arr)
-        
+
         result = np.stack(embs).astype(np.float32)
         return result
 

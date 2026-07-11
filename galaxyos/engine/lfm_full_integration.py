@@ -43,7 +43,7 @@ def ode_rnn_predict(embedding: np.ndarray, recent_embs: List[np.ndarray] = None)
     from ode_rnn_continual import ODERNNContinual
     ode_rnn = ODERNNContinual(input_dim=2048, hidden_dim=128, memory_size=32)
     params = ode_rnn.get_params()
-    
+
     result = {"task_count": getattr(ode_rnn, 'task_count', 0)}
     if recent_embs and len(recent_embs) >= 2:
         x_seq = np.stack(recent_embs[-10:], axis=0)
@@ -54,7 +54,7 @@ def ode_rnn_predict(embedding: np.ndarray, recent_embs: List[np.ndarray] = None)
             result["seq_len"] = len(x_seq)
         except Exception as e:
             result["error"] = str(e)[:80]
-    
+
     return result
 
 
@@ -75,7 +75,7 @@ def neural_ode_trajectory(embedding: np.ndarray, steps: int = 16) -> Dict:
     y0 = embedding.astype(np.float32)
     t_span = (0.0, float(steps) * 0.1)
     traj = ode_model.forward(y0, t_span, dt=0.1)
-    
+
     # NeuralODE.forward 返回 (timestamps, states)
     # timestamps: (steps,), states: (steps, state_dim)
     if isinstance(traj, (tuple, list)) and len(traj) == 2:
@@ -91,7 +91,7 @@ def neural_ode_trajectory(embedding: np.ndarray, steps: int = 16) -> Dict:
         final_state_norm = float(np.linalg.norm(traj_list[-1]))
         drift = float(np.linalg.norm(traj_list[-1] - traj_list[0])) if len(traj_list) > 1 else 0.0
         steps = len(traj_list)
-    
+
     return {
         "trajectory_norm": norms,
         "final_state_norm": final_state_norm,
@@ -116,7 +116,7 @@ def kan_transform(embedding: np.ndarray) -> Dict:
     x = embedding.reshape(1, 2048).astype(np.float32)
     out = kan.forward(x)
     layers = kan.get_layer_info()
-    
+
     return {
         "output_norm": float(np.linalg.norm(out)),
         "output_std": float(np.std(out)),
@@ -135,21 +135,21 @@ def ltc_dynamics(embedding: np.ndarray, dt: float = 0.1) -> Dict:
          "energy": 液态能量}
     """
     from ltc_se_framework import LTCUnit, CfCUnit, LiquidCellConfig
-    
+
     cfg = LiquidCellConfig(input_dim=2048, state_dim=256)
     ltc = LTCUnit(cfg)
     cfc = CfCUnit(cfg)
-    
+
     h_ltc = np.zeros(256, dtype=np.float32)
     h_cfc = np.zeros(256, dtype=np.float32)
-    
+
     x = embedding.astype(np.float32)
     h_ltc = ltc.forward(h_ltc, x, dt)
     h_cfc = cfc.forward(h_cfc, x, dt)
-    
+
     ltc_params = ltc.get_params()
     cfc_params = cfc.get_params()
-    
+
     return {
         "ltc_norm": float(np.linalg.norm(h_ltc)),
         "cfc_norm": float(np.linalg.norm(h_cfc)),
@@ -168,11 +168,11 @@ def moe_route(embedding: np.ndarray, engram_hit_rate: float = 0.0) -> Dict:
         {"route_decision": routing, "route_alpha": 融合系数}
     """
     from moe_engram_hybrid import MoeEngramRouter, MoeEngramBlock, U_ShapeScalingLaw
-    
+
     router = MoeEngramRouter(input_dim=2048, hidden_dim=64)
     decision = router.route(embedding)
     stats = router.get_route_stats()
-    
+
     return {
         "route_decision": decision.value,
         "route_moe_pct": float(stats.get("moe_pct", 0.33)),
@@ -185,7 +185,7 @@ def moe_route(embedding: np.ndarray, engram_hit_rate: float = 0.0) -> Dict:
 
 # ── P14 SSM 状态模型 × 3 (Mamba3 / LiquidSSM / SSM-KAN) ──
 
-def ssm_filter_embedding(embedding: np.ndarray, 
+def ssm_filter_embedding(embedding: np.ndarray,
                          recent_embs: List[np.ndarray] = None) -> Dict:
     """三路 SSM 滤波/预测
     
@@ -197,9 +197,9 @@ def ssm_filter_embedding(embedding: np.ndarray,
     from mamba3_ssm import Mamba3SSM
     from ssm_kan_fusion import KANStateUpdate
     from liquid_ssm import LiquidSSM
-    
+
     result = {}
-    
+
     # Mamba3
     mamba3 = Mamba3SSM(input_dim=2048, state_dim=128, output_dim=2048)
     u_seq = np.stack([embedding] + (recent_embs[-3:] or []), axis=0)[:4]
@@ -208,7 +208,7 @@ def ssm_filter_embedding(embedding: np.ndarray,
         "filtered_norm": float(np.linalg.norm(mamba_out[-1])),
         "delta": float(np.linalg.norm(mamba_out[-1] - embedding)),
     }
-    
+
     # SSM-KAN
     ssm_kan = KANStateUpdate(state_dim=128, input_dim=2048)
     h = np.zeros(128, dtype=np.float32)
@@ -217,7 +217,7 @@ def ssm_filter_embedding(embedding: np.ndarray,
         "state_norm": float(np.linalg.norm(h_new)),
         "info": ssm_kan.get_info(),
     }
-    
+
     # LiquidSSM (已用 predict_embedding, 这里复用)
     try:
         ssm = LiquidSSM(state_dim=128, input_dim=2048, output_dim=2048)
@@ -244,14 +244,14 @@ def lipschitz_analyze(embedding: np.ndarray) -> Dict:
          "w_norm": 权重 norm}
     """
     from lipschitz_liquid import LipschitzLTCUnit
-    
+
     ltc = LipschitzLTCUnit(state_dim=64, input_dim=256)
     h0 = np.zeros(64, dtype=np.float32)
     x = embedding[:256].astype(np.float32)
     h1 = ltc.forward(h0, x, t=0.0)
     h2 = ltc.forward(h1, x, t=0.1)
     L = ltc.estimate_lipschitz(n_samples=10)
-    
+
     return {
         "lipschitz_constant": float(L),
         "h_norm": float(np.linalg.norm(h1)),
@@ -270,13 +270,13 @@ def sparsity_analyze(embedding: np.ndarray) -> Dict:
          "efficiency": 效率分}
     """
     from unified_sparsity_view import SparsityAnalyzer, SparsityConfig, SparsityDimension
-    
+
     analyzer = SparsityAnalyzer()
-    
+
     # 计算 embedding 稀疏性指标
     emb_sparsity = float(np.mean(np.abs(embedding) < 0.1))
     emb_activity = float(np.mean(np.abs(embedding) > 0.1))
-    
+
     # 注册 embedding 作为 sparsity 组件
     emb_config = SparsityConfig(
         dim=SparsityDimension.COMPUTE,
@@ -285,7 +285,7 @@ def sparsity_analyze(embedding: np.ndarray) -> Dict:
         quality_loss=emb_sparsity * 0.3,
     )
     analyzer.register_component("lfm_embedding", emb_config)
-    
+
     # 注册 engram hit rate 组件
     hit_config = SparsityConfig(
         dim=SparsityDimension.MEMORY,
@@ -294,10 +294,10 @@ def sparsity_analyze(embedding: np.ndarray) -> Dict:
         quality_loss=0.2,
     )
     analyzer.register_component("engram_cache", hit_config)
-    
+
     analysis = analyzer.analyze()
     opt = analyzer.suggest_optimization()
-    
+
     return {
         "sparsity_ratio": round(emb_sparsity, 4),
         "active_ratio": round(emb_activity, 4),
@@ -317,12 +317,12 @@ def lfm_edge_quantize(embedding: np.ndarray) -> Dict:
          "original_bytes": 原始大小, "quantized_bytes": 量化后}
     """
     from lfm_edge import QuantizedParams, QuantType
-    
+
     qp = QuantizedParams(qtype=QuantType.INT8)
     emb_bytes = embedding.nbytes
     qp.pack_weight("lfm_embed", embedding.astype(np.float32))
     ratio = qp.compression_ratio(emb_bytes)
-    
+
     return {
         "qtype": "INT8",
         "original_bytes": int(emb_bytes),
@@ -341,13 +341,13 @@ def kan_ltc_fuse(embedding: np.ndarray) -> Dict:
     """
     from kan_network import KanLtcMerger
     merger = KanLtcMerger(state_dim=128, input_dim=2048)
-    
+
     h0 = np.zeros(128, dtype=np.float32)
     x_seq = embedding.reshape(1, 2048).astype(np.float32)
     traj = merger.forward_euler(h0, x_seq, dt=0.1)
-    
+
     merger_info = merger.get_info()
-    
+
     return {
         "traj_norm_start": float(np.linalg.norm(traj[0])),
         "traj_norm_end": float(np.linalg.norm(traj[-1])),
@@ -366,7 +366,7 @@ def dag_liquid_score(embedding: np.ndarray) -> Dict:
          "node_score": 节点分数}
     """
     from dag_liquid_fusion import DAGLiquidFusionConfig, LTCConstantComputer, TimeAwareNodeRanker
-    
+
     config = DAGLiquidFusionConfig()
     ltc = LTCConstantComputer(config)
     # 模拟一个节点维度
@@ -379,9 +379,9 @@ def dag_liquid_score(embedding: np.ndarray) -> Dict:
         max_tokens=8192,
         avg_tau=tau
     )
-    
+
     ranker = TimeAwareNodeRanker(config)
-    
+
     return {
         "tau_liquid": float(tau),
         "compact_readiness": float(readiness),
@@ -399,12 +399,12 @@ def ncd_predict(embedding: np.ndarray) -> Dict:
          "cfc_comparison": 与 CfC 对比}
     """
     from neural_closed_form_derivative import NCDLayer
-    
+
     ncd = NCDLayer(state_dim=256, input_dim=2048)
     x = embedding.astype(np.float32)
     h0 = np.zeros(256, dtype=np.float32)
     h_next = ncd.forward(h0, x)
-    
+
     return {
         "h_norm": float(np.linalg.norm(h_next)),
         "h_min": float(h_next.min()),
@@ -415,7 +415,7 @@ def ncd_predict(embedding: np.ndarray) -> Dict:
 
 # ── 统一入口 ──
 
-def run_full_integration(embedding: np.ndarray, 
+def run_full_integration(embedding: np.ndarray,
                           recent_embs: List[np.ndarray] = None,
                           engram_hit_rate: float = 0.0) -> Dict:
     """运行全链路 14 模块集成，返回完整结果
@@ -429,43 +429,43 @@ def run_full_integration(embedding: np.ndarray,
         包含全部模块输出的字典
     """
     results = {}
-    
+
     # P9: ODE-RNN
     results["ode_rnn"] = ode_rnn_predict(embedding, recent_embs)
-    
+
     # P10: Neural ODE
     results["neural_ode"] = neural_ode_trajectory(embedding)
-    
+
     # P11: KAN
     results["kan_transform"] = kan_transform(embedding)
-    
+
     # P11B: KAN+LTC
     results["kan_ltc_fuse"] = kan_ltc_fuse(embedding)
-    
+
     # P12: LTC
     results["ltc_dynamics"] = ltc_dynamics(embedding)
-    
+
     # P13: MoE
     results["moe_route"] = moe_route(embedding, engram_hit_rate)
-    
+
     # P14: SSM × 3
     results["ssm_filter"] = ssm_filter_embedding(embedding, recent_embs)
-    
+
     # P15: Lipschitz
     results["lipschitz"] = lipschitz_analyze(embedding)
-    
+
     # P16: Sparsity
     results["sparsity"] = sparsity_analyze(embedding)
-    
+
     # P17: LFM Edge
     results["lfm_edge"] = lfm_edge_quantize(embedding)
-    
+
     # P18: DAG Liquid
     results["dag_liquid"] = dag_liquid_score(embedding)
-    
+
     # P19: NCD
     results["ncd"] = ncd_predict(embedding)
-    
+
     return results
 
 

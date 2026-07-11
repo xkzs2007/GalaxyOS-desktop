@@ -122,11 +122,11 @@ def _patch_asyncio_with_uvloop():
 
 class DuckDBAnalyzer:
     """基于 DuckDB 的记忆分析引擎"""
-    
+
     def __init__(self):
         self.conn = None
         self._init()
-    
+
     def _init(self):
         try:
             import duckdb
@@ -135,19 +135,19 @@ class DuckDBAnalyzer:
             _status["duckdb"] = True
         except ImportError:
             pass
-    
+
     def available(self) -> bool:
         return self.conn is not None
-    
+
     def analyze_memories(self, memories: list) -> dict:
         """对记忆列表进行统计分析"""
         if not self.available() or not memories:
             return {}
-        
+
         import pandas as pd
         df = pd.DataFrame(memories)
         self.conn.register("memories", df)
-        
+
         result = {}
         try:
             # 按来源统计
@@ -155,7 +155,7 @@ class DuckDBAnalyzer:
                 result["by_source"] = self.conn.execute(
                     "SELECT source, count(*) as cnt FROM memories GROUP BY source ORDER BY cnt DESC"
                 ).fetchdf().to_dict("records")
-            
+
             # 按置信度区间统计
             if "confidence" in df.columns:
                 result["confidence_stats"] = self.conn.execute(
@@ -165,9 +165,9 @@ class DuckDBAnalyzer:
             pass
         finally:
             self.conn.unregister("memories")
-        
+
         return result
-    
+
     def query(self, sql: str, params: Optional[list] = None):
         """执行 SQL 查询"""
         if not self.available():
@@ -179,7 +179,7 @@ class DuckDBAnalyzer:
         except Exception as e:
             logger.error(f"DuckDB 查询错误: {e}")
             return None
-    
+
     def __del__(self):
         if self.conn:
             try:
@@ -202,11 +202,11 @@ def get_analyzer() -> DuckDBAnalyzer:
 
 class PolarsHelper:
     """Polars 高性能数据处理辅助"""
-    
+
     @staticmethod
     def available() -> bool:
         return "polars" in _status and _status["polars"]
-    
+
     def __init__(self):
         try:
             import polars as pl
@@ -214,19 +214,19 @@ class PolarsHelper:
             _status["polars"] = True
         except ImportError:
             self.pl = None
-    
+
     def from_dicts(self, data: list) -> Optional[object]:
         """从字典列表创建 DataFrame"""
         if not self.pl or not data:
             return None
         return self.pl.DataFrame(data)
-    
+
     def to_dicts(self, df) -> list:
         """DataFrame 转字典列表"""
         if not self.pl:
             return []
         return df.to_dicts()
-    
+
     def search_text(self, df, column: str, keyword: str) -> Optional[object]:
         """Polars 文本搜索（比纯 Python 快 10x+）"""
         if not self.pl:
@@ -248,11 +248,11 @@ def get_polars() -> PolarsHelper:
 
 class PandasHelper:
     """Pandas 数据处理辅助"""
-    
+
     @staticmethod
     def available() -> bool:
         return "pandas" in _status and _status["pandas"]
-    
+
     def __init__(self):
         try:
             import pandas as pd
@@ -260,17 +260,17 @@ class PandasHelper:
             _status["pandas"] = True
         except ImportError:
             self.pd = None
-    
+
     def from_dicts(self, data: list) -> Optional[object]:
         if not self.pd or not data:
             return None
         return self.pd.DataFrame(data)
-    
+
     def to_dicts(self, df) -> list:
         if not self.pd:
             return []
         return df.to_dict("records")
-    
+
     def group_count(self, df, column: str) -> Optional[dict]:
         """按列统计计数"""
         if not self.pd:
@@ -291,11 +291,11 @@ def get_pandas() -> PandasHelper:
 
 class ONNXInference:
     """ONNX Runtime 推理加速（用于 Embedding 模型）"""
-    
+
     @staticmethod
     def available() -> bool:
         return "onnxruntime" in _status and _status["onnxruntime"]
-    
+
     def __init__(self):
         self.session = None
         try:
@@ -304,7 +304,7 @@ class ONNXInference:
             _status["onnxruntime"] = True
         except ImportError:
             pass
-    
+
     def load_model(self, model_path: str) -> bool:
         """加载 ONNX 模型"""
         if not hasattr(self, "ort") or not self.ort:
@@ -318,7 +318,7 @@ class ONNXInference:
         except Exception as e:
             logger.error(f"ONNX 模型加载失败: {e}")
             return False
-    
+
     def run(self, input_name: str, input_data):
         """运行推理"""
         if not self.session:
@@ -345,7 +345,7 @@ def _enable_sqlite_vec():
         sqlite3, has_ext = get_sqlite_module()
         if not has_ext:
             return False
-        
+
         # 从 pip 的 sqlite_vec 包加载 vec0.so
         pip_vec = os.path.expanduser(
             "~/.openclaw/workspace/repo/lib/python3.12/site-packages/sqlite_vec/vec0.so"
@@ -355,17 +355,17 @@ def _enable_sqlite_vec():
             os.path.expanduser("~/.openclaw/node_modules/sqlite-vec-linux-x64/vec0.so"),
             os.path.expanduser("~/.openclaw/extensions/memory-tencentdb/node_modules/sqlite-vec-linux-x64/vec0.so"),
         ]
-        
+
         conn = sqlite3.connect(":memory:")
         conn.enable_load_extension(True)
-        
+
         for path in alt_vecs:
             if os.path.exists(path):
                 conn.execute(f"SELECT load_extension('{path}')")
                 _status["sqlite_vec"] = True
                 logger.info(f"✅ sqlite-vec: {path} 已加载")
                 break
-        
+
         conn.close()
         return _status["sqlite_vec"]
     except Exception as e:
@@ -378,17 +378,17 @@ def _enable_sqlite_vec():
 def patch_all():
     """一键激活所有可用优化"""
     results = []
-    
+
     results.append(("orjson", _patch_json_with_orjson()))
     results.append(("uvloop", _patch_asyncio_with_uvloop()))
     results.append(("sqlite-vec", _enable_sqlite_vec()))
-    
+
     # DuckDB/Polars/Pandas 懒加载，首次使用时自动初始化
     results.append(("duckdb", importlib.util.find_spec("duckdb") is not None))
     results.append(("polars", importlib.util.find_spec("polars") is not None))
     results.append(("pandas", importlib.util.find_spec("pandas") is not None))
     results.append(("onnxruntime", importlib.util.find_spec("onnxruntime") is not None))
-    
+
     enabled = [name for name, ok in results if ok]
     logger.info(f"性能补丁完成: {', '.join(enabled)}")
     return _status

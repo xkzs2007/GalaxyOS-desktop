@@ -82,7 +82,7 @@ class MultiSourceCrossValidator:
     
     从多个来源验证信息的一致性。
     """
-    
+
     # 来源可信度权重
     SOURCE_WEIGHTS = {
         SourceType.USER_STATEMENT: 0.95,
@@ -94,15 +94,15 @@ class MultiSourceCrossValidator:
         SourceType.INFERENCE: 0.50,
         SourceType.UNKNOWN: 0.30,
     }
-    
+
     def __init__(self, workspace_path: str = None):
-        self.workspace_path = Path(workspace_path or 
+        self.workspace_path = Path(workspace_path or
             workspace())
-        
+
         # 加载记忆系统
         self._memories: List[Dict] = []
         self._load_memories()
-    
+
     def _load_memories(self):
         """加载内部记忆"""
         memory_file = self.workspace_path / ".learnings" / "verified_memories.jsonl"
@@ -111,7 +111,7 @@ class MultiSourceCrossValidator:
                 for line in f:
                     if line.strip():
                         self._memories.append(json.loads(line))
-    
+
     def search_internal_memory(self, query: str, top_k: int = 5) -> List[VerificationSource]:
         """从内部记忆搜索（支持中文 jieba 分词）"""
         results = []
@@ -123,7 +123,7 @@ class MultiSourceCrossValidator:
         import re
         num_pattern = re.findall(r'\d+\s*[a-zA-Z\u4e00-\u9fff]+', query.lower())
         query_words.update(num_pattern)
-        
+
         for mem in self._memories:
             content = mem.get("content", "")
             try:
@@ -132,7 +132,7 @@ class MultiSourceCrossValidator:
                 content_words = set(content.lower().split())
             content_words.update(re.findall(r'\d+\s*[a-zA-Z\u4e00-\u9fff]+', content.lower()))
             overlap = len(query_words & content_words)
-            
+
             if overlap > 0:
                 confidence = mem.get("confidence", 0.5)
                 results.append(VerificationSource(
@@ -142,10 +142,10 @@ class MultiSourceCrossValidator:
                     timestamp=mem.get("created_at", ""),
                     metadata={"id": mem.get("id")}
                 ))
-        
+
         results.sort(key=lambda x: x.confidence, reverse=True)
         return results[:top_k]
-    
+
     def search_web(self, query: str) -> List[VerificationSource]:
         """
         多搜索引擎聚合搜索（通过代理跨墙）
@@ -157,11 +157,12 @@ class MultiSourceCrossValidator:
                       Baidu / 360 / Sogou / Brave / Ecosia / Qwant /
                       Startpage / Yahoo / WolframAlpha
         """
-        import urllib.request, urllib.parse
-        
+        import urllib.request
+        import urllib.parse
+
         proxy = 'http://127.0.0.1:7890'
         proxy_handler = urllib.request.ProxyHandler({'http': proxy, 'https': proxy})
-        
+
         engines = [
             # 国际引擎（走代理，质量优先）
             ("DuckDuckGo", f"https://duckduckgo.com/html/?q={urllib.parse.quote(query)}", proxy_handler, 0.70),
@@ -180,7 +181,7 @@ class MultiSourceCrossValidator:
             ("Qwant",      f"https://www.qwant.com/?q={urllib.parse.quote(query)}", proxy_handler, 0.55),
             ("Startpage",  f"https://www.startpage.com/sp/search?query={urllib.parse.quote(query)}", proxy_handler, 0.55),
         ]
-        
+
         def extract_text(html):
             # 去 script 和 style
             text = re.sub(r'<script[^>]*>.*?</script>', '', html, flags=re.DOTALL)
@@ -206,10 +207,10 @@ class MultiSourceCrossValidator:
                     result_lines.append(l)
             # 如果中文结果太少，扩大范围取
             if sum(1 for l in result_lines if any('\u4e00' <= c <= '\u9fff' for c in l)) < 3:
-                result_lines += [l for l in lines if 20 < len(l) < 300 
+                result_lines += [l for l in lines if 20 < len(l) < 300
                                  and not any(x in l.lower() for x in skip_words)]
             return '\n'.join(result_lines[:12])[:600]
-        
+
         for name, url, handler, base_conf in engines:
             try:
                 opener = urllib.request.build_opener(handler) if handler else urllib.request.build_opener()
@@ -230,7 +231,7 @@ class MultiSourceCrossValidator:
             except Exception as e:
                 logger.debug(f"多引擎搜索: {name} 失败 ({str(e)[:50]})")
                 continue
-        
+
         # 兜底：WolframAlpha 知识查询
         try:
             wa = f"https://www.wolframalpha.com/input?i={urllib.parse.quote(query)}"
@@ -248,9 +249,9 @@ class MultiSourceCrossValidator:
                     )]
         except Exception:
             pass
-        
+
         return []
-    
+
     def search_knowledge_graph(self, entity: str) -> List[VerificationSource]:
         """从知识图谱搜索"""
         # 实际实现需要调用 ontology 模块
@@ -458,7 +459,7 @@ class MultiSourceCrossValidator:
             logger.warning(f"VLM 图像验证失败: {e}")
 
         return results
-    
+
     def cross_validate(
         self,
         statement: str,
@@ -487,22 +488,22 @@ class MultiSourceCrossValidator:
                 consensus="insufficient_data",
                 analysis="没有足够的验证来源"
             )
-        
+
         # 计算加权一致性
         weighted_agreements = 0.0
         weighted_disagreements = 0.0
         total_weight = 0.0
-        
+
         agreements = 0
         disagreements = 0
-        
+
         for source in sources:
             # 过滤过低置信度的来源（避免 recall keyword_fallback 稀释验证）
             if source.confidence < 0.1:
                 continue
             weight = self.SOURCE_WEIGHTS.get(source.source_type, 0.5)
             total_weight += weight
-            
+
             # 中英文兼容的关键词重叠计算
             # 优先 jieba 分词（中文），降级到空格分词（英文）
             try:
@@ -512,14 +513,14 @@ class MultiSourceCrossValidator:
             except ImportError:
                 statement_words = set(statement.lower().split())
                 source_words = set(source.content.lower().split())
-            
+
             # 额外提取数字单位模式（如 "15层"、"29个"、"4个"）确保关键数值匹配
             import re
             num_pattern = re.findall(r'\d+\s*[a-zA-Z\u4e00-\u9fff]+', statement.lower())
             source_num_pattern = re.findall(r'\d+\s*[a-zA-Z\u4e00-\u9fff]+', source.content.lower())
             statement_words.update(num_pattern)
             source_words.update(source_num_pattern)
-            
+
             # 数值冲突检测：如果两者都有数字+单位组合，但数值不同 → 视为不一致
             numeric_conflict = False
             for sn in source_num_pattern:
@@ -534,10 +535,10 @@ class MultiSourceCrossValidator:
                         break
                 if numeric_conflict:
                     break
-            
+
             overlap = len(statement_words & source_words)
             overlap_ratio = overlap / max(len(statement_words), 1)
-            
+
             # 有数值冲突时直接视为 disagree
             if numeric_conflict:
                 weighted_disagreements += weight * source.confidence
@@ -548,13 +549,13 @@ class MultiSourceCrossValidator:
             else:
                 weighted_disagreements += weight * source.confidence
                 disagreements += 1
-        
+
         # 计算一致性比率
         if total_weight > 0:
             agreement_ratio = weighted_agreements / total_weight
         else:
             agreement_ratio = 0.0
-        
+
         # 判断共识程度
         if agreement_ratio >= 0.8:
             consensus = "strong_agreement"
@@ -572,10 +573,10 @@ class MultiSourceCrossValidator:
             consensus = "insufficient_data"
             is_verified = False
             confidence = agreement_ratio * 0.3
-        
+
         # 生成分析
         analysis = self._generate_analysis(statement, sources, agreements, disagreements, consensus)
-        
+
         return CrossValidationResult(
             statement=statement,
             is_verified=is_verified,
@@ -586,7 +587,7 @@ class MultiSourceCrossValidator:
             consensus=consensus,
             analysis=analysis
         )
-    
+
     def _generate_analysis(
         self,
         statement: str,
@@ -597,12 +598,12 @@ class MultiSourceCrossValidator:
     ) -> str:
         """生成分析报告"""
         total = agreements + disagreements
-        
+
         analysis_parts = [
             f"交叉验证结果：{agreements}/{total} 个来源支持",
             f"共识程度：{consensus}",
         ]
-        
+
         if consensus == "strong_agreement":
             analysis_parts.append("多个独立来源一致确认该信息，可信度高")
         elif consensus == "weak_agreement":
@@ -611,7 +612,7 @@ class MultiSourceCrossValidator:
             analysis_parts.append("来源之间存在明显分歧，信息可靠性存疑")
         else:
             analysis_parts.append("验证来源不足，无法确定信息可靠性")
-        
+
         return " | ".join(analysis_parts)
 
 
@@ -621,7 +622,7 @@ class ThinkingSkillVerifier:
     
     使用思考技能分析不确定性。
     """
-    
+
     # 思考技能触发规则
     SKILL_TRIGGERS = {
         "critical-thinking": {
@@ -658,18 +659,18 @@ class ThinkingSkillVerifier:
             ]
         }
     }
-    
+
     def detect_applicable_skill(self, statement: str) -> Optional[str]:
         """检测适用的思考技能"""
         statement_lower = statement.lower()
-        
+
         for skill, config in self.SKILL_TRIGGERS.items():
             for trigger in config["triggers"]:
                 if trigger in statement_lower:
                     return skill
-        
+
         return None
-    
+
     def generate_verification_questions(
         self,
         statement: str,
@@ -687,10 +688,10 @@ class ThinkingSkillVerifier:
         """
         if skill is None:
             skill = self.detect_applicable_skill(statement)
-        
+
         if skill and skill in self.SKILL_TRIGGERS:
             return self.SKILL_TRIGGERS[skill]["questions"]
-        
+
         # 默认问题
         return [
             "这个说法有证据支撑吗？",
@@ -698,7 +699,7 @@ class ThinkingSkillVerifier:
             "这个信息是否可能已经过时？",
             "是否存在歧义或多重理解？"
         ]
-    
+
     def analyze_with_thinking(
         self,
         statement: str,
@@ -724,13 +725,13 @@ class ThinkingSkillVerifier:
         """
         if skill is None:
             skill = self.detect_applicable_skill(statement) or "critical-thinking"
-        
+
         questions = self.generate_verification_questions(statement, skill)
-        
+
         # 分析问题
         issues_found = []
         confidence_adjustment = 0.0
-        
+
         # 检查绝对化表述
         absolute_patterns = [
             (r"一定", "过于绝对"),
@@ -739,27 +740,27 @@ class ThinkingSkillVerifier:
             (r"所有.*都", "可能存在例外"),
             (r"没有任何", "可能存在例外"),
         ]
-        
+
         for pattern, issue in absolute_patterns:
             if re.search(pattern, statement):
                 issues_found.append(issue)
                 confidence_adjustment -= 0.1
-        
+
         # 检查数据来源
         if re.search(r'\d+', statement):
             if not re.search(r'来源|根据|数据显示|统计', statement):
                 issues_found.append("包含数据但未注明来源")
                 confidence_adjustment -= 0.15
-        
+
         # 检查时效性
         if not re.search(r'目前|现在|截至|当前|今天|今年', statement):
             if re.search(r'是|为|有|在', statement):
                 issues_found.append("可能缺乏时效性说明")
                 confidence_adjustment -= 0.05
-        
+
         # 生成分析
         analysis = self._generate_thinking_analysis(skill, questions, issues_found)
-        
+
         return {
             "skill_used": skill,
             "questions": questions,
@@ -767,7 +768,7 @@ class ThinkingSkillVerifier:
             "confidence_adjustment": confidence_adjustment,
             "issues_found": issues_found
         }
-    
+
     def _generate_thinking_analysis(
         self,
         skill: str,
@@ -781,20 +782,20 @@ class ThinkingSkillVerifier:
             "first-principles": "第一性原理",
             "analogical-thinking": "类比思维"
         }
-        
+
         parts = [f"使用 {skill_names.get(skill, skill)} 分析："]
-        
+
         if issues:
             parts.append(f"发现 {len(issues)} 个潜在问题：")
             for issue in issues:
                 parts.append(f"  - {issue}")
         else:
             parts.append("未发现明显问题")
-        
-        parts.append(f"\n建议思考的问题：")
+
+        parts.append("\n建议思考的问题：")
         for q in questions[:3]:
             parts.append(f"  ? {q}")
-        
+
         return "\n".join(parts)
 
 
@@ -804,24 +805,24 @@ class EnhancedHallucinationGuard:
     
     整合多源交叉验证和思考能力。
     """
-    
+
     def __init__(self, workspace_path: str = None):
-        self.workspace_path = Path(workspace_path or 
+        self.workspace_path = Path(workspace_path or
             workspace())
-        
+
         # 初始化组件
         self.cross_validator = MultiSourceCrossValidator(str(self.workspace_path))
         self.thinking_verifier = ThinkingSkillVerifier()
-        
+
         # 加载基础防幻觉系统
         try:
             from hallucination_guard import HallucinationGuard
             self.base_guard = HallucinationGuard(str(self.workspace_path))
         except:
             self.base_guard = None
-        
+
         logger.info("增强版防幻觉系统初始化完成")
-    
+
     def determine_verification_level(self, confidence: float) -> VerificationLevel:
         """根据置信度确定验证级别"""
         if confidence >= 0.9:
@@ -834,7 +835,7 @@ class EnhancedHallucinationGuard:
             return VerificationLevel.DEEP
         else:
             return VerificationLevel.EXHAUSTIVE
-    
+
     def verify_with_cross_validation(
         self,
         statement: str,
@@ -873,23 +874,23 @@ class EnhancedHallucinationGuard:
             "is_reliable": False,
             "recommendation": ""
         }
-        
+
         # 1. 确定验证级别
         level = self.determine_verification_level(initial_confidence)
         result["verification_level"] = level.value
-        
+
         if level == VerificationLevel.NONE:
             result["is_reliable"] = True
             result["recommendation"] = "置信度足够高，无需额外验证"
             return result
-        
+
         # 2. 收集验证来源
         sources = []
-        
+
         # 2.1 内部记忆
         memory_sources = self.cross_validator.search_internal_memory(statement)
         sources.extend(memory_sources)
-        
+
         # 2.1.5 调 recall() 补充证据（中文兼容，不受空格分词限制）
         try:
             from xiaoyi_claw_api import XiaoYiClawLLM
@@ -905,14 +906,14 @@ class EnhancedHallucinationGuard:
                     ))
         except Exception:
             pass
-        
+
         # 2.2 网络搜索（如果启用）
         if use_web_search and level in [VerificationLevel.MODERATE, VerificationLevel.DEEP, VerificationLevel.EXHAUSTIVE]:
             # 实际实现需要调用 xiaoyi-web-search
             # web_sources = self._search_web(statement)
             # sources.extend(web_sources)
             pass
-        
+
         # 3. 交叉验证
         if sources:
             cv_result = self.cross_validator.cross_validate(statement, sources)
@@ -924,7 +925,7 @@ class EnhancedHallucinationGuard:
                 "consensus": cv_result.consensus,
                 "analysis": cv_result.analysis
             }
-            
+
             # 基于 agreement_ratio 调整置信度
             # 用实际一致性比率替代二值逻辑
             cv_conf = cv_result.confidence
@@ -935,16 +936,16 @@ class EnhancedHallucinationGuard:
             else:
                 adjusted = initial_confidence * 0.2
             result["final_confidence"] = min(1.0, max(0.1, round(adjusted, 2)))
-        
+
         # 4. 思考技能分析
         if use_thinking and level in [VerificationLevel.DEEP, VerificationLevel.EXHAUSTIVE]:
             thinking_result = self.thinking_verifier.analyze_with_thinking(statement)
             result["thinking_analysis"] = thinking_result
-            
+
             # 根据思考结果调整置信度
             result["final_confidence"] += thinking_result["confidence_adjustment"]
             result["final_confidence"] = max(0.0, min(1.0, result["final_confidence"]))
-        
+
         # 5. 认知偏差检测（对所有验证级别都做快速检测，深级做完整检测）
         bias_result = self.cross_validator.detect_cognitive_biases(statement)
         if bias_result["biases_detected"]:
@@ -953,7 +954,7 @@ class EnhancedHallucinationGuard:
             result["final_confidence"] -= bias_result["confidence_penalty"]
             result["final_confidence"] = max(0.0, min(1.0, result["final_confidence"]))
             logger.info(f"认知偏差检测: 发现{len(bias_result['biases_detected'])}个偏差, 置信度惩罚{bias_result['confidence_penalty']:.2f}")
-        
+
         # 6. 最终判断
         result["is_reliable"] = result["final_confidence"] >= 0.6
 
@@ -1019,14 +1020,14 @@ class EnhancedHallucinationGuard:
             result["analysis"] = f"图像分析未能验证声明: {claim}"
 
         return result
-        
+
         return result
-    
+
     def _generate_recommendation(self, result: Dict) -> str:
         """生成建议"""
         level = result["verification_level"]
         confidence = result["final_confidence"]
-        
+
         if result["is_reliable"]:
             if confidence >= 0.8:
                 return "信息经过多源验证，可信度高"
@@ -1039,7 +1040,7 @@ class EnhancedHallucinationGuard:
                 return "信息存在不确定性，建议进一步验证后再使用"
             else:
                 return "信息可能不够准确，建议核实关键细节"
-    
+
     def express_with_verification(
         self,
         content: str,
@@ -1056,7 +1057,7 @@ class EnhancedHallucinationGuard:
             带不确定性表达的内容
         """
         confidence = verification_result["final_confidence"]
-        
+
         if confidence >= 0.9:
             return content
         elif confidence >= 0.7:
@@ -1069,66 +1070,66 @@ class EnhancedHallucinationGuard:
                 return f"这个信息可能存在问题（{issues[0]}），建议查证后再使用"
             return f"这个信息不太确定，{content}，建议你查证"
         else:
-            return f"这个信息可靠性较低，建议查阅权威资料确认"
+            return "这个信息可靠性较低，建议查阅权威资料确认"
 
 
 # CLI 接口
 def main():
     """命令行接口"""
     import argparse
-    
+
     parser = argparse.ArgumentParser(description="增强版防幻觉系统")
     parser.add_argument("command", choices=["verify", "level", "questions"])
     parser.add_argument("--statement", help="待验证陈述")
     parser.add_argument("--confidence", type=float, default=0.5, help="初始置信度")
     parser.add_argument("--skill", help="指定思考技能")
-    
+
     args = parser.parse_args()
-    
+
     guard = EnhancedHallucinationGuard()
-    
+
     if args.command == "verify":
         if not args.statement:
             print("错误: 需要提供 --statement")
             return
-        
+
         result = guard.verify_with_cross_validation(
             args.statement,
             initial_confidence=args.confidence
         )
-        
-        print(f"验证结果:")
+
+        print("验证结果:")
         print(f"  初始置信度: {result['initial_confidence']:.2f}")
         print(f"  最终置信度: {result['final_confidence']:.2f}")
         print(f"  验证级别: {result['verification_level']}")
         print(f"  是否可靠: {'✅' if result['is_reliable'] else '❌'}")
         print(f"  建议: {result['recommendation']}")
-        
+
         if result.get("cross_validation"):
             cv = result["cross_validation"]
-            print(f"\n交叉验证:")
+            print("\n交叉验证:")
             print(f"  一致来源: {cv['agreements']} 个")
             print(f"  分歧来源: {cv['disagreements']} 个")
             print(f"  共识程度: {cv['consensus']}")
-        
+
         if result.get("thinking_analysis"):
             ta = result["thinking_analysis"]
             print(f"\n思考分析 ({ta['skill_used']}):")
             print(ta["analysis"])
-    
+
     elif args.command == "level":
         level = guard.determine_verification_level(args.confidence)
         print(f"置信度 {args.confidence:.2f} 对应验证级别: {level.value}")
-    
+
     elif args.command == "questions":
         if not args.statement:
             print("错误: 需要提供 --statement")
             return
-        
+
         verifier = ThinkingSkillVerifier()
         skill = args.skill or verifier.detect_applicable_skill(args.statement)
         questions = verifier.generate_verification_questions(args.statement, skill)
-        
+
         print(f"验证问题 ({skill or 'default'}):")
         for i, q in enumerate(questions, 1):
             print(f"  {i}. {q}")

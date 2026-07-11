@@ -73,12 +73,12 @@ class LiquidSSM:
         self.tau_min = tau_min
         self.tau_max = tau_max
         self.use_selective = use_selective
-        
+
         # 尝试连接 UDS lfm_server
         self._uds_ok = False
         self._uds_tried = False
         self._try_uds()
-        
+
         if not self._uds_ok:
             # ===== SSM 参数 (多通道) =====
             self.A = -np.random.uniform(0.1, 2.0, (n_channels, state_dim)).astype(np.float32)
@@ -134,8 +134,8 @@ class LiquidSSM:
             self.w_out = np.random.uniform(-limit_out, limit_out,
                                             (output_dim, state_dim * n_channels)).astype(np.float32)
             self.b_out = np.zeros(output_dim, dtype=np.float32)
-            logger.info(f"LiquidSSM 使用 UDS 后端 (lfm_server state)")
-    
+            logger.info("LiquidSSM 使用 UDS 后端 (lfm_server state)")
+
 
         # A 矩阵 (对角线): [n_channels, state_dim]
         self.A = -np.random.uniform(0.1, 2.0, (n_channels, state_dim)).astype(np.float32)
@@ -314,7 +314,7 @@ class LiquidSSM:
         """
         if self._uds_ok:
             return self._forward_uds(u_seq)
-        
+
         T = u_seq.shape[0]
         h = np.zeros((self.n_channels, self.state_dim), dtype=np.float64)
         y_seq = np.zeros((T, self.output_dim), dtype=np.float32)
@@ -334,13 +334,13 @@ class LiquidSSM:
         """UDS 后端：调 lfm_server update_state 演进状态"""
         T = u_seq.shape[0]
         y_seq = np.zeros((T, self.output_dim), dtype=np.float32)
-        
+
         try:
             from galaxyos_native import lfm_update_state, lfm_get_state, lfm_reset_state
-            
+
             # 重置 LFM conv state
             lfm_reset_state()
-            
+
             # 将 u_seq 投影为伪 token IDs，喂给 LFM
             for t in range(T):
                 u = u_seq[t]
@@ -349,14 +349,14 @@ class LiquidSSM:
                 token_ids = proj.tolist()
                 if isinstance(token_ids, int):
                     token_ids = [token_ids]
-                
+
                 # 喂给 LFM update_state，让真实状态演进
                 lfm_update_state(token_ids[:16])
-                
+
                 # 取当前 embedding 作为输出
                 state = lfm_get_state()
                 emb = np.array(state.get("embedding", np.zeros(2048)), dtype=np.float32)
-                
+
                 # 投影到 output_dim
                 if len(emb) != self.output_dim:
                     if not hasattr(self, '_uds_out_proj'):
@@ -364,17 +364,17 @@ class LiquidSSM:
                     y_seq[t] = self._uds_out_proj @ emb[:len(emb)]
                 else:
                     y_seq[t] = emb[:self.output_dim]
-            
+
             return y_seq
         except Exception as e:
             logger.warning(f"LiquidSSM UDS forward 失败: {e}, 降级到 numpy")
             return self._forward_numpy(self, self._mock_to_numpy(u_seq))
-        
+
         return y_seq
 
     def _mock_to_numpy(self, u_seq):
         return u_seq
-    
+
     def forward_with_state(self, u_seq: np.ndarray
                            ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         """序列前向 + 状态 + 时间常数轨迹
@@ -524,7 +524,7 @@ def test_multi_channel_mimo():
     y_seq = ssm.forward(u_seq)
 
     assert y_seq.shape == (30, 6), f"MIMO 形状错误: {y_seq.shape}"
-    print(f"✅ MIMO 多通道: 输入(2) → 8通道×4状态 → 输出(6)")
+    print("✅ MIMO 多通道: 输入(2) → 8通道×4状态 → 输出(6)")
     print(f"   序列: (30, 6), 范围: [{y_seq.min():.3f}, {y_seq.max():.3f}]")
 
 
@@ -548,7 +548,7 @@ def test_variable_tau_effect():
     y2 = ssm2.forward(u_seq)
 
     diff = np.abs(y1 - y2).mean()
-    print(f"✅ τ 影响: 小 τ (0.01-0.1) vs 大 τ (0.5-1.0)")
+    print("✅ τ 影响: 小 τ (0.01-0.1) vs 大 τ (0.5-1.0)")
     print(f"   输出差异均值: {diff:.4f}")
     assert diff > 0, "不同 τ 应该产生不同输出"
 
@@ -599,7 +599,7 @@ if __name__ == "__main__":
 
     # ── LFM embedding 时序预测 ──
 
-    def predict_embedding(self, recent_embeddings: list, 
+    def predict_embedding(self, recent_embeddings: list,
                           steps: int = 1) -> np.ndarray:
         """对 LFM embedding 序列做时序预测
         
@@ -613,11 +613,11 @@ if __name__ == "__main__":
         import numpy as np
         if not recent_embeddings:
             return np.zeros(2048, dtype=np.float32)
-        
+
         u_seq = np.stack(recent_embeddings[-self.state_dim:], axis=0)
         if len(u_seq) < 2:
             return u_seq[-1]
-        
+
         # 调整维度: (seq, 2048) → (seq, input_dim)
         if u_seq.shape[-1] != self.input_dim and self.input_dim == 2048:
             pass  # 匹配
@@ -627,17 +627,17 @@ if __name__ == "__main__":
             if not hasattr(self, '_proj_emb'):
                 self._proj_emb = np.random.randn(self.input_dim, u_seq.shape[-1]).astype(np.float32) * 0.02
             u_seq = u_seq @ self._proj_emb.T
-        
+
         h = np.zeros(self.state_dim, dtype=np.float32)
         for t in range(len(u_seq)):
             h = self.forward_step(h, u_seq[t], dt=0.1)
-        
+
         # 预测未来 steps 步
         last_u = u_seq[-1]
         for _ in range(steps):
             h = self.forward_step(h, last_u, dt=0.1)
             last_u = h[:self.input_dim] if self.input_dim <= self.state_dim else h
-        
+
         out = last_u[:2048] if len(last_u) >= 2048 else np.pad(last_u, (0, 2048 - len(last_u)))
         return out.astype(np.float32)
 

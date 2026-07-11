@@ -82,27 +82,27 @@ class ComponentInfo:
     module_path: str
     class_name: str
     description: str = ""
-    
+
     # 依赖关系
     dependencies: List[str] = field(default_factory=list)
     dependents: List[str] = field(default_factory=list)
-    
+
     # 状态
     status: ComponentStatus = ComponentStatus.HEALTHY
     last_check: str = ""
     last_error: str = ""
     error_count: int = 0
     success_count: int = 0
-    
+
     # 配置
     max_errors: int = 3
     recovery_threshold: int = 2
     auto_reload: bool = True
     fallback_component: str = ""  # 降级替代组件
-    
+
     # 实例
     instance: Any = None
-    
+
     def to_dict(self) -> Dict:
         result = asdict(self)
         result['tier'] = self.tier.value
@@ -121,7 +121,7 @@ class FailureEvent:
     stack_trace: str
     recovery_action: str
     recovered: bool = False
-    
+
     def to_dict(self) -> Dict:
         result = asdict(self)
         result['failure_type'] = self.failure_type.value
@@ -154,7 +154,7 @@ COMPONENT_REGISTRY: Dict[str, ComponentInfo] = {
         dependencies=[],
         max_errors=1
     ),
-    
+
     # === 关键层 (CRITICAL) - 重要功能 ===
     "hallucination_guard": ComponentInfo(
         id="hallucination_guard",
@@ -226,7 +226,7 @@ COMPONENT_REGISTRY: Dict[str, ComponentInfo] = {
         dependencies=["synapse_network", "emotion_memory"],
         fallback_component="static_params"
     ),
-    
+
     # === 增强层 (ENHANCED) - 提升体验 ===
     "adaptive_hallucination_params": ComponentInfo(
         id="adaptive_hallucination_params",
@@ -359,7 +359,7 @@ COMPONENT_REGISTRY: Dict[str, ComponentInfo] = {
         dependencies=["memory_core"],
         fallback_component="manual_sync"
     ),
-    
+
     # === 可选层 (OPTIONAL) - 锦上添花 ===
     "memory_reflector": ComponentInfo(
         id="memory_reflector",
@@ -408,32 +408,32 @@ class ResilienceSystem:
     5. 自动恢复
     6. 热重载
     """
-    
+
     def __init__(self, workspace_path: str = None):
-        self.workspace_path = Path(workspace_path or 
+        self.workspace_path = Path(workspace_path or
             workspace())
         self.core_path = self.workspace_path / "skills" / "xiaoyi-claw-omega-final" / "skills" / "llm-memory-integration" / "core"
-        
+
         # 添加到 Python 路径
         if str(self.core_path) not in sys.path:
             sys.path.insert(0, str(self.core_path))
-        
+
         # 组件注册表
         self.components: Dict[str, ComponentInfo] = COMPONENT_REGISTRY.copy()
-        
+
         # 故障历史
         self.failure_history: List[FailureEvent] = []
         self.max_history = 100
-        
+
         # 监控状态
         self._monitoring = False
         self._monitor_thread: Optional[threading.Thread] = None
         self._lock = threading.RLock()
-        
+
         # 回调
         self.on_failure_callbacks: List[Callable] = []
         self.on_recovery_callbacks: List[Callable] = []
-        
+
         # 统计
         self.stats = {
             'total_checks': 0,
@@ -441,46 +441,46 @@ class ResilienceSystem:
             'total_recoveries': 0,
             'uptime_start': datetime.now(timezone.utc).isoformat()
         }
-        
+
         logger.info("弹性系统初始化完成")
-    
+
     # ==================== 组件管理 ====================
-    
+
     def register_component(self, component: ComponentInfo):
         """注册组件"""
         with self._lock:
             self.components[component.id] = component
             logger.info(f"组件已注册: {component.id} ({component.tier.value})")
-    
+
     def get_component(self, component_id: str) -> Optional[ComponentInfo]:
         """获取组件"""
         return self.components.get(component_id)
-    
+
     def get_instance(self, component_id: str) -> Optional[Any]:
         """获取组件实例"""
         component = self.get_component(component_id)
         if component and component.instance:
             return component.instance
-        
+
         # 尝试加载
         return self._load_component(component_id)
-    
+
     def _load_component(self, component_id: str) -> Optional[Any]:
         """加载组件实例"""
         component = self.get_component(component_id)
         if not component:
             return None
-        
+
         try:
             # 特殊处理：proactive_tasks 路径
             if component_id == "proactive_tasks":
                 proactive_path = str(self.workspace_path / "skills" / "proactive-tasks" / "scripts")
                 if proactive_path not in sys.path:
                     sys.path.insert(0, proactive_path)
-            
+
             # 导入模块
             module = importlib.import_module(component.module_path)
-            
+
             # 检查是否有类名（函数式模块无类）
             if not component.class_name:
                 # 直接使用模块作为实例
@@ -488,7 +488,7 @@ class ResilienceSystem:
             else:
                 # 获取类
                 cls = getattr(module, component.class_name)
-                
+
                 # 特殊处理：需要参数的类
                 special_init = {
                     "reflection_engine": lambda: cls(None),  # MemoryStream=None
@@ -497,102 +497,102 @@ class ResilienceSystem:
                     "gat_layer": lambda: cls(in_features=128, out_features=64),
                     "graphsage_layer": lambda: cls(input_dim=128, output_dim=64),
                 }
-                
+
                 if component_id in special_init:
                     instance = special_init[component_id]()
                 else:
                     # 默认无参构造
                     instance = cls()
-            
+
             with self._lock:
                 component.instance = instance
                 component.status = ComponentStatus.HEALTHY
                 component.success_count += 1
-            
+
             logger.info(f"组件加载成功: {component_id}")
             return instance
-            
+
         except Exception as e:
             self._handle_failure(component_id, FailureType.IMPORT_ERROR, str(e))
             return None
-    
+
     # ==================== 健康检查 ====================
-    
+
     def check_component(self, component_id: str) -> bool:
         """检查单个组件健康"""
         component = self.get_component(component_id)
         if not component:
             return False
-        
+
         try:
             # 检查实例是否存在
             if component.instance is None:
                 # 尝试加载
                 if self._load_component(component_id) is None:
                     return False
-            
+
             # 检查依赖
             for dep_id in component.dependencies:
                 dep = self.get_component(dep_id)
                 if dep and dep.status != ComponentStatus.HEALTHY:
                     self._handle_failure(
-                        component_id, 
+                        component_id,
                         FailureType.DEPENDENCY_FAILED,
                         f"依赖组件 {dep_id} 不健康"
                     )
                     return False
-            
+
             # 简单健康检查（调用实例方法）
             if hasattr(component.instance, 'get_stats'):
                 component.instance.get_stats()
-            
+
             # 更新状态
             with self._lock:
                 component.status = ComponentStatus.HEALTHY
                 component.last_check = datetime.now(timezone.utc).isoformat()
                 component.success_count += 1
                 component.error_count = 0
-            
+
             return True
-            
+
         except Exception as e:
             self._handle_failure(component_id, FailureType.RUNTIME_ERROR, str(e))
             return False
-    
+
     def check_all(self) -> Dict[str, bool]:
         """检查所有组件"""
         results = {}
-        
+
         # 按层级顺序检查（核心优先）
         tiers = [ComponentTier.CORE, ComponentTier.CRITICAL, ComponentTier.ENHANCED, ComponentTier.OPTIONAL]
-        
+
         for tier in tiers:
             for comp_id, comp in self.components.items():
                 if comp.tier == tier:
                     results[comp_id] = self.check_component(comp_id)
-        
+
         self.stats['total_checks'] += 1
         return results
-    
+
     # ==================== 故障处理 ====================
-    
+
     def _handle_failure(self, component_id: str, failure_type: FailureType, error_msg: str):
         """处理故障"""
         component = self.get_component(component_id)
         if not component:
             return
-        
+
         with self._lock:
             component.error_count += 1
             component.last_error = error_msg
             component.last_check = datetime.now(timezone.utc).isoformat()
-            
+
             # 更新状态
             if component.error_count >= component.max_errors:
                 component.status = ComponentStatus.UNHEALTHY
             else:
                 component.status = ComponentStatus.DEGRADED
-            
+
             # 记录故障事件
             event = FailureEvent(
                 timestamp=datetime.now(timezone.utc).isoformat(),
@@ -603,25 +603,25 @@ class ResilienceSystem:
                 recovery_action=self._determine_recovery_action(component)
             )
             self.failure_history.append(event)
-            
+
             # 限制历史长度
             if len(self.failure_history) > self.max_history:
                 self.failure_history = self.failure_history[-self.max_history:]
-            
+
             self.stats['total_failures'] += 1
-        
+
         # 触发回调
         for callback in self.on_failure_callbacks:
             try:
                 callback(component_id, failure_type, error_msg)
             except Exception as e:
                 logger.error(f"故障回调执行失败: {e}")
-        
+
         logger.warning(f"组件故障: {component_id} - {failure_type.value} - {error_msg}")
-        
+
         # 尝试恢复
         self._attempt_recovery(component_id)
-    
+
     def _determine_recovery_action(self, component: ComponentInfo) -> str:
         """确定恢复策略"""
         if component.tier == ComponentTier.CORE:
@@ -636,15 +636,15 @@ class ResilienceSystem:
             return RecoveryStrategy.SKIP.value
         else:  # OPTIONAL
             return RecoveryStrategy.SKIP.value
-    
+
     def _attempt_recovery(self, component_id: str) -> bool:
         """尝试恢复组件"""
         component = self.get_component(component_id)
         if not component:
             return False
-        
+
         action = self._determine_recovery_action(component)
-        
+
         try:
             if action == RecoveryStrategy.RELOAD.value:
                 # 重新加载模块
@@ -652,7 +652,7 @@ class ResilienceSystem:
                     if component.module_path in sys.modules:
                         importlib.reload(sys.modules[component.module_path])
                     return self._load_component(component_id) is not None
-                    
+
             elif action == RecoveryStrategy.FALLBACK.value:
                 # 使用降级组件
                 if component.fallback_component:
@@ -660,20 +660,20 @@ class ResilienceSystem:
                     if fallback and fallback.status == ComponentStatus.HEALTHY:
                         logger.info(f"组件 {component_id} 降级到 {component.fallback_component}")
                         return True
-                        
+
             elif action == RecoveryStrategy.SKIP.value:
                 # 跳过可选组件
                 component.status = ComponentStatus.OFFLINE
                 logger.info(f"可选组件 {component_id} 已跳过")
                 return True
-                
+
         except Exception as e:
             logger.error(f"恢复失败: {component_id} - {e}")
-        
+
         return False
-    
+
     # ==================== 降级策略 ====================
-    
+
     def get_degradation_level(self) -> Tuple[int, str]:
         """
         获取系统降级级别
@@ -687,11 +687,11 @@ class ResilienceSystem:
             4 = 核心组件故障
         """
         unhealthy_counts = defaultdict(int)
-        
+
         for comp in self.components.values():
             if comp.status != ComponentStatus.HEALTHY:
                 unhealthy_counts[comp.tier] += 1
-        
+
         if unhealthy_counts[ComponentTier.CORE] > 0:
             return (4, "核心组件故障，系统不可用")
         elif unhealthy_counts[ComponentTier.CRITICAL] > 0:
@@ -702,7 +702,7 @@ class ResilienceSystem:
             return (1, f"可选组件降级，{unhealthy_counts[ComponentTier.OPTIONAL]}个组件异常")
         else:
             return (0, "系统完全健康")
-    
+
     def get_available_features(self) -> Dict[str, List[str]]:
         """获取当前可用的功能"""
         available = {
@@ -711,49 +711,49 @@ class ResilienceSystem:
             'enhanced': [],
             'optional': []
         }
-        
+
         for comp in self.components.values():
             if comp.status == ComponentStatus.HEALTHY:
                 available[comp.tier.value].append(comp.name)
-        
+
         return available
-    
+
     # ==================== 监控 ====================
-    
+
     def start_monitoring(self, interval: float = 30.0):
         """启动后台监控"""
         if self._monitoring:
             return
-        
+
         self._monitoring = True
-        
+
         def monitor_loop():
             while self._monitoring:
                 try:
                     self.check_all()
                 except Exception as e:
                     logger.error(f"监控检查失败: {e}")
-                
+
                 time.sleep(interval)
-        
+
         self._monitor_thread = threading.Thread(target=monitor_loop, daemon=True)
         self._monitor_thread.start()
         logger.info(f"后台监控已启动，间隔 {interval}s")
-    
+
     def stop_monitoring(self):
         """停止监控"""
         self._monitoring = False
         if self._monitor_thread:
             self._monitor_thread.join(timeout=5)
         logger.info("后台监控已停止")
-    
+
     # ==================== 报告 ====================
-    
+
     def get_health_report(self) -> Dict:
         """获取健康报告"""
         level, desc = self.get_degradation_level()
         features = self.get_available_features()
-        
+
         component_status = {}
         for comp_id, comp in self.components.items():
             component_status[comp_id] = {
@@ -763,7 +763,7 @@ class ResilienceSystem:
                 'error_count': comp.error_count,
                 'last_error': comp.last_error[:100] if comp.last_error else None
             }
-        
+
         return {
             'timestamp': datetime.now(timezone.utc).isoformat(),
             'degradation_level': level,
@@ -775,11 +775,11 @@ class ResilienceSystem:
             'stats': self.stats,
             'recent_failures': [f.to_dict() for f in self.failure_history[-5:]]
         }
-    
+
     def print_report(self):
         """打印健康报告"""
         report = self.get_health_report()
-        
+
         print("=" * 60)
         print("弹性系统健康报告")
         print("=" * 60)
@@ -787,12 +787,12 @@ class ResilienceSystem:
         print(f"降级级别: {report['degradation_level']} - {report['degradation_desc']}")
         print(f"健康组件: {report['healthy_components']}/{report['total_components']}")
         print()
-        
+
         print("可用功能:")
         for tier, features in report['available_features'].items():
             if features:
                 print(f"  [{tier}] {', '.join(features)}")
-        
+
         print()
         print("组件状态:")
         for comp_id, info in report['components'].items():
@@ -800,13 +800,13 @@ class ResilienceSystem:
             print(f"  {status_icon} {info['name']} ({info['tier']}): {info['status']}")
             if info['last_error']:
                 print(f"      错误: {info['last_error']}")
-        
+
         if report['recent_failures']:
             print()
             print("最近故障:")
             for f in report['recent_failures']:
                 print(f"  - [{f['timestamp'][:19]}] {f['component_id']}: {f['failure_type']}")
-        
+
         print("=" * 60)
 
 
@@ -827,17 +827,17 @@ def get_resilience_system() -> ResilienceSystem:
 if __name__ == "__main__":
     print("弹性系统测试")
     print("=" * 60)
-    
+
     system = ResilienceSystem()
-    
+
     # 检查所有组件
     print("\n检查所有组件...")
     results = system.check_all()
-    
+
     # 打印报告
     print()
     system.print_report()
-    
+
     # 获取降级级别
     level, desc = system.get_degradation_level()
     print(f"\n降级级别: {level} - {desc}")
@@ -956,7 +956,7 @@ REMAINING_MODULES = {
         dependencies=["memory_core"],
         max_errors=1
     ),
-    
+
     # Self-RAG 组件
     "isrel_predictor": ComponentInfo(
         id="isrel_predictor",
@@ -988,7 +988,7 @@ REMAINING_MODULES = {
         dependencies=[],
         fallback_component="assume_useful"
     ),
-    
+
     # CRAG 组件
     "retrieval_evaluator": ComponentInfo(
         id="retrieval_evaluator",
@@ -1020,7 +1020,7 @@ REMAINING_MODULES = {
         dependencies=[],
         fallback_component="no_augment"
     ),
-    
+
     # 检索增强
     "proposition_retriever": ComponentInfo(
         id="proposition_retriever",
@@ -1052,7 +1052,7 @@ REMAINING_MODULES = {
         dependencies=["memory_core"],
         fallback_component="text_only"
     ),
-    
+
     # 反思引擎
     "reflection_engine": ComponentInfo(
         id="reflection_engine",
@@ -1074,7 +1074,7 @@ REMAINING_MODULES = {
         dependencies=[],
         auto_reload=True
     ),
-    
+
     # 知识图谱 GNN
     "graph_constructor": ComponentInfo(
         id="graph_constructor",
@@ -1106,7 +1106,7 @@ REMAINING_MODULES = {
         dependencies=["graph_constructor"],
         auto_reload=True
     ),
-    
+
     # 防幻觉集成
     "hallucination_integration": ComponentInfo(
         id="hallucination_integration",
@@ -1118,7 +1118,7 @@ REMAINING_MODULES = {
         dependencies=["hallucination_guard", "memory_core"],
         fallback_component="no_protection"
     ),
-    
+
     # 向量优化
     "quantization": ComponentInfo(
         id="quantization",
@@ -1150,7 +1150,7 @@ REMAINING_MODULES = {
         dependencies=[],
         fallback_component="no_eval"
     ),
-    
+
     # 其他
     "relation_predictor": ComponentInfo(
         id="relation_predictor",

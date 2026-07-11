@@ -1,4 +1,9 @@
-import sys, os, struct, json, tempfile, time as _t
+import sys
+import os
+import struct
+import json
+import tempfile
+import time as _t
 from galaxyos.shared.paths import galaxyos_home
 
 def _resolve_rci_mmap():

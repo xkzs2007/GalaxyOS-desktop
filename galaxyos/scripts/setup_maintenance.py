@@ -11,7 +11,8 @@ from datetime import datetime
 
 
 # ── Centralized path resolution ──
-import os as _os, sys as _sys
+import os as _os
+import sys as _sys
 from galaxyos.shared.paths import workspace
 _ws_root = workspace()
 for _p in [_ws_root, "/workspace"]:
@@ -59,10 +60,10 @@ MAINTENANCE_CONFIG = {
 def create_maintenance_scripts():
     """创建维护脚本"""
     print("\n📝 创建维护脚本:")
-    
+
     scripts_dir = WORKSPACE / "skills" / "llm-memory-integration" / "scripts"
     scripts_dir.mkdir(parents=True, exist_ok=True)
-    
+
     # 1. 向量覆盖率检查脚本
     coverage_script = scripts_dir / "check_coverage.py"
     coverage_script.write_text('''#!/usr/bin/env python3
@@ -115,8 +116,8 @@ if __name__ == "__main__":
         print("检查失败")
 ''')
     coverage_script.chmod(0o755)
-    print(f"  ✅ check_coverage.py")
-    
+    print("  ✅ check_coverage.py")
+
     # 2. FTS 索引重建脚本
     fts_script = scripts_dir / "rebuild_fts.py"
     fts_script.write_text('''#!/usr/bin/env python3
@@ -159,8 +160,8 @@ if __name__ == "__main__":
     rebuild_fts()
 ''')
     fts_script.chmod(0o755)
-    print(f"  ✅ rebuild_fts.py")
-    
+    print("  ✅ rebuild_fts.py")
+
     # 3. 综合维护脚本
     maintenance_script = scripts_dir / "run_maintenance.py"
     maintenance_script.write_text('''#!/usr/bin/env python3
@@ -286,13 +287,13 @@ if __name__ == "__main__":
     main()
 ''')
     maintenance_script.chmod(0o755)
-    print(f"  ✅ run_maintenance.py")
+    print("  ✅ run_maintenance.py")
 
 
 def create_cron_config():
     """创建 cron 配置说明"""
     print("\n📅 定时任务配置:")
-    
+
     cron_config = f"""# 小艺 Claw 维护任务定时配置
 # 添加到 crontab: crontab -e
 
@@ -305,11 +306,11 @@ def create_cron_config():
 # 每周日凌晨 02:00 重建 FTS 索引
 0 2 * * 0 python3 {path_resolver.LLM_MEMORY_SCRIPTS}/rebuild_fts.py
 """
-    
+
     config_file = WORKSPACE / "skills" / "llm-memory-integration" / "maintenance_cron.txt"
     config_file.write_text(cron_config)
     print(f"  ✅ 配置文件: {config_file}")
-    
+
     print("\n  安装定时任务:")
     print("    crontab -e")
     print("    # 粘贴上述内容")
@@ -318,9 +319,9 @@ def create_cron_config():
 def create_maintenance_readme():
     """创建维护说明文档"""
     print("\n📖 创建维护说明:")
-    
+
     readme = WORKSPACE / "skills" / "llm-memory-integration" / "MAINTENANCE.md"
-    
+
     content = f"""# 维护指南
 
 ## 维护任务
@@ -382,24 +383,24 @@ python3 {path_resolver.LLM_MEMORY_SCRIPTS}/rebuild_fts.py
 2. 检查 FTS 表是否存在
 3. 验证分词器配置
 """
-    
+
     readme.write_text(content)
-    print(f"  ✅ MAINTENANCE.md")
+    print("  ✅ MAINTENANCE.md")
 
 
 def run_initial_maintenance():
     """运行初始维护"""
     print("\n🔧 运行初始维护:")
-    
+
     scripts_dir = WORKSPACE / "skills" / "llm-memory-integration" / "scripts"
-    
+
     # 运行覆盖率检查
     result = subprocess.run(
         f"python3 {scripts_dir / 'check_coverage.py'}",
         shell=False, capture_output=True, text=True
     )
     print(result.stdout)
-    
+
     # 运行完整维护
     result = subprocess.run(
         f"python3 {scripts_dir / 'run_maintenance.py'}",
@@ -414,19 +415,19 @@ def main():
     print("一键配置维护建议")
     print(f"时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print("=" * 60)
-    
+
     # 1. 创建维护脚本
     create_maintenance_scripts()
-    
+
     # 2. 创建 cron 配置
     create_cron_config()
-    
+
     # 3. 创建维护说明
     create_maintenance_readme()
-    
+
     # 4. 运行初始维护
     run_initial_maintenance()
-    
+
     print("\n" + "=" * 60)
     print("配置完成")
     print("=" * 60)

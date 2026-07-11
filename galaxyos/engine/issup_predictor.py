@@ -51,7 +51,7 @@ class IsSUPPredictor:
     3. 时效性：内容是否是最新的（如果需要）
     4. 权威性：内容来源是否可靠
     """
-    
+
     # 相关性评分权重
     WEIGHTS = {
         'keyword_overlap': 0.25,
@@ -60,7 +60,7 @@ class IsSUPPredictor:
         'recency': 0.10,
         'authority': 0.10
     }
-    
+
     def __init__(self, config: Optional[Dict] = None):
         """
         初始化 IsSUP 预测器
@@ -73,12 +73,12 @@ class IsSUPPredictor:
         self.config = config or {}
         self.relevance_threshold = self.config.get('relevance_threshold', 0.6)
         self.coverage_threshold = self.config.get('coverage_threshold', 0.5)
-        
+
         logger.info(f"IsSUP Predictor initialized with relevance_threshold={self.relevance_threshold}")
-    
+
     def predict(
-        self, 
-        query: str, 
+        self,
+        query: str,
         retrieved_content: str,
         metadata: Optional[Dict] = None
     ) -> SupportDecision:
@@ -95,26 +95,26 @@ class IsSUPPredictor:
         """
         # 1. 提取查询关键词
         query_keywords = self._extract_keywords(query)
-        
+
         # 2. 计算关键词重叠度
         keyword_overlap, key_matches = self._calculate_keyword_overlap(
             query_keywords, retrieved_content
         )
-        
+
         # 3. 计算语义匹配度
         semantic_match = self._calculate_semantic_match(query, retrieved_content)
-        
+
         # 4. 计算覆盖度
         coverage_score, missing_aspects = self._calculate_coverage(
             query, retrieved_content
         )
-        
+
         # 5. 计算时效性得分
         recency_score = self._calculate_recency(query, metadata)
-        
+
         # 6. 计算权威性得分
         authority_score = self._calculate_authority(metadata)
-        
+
         # 7. 综合评分
         relevance_score = (
             self.WEIGHTS['keyword_overlap'] * keyword_overlap +
@@ -123,23 +123,23 @@ class IsSUPPredictor:
             self.WEIGHTS['recency'] * recency_score +
             self.WEIGHTS['authority'] * authority_score
         )
-        
+
         # 8. 确定支持级别
         support_level = self._determine_support_level(
             relevance_score, coverage_score, keyword_overlap
         )
-        
+
         # 9. 计算置信度
         confidence = self._calculate_confidence(
             keyword_overlap, semantic_match, coverage_score
         )
-        
+
         # 10. 生成推理说明
         reasoning = self._generate_reasoning(
             support_level, relevance_score, coverage_score,
             key_matches, missing_aspects
         )
-        
+
         return SupportDecision(
             is_supported=(support_level in [SupportLevel.FULLY_RELEVANT, SupportLevel.PARTIALLY_RELEVANT]),
             confidence=round(confidence, 3),
@@ -150,10 +150,10 @@ class IsSUPPredictor:
             missing_aspects=missing_aspects,
             reasoning=reasoning
         )
-    
+
     def is_supported(
-        self, 
-        query: str, 
+        self,
+        query: str,
         retrieved_content: str
     ) -> Tuple[bool, float]:
         """
@@ -168,53 +168,53 @@ class IsSUPPredictor:
         """
         decision = self.predict(query, retrieved_content)
         return decision.is_supported, decision.confidence
-    
+
     def _extract_keywords(self, text: str) -> List[str]:
         """提取关键词"""
         stopwords = {'的', '是', '在', '了', '和', '与', '或', '有', '我', '你', '他', '她', '它',
                      '这', '那', '什么', '怎么', '如何', '为什么', '哪', '吗', '呢', '吧'}
-        
+
         words = re.findall(r'[\u4e00-\u9fa5]+|[a-zA-Z]+|\d+', text.lower())
-        
+
         keywords = [
-            w for w in words 
+            w for w in words
             if w not in stopwords and len(w) > 1
         ]
-        
+
         return list(set(keywords))
-    
+
     def _calculate_keyword_overlap(
-        self, 
-        query_keywords: List[str], 
+        self,
+        query_keywords: List[str],
         content: str
     ) -> Tuple[float, List[str]]:
         """计算关键词重叠度"""
         if not query_keywords:
             return 0.0, []
-        
+
         content_lower = content.lower()
         matches = []
-        
+
         for keyword in query_keywords:
             if keyword.lower() in content_lower:
                 matches.append(keyword)
-        
+
         # 提高重叠度的权重
         overlap = len(matches) / len(query_keywords)
         # 给予基础分，只要有匹配
         if matches:
             overlap = max(overlap, 0.3)
-        
+
         return overlap, matches
-    
+
     def _calculate_semantic_match(self, query: str, content: str) -> float:
         """计算语义匹配度（简化版本）"""
         # 检查问题类型匹配
         query_lower = query.lower()
         content_lower = content.lower()
-        
+
         score = 0.0
-        
+
         # 定义问题类型及其对应的内容指示词
         question_patterns = {
             '定义类': {
@@ -234,7 +234,7 @@ class IsSUPPredictor:
                 'content': ['不同', '相比', '区别', '差异', '而', '但是']
             }
         }
-        
+
         for qtype, patterns in question_patterns.items():
             # 检查查询是否属于该类型
             is_type = any(p in query_lower for p in patterns['query'])
@@ -243,33 +243,33 @@ class IsSUPPredictor:
                 has_answer = any(p in content_lower for p in patterns['content'])
                 if has_answer:
                     score += 0.30
-        
+
         return min(score, 1.0)
-    
+
     def _calculate_coverage(
-        self, 
-        query: str, 
+        self,
+        query: str,
         content: str
     ) -> Tuple[float, List[str]]:
         """计算覆盖度"""
         # 提取查询中的核心概念
         concepts = self._extract_core_concepts(query)
-        
+
         missing = []
         covered = 0
-        
+
         for concept in concepts:
             if concept.lower() in content.lower():
                 covered += 1
             else:
                 missing.append(concept)
-        
+
         if not concepts:
             return 1.0, []
-        
+
         coverage = covered / len(concepts)
         return coverage, missing
-    
+
     def _extract_core_concepts(self, query: str) -> List[str]:
         """提取查询中的核心概念"""
         # 移除疑问词
@@ -277,54 +277,54 @@ class IsSUPPredictor:
         cleaned = query
         for word in question_words:
             cleaned = cleaned.replace(word, '')
-        
+
         # 提取名词性短语
         concepts = re.findall(r'[\u4e00-\u9fa5]{2,}|[A-Za-z]{2,}', cleaned)
-        
+
         return [c for c in concepts if len(c) >= 2][:5]
-    
+
     def _calculate_recency(self, query: str, metadata: Optional[Dict]) -> float:
         """计算时效性得分"""
         # 检查查询是否需要最新信息
         time_keywords = ['最新', '最近', '当前', '现在', '今年', '去年', '近期']
         needs_recent = any(kw in query for kw in time_keywords)
-        
+
         if not needs_recent:
             return 1.0  # 不需要最新信息
-        
+
         if not metadata:
             return 0.5  # 无元数据，假设中等时效性
-        
+
         # 检查内容时间
         if 'date' in metadata or 'timestamp' in metadata:
             # 简化处理：假设有日期信息就是较新的
             return 0.8
-        
+
         return 0.5
-    
+
     def _calculate_authority(self, metadata: Optional[Dict]) -> float:
         """计算权威性得分"""
         if not metadata:
             return 0.5
-        
+
         # 检查来源
         source = metadata.get('source', '').lower()
-        
+
         # 高权威来源
         high_authority = ['官方', '政府', 'edu', 'gov', 'org', 'wikipedia']
         if any(auth in source for auth in high_authority):
             return 0.9
-        
+
         # 中等权威来源
         medium_authority = ['news', 'blog', 'medium', 'zhihu']
         if any(auth in source for auth in medium_authority):
             return 0.7
-        
+
         return 0.5
-    
+
     def _determine_support_level(
-        self, 
-        relevance_score: float, 
+        self,
+        relevance_score: float,
         coverage_score: float,
         keyword_overlap: float
     ) -> SupportLevel:
@@ -338,10 +338,10 @@ class IsSUPPredictor:
             return SupportLevel.NOT_RELEVANT
         else:
             return SupportLevel.PARTIALLY_RELEVANT
-    
+
     def _calculate_confidence(
-        self, 
-        keyword_overlap: float, 
+        self,
+        keyword_overlap: float,
         semantic_match: float,
         coverage: float
     ) -> float:
@@ -350,12 +350,12 @@ class IsSUPPredictor:
         scores = [keyword_overlap, semantic_match, coverage]
         avg = sum(scores) / len(scores)
         variance = sum((s - avg) ** 2 for s in scores) / len(scores)
-        
+
         # 方差越小，置信度越高
         consistency = 1.0 - min(variance * 2, 0.5)
-        
+
         return (avg + consistency) / 2
-    
+
     def _generate_reasoning(
         self,
         support_level: SupportLevel,
@@ -368,26 +368,26 @@ class IsSUPPredictor:
         reasons = [f"支持级别: {support_level.value}"]
         reasons.append(f"相关性得分: {relevance_score:.2f}")
         reasons.append(f"覆盖度: {coverage_score:.2f}")
-        
+
         if key_matches:
             reasons.append(f"匹配关键词: {', '.join(key_matches[:5])}")
-        
+
         if missing_aspects:
             reasons.append(f"缺失方面: {', '.join(missing_aspects[:3])}")
-        
+
         return "; ".join(reasons)
-    
+
     def batch_predict(
-        self, 
-        query: str, 
+        self,
+        query: str,
         contents: List[str]
     ) -> List[SupportDecision]:
         """批量预测多个检索结果"""
         return [self.predict(query, content) for content in contents]
-    
+
     def rank_by_relevance(
-        self, 
-        query: str, 
+        self,
+        query: str,
         contents: List[str]
     ) -> List[Tuple[int, float, str]]:
         """
@@ -401,7 +401,7 @@ class IsSUPPredictor:
             decision = self.predict(query, content)
             summary = content[:100] + "..." if len(content) > 100 else content
             results.append((idx, decision.relevance_score, summary))
-        
+
         # 按相关性降序排序
         results.sort(key=lambda x: x[1], reverse=True)
         return results
@@ -440,13 +440,13 @@ if __name__ == "__main__":
             "content": "iPhone 15系列于2023年9月发布，起售价为5999元。iPhone 15 Pro Max最高配置售价为13999元。"
         }
     ]
-    
+
     predictor = IsSUPPredictor()
-    
+
     print("=" * 60)
     print("IsSUP Predictor 测试")
     print("=" * 60)
-    
+
     for case in test_cases:
         decision = predictor.predict(case["query"], case["content"])
         print(f"\n查询: {case['query']}")

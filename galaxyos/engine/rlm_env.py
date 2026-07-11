@@ -71,7 +71,7 @@ class RLMEnvironment:
     
     prompt 作为外部变量存储，模型通过 REPL 写代码切片/递归处理。
     """
-    
+
     def __init__(self, prompt: str, workspace: str = None):
         self.prompt = prompt
         self.prompt_len = len(prompt)
@@ -80,12 +80,12 @@ class RLMEnvironment:
         self._exec_count = 0
         self._output = []
         self._start_time = time.time()
-        
+
         if workspace is None:
             workspace = os.environ.get("OPENCLAW_WORKSPACE",
                                        str(Path(workspace())))
         self.workspace = workspace
-    
+
     @property
     def meta_context(self) -> str:
         """返回给模型的 meta 信息（很小，不占 context）"""
@@ -94,11 +94,11 @@ class RLMEnvironment:
             f"prompt_prefix={self.prompt[:200]!r}...\n"
             f"vars={list(self._variables.keys())}\n"
         )
-    
+
     def register_recursive_call(self, name: str, callback: Callable):
         """注册递归回调 — 模型可以调 rlm('子prompt') 递归处理"""
         self._callbacks[name] = callback
-    
+
     def exec_repl(self, code: str) -> str:
         """
         执行一段 Python 代码，返回 stdout 和新增变量。
@@ -109,13 +109,13 @@ class RLMEnvironment:
         """
         self._exec_count += 1
         old_stdout = sys.stdout
-        
+
         from io import StringIO
         buf = StringIO()
         sys.stdout = buf
-        
+
         result = {"ok": True, "output": "", "new_vars": [], "error": ""}
-        
+
         try:
             # 构建可用变量环境
             env_vars = {
@@ -127,23 +127,23 @@ class RLMEnvironment:
             }
             env_vars.update(self._variables)
             safe_globals = _make_safe_globals(env_vars)
-            
+
             # 执行代码
-            compiled = compile(code, "<rlm_repl>", "exec", 
+            compiled = compile(code, "<rlm_repl>", "exec",
                                flags=ast.PyCF_ONLY_AST | ast.PyCF_ALLOW_TOP_LEVEL_AWAIT)
             code_obj = compile(compiled, "<rlm_repl>", "exec")
             exec(code_obj, safe_globals)
-            
+
             # 收集新变量
             before_keys = set(self._variables.keys())
             # 从 safe_globals 中提取用户定义的变量（不包括内置的）
-            user_vars = {k: v for k, v in safe_globals.items() 
+            user_vars = {k: v for k, v in safe_globals.items()
                         if k not in env_vars and not k.startswith("_") and k != "import"}
             self._variables.update(user_vars)
             new_keys = set(self._variables.keys()) - before_keys
-            
+
             result["new_vars"] = list(new_keys)
-            
+
         except Exception as e:
             result["ok"] = False
             result["error"] = f"{type(e).__name__}: {e}"
@@ -156,21 +156,21 @@ class RLMEnvironment:
                 result["output"] = raw_output[:200] + f"\n... (truncated, total {len(raw_output)} chars)"
             else:
                 result["output"] = raw_output
-        
+
         self._output.append({
             "exec_no": self._exec_count,
             "code_len": len(code),
             "result": result
         })
-        
+
         return json.dumps(result, ensure_ascii=False)
-    
+
     def _slice_func(self, start: int, end: int) -> str:
         """切片 prompt"""
         start = max(0, min(start, self.prompt_len))
         end = max(start, min(end, self.prompt_len))
         return self.prompt[start:end]
-    
+
     def _rlm_func(self, name: str, sub_prompt: str) -> str:
         """递归调用 — 按 name 查找回调，处理子 prompt"""
         if name in self._callbacks:
@@ -181,10 +181,10 @@ class RLMEnvironment:
         key = f"_rlm_seg_{self._exec_count}_{int(time.time() * 1000) % 10000}"
         self._variables[key] = sub_prompt
         return json.dumps({"ok": True, "stored_as": key, "len": len(sub_prompt)})
-    
+
     def get_var(self, name: str, default=None):
         return self._variables.get(name, default)
-    
+
     def get_summary(self) -> dict:
         return {
             "exec_count": self._exec_count,
@@ -201,14 +201,14 @@ class RLMProcessor:
     
     作为 Worker 的一个 UDS 端点暴露。
     """
-    
+
     def __init__(self, llm_flash=None, llm_pro=None):
         self.llm_flash = llm_flash
         self.llm_pro = llm_pro
         self._max_depth = 3          # 最大递归深度
         self._max_root_iters = 20    # 根循环最大迭代次数
         self._max_tokens_per_seg = 8000  # 每个子片段的 token 上限
-    
+
     def process(self, prompt: str, depth: int = 0) -> str:
         """
         主入口: 递归处理超长 prompt
@@ -222,15 +222,15 @@ class RLMProcessor:
         if depth > self._max_depth:
             logger.warning(f"RLM 已达最大递归深度 ({depth})，截断处理")
             return self._truncate_and_process(prompt)
-        
+
         if len(prompt) < self._max_tokens_per_seg:
             # 足够短，直接返回
             return prompt
-        
+
         env = RLMEnvironment(prompt)
-        env.register_recursive_call("rlm_process", 
+        env.register_recursive_call("rlm_process",
                                      lambda sub: self.process(sub, depth + 1))
-        
+
         # 构建给 LLM 的 meta prompt
         meta = (
             "你是一个 RLM（Recursive Language Model）。\n"
@@ -249,7 +249,7 @@ class RLMProcessor:
             f"环境状态:\n{env.meta_context}\n\n"
             "请生成 Python 代码来处理这个超长输入:"
         )
-        
+
         # 根循环
         final_result = None
         for iteration in range(self._max_root_iters):
@@ -257,17 +257,17 @@ class RLMProcessor:
             code = self._call_llm_for_code(meta, env)
             if not code:
                 break
-            
+
             # 执行代码
             result = env.exec_repl(code)
             result_obj = json.loads(result)
-            
+
             # 检查是否设置了 Final
             final_val = env.get_var("Final")
             if final_val is not None:
                 final_result = str(final_val)
                 break
-            
+
             # 更新 meta 给下一次迭代
             meta = (
                 f"迭代 {iteration + 1} 完成。\n"
@@ -275,15 +275,15 @@ class RLMProcessor:
                 f"上次执行结果: {result_obj.get('output', '')[:300]}\n"
                 "请继续生成代码处理:"
             )
-        
+
         if final_result is not None:
             return final_result
-        
+
         # 兜底: 如果 RLM 没设置 Final，取所有输出拼接
         outputs = [o["result"].get("output", "") for o in env._output]
         combined = "\n".join(outputs)
         return combined if combined else self._truncate_and_process(prompt)
-    
+
     def _call_llm_for_code(self, meta: str, env: RLMEnvironment) -> Optional[str]:
         """调 LLM 生成 Python 代码"""
         try:
@@ -311,18 +311,18 @@ class RLMProcessor:
                 code = resp.choices[0].message.content.strip()
             else:
                 return None
-            
+
             # 提取代码块
             if "```python" in code:
                 code = code.split("```python")[1].split("```")[0].strip()
             elif "```" in code:
                 code = code.split("```")[1].split("```")[0].strip()
-            
+
             return code if code else None
         except Exception as e:
             logger.error(f"RLM LLM 调用失败: {e}")
             return None
-    
+
     def _truncate_and_process(self, text: str) -> str:
         """兜底截断处理"""
         max_chars = self._max_tokens_per_seg * 4
@@ -342,11 +342,11 @@ class FastRLMProcessor:
     2. 每段独立处理/摘要
     3. 合并结果
     """
-    
+
     def __init__(self, chunk_size: int = 6000, overlap: int = 200):
         self.chunk_size = chunk_size
         self.overlap = overlap
-    
+
     def process(self, text: str, processor: Callable = None) -> List[str]:
         """
         分割长文本并处理每段
@@ -367,16 +367,16 @@ class FastRLMProcessor:
                 result = chunk
             results.append(result)
         return results
-    
+
     def _smart_split(self, text: str) -> List[str]:
         """智能分段 - 按段落边界"""
         if len(text) <= self.chunk_size:
             return [text]
-        
+
         chunks = []
         paragraphs = text.split("\n\n")
         current = ""
-        
+
         for para in paragraphs:
             if len(current) + len(para) < self.chunk_size:
                 current += (para + "\n\n")
@@ -384,8 +384,8 @@ class FastRLMProcessor:
                 if current:
                     chunks.append(current.strip())
                 current = para + "\n\n"
-        
+
         if current:
             chunks.append(current.strip())
-        
+
         return chunks

@@ -68,7 +68,7 @@ class LightweightDependencyParser:
     - 并列关系 (COO): 连词连接
     - 介宾关系 (POB): 介词+名词
     """
-    
+
     # 词性模板 → 依存关系映射
     POS_PATTERNS = [
         # 主谓：名词(主语) + 动词(谓语)
@@ -95,12 +95,12 @@ class LightweightDependencyParser:
         (("p", "ns"), "POB", 0, 1),    # 介词+地名
         (("p", "r"), "POB", 0, 1),     # 介词+代词
     ]
-    
+
     # 标点词性
     PUNCT_POS = {"w", "x"}
     # 不做核心词的词性
     NON_HEAD_POS = {"u", "uj", "ul", "ud", "c", "p", "m", "q"}
-    
+
     def parse(self, text: str) -> DependencyParseResult:
         """
         对句子做依存分析
@@ -113,21 +113,21 @@ class LightweightDependencyParser:
         """
         if not JIEBA_AVAILABLE:
             return DependencyParseResult(tokens=[], relations=[])
-        
+
         words = list(pseg.cut(text))
         tokens = [(w.word, w.flag) for w in words]
-        
+
         relations = []
-        
+
         # 滑动窗口匹配词性模板
         for i in range(len(words)):
             for j in range(i + 1, min(i + 3, len(words))):
                 w1, p1 = words[i].word, words[i].flag
                 w2, p2 = words[j].word, words[j].flag
-                
+
                 if p1 in self.PUNCT_POS or p2 in self.PUNCT_POS:
                     continue
-                
+
                 # 匹配模板
                 for (pos1, pos2), rel, head_idx, dep_idx in self.POS_PATTERNS:
                     if self._pos_match(p1, pos1) and self._pos_match(p2, pos2):
@@ -135,11 +135,11 @@ class LightweightDependencyParser:
                         head_p = p1 if head_idx == 0 else p2
                         dep = w1 if dep_idx == 0 else w2
                         dep_p = p1 if dep_idx == 0 else p2
-                        
+
                         # 过滤过短的词
                         if len(head) < 1 or len(dep) < 1:
                             continue
-                            
+
                         relations.append(DependencyRelation(
                             head_word=head, head_pos=head_p,
                             dep_word=dep, dep_pos=dep_p,
@@ -147,7 +147,7 @@ class LightweightDependencyParser:
                             head_idx=i if head_idx == 0 else j,
                             dep_idx=i if dep_idx == 0 else j
                         ))
-        
+
         # 找出核心词（未被任何关系做依赖词的词）
         dep_indices = {r.dep_idx for r in relations}
         root_idx = -1
@@ -156,20 +156,20 @@ class LightweightDependencyParser:
                 if i not in dep_indices:
                     root_idx = i
                     break
-        
+
         root_word = tokens[root_idx][0] if root_idx >= 0 else (tokens[0][0] if tokens else None)
-        
+
         return DependencyParseResult(
             tokens=tokens,
             relations=relations,
             root_word=root_word,
             root_idx=root_idx
         )
-    
+
     def _pos_match(self, actual: str, pattern: str) -> bool:
         """词性匹配（支持前缀匹配）"""
         return actual == pattern or actual.startswith(pattern)
-    
+
     def extract_triple(self, text: str) -> Optional[Tuple[str, str, str]]:
         """
         从句子中提取主谓宾三元组
@@ -180,11 +180,11 @@ class LightweightDependencyParser:
             (主语, 谓语, 宾语) 或 None
         """
         result = self.parse(text)
-        
+
         subject = None
         verb = None
         obj = None
-        
+
         for rel in result.relations:
             if rel.relation == "SBV":
                 if rel.head_pos.startswith("v"):
@@ -194,10 +194,10 @@ class LightweightDependencyParser:
                 obj = rel.dep_word
                 if rel.head_word and not verb:
                     verb = rel.head_word
-        
+
         if subject and verb:
             return (subject, verb, obj or "")
-        
+
         return None
 
 
@@ -221,25 +221,25 @@ class EntityLinker:
     将 NLP 抽取出的命名实体映射到系统知识库，
     为检索提供精确的实体→文档/记忆跳转。
     """
-    
+
     def __init__(self, workspace_path: str = None):
         workspace = workspace_path or os.environ.get(
             "OPENCLAW_WORKSPACE",
             workspace())
-        
+
         # 内置知识库
         self._builtin_entities = self._build_system_kb(workspace)
-        
+
         # 持久化路径
         self.custom_path = Path(workspace) / ".learnings" / "entity_linker.jsonl"
         self.custom_path.parent.mkdir(parents=True, exist_ok=True)
         if not self.custom_path.exists():
             self.custom_path.touch()
-        
+
         # 缓存
         self._custom_entities: Dict[str, KnowledgeEntity] = {}
         self._load_custom()
-    
+
     def _build_system_kb(self, workspace: str) -> Dict[str, KnowledgeEntity]:
         """构建系统内置知识库"""
         kb = {}
@@ -269,7 +269,7 @@ class EntityLinker:
             for alias in e.aliases:
                 kb[alias] = e
         return kb
-    
+
     def _load_custom(self):
         """加载自定义实体"""
         try:
@@ -283,7 +283,7 @@ class EntityLinker:
                             self._custom_entities[alias] = e
         except Exception:
             pass
-    
+
     def add_entity(self, entity: KnowledgeEntity):
         """添加自定义实体"""
         self._custom_entities[entity.name] = entity
@@ -301,7 +301,7 @@ class EntityLinker:
                 }, ensure_ascii=False) + "\n")
         except Exception:
             pass
-    
+
     def link(self, text: str) -> List[Tuple[str, KnowledgeEntity, float]]:
         """
         将文本中的实体链接到知识库
@@ -314,13 +314,13 @@ class EntityLinker:
         """
         results = []
         matched = set()
-        
+
         # 精确匹配（优先长匹配）
         candidates = sorted(
             list(self._builtin_entities.keys()) + list(self._custom_entities.keys()),
             key=len, reverse=True
         )
-        
+
         for name in candidates:
             if name in matched:
                 continue
@@ -332,7 +332,7 @@ class EntityLinker:
                         continue
                     results.append((name, entity, 0.9))
                     matched.add(name)
-        
+
         return results
 
 
@@ -345,12 +345,12 @@ class CoreferenceResolver:
     基于就近原则 + 语法角色的代词解析。
     支持：人称代词（它/他/她/它们）、指示代词（这/那/这个/那个）
     """
-    
+
     # 代词映射
     PRONOUNS = {
         # 人称代词 → 可能的实体类型倾向
         "它": "thing",
-        "他": "person", 
+        "他": "person",
         "她": "person",
         "它们": "thing",
         "他们": "person",
@@ -368,11 +368,11 @@ class CoreferenceResolver:
         "前者": "thing",
         "后者": "thing",
     }
-    
+
     def __init__(self):
         self._history: List[Dict] = []  # 对话历史实体
         self._max_history = 20
-    
+
     def update_context(self, entities: List[str]):
         """更新上下文实体列表"""
         for e in reversed(entities):
@@ -383,7 +383,7 @@ class CoreferenceResolver:
                 })
         # 裁剪
         self._history = self._history[:self._max_history]
-    
+
     def resolve(self, text: str, context_text: str = "") -> Dict[str, str]:
         """
         解析文本中的代词
@@ -397,18 +397,18 @@ class CoreferenceResolver:
         """
         if not JIEBA_AVAILABLE:
             return {}
-        
+
         # 从上下文提取候选实体
         if context_text and not self._history:
             words = jieba.lcut(context_text)
             # 名词和专有名词作为候选
             candidates = [w for w in words if len(w) > 1]
             self.update_context(candidates)
-        
+
         # 查找代词
         resolutions = {}
         words = list(pseg.cut(text))
-        
+
         for word, flag in words:
             if word in self.PRONOUNS and flag.startswith("r"):
                 # 找最近的匹配实体
@@ -419,7 +419,7 @@ class CoreferenceResolver:
                         if h["name"] not in text:  # 避免自指
                             resolutions[word] = h["name"]
                             break
-        
+
         return resolutions
 
 
@@ -445,7 +445,7 @@ class ComparisonDetector:
     - 显式比较：A比B更X, A不如B, A和B一样
     - 隐式比较：A更X（省略B）, A最好（最高级）
     """
-    
+
     COMPARISON_MARKERS = [
         # (marker_word, relation, require_second_word)
         ("比", ">", False),     # A比B更X / A比BX得多
@@ -458,7 +458,7 @@ class ComparisonDetector:
         ("优于", ">", False),
         ("劣于", "<", False),
     ]
-    
+
     # 常见比较维度关键词
     DIMENSION_WORDS = [
         "好", "坏", "快", "慢", "大", "小", "多", "少",
@@ -472,17 +472,17 @@ class ComparisonDetector:
         """检测对比句"""
         if not text or len(text) < 5 or not JIEBA_AVAILABLE:
             return None
-        
+
         for marker, relation, require_second in self.COMPARISON_MARKERS:
             pos = text.find(marker)
             if pos < 0:
                 continue
-            
+
             before = text[:pos].strip()
             after = text[pos + len(marker):].strip()
             if not before or not after:
                 continue
-            
+
             if require_second:
                 # A和B一样X / A没有B那么X → 找第二个标记词
                 second_markers = {"和": "一样", "没有": "那么"}.get(marker)
@@ -496,10 +496,10 @@ class ComparisonDetector:
             else:
                 mid_part = after
                 last_part = ""
-            
+
             if not mid_part:
                 continue
-            
+
             # 抽实体：从左(before)取最后一个名词+英文，从右(mid_part)取第一个名词+英文
             def _extract_entity(seg: str, from_left: bool) -> str:
                 """从分词中组装配对的相邻名词+英文"""
@@ -514,13 +514,13 @@ class ComparisonDetector:
                 if from_left:
                     return "".join(parts[-3:])  # 取最后3个连续词
                 return "".join(parts[:3])       # 取前3个连续词
-            
+
             left_entity = _extract_entity(before, True)
             right_entity = _extract_entity(mid_part, False)
-            
+
             if not left_entity or not right_entity or left_entity == right_entity:
                 continue
-            
+
             # 维度词：从最后一个比较段找
             dim = ""
             if last_part:
@@ -533,14 +533,14 @@ class ComparisonDetector:
                     if ("得" + dw) in after or dw in after:
                         dim = dw
                         break
-            
+
             return ComparisonResult(
                 has_comparison=True,
                 subject_a=left_entity, subject_b=right_entity,
                 dimension=dim, relation=relation,
                 original_sentence=text, confidence=0.8
             )
-        
+
         # 最高级：A 最 X
         max_match = re.search(r"(.+?)\s*最\s*([\u4e00-\u9fff]{1,4})", text)
         if max_match:
@@ -551,9 +551,9 @@ class ComparisonDetector:
                 dimension=d, relation="max",
                 original_sentence=text, confidence=0.75
             )
-        
+
         return None
-    
+
     def extract_comparison_graph(self, texts: List[str]) -> List[ComparisonResult]:
         """
         从多条文本中抽取比较关系图谱
@@ -580,13 +580,13 @@ class EnhancedNLP:
     
     整合依存分析、实体链接、指代消解、对比检测四项能力。
     """
-    
+
     def __init__(self, workspace_path: str = None):
         self.dep_parser = LightweightDependencyParser()
         self.entity_linker = EntityLinker(workspace_path)
         self.coref_resolver = CoreferenceResolver()
         self.comparison_detector = ComparisonDetector()
-    
+
     def analyze(self, text: str, context: str = "") -> Dict[str, Any]:
         """
         对文本做全量增强分析
@@ -599,7 +599,7 @@ class EnhancedNLP:
             分析结果字典
         """
         result = {"text": text[:200]}
-        
+
         # 1. 依存句法
         try:
             dep = self.dep_parser.parse(text)
@@ -611,7 +611,7 @@ class EnhancedNLP:
             }
         except Exception:
             pass
-        
+
         # 2. 实体链接
         try:
             links = self.entity_linker.link(text)
@@ -627,7 +627,7 @@ class EnhancedNLP:
             result["entities"] = linked_entities
         except Exception:
             pass
-        
+
         # 3. 指代消解
         try:
             resolutions = self.coref_resolver.resolve(text, context)
@@ -635,7 +635,7 @@ class EnhancedNLP:
                 result["coreferences"] = resolutions
         except Exception:
             pass
-        
+
         # 4. 对比检测
         try:
             comparison = self.comparison_detector.detect(text)
@@ -650,7 +650,7 @@ class EnhancedNLP:
                 }
         except Exception:
             pass
-        
+
         return result
 
 
@@ -696,7 +696,7 @@ def analyze_text(text: str, context: str = "", workspace: str = None) -> Dict:
 
 if __name__ == "__main__":
     nlp = EnhancedNLP()
-    
+
     print("=== 1. 依存句法 ===")
     dep = nlp.dep_parser.parse("小艺Claw系统使用Python开发")
     print(f"  核心词: {dep.root_word}")
@@ -704,18 +704,18 @@ if __name__ == "__main__":
         print(f"  {r.relation}: {r.head_word}({r.head_pos}) ← {r.dep_word}({r.dep_pos})")
     triple = nlp.dep_parser.extract_triple("小艺系统使用Python")
     print(f"  三元组: {triple}")
-    
+
     print("\n=== 2. 实体链接 ===")
     links = nlp.entity_linker.link("对比一下小艺Claw和无问芯穹哪个更好")
     for m, e, c in links:
         print(f"  {m} → {e.name} ({e.type}) [{c}]")
-    
+
     print("\n=== 3. 指代消解 ===")
     nlp.coref_resolver.update_context(["小艺Claw", "DAG", "突触网络"])
     res = nlp.coref_resolver.resolve("它好用吗", "小艺Claw的DAG上下文管理器")
     for k, v in res.items():
         print(f"  {k} → {v}")
-    
+
     print("\n=== 4. 对比检测 ===")
     tests = [
         "小艺Claw比腾讯云插件更方便",
@@ -728,7 +728,7 @@ if __name__ == "__main__":
             print(f"  ✅ {r.relation}: {r.subject_a} vs {r.subject_b} ({r.dimension})")
         else:
             print(f"  ❌ 非对比句: {t[:30]}")
-    
+
     print("\n=== 5. 全量分析 ===")
     result = nlp.analyze("DAG上下文管理器比腾讯云插件稳定得多", "小艺Claw系统架构")
     print(json.dumps(result, indent=2, ensure_ascii=False))

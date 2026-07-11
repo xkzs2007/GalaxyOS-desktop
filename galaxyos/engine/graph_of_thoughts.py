@@ -253,7 +253,7 @@ class GraphOfThoughts:
             return {"answer": answer, "avg_score": avg_score, "log": f"aggregated_{len(valid)}_nodes_avg{avg_score:.1f}"}
         except Exception as e:
             logger.warning(f"GoT 聚合失败: {e}")
-            return {"answer": valid[0].result if valid else "", "avg_score": avg_score, "log": f"aggregate_fallback"}
+            return {"answer": valid[0].result if valid else "", "avg_score": avg_score, "log": "aggregate_fallback"}
 
 
 # ── 全局实例 ──

@@ -36,7 +36,7 @@ class VisualGenerator:
     3. 报告增强 - 自动生成配图
     4. 概念可视化 - 防幻觉辅助验证
     """
-    
+
     def __init__(self, skill_path: str = None):
         """
         初始化视觉生成器
@@ -48,19 +48,19 @@ class VisualGenerator:
             skill_path = os.path.expanduser(
                 "~/.openclaw/workspace/skills/seedream-image_gen/scripts/generate_seedream.py"
             )
-        
+
         self.skill_path = skill_path
         self.output_dir = os.path.expanduser(
             "~/.openclaw/workspace/generated-images"
         )
-        
+
         # 确保输出目录存在
         Path(self.output_dir).mkdir(parents=True, exist_ok=True)
-        
-        logger.info(f"VisualGenerator 初始化完成")
+
+        logger.info("VisualGenerator 初始化完成")
         logger.info(f"  技能路径: {self.skill_path}")
         logger.info(f"  输出目录: {self.output_dir}")
-    
+
     def generate_image(
         self,
         prompt: str,
@@ -82,7 +82,7 @@ class VisualGenerator:
         """
         # 构建增强的 prompt
         enhanced_prompt = self._enhance_prompt(prompt, style)
-        
+
         # 调用 seedream-image-gen
         cmd = [
             "python3",
@@ -91,9 +91,9 @@ class VisualGenerator:
             "--size", size,
             "--max-images", str(max_images)
         ]
-        
+
         logger.info(f"生成图像: {enhanced_prompt[:50]}...")
-        
+
         try:
             result = subprocess.run(
                 cmd,
@@ -101,7 +101,7 @@ class VisualGenerator:
                 text=True,
                 timeout=120
             )
-            
+
             if result.returncode != 0:
                 logger.error(f"图像生成失败: {result.stderr}")
                 return {
@@ -109,10 +109,10 @@ class VisualGenerator:
                     "error": result.stderr,
                     "images": []
                 }
-            
+
             # 解析输出，提取图片路径
             images = self._parse_output(result.stdout)
-            
+
             return {
                 "success": True,
                 "images": images,
@@ -120,7 +120,7 @@ class VisualGenerator:
                 "style": style,
                 "timestamp": datetime.now().isoformat()
             }
-            
+
         except subprocess.TimeoutExpired:
             logger.error("图像生成超时")
             return {
@@ -135,7 +135,7 @@ class VisualGenerator:
                 "error": str(e),
                 "images": []
             }
-    
+
     def visualize_memory(
         self,
         memory_content: str,
@@ -159,16 +159,16 @@ class VisualGenerator:
             "semantic": "realistic",  # 语义记忆 → 写实风格
             "procedural": "diagram"   # 程序记忆 → 图解风格
         }
-        
+
         style = style_map.get(memory_type, "anime")
-        
+
         # 构建可视化 prompt
         prompt = f"将以下记忆内容可视化为图像：{memory_content}"
-        
+
         logger.info(f"可视化记忆 ({memory_type}): {memory_content[:50]}...")
-        
+
         return self.generate_image(prompt, style=style)
-    
+
     def visualize_knowledge_graph(
         self,
         entities: List[Dict[str, Any]],
@@ -189,13 +189,13 @@ class VisualGenerator:
         # 构建图谱描述
         entity_desc = ", ".join([f"{e['name']}({e.get('type', 'entity')})" for e in entities[:5]])
         relation_desc = ", ".join([f"{r['from']}-{r['type']}->{r['to']}" for r in relations[:5]])
-        
+
         prompt = f"知识图谱可视化：实体包括{entity_desc}，关系包括{relation_desc}，使用清晰的节点和连线表示，现代简约风格"
-        
+
         logger.info(f"可视化知识图谱: {len(entities)} 实体, {len(relations)} 关系")
-        
+
         return self.generate_image(prompt, style="diagram")
-    
+
     def enhance_report(
         self,
         report_title: str,
@@ -217,11 +217,11 @@ class VisualGenerator:
         """
         # 根据报告内容生成配图
         prompt = f"为报告《{report_title}》生成配图，内容概要：{report_summary}，{style}风格，适合商务场景"
-        
+
         logger.info(f"增强报告: {report_title}")
-        
+
         return self.generate_image(prompt, style="realistic")
-    
+
     def visualize_concept(
         self,
         concept: str,
@@ -243,11 +243,11 @@ class VisualGenerator:
         if context:
             prompt += f"，上下文：{context}"
         prompt += "，清晰准确地表达概念本质"
-        
+
         logger.info(f"可视化概念: {concept}")
-        
+
         return self.generate_image(prompt, style="realistic")
-    
+
     def generate_avatar(
         self,
         description: str,
@@ -264,11 +264,11 @@ class VisualGenerator:
             头像生成结果
         """
         prompt = f"头像设计：{description}，{style}风格，适合作为个人形象"
-        
+
         logger.info(f"生成头像: {description[:50]}...")
-        
+
         return self.generate_image(prompt, style=style)
-    
+
     def _enhance_prompt(self, prompt: str, style: str) -> str:
         """
         增强 prompt，添加风格和质量描述
@@ -289,14 +289,14 @@ class VisualGenerator:
             "professional": "专业商务风格，简洁大气",
             "creative": "创意艺术风格，独特新颖"
         }
-        
+
         style_desc = style_keywords.get(style, "")
-        
+
         if style_desc:
             return f"{prompt}，{style_desc}"
-        
+
         return prompt
-    
+
     def _parse_output(self, output: str) -> List[str]:
         """
         解析生成输出，提取图片路径
@@ -308,7 +308,7 @@ class VisualGenerator:
             图片路径列表
         """
         images = []
-        
+
         for line in output.split("\n"):
             if "Saved to:" in line or "saved to:" in line.lower():
                 # 提取路径
@@ -317,7 +317,7 @@ class VisualGenerator:
                     path = parts[-1].strip()
                     if os.path.exists(path):
                         images.append(path)
-        
+
         # 如果没找到，尝试从输出目录获取最新图片
         if not images:
             try:
@@ -330,7 +330,7 @@ class VisualGenerator:
                     images.append(str(files[0]))
             except Exception as e:
                 logger.warning(f"获取最新图片失败: {e}")
-        
+
         return images
 
 
@@ -340,10 +340,10 @@ class VisualGenerationWorkflow:
     
     集成到统一协调器中，与其他模块协同工作
     """
-    
+
     def __init__(self):
         self.generator = VisualGenerator()
-    
+
     def execute(self, task: Dict[str, Any]) -> Dict[str, Any]:
         """
         执行视觉生成任务
@@ -358,7 +358,7 @@ class VisualGenerationWorkflow:
         """
         task_type = task.get("type", "general")
         data = task.get("data", {})
-        
+
         handlers = {
             "memory_viz": self._handle_memory_visualization,
             "kg_viz": self._handle_kg_visualization,
@@ -367,25 +367,25 @@ class VisualGenerationWorkflow:
             "avatar": self._handle_avatar_generation,
             "general": self._handle_general_generation
         }
-        
+
         handler = handlers.get(task_type, self._handle_general_generation)
-        
+
         return handler(data)
-    
+
     def _handle_memory_visualization(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """处理记忆可视化"""
         return self.generator.visualize_memory(
             memory_content=data.get("content", ""),
             memory_type=data.get("memory_type", "episodic")
         )
-    
+
     def _handle_kg_visualization(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """处理知识图谱可视化"""
         return self.generator.visualize_knowledge_graph(
             entities=data.get("entities", []),
             relations=data.get("relations", [])
         )
-    
+
     def _handle_report_enhancement(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """处理报告增强"""
         return self.generator.enhance_report(
@@ -393,21 +393,21 @@ class VisualGenerationWorkflow:
             report_summary=data.get("summary", ""),
             style=data.get("style", "professional")
         )
-    
+
     def _handle_concept_visualization(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """处理概念可视化"""
         return self.generator.visualize_concept(
             concept=data.get("concept", ""),
             context=data.get("context", "")
         )
-    
+
     def _handle_avatar_generation(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """处理头像生成"""
         return self.generator.generate_avatar(
             description=data.get("description", ""),
             style=data.get("style", "anime")
         )
-    
+
     def _handle_general_generation(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """处理通用图像生成"""
         return self.generator.generate_image(
@@ -440,7 +440,7 @@ def generate_image(prompt: str, style: str = "anime") -> Dict[str, Any]:
 # CLI 入口
 if __name__ == "__main__":
     import argparse
-    
+
     parser = argparse.ArgumentParser(description="视觉生成模块")
     parser.add_argument("--type", choices=[
         "memory", "kg", "report", "concept", "avatar", "general"
@@ -448,16 +448,16 @@ if __name__ == "__main__":
     parser.add_argument("--prompt", required=True, help="提示词或内容")
     parser.add_argument("--style", default="anime", help="风格")
     parser.add_argument("--output", help="输出路径")
-    
+
     args = parser.parse_args()
-    
+
     generator = VisualGenerator()
-    
+
     if args.type == "memory":
         result = generator.visualize_memory(args.prompt)
     elif args.type == "concept":
         result = generator.visualize_concept(args.prompt)
     else:
         result = generator.generate_image(args.prompt, args.style)
-    
+
     print(json.dumps(result, ensure_ascii=False, indent=2))

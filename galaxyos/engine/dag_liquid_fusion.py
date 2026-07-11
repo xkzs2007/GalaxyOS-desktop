@@ -38,24 +38,24 @@ class DAGLiquidFusionConfig:
     # LTC 时间常数范围
     tau_min: float = 0.5          # 最小时间常数（响应最快）
     tau_max: float = 12.0         # 最大时间常数（最慢）
-    
+
     # 压缩触发参数
     soft_compact_threshold: float = 0.75   # 软压缩阈值（上下文使用率）
     hard_compact_threshold: float = 0.90   # 硬压缩阈值
     token_growth_rate: float = 0.0         # token 增长率（自动计算）
-    
+
     # 节点重要性参数
     heat_decay_hours: float = 24.0        # 热度半衰期（小时）
     importance_boost: float = 0.2         # 液态重要性提升系数
     base_importance: float = 0.3          # 基础重要性
-    
+
     # 时间感知排序参数
     recency_weight: float = 0.3           # 时效性权重
     heat_weight: float = 0.3              # 热度权重
     liquid_weight: float = 0.4            # 液态权重
     min_score: float = 0.01               # 最小评分
     max_score: float = 1.0                # 最大评分
-    
+
     # 连续时间 LTC
     lt_sigmoid_temp: float = 2.0          # sigmoid 温度（值越大越尖锐）
     epsilon: float = 1e-8                 # 数值稳定
@@ -76,13 +76,13 @@ class LTCConstantComputer:
 
     def __init__(self, config: Optional[DAGLiquidFusionConfig] = None):
         self.config = config or DAGLiquidFusionConfig()
-        
+
         # 尝试连接 UDS lfm_server
         self._uds_ok = False
         self._uds_tried = False
         self._uds_last_embedding = None
         self._try_uds()
-        
+
         # 动态参数
         self._w_tau: Optional[np.ndarray] = None
         self._b_tau: Optional[np.ndarray] = None
@@ -140,13 +140,13 @@ class LTCConstantComputer:
                     else:
                         gate = 0.5
                     self._uds_last_embedding = curr_emb
-                    
+
                     tau = gate * (self.config.tau_max - self.config.tau_min) + self.config.tau_min
                     tau *= (1.0 + importance * self.config.importance_boost)
                     return float(max(self.config.tau_min, min(self.config.tau_max * 2.0, tau)))
             except Exception:
                 pass
-        
+
         # fallback: 原有随机权重
         self._ensure_initialized()
         depth_penalty = 1.0 / (1.0 + depth * 0.5)
@@ -173,7 +173,7 @@ class LTCConstantComputer:
         """
         usage_ratio = raw_tokens / max(max_tokens, 1)
         tau_factor = 1.0 + 1.0 / max(avg_tau, self.config.epsilon)
-        
+
         return usage_ratio * tau_factor
 
 
@@ -233,11 +233,11 @@ class TimeAwareNodeRanker:
         """
         if now is None:
             now = time.time()
-        
+
         # 时效性：越新越高（指数衰减）
         age_hours = (now - timestamp) / 3600.0 if timestamp > 0 else 0
         recency = max(0.01, math.exp(-age_hours / self.config.heat_decay_hours))
-        
+
         # 液态时间常数
         tau = self._tau_computer.compute_tau(
             importance=importance,
@@ -245,22 +245,22 @@ class TimeAwareNodeRanker:
             recency=recency,
             depth=float(depth),
         )
-        
+
         # 液态评分：τ 越大越保留
         tau_mid = (self.config.tau_min + self.config.tau_max) / 2.0
         tau_range = self.config.tau_max - self.config.tau_min
         normalized_tau = (tau - tau_mid) / max(tau_range, self.config.epsilon)
         liquid_score = 1.0 / (1.0 + math.exp(-self.config.lt_sigmoid_temp * normalized_tau))
-        
+
         # 综合评分
         score = (
             self.config.recency_weight * recency +
             self.config.heat_weight * heat +
             self.config.liquid_weight * liquid_score
         )
-        
+
         score = max(self.config.min_score, min(self.config.max_score, score))
-        
+
         return NodeScore(
             node_id=node_id,
             score=score,
@@ -287,7 +287,7 @@ class TimeAwareNodeRanker:
         """
         if now is None:
             now = time.time()
-        
+
         scores = []
         for n in nodes:
             ns = self.compute_node_score(
@@ -299,12 +299,12 @@ class TimeAwareNodeRanker:
                 now=now,
             )
             scores.append(ns)
-        
+
         scores.sort(key=lambda x: -x.score)
-        
+
         if top_k is not None:
             scores = scores[:top_k]
-        
+
         return scores
 
     def should_compact_node(self, score: NodeScore, threshold: float = 0.4) -> bool:
@@ -338,7 +338,7 @@ class TimeAwareNodeRanker:
         """
         scores = self.rank_nodes(nodes, now=now)
         split = max(1, int(len(scores) * retain_ratio))
-        
+
         return scores[:split], scores[split:]
 
     def get_tau_computer(self) -> LTCConstantComputer:
@@ -369,7 +369,7 @@ class LTCDAGCompactStrategy:
         self.config = config or DAGLiquidFusionConfig()
         self._tau_computer = LTCConstantComputer(self.config)
         self._ranker = TimeAwareNodeRanker(self.config)
-        
+
         # 压缩历史（用于自适应调整）
         self._compact_history: List[Dict] = []
         self._avg_tau: float = (self.config.tau_min + self.config.tau_max) / 2.0
@@ -393,7 +393,7 @@ class LTCDAGCompactStrategy:
         """
         if force:
             return True, 2.0, {"reason": "force", "avg_tau": self._avg_tau}
-        
+
         # 计算平均时间常数
         taus = []
         for n in nodes:
@@ -404,19 +404,19 @@ class LTCDAGCompactStrategy:
                 depth=n.get("depth", 0),
             ))
         self._avg_tau = float(np.mean(taus)) if taus else self._avg_tau
-        
+
         # 就绪度
         readiness = self._tau_computer.estimate_compact_readiness(
             raw_tokens, max_tokens, self._avg_tau
         )
-        
+
         # 使用率
         usage_ratio = raw_tokens / max(max_tokens, 1)
-        
+
         # 决策
         threshold = self.config.soft_compact_threshold * (1.0 + 1.0 / max(self._avg_tau, 1e-8))
         should = readiness > threshold or usage_ratio > self.config.hard_compact_threshold
-        
+
         stats = {
             "readiness": float(readiness),
             "avg_tau": float(self._avg_tau),
@@ -424,7 +424,7 @@ class LTCDAGCompactStrategy:
             "threshold": float(threshold),
             "reason": "readiness" if should else "ok",
         }
-        
+
         return should, readiness, stats
 
     def select_nodes_to_compact(self,
@@ -445,18 +445,18 @@ class LTCDAGCompactStrategy:
         _, candidates = self._ranker.partition_for_compact(
             nodes, retain_ratio=1.0 - compact_ratio
         )
-        
+
         # 确保至少 min_to_compact 个
         if len(candidates) < min_to_compact and len(nodes) > min_to_compact:
             scores = self._ranker.rank_nodes(nodes)
             candidates = [s for s in scores[:-min_to_compact]]
-        
+
         result = []
         candidate_ids = set(c.node_id for c in candidates)
         for n in nodes:
             if n.get("node_id") in candidate_ids:
                 result.append(n)
-        
+
         return result[:max(min_to_compact, len(candidates))]
 
     def compute_compact_tau(self, source_nodes: List[Dict[str, Any]]) -> float:
@@ -474,7 +474,7 @@ class LTCDAGCompactStrategy:
         """
         if not source_nodes:
             return self._avg_tau
-        
+
         taus = []
         for n in source_nodes:
             tau = self._tau_computer.compute_tau(
@@ -484,13 +484,13 @@ class LTCDAGCompactStrategy:
                 depth=n.get("depth", 0),
             )
             taus.append(tau)
-        
+
         median_tau = float(np.median(taus))
         avg_depth = float(np.mean([n.get("depth", 0) for n in source_nodes]))
-        
+
         # 深度衰减：depth=0 → 1.0, depth=1 → 0.7, depth=2 → 0.5
         depth_decay = 1.0 / (1.0 + avg_depth * 0.5)
-        
+
         return median_tau * depth_decay
 
     def record_compact(self, stats: Dict):
@@ -587,11 +587,11 @@ class DAGLiquidFusion:
         should, readiness, stats = self.compact_strategy.should_compact(
             raw_tokens, max_tokens, nodes
         )
-        
+
         retain, candidates = self.compact_strategy.get_ranker().partition_for_compact(
             nodes, retain_ratio=0.6
         )
-        
+
         return {
             "should_compact": should,
             "readiness": readiness,
@@ -624,18 +624,18 @@ class DAGLiquidFusion:
 def test_tau_computer():
     """测试 LTC 时间常数计算"""
     computer = LTCConstantComputer()
-    
+
     test_cases = [
         (0.9, 0.9, 1.0, 0),   # 高重要+高频+新+原始 → τ 大（保留）
         (0.5, 0.5, 0.5, 1),   # 中等 + 一次摘要 → τ 中
         (0.1, 0.1, 0.1, 2),   # 低重要+低频+旧+二次摘要 → τ 小（压缩）
     ]
-    
+
     print("=== LTCConstantComputer 测试 ===")
     for imp, heat, rec, depth in test_cases:
         tau = computer.compute_tau(imp, heat, rec, depth)
         print(f"  imp={imp:.1f}, heat={heat:.1f}, rec={rec:.1f}, depth={depth} → τ={tau:.2f}")
-    
+
     return True
 
 
@@ -643,68 +643,68 @@ def test_node_ranker():
     """测试节点排序"""
     ranker = TimeAwareNodeRanker()
     now = time.time()
-    
+
     nodes = [
         {"node_id": "n1", "timestamp": now - 3600, "heat": 0.9, "importance_score": 0.9, "depth": 0},
         {"node_id": "n2", "timestamp": now - 86400, "heat": 0.5, "importance_score": 0.5, "depth": 0},
         {"node_id": "n3", "timestamp": now - 86400 * 7, "heat": 0.1, "importance_score": 0.2, "depth": 1},
         {"node_id": "n4", "timestamp": now - 3600 * 2, "heat": 0.7, "importance_score": 0.8, "depth": 0},
     ]
-    
+
     print("\n=== TimeAwareNodeRanker 测试 ===")
     scores = ranker.rank_nodes(nodes)
     for s in scores:
         print(f"  {s.node_id}: score={s.score:.4f} (liquid={s.liquid_score:.3f}, heat={s.heat_score:.3f}, "
               f"recency={s.recency_score:.3f}, τ={s.tau_value:.2f})")
-    
+
     keep, compact = ranker.partition_for_compact(nodes, retain_ratio=0.5)
     print(f"\n  保留: {[s.node_id for s in keep]}")
     print(f"  压缩: {[s.node_id for s in compact]}")
-    
+
     return True
 
 
 def test_compact_strategy():
     """测试压缩策略"""
     strategy = LTCDAGCompactStrategy()
-    
+
     nodes = [
         {"node_id": f"n{i}", "importance_score": 0.5, "heat": 0.3, "depth": 0}
         for i in range(20)
     ]
-    
+
     # 场景：token 使用率 80%
     should, readiness, stats = strategy.should_compact(
         raw_tokens=8000, max_tokens=10000, nodes=nodes
     )
-    
+
     print("\n=== LTCDAGCompactStrategy 测试 ===")
     print(f"  8000/10000 tokens: should={should}, readiness={readiness:.3f}, τ_avg={stats['avg_tau']:.2f}")
-    
+
     # 场景：token 使用率 95%
     should2, readiness2, stats2 = strategy.should_compact(
         raw_tokens=9500, max_tokens=10000, nodes=nodes
     )
     print(f"  9500/10000 tokens: should={should2}, readiness={readiness2:.3f}, τ_avg={stats2['avg_tau']:.2f}")
-    
+
     # 选择要压缩的节点
     to_compact = strategy.select_nodes_to_compact(nodes, compact_ratio=0.3)
     print(f"  建议压缩 {len(to_compact)} 个节点")
-    
+
     # 摘要节点 τ
     summary_tau = strategy.compute_compact_tau(to_compact[:3])
     print(f"  摘要节点 τ={summary_tau:.2f}")
-    
+
     strategy.record_compact(stats)
     print(f"  压缩历史: {len(strategy._compact_history)} 次")
-    
+
     return True
 
 
 def test_full_fusion():
     """测试完整融合"""
     fusion = DAGLiquidFusion()
-    
+
     now = time.time()
     nodes = [
         {"node_id": "hot_recent", "timestamp": now - 1800, "heat": 0.95, "importance_score": 0.9, "depth": 0},
@@ -712,9 +712,9 @@ def test_full_fusion():
         {"node_id": "old_warm", "timestamp": now - 86400 * 3, "heat": 0.4, "importance_score": 0.5, "depth": 0},
         {"node_id": "summary_old", "timestamp": now - 86400 * 7, "heat": 0.2, "importance_score": 0.3, "depth": 2},
     ]
-    
+
     print("\n=== DAGLiquidFusion 完整测试 ===")
-    
+
     rec = fusion.get_compact_recommendation(
         raw_tokens=12000, max_tokens=16000, nodes=nodes
     )
@@ -722,10 +722,10 @@ def test_full_fusion():
     print(f"  readiness: {rec['readiness']:.3f}")
     print(f"  保留: {rec['retain'][:3]}")
     print(f"  压缩候选: {rec['candidates'][:3]}")
-    
+
     info = fusion.get_info()
     print(f"  avg_tau: {info['compact_strategy_status']['avg_tau']:.2f}")
-    
+
     return True
 
 

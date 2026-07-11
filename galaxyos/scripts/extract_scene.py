@@ -13,7 +13,8 @@ from pathlib import Path
 # 路径配置
 
 # ── Centralized path resolution ──
-import os as _os, sys as _sys
+import os as _os
+import sys as _sys
 from galaxyos.shared.paths import workspace
 _ws_root = workspace()
 for _p in [_ws_root, "/workspace"]:
@@ -43,9 +44,9 @@ def append_to_daily_note(scene_name, scene_content):
     """追加场景到每日记录"""
     daily_note = get_daily_note_path()
     existing = read_file(daily_note)
-    
+
     timestamp = datetime.now().strftime("%H:%M:%S")
-    
+
     # 构建场景块
     scene_block = f"""
 
@@ -56,22 +57,22 @@ def append_to_daily_note(scene_name, scene_content):
 
 {scene_content}
 """
-    
+
     # 如果文件不存在，创建头部
     if not existing:
         today = datetime.now().strftime("%Y-%m-%d")
         header = f"# {today} 每日记录\n\n> 自动记录的场景和事件\n"
         existing = header
-    
+
     write_file(daily_note, existing + scene_block)
     print(f"✅ 已记录场景到 {daily_note.name}")
 
 def record_to_git_notes(scene_name, scene_content):
     """记录到 git-notes-memory"""
     import subprocess
-    
+
     git_notes_script = WORKSPACE / "skills" / "git-notes-memory" / "memory.py"
-    
+
     if git_notes_script.exists():
         try:
             # 构建记忆内容
@@ -80,7 +81,7 @@ def record_to_git_notes(scene_name, scene_content):
                 "content": scene_content,
                 "timestamp": datetime.now().isoformat()
             }, ensure_ascii=False)
-            
+
             # 调用 git-notes-memory
             result = subprocess.run([
                 "python3", str(git_notes_script),
@@ -89,7 +90,7 @@ def record_to_git_notes(scene_name, scene_content):
                 "-t", f"scene,{scene_name}",
                 "-i", "n"
             ], capture_output=True, text=True)
-            
+
             if result.returncode == 0:
                 print(f"✅ 已记录到 git-notes-memory: {result.stdout.strip()}")
             else:
@@ -104,16 +105,16 @@ def main():
     if len(sys.argv) < 3:
         print("用法: python3 extract_scene.py '<场景名称>' '<场景内容>'")
         sys.exit(1)
-    
+
     scene_name = sys.argv[1]
     scene_content = sys.argv[2]
-    
+
     # 追加到每日记录
     append_to_daily_note(scene_name, scene_content)
-    
+
     # 记录到 git-notes-memory
     record_to_git_notes(scene_name, scene_content)
-    
+
     print("场景提取完成")
 
 if __name__ == "__main__":

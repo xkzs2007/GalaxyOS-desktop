@@ -643,7 +643,7 @@ class CfCSequencePredictor(nn.Module):
 
         if verbose:
             print(f"{'='*60}")
-            print(f"CfC 序列预测器训练")
+            print("CfC 序列预测器训练")
             print(f"  训练样本: {len(train_idx)}, 验证样本: {len(val_idx)}")
             print(f"  序列长度: {self.seq_len}, Embedding 维度: {self.input_dim}")
             print(f"  Epochs: {epochs}, LR: {lr}, Batch: {batch_size}")
@@ -1176,7 +1176,7 @@ def _test_record_and_predict(predictor: CfCSequencePredictor):
     # 带 timespans 预测
     predicted2 = predictor.predict_next(recent, timespans=[1.0, 0.8, 1.2, 0.5, 1.5])
     assert len(predicted2) == 16
-    print(f"  ✓ 带 timespans 预测正常")
+    print("  ✓ 带 timespans 预测正常")
 
 
 def _test_recommend(predictor: CfCSequencePredictor):
@@ -1308,7 +1308,7 @@ def _test_synthetic_data():
     # 检查 embedding 维度
     for mid, emb in embeddings.items():
         assert len(emb) == 16, f"embedding 维度错误: {mid}"
-    print(f"  ✓ 所有 embedding 维度正确")
+    print("  ✓ 所有 embedding 维度正确")
 
 
 def _test_save_load(tmp_path: str = "/tmp/cfc_seq_test.json"):
@@ -1365,21 +1365,21 @@ def _test_empty_and_edge():
     # 空序列预测
     empty_pred = predictor.predict_next([])
     assert all(v == 0.0 for v in empty_pred)
-    print(f"  ✓ 空序列预测返回零向量")
+    print("  ✓ 空序列预测返回零向量")
 
     # 短序列预测
     short_pred = predictor.predict_next([[1.0] * 16] * 2)
     assert len(short_pred) == 16
-    print(f"  ✓ 短序列预测正常")
+    print("  ✓ 短序列预测正常")
 
     # 空推荐
     empty_recs = predictor.recommend(top_k=3)
     assert empty_recs == []
-    print(f"  ✓ 空推荐返回空列表")
+    print("  ✓ 空推荐返回空列表")
 
     # 空训练
     history = predictor.train_on_history([], {}, epochs=5)
-    print(f"  ✓ 空训练不崩溃")
+    print("  ✓ 空训练不崩溃")
 
 
 def main():

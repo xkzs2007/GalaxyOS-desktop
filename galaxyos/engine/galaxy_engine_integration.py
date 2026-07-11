@@ -66,11 +66,11 @@ class EngramRetrievalAugmenter:
       1. 检索前：用 Engram O(1) 快速查找常见模式，预填充结果
       2. 检索后：用 Engram hit_rate 调节 retrieval_confidence
     """
-    
+
     def __init__(self):
         self._engram_mem = None
         self._engram_initialized = False
-    
+
     def _ensure_engram(self):
         if self._engram_initialized:
             return self._engram_mem is not None
@@ -95,7 +95,7 @@ class EngramRetrievalAugmenter:
             logger.warning(f"Engram 初始化失败: {e}")
             self._engram_initialized = True  # 标记为已尝试
             return False
-    
+
     def pre_retrieval_lookup(self, query: str) -> Dict:
         """
         检索前快速条件记忆查找
@@ -118,8 +118,8 @@ class EngramRetrievalAugmenter:
         except Exception as e:
             logger.debug(f"Engram pre_retrieval 跳过: {e}")
             return {"hit": False, "hit_rate": 0.0}
-    
-    def post_retrieval_bias(self, query: str, 
+
+    def post_retrieval_bias(self, query: str,
                             base_confidence: float,
                             retrieved_count: int) -> float:
         """
@@ -140,7 +140,7 @@ class EngramRetrievalAugmenter:
             return base_confidence
         except Exception:
             return base_confidence
-    
+
     def remember_query(self, query: str, answer: str = ""):
         """将查询存入条件记忆"""
         if not self._ensure_engram():
@@ -149,7 +149,7 @@ class EngramRetrievalAugmenter:
             self._engram_mem.remember(query + " " + answer[:100])
         except Exception:
             pass
-    
+
     def get_status(self) -> Dict:
         if not self._ensure_engram():
             return {"available": False}
@@ -170,11 +170,11 @@ class DAGLiquidAdviceProvider:
       - should_compact() 判断
       - select_nodes_to_compact() 选择
     """
-    
+
     def __init__(self):
         self._fusion = None
         self._initialized = False
-    
+
     def _ensure(self):
         if self._initialized:
             return self._fusion is not None
@@ -195,7 +195,7 @@ class DAGLiquidAdviceProvider:
             logger.warning(f"DAGLiquid 初始化失败: {e}")
             self._initialized = True
             return False
-    
+
     def get_compact_advice(self, raw_tokens: int, max_tokens: int,
                            dag_nodes: List[Dict]) -> Dict:
         """
@@ -214,7 +214,7 @@ class DAGLiquidAdviceProvider:
         except Exception as e:
             logger.debug(f"DAGLiquid advice 跳过: {e}")
             return {"should_compact": False, "reason": str(e)}
-    
+
     def rank_nodes(self, nodes: List[Dict], top_k: int = None) -> List:
         """液态时间感知排序"""
         if not self._ensure():
@@ -225,7 +225,7 @@ class DAGLiquidAdviceProvider:
                     for s in scores]
         except Exception:
             return []
-    
+
     def compute_summary_tau(self, source_nodes: List[Dict]) -> float:
         """压缩后摘要节点的时间常数"""
         if not self._ensure():
@@ -234,7 +234,7 @@ class DAGLiquidAdviceProvider:
             return self._fusion.compact_strategy.compute_compact_tau(source_nodes)
         except Exception:
             return 5.0
-    
+
     def get_info(self) -> Dict:
         if not self._ensure():
             return {"available": False}
@@ -279,31 +279,31 @@ class LFMReasoningChannel:
     提供 analyze_query / lfm_reason 接口，
     底层使用 LFM2.5-1.2B-Thinking 真实权重。
     """
-    
+
     def __init__(self):
         self._real = None
         self._initialized = False
-    
+
     def _ensure(self):
         if self._initialized:
             return self._real is not None
         self._real = _get_lfm_real()
         self._initialized = True
         return self._real is not None
-    
+
     def _forward_text(self, text: str) -> Dict:
         """委托给 RealLFMNetwork 的隐状态分析"""
         if not self._ensure():
             return {"reasoning_available": False}
         return self._real._forward_text(text)
-    
+
     def generate(self, prompt: str, max_new_tokens: int = 128,
                  temperature: float = 0.7) -> str:
         """委托给 RealLFMNetwork 的文本生成"""
         if not self._ensure():
             return ""
         return self._real.generate(prompt, max_new_tokens, temperature)
-    
+
     def analyze_query(self, query: str) -> Dict:
         """语义分析 — 隐状态 norm + 关键字意图"""
         ft = self._forward_text(query)
@@ -316,7 +316,7 @@ class LFMReasoningChannel:
                 outputs = self._real._model(**inputs, output_hidden_states=True)
                 hidden = outputs.hidden_states[-1]
                 norm = float(hidden.norm().item())
-            
+
             token_cnt = len(self._real._tokenizer.encode(query))
             intent_patterns = {
                 "query": ["什么", "怎么", "为什么", "如何", "谁是", "哪里", "多少", "何时"],
@@ -329,7 +329,7 @@ class LFMReasoningChannel:
                 if any(kw in query for kw in kws):
                     intent = it
                     break
-            
+
             return {
                 "reasoning_available": True,
                 "embedding_norm": round(norm, 2),
@@ -340,7 +340,7 @@ class LFMReasoningChannel:
         except Exception as e:
             logger.debug(f"LFM analyze 跳过: {e}")
             return ft
-    
+
     def lfm_reason(self, query: str, context: str = "") -> Dict:
         """完整推理"""
         if not self._ensure():
@@ -391,7 +391,7 @@ class SSMStateTracker:
       - 预测用户的"注意力状态"（话题切换/延续）
       - 预测哪些记忆应该被激活
     """
-    
+
     def __init__(self):
         self._predictor = None
         self._liquid_ssm = None
@@ -403,7 +403,7 @@ class SSMStateTracker:
             "turns": 0,
             "last_update": time.time(),
         }
-    
+
     def _ensure(self):
         if self._initialized:
             return self._predictor is not None
@@ -425,7 +425,7 @@ class SSMStateTracker:
             logger.warning(f"SSMStateTracker 初始化失败: {e}")
             self._initialized = True
             return False
-    
+
     def on_turn(self, query: str, topic: str = "") -> Dict:
         """
         每轮对话更新状态追踪
@@ -436,10 +436,10 @@ class SSMStateTracker:
         """
         self._state["turns"] += 1
         self._state["last_update"] = time.time()
-        
+
         if not self._ensure():
             return {"status": "fallback", "turns": self._state["turns"]}
-        
+
         try:
             # 话题切换检测
             if topic and self._state["topic"] and topic != self._state["topic"]:
@@ -449,7 +449,7 @@ class SSMStateTracker:
                     0.0, self._state.get("switch_probability", 0) - 0.1
                 )
             self._state["topic"] = topic or self._state["topic"]
-            
+
             # 用 SSM 预测器分析时间模式
             now = time.time()
             # SSMStatePredictor 的真实方法：predict(memory_id, now=None)
@@ -458,11 +458,11 @@ class SSMStateTracker:
                 memory_id=_mem_id,
                 now=now,
             )
-            
+
             self._state["engagement"] = min(
                 1.0, self._state["turns"] * 0.1 + 0.3
             )
-            
+
             return {
                 "status": "ok",
                 "switch_probability": self._state["switch_probability"],
@@ -473,7 +473,7 @@ class SSMStateTracker:
         except Exception as e:
             logger.debug(f"SSM on_turn 跳过: {e}")
             return {"status": "fallback", "turns": self._state["turns"]}
-    
+
     def record_memory_access(self, memory_id: str, now: float = None):
         """记录记忆访问（供 SSM 学习时间模式）
         
@@ -486,7 +486,7 @@ class SSMStateTracker:
             self._predictor.record_recall([memory_id])
         except Exception:
             pass
-    
+
     def get_state(self) -> Dict:
         return dict(self._state)
 
@@ -505,14 +505,14 @@ class ContinualLearningPipeline:
       3. 更新记忆嵌入
       4. 生成学习报告
     """
-    
+
     def __init__(self):
         self._continual = None
         self._initialized = False
         self._last_learn_time = time.time()
         self._session_data: List[Dict] = []
         self._total_learn_steps = 0
-    
+
     def _ensure(self):
         if self._initialized:
             return self._continual is not None
@@ -540,8 +540,8 @@ class ContinualLearningPipeline:
             logger.warning(f"持续学习管线初始化失败: {e}")
             self._initialized = True
             return False
-    
-    def record_interaction(self, query: str, answer: str, 
+
+    def record_interaction(self, query: str, answer: str,
                            metadata: Dict = None):
         """记录一次交互（供后续学习）"""
         self._session_data.append({
@@ -553,7 +553,7 @@ class ContinualLearningPipeline:
         # 只保留最近 200 条
         if len(self._session_data) > 200:
             self._session_data = self._session_data[-200:]
-    
+
     def execute_learning_step(self, max_steps: int = 10) -> Dict:
         """
         执行一次持续学习步骤（心跳调用）
@@ -565,7 +565,7 @@ class ContinualLearningPipeline:
             return {"learned": 0, "error": "unavailable"}
         if not self._session_data:
             return {"learned": 0, "reason": "no_data"}
-        
+
         try:
             import numpy as np
             recent = self._session_data[-max_steps:]
@@ -582,15 +582,15 @@ class ContinualLearningPipeline:
                 y_true = np.zeros((T, 16), dtype=np.float32)
                 for i in range(T - 1):
                     y_true[i, ord(text[i+1]) % 16] = 1.0
-                
+
                 loss = self._continual.continual_learning_step(
                     x_seq, y_true, task_id=0
                 )
                 total_loss += loss
                 self._total_learn_steps += 1
-            
+
             self._last_learn_time = time.time()
-            
+
             return {
                 "learned": len(recent),
                 "ewc_loss": total_loss / max(len(recent), 1),
@@ -601,7 +601,7 @@ class ContinualLearningPipeline:
         except Exception as e:
             logger.warning(f"持续学习步进失败: {e}")
             return {"learned": 0, "error": str(e)}
-    
+
     def summarize_patterns(self) -> Dict:
         """
         总结学习到的模式
@@ -616,7 +616,7 @@ class ContinualLearningPipeline:
             return {"available": True, "summary": summary}
         except Exception:
             return {"available": False, "error": "summarize failed"}
-    
+
     def get_status(self) -> Dict:
         self._ensure()  # 触发懒加载
         return {
@@ -638,75 +638,75 @@ class GalaxyEngineIntegration:
     
     统一管理所有子模块的初始化、生命周期、状态报告。
     """
-    
+
     def __init__(self, workspace: str = ""):
         self.ws = workspace or os.environ.get(
-            "OPENCLAW_WORKSPACE", 
+            "OPENCLAW_WORKSPACE",
             workspace()
         )
-        
+
         # 子模块（均为 lazyload）
         self.engram = EngramRetrievalAugmenter()
         self.dag_liquid = DAGLiquidAdviceProvider()
         self.lfm = LFMReasoningChannel()
         self.ssm = SSMStateTracker()
         self.continual = ContinualLearningPipeline()
-        
+
         logger.info("GalaxyEngineIntegration 已创建 (5 个子模块)")
-    
+
     # ────────── Retrieval Phase Hooks ──────────
-    
+
     def pre_retrieval(self, query: str) -> Dict:
         """检索前：Engram 条件记忆快速查找"""
         return self.engram.pre_retrieval_lookup(query)
-    
+
     def post_retrieval(self, query: str, base_confidence: float,
                        retrieved_count: int) -> float:
         """检索后：confidence 微调"""
         return self.engram.post_retrieval_bias(
             query, base_confidence, retrieved_count
         )
-    
+
     def get_compact_advice(self, raw_tokens: int, max_tokens: int,
                            dag_nodes: List[Dict]) -> Dict:
         """DAG 压缩建议"""
         return self.dag_liquid.get_compact_advice(
             raw_tokens, max_tokens, dag_nodes
         )
-    
+
     def remember_retrieved(self, query: str, answer: str = ""):
         """记录查询到 Engram"""
         self.engram.remember_query(query, answer)
-    
+
     # ────────── Cognition Phase Hooks ──────────
-    
+
     def analyze_with_lfm(self, query: str) -> Dict:
         """LFM 推理分析"""
         return self.lfm.analyze_query(query)
-    
+
     def track_ssm_state(self, query: str, topic: str = "") -> Dict:
         """SSM 状态追踪"""
         return self.ssm.on_turn(query, topic)
-    
+
     # ────────── Memory Phase Hooks ──────────
-    
+
     def record_memory_access_ssm(self, memory_id: str):
         """SSM 记录记忆访问"""
         self.ssm.record_memory_access(memory_id)
-    
+
     def record_interaction_continual(self, query: str, answer: str,
                                       metadata: Dict = None):
         """持续学习记录交互"""
         self.continual.record_interaction(query, answer, metadata)
-    
+
     # ────────── Heartbeat ──────────
-    
+
     def execute_continual_learning(self, max_steps: int = 10) -> Dict:
         """心跳：持续学习步进"""
         return self.continual.execute_learning_step(max_steps=max_steps)
-    
+
     # ────────── Status ──────────
-    
+
     def get_full_status(self) -> Dict:
         return {
             "engram": self.engram.get_status(),
@@ -715,7 +715,7 @@ class GalaxyEngineIntegration:
             "ssm": {"state": self.ssm.get_state()},
             "continual": self.continual.get_status(),
         }
-    
+
     def get_enabled_count(self) -> int:
         return sum([
             1 if self.engram.get_status().get("available") else 0,

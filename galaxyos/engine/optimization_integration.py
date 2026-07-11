@@ -66,7 +66,7 @@ class OptimizationIntegration:
     
     统一调用所有优化模块，提供一站式接口
     """
-    
+
     def __init__(self, user_context: Optional[Dict] = None):
         """
         初始化优化集成
@@ -75,7 +75,7 @@ class OptimizationIntegration:
             user_context: 用户上下文
         """
         self.user_context = user_context or {}
-        
+
         # 初始化各模块
         self.hallucination_adapter = AdaptiveHallucinationParams(user_context)
         self.crag_selector = DynamicCRAGThreshold()
@@ -83,7 +83,7 @@ class OptimizationIntegration:
         self.rrf_adapter = AdaptiveRRF()
         self.thinking_trigger = IntelligentThinkingTrigger(user_context)
         self.heartbeat_executor = HeartbeatTaskExecutor()
-    
+
     def optimize_query_processing(
         self,
         query: str,
@@ -102,7 +102,7 @@ class OptimizationIntegration:
             优化结果
         """
         results = {}
-        
+
         # 1. 防幻觉参数自适应
         hallucination_thresholds = self.hallucination_adapter.adjust_thresholds(query, context)
         results["hallucination"] = {
@@ -114,7 +114,7 @@ class OptimizationIntegration:
             "query_type": self.hallucination_adapter.classify_query(query).value,
             "domain": self.hallucination_adapter.detect_domain(query, context).value
         }
-        
+
         # 2. 思考技能触发
         thinking_analysis = self.thinking_trigger.detect_thinking_need(query, context)
         results["thinking"] = {
@@ -124,7 +124,7 @@ class OptimizationIntegration:
             "confidence": thinking_analysis.confidence,
             "reasoning": thinking_analysis.reasoning
         }
-        
+
         # 3. RRF 权重
         rrf_weights = self.rrf_adapter.get_adaptive_weights(query)
         results["rrf"] = {
@@ -132,9 +132,9 @@ class OptimizationIntegration:
             "sparse_weight": rrf_weights.sparse_weight,
             "category": self.rrf_adapter.classify_query(query).value
         }
-        
+
         return results
-    
+
     def optimize_retrieval(
         self,
         scores: List[float],
@@ -154,13 +154,13 @@ class OptimizationIntegration:
         """
         # CRAG 策略选择
         strategy, analysis = self.crag_selector.select_strategy(scores, query_type)
-        
+
         return {
             "strategy": strategy.value,
             "analysis": analysis,
             "recommendation": self._get_strategy_recommendation(strategy)
         }
-    
+
     def optimize_memory_synapse(
         self,
         synapse: SynapseState,
@@ -182,7 +182,7 @@ class OptimizationIntegration:
         else:
             new_synapse = self.ltp_ltd_adapter.apply_ltd(synapse)
             strength = self.ltp_ltd_adapter.calculate_ltd_rate(synapse)
-        
+
         return {
             "operation": operation,
             "old_weight": synapse.weight,
@@ -190,7 +190,7 @@ class OptimizationIntegration:
             "change": strength,
             "reinforcement_count": new_synapse.reinforcement_count
         }
-    
+
     def execute_heartbeat(self) -> HeartbeatResult:
         """
         执行心跳任务
@@ -199,7 +199,7 @@ class OptimizationIntegration:
             心跳执行结果
         """
         return self.heartbeat_executor.execute_heartbeat()
-    
+
     def _get_strategy_recommendation(self, strategy: RetrievalStrategy) -> str:
         """获取策略建议"""
         recommendations = {
@@ -227,41 +227,41 @@ def optimize_retrieval(scores: List[float], query_type: str = "general") -> Dict
 if __name__ == "__main__":
     # 测试集成
     integration = OptimizationIntegration()
-    
+
     print("=" * 70)
     print("优化模块集成测试")
     print("=" * 70)
-    
+
     # 测试查询优化
     test_query = "如何从根本上解决系统性能问题？"
-    print(f"\n【查询优化测试】")
+    print("\n【查询优化测试】")
     print(f"查询: {test_query}")
-    
+
     result = integration.optimize_query_processing(test_query)
-    
-    print(f"\n防幻觉参数:")
+
+    print("\n防幻觉参数:")
     print(f"  熟悉度阈值: {result['hallucination']['thresholds']['familiarity']:.2f}")
     print(f"  查询类型: {result['hallucination']['query_type']}")
     print(f"  领域: {result['hallucination']['domain']}")
-    
-    print(f"\n思考技能:")
+
+    print("\n思考技能:")
     print(f"  建议技能: {result['thinking']['skill']}")
     print(f"  复杂度: {result['thinking']['complexity']:.2f}")
     print(f"  推理: {result['thinking']['reasoning']}")
-    
-    print(f"\nRRF 权重:")
+
+    print("\nRRF 权重:")
     print(f"  Dense: {result['rrf']['dense_weight']:.2f}")
     print(f"  Sparse: {result['rrf']['sparse_weight']:.2f}")
-    
+
     # 测试检索优化
-    print(f"\n【检索优化测试】")
+    print("\n【检索优化测试】")
     test_scores = [0.75, 0.72, 0.70, 0.68]
     print(f"分数: {test_scores}")
-    
+
     retrieval_result = integration.optimize_retrieval(test_scores, query_type="factual")
     print(f"策略: {retrieval_result['strategy']}")
     print(f"建议: {retrieval_result['recommendation']}")
-    
+
     print("\n" + "=" * 70)
     print("集成测试完成")
     print("=" * 70)

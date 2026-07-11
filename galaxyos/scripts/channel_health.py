@@ -13,7 +13,8 @@ from datetime import datetime
 # 路径配置
 
 # ── Centralized path resolution ──
-import os as _os, sys as _sys
+import os as _os
+import sys as _sys
 from galaxyos.shared.paths import workspace
 _ws_root = workspace()
 for _p in [_ws_root, "/workspace"]:
@@ -26,20 +27,20 @@ HEALTH_LOG = WORKSPACE / "memory" / "channel_health.json"
 
 class ChannelHealthChecker:
     """通道健康检查器"""
-    
+
     def __init__(self):
         self.config = self._load_config()
-    
+
     def _load_config(self):
         """加载配置"""
         if CONFIG_PATH.exists():
             return json.loads(CONFIG_PATH.read_text())
         return {}
-    
+
     def get_channel_config(self):
         """获取通道配置"""
         return self.config.get("channels", {}).get("xiaoyi-channel", {})
-    
+
     def check_gateway_health(self):
         """检查 Gateway 健康状态"""
         try:
@@ -57,14 +58,14 @@ class ChannelHealthChecker:
                 "success": False,
                 "error": str(e)
             }
-    
+
     def check_channel_config(self):
         """检查通道配置完整性"""
         channel = self.get_channel_config()
-        
+
         required_fields = ["wsUrl1", "apiKey", "agentId", "enabled"]
         missing = [f for f in required_fields if not channel.get(f)]
-        
+
         return {
             "success": len(missing) == 0,
             "enabled": channel.get("enabled", False),
@@ -72,24 +73,24 @@ class ChannelHealthChecker:
             "has_api_key": bool(channel.get("apiKey")),
             "has_agent_id": bool(channel.get("agentId"))
         }
-    
+
     def save_result(self, result):
         """保存检查结果"""
         HEALTH_LOG.parent.mkdir(parents=True, exist_ok=True)
-        
+
         if HEALTH_LOG.exists():
             results = json.loads(HEALTH_LOG.read_text())
         else:
             results = []
-        
+
         results.append(result)
-        
+
         # 保留最近100条
         if len(results) > 100:
             results = results[-100:]
-        
+
         HEALTH_LOG.write_text(json.dumps(results, indent=2))
-    
+
     def run_check(self):
         """运行健康检查"""
         result = {
@@ -97,10 +98,10 @@ class ChannelHealthChecker:
             "gateway": self.check_gateway_health(),
             "channel_config": self.check_channel_config()
         }
-        
+
         self.save_result(result)
         return result
-    
+
     def print_report(self):
         """打印健康报告"""
         print("=" * 60)
@@ -108,7 +109,7 @@ class ChannelHealthChecker:
         print("=" * 60)
         print(f"检查时间: {datetime.now().isoformat()}")
         print()
-        
+
         # Gateway 检查
         gateway = self.check_gateway_health()
         status = "✅" if gateway["success"] else "❌"
@@ -117,9 +118,9 @@ class ChannelHealthChecker:
             print(f"   - 响应时间: {gateway['response_time_ms']}ms")
         else:
             print(f"   - 错误: {gateway.get('error', 'unknown')}")
-        
+
         print()
-        
+
         # 通道配置检查
         config = self.check_channel_config()
         status = "✅" if config["success"] else "⚠️"
@@ -127,10 +128,10 @@ class ChannelHealthChecker:
         print(f"   - 已启用: {'是' if config['enabled'] else '否'}")
         print(f"   - API Key: {'已配置' if config['has_api_key'] else '未配置'}")
         print(f"   - Agent ID: {'已配置' if config['has_agent_id'] else '未配置'}")
-        
+
         if config["missing_fields"]:
             print(f"   - 缺失字段: {', '.join(config['missing_fields'])}")
-        
+
         # 历史统计
         if HEALTH_LOG.exists():
             results = json.loads(HEALTH_LOG.read_text())

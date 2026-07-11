@@ -175,10 +175,10 @@ EXTENDED_SKILL_RECOMMENDATIONS = {
 
 class SkillCoordinator:
     """技能协调器"""
-    
+
     def __init__(self):
         self.registry = SKILL_REGISTRY
-    
+
     def detect_intent(self, user_message: str) -> List[Tuple[str, float]]:
         """
         检测用户意图，返回匹配的技能列表
@@ -191,28 +191,28 @@ class SkillCoordinator:
         """
         matches = []
         message_lower = user_message.lower()
-        
+
         for skill_name, skill_info in self.registry.items():
             score = 0.0
-            
+
             # 检查触发词
             for trigger in skill_info.triggers:
                 if trigger.lower() in message_lower:
                     score += 0.3
-            
+
             # 检查使用场景
             for use_case in skill_info.use_cases:
                 if any(keyword in message_lower for keyword in use_case.split()):
                     score += 0.1
-            
+
             if score > 0:
                 matches.append((skill_name, min(score, 1.0)))
-        
+
         # 按匹配度排序
         matches.sort(key=lambda x: x[1], reverse=True)
-        
+
         return matches
-    
+
     def recommend_skill(self, user_message: str) -> Optional[str]:
         """
         推荐最合适的技能
@@ -224,16 +224,16 @@ class SkillCoordinator:
             技能名或None
         """
         matches = self.detect_intent(user_message)
-        
+
         if matches and matches[0][1] >= 0.3:
             return matches[0][0]
-        
+
         return None
-    
+
     def get_skill_info(self, skill_name: str) -> Optional[SkillInfo]:
         """获取技能信息"""
         return self.registry.get(skill_name)
-    
+
     def suggest_combination(self, user_message: str) -> List[str]:
         """
         建议技能组合
@@ -245,10 +245,10 @@ class SkillCoordinator:
             [技能名, ...]
         """
         matches = self.detect_intent(user_message)
-        
+
         # 返回匹配度 >= 0.2 的技能
         return [name for name, score in matches if score >= 0.2]
-    
+
     def get_workflow(self, scenario: str) -> List[str]:
         """
         获取预定义的工作流
@@ -285,9 +285,9 @@ class SkillCoordinator:
                 "decision-engine",    # 优先级决策
             ],
         }
-        
+
         return workflows.get(scenario, [])
-    
+
     def list_skills(self, category: Optional[SkillCategory] = None) -> List[SkillInfo]:
         """
         列出技能
@@ -299,12 +299,12 @@ class SkillCoordinator:
             [SkillInfo, ...]
         """
         skills = list(self.registry.values())
-        
+
         if category:
             skills = [s for s in skills if s.category == category]
-        
+
         return skills
-    
+
     def recommend_extended_skill(self, user_message: str) -> List[Dict]:
         """
         推荐扩展技能（工具类技能）
@@ -317,15 +317,15 @@ class SkillCoordinator:
         """
         recommendations = []
         message_lower = user_message.lower()
-        
+
         for skill_name, skill_info in EXTENDED_SKILL_RECOMMENDATIONS.items():
             score = 0.0
-            
+
             # 检查触发词
             for trigger in skill_info["triggers"]:
                 if trigger.lower() in message_lower:
                     score += 0.4
-            
+
             if score > 0:
                 recommendations.append({
                     "name": skill_name,
@@ -333,12 +333,12 @@ class SkillCoordinator:
                     "suggest_when": skill_info["suggest_when"],
                     "confidence": min(score, 1.0)
                 })
-        
+
         # 按置信度排序
         recommendations.sort(key=lambda x: x["confidence"], reverse=True)
-        
+
         return recommendations
-    
+
     def get_smart_suggestion(self, user_message: str) -> Optional[str]:
         """
         智能推荐：当检测到用户可能需要某个技能时，返回提示
@@ -355,13 +355,13 @@ class SkillCoordinator:
             skill_info = self.get_skill_info(thinking_match)
             if skill_info:
                 return f"💡 建议使用「{skill_info.description}」来分析这个问题"
-        
+
         # 再检查扩展技能
         extended_matches = self.recommend_extended_skill(user_message)
         if extended_matches:
             top_match = extended_matches[0]
             return f"💡 可以用「{top_match['name']}」：{top_match['description']}"
-        
+
         return None
 
 
@@ -402,15 +402,15 @@ def parse_shortcut(message: str) -> Optional[str]:
         技能名或None
     """
     message = message.strip()
-    
+
     if message in SHORTCUTS:
         return SHORTCUTS[message]
-    
+
     # 检查消息开头
     for shortcut, skill_name in SHORTCUTS.items():
         if message.startswith(shortcut + " ") or message.startswith(shortcut + "\n"):
             return skill_name
-    
+
     return None
 
 
@@ -418,32 +418,32 @@ def parse_shortcut(message: str) -> Optional[str]:
 def main():
     """命令行接口"""
     import argparse
-    
+
     parser = argparse.ArgumentParser(description="技能协调器")
     parser.add_argument("command", choices=["detect", "recommend", "list", "workflow"])
     parser.add_argument("--message", help="用户消息")
     parser.add_argument("--scenario", help="场景名称")
     parser.add_argument("--category", help="技能类别")
-    
+
     args = parser.parse_args()
-    
+
     coordinator = SkillCoordinator()
-    
+
     if args.command == "detect":
         if not args.message:
             print("错误: 需要提供 --message")
             return
-        
+
         matches = coordinator.detect_intent(args.message)
-        print(f"检测到的技能:")
+        print("检测到的技能:")
         for name, score in matches:
             print(f"  - {name}: {score:.2f}")
-    
+
     elif args.command == "recommend":
         if not args.message:
             print("错误: 需要提供 --message")
             return
-        
+
         skill = coordinator.recommend_skill(args.message)
         if skill:
             info = coordinator.get_skill_info(skill)
@@ -452,21 +452,21 @@ def main():
             print(f"使用场景: {', '.join(info.use_cases)}")
         else:
             print("未检测到明确的技能需求")
-    
+
     elif args.command == "list":
         category = SkillCategory(args.category) if args.category else None
         skills = coordinator.list_skills(category)
-        
+
         print(f"技能列表 ({len(skills)} 个):")
         for skill in skills:
             print(f"  - {skill.name} ({skill.category.value})")
             print(f"    触发词: {', '.join(skill.triggers)}")
-    
+
     elif args.command == "workflow":
         if not args.scenario:
             print("错误: 需要提供 --scenario")
             return
-        
+
         workflow = coordinator.get_workflow(args.scenario)
         if workflow:
             print(f"工作流: {args.scenario}")

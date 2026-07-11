@@ -36,7 +36,7 @@ class LTP_LTDParams:
     max_weight: float = 1.0
     min_weight: float = 0.0
     importance_preservation: float = 0.5  # 重要记忆保留系数
-    
+
     # 艾宾浩斯遗忘曲线参数
     ebbinghaus_base_s: float = 3.0       # 基础记忆强度S（天数）
     ebbinghaus_min_s: float = 1.0        # 最小S值（最弱记忆）
@@ -58,10 +58,10 @@ class AdaptiveLTP_LTD:
     - LTD 衰减率基于艾宾浩斯指数衰减模型
     - 每次强化后记忆强度S倍增，曲线趋平缓
     """
-    
+
     # 默认参数
     DEFAULT_PARAMS = LTP_LTDParams()
-    
+
     def __init__(self, params: Optional[LTP_LTDParams] = None):
         """
         初始化自适应 LTP/LTD
@@ -71,7 +71,7 @@ class AdaptiveLTP_LTD:
         """
         self.params = params or self.DEFAULT_PARAMS
         self.adjustment_log = []
-    
+
     def calculate_ltp_strength(
         self,
         synapse: SynapseState,
@@ -96,34 +96,34 @@ class AdaptiveLTP_LTD:
             LTP 强度
         """
         base_strength = self.params.base_ltp_strength
-        
+
         # 1. 权重因子：接近上限时，减弱增强效果
         # 使用 sigmoid 函数平滑过渡
         weight_ratio = synapse.weight / self.params.max_weight
         weight_factor = 1.0 - math.pow(weight_ratio, 2)  # 二次衰减
-        
+
         # 2. 激活频率因子：高频激活时增强效果
         # 但避免过度强化
         freq_factor = min(1.0 + synapse.reinforcement_count * 0.05, 1.5)
-        
+
         # 3. 时间间隔因子：短间隔内重复激活时增强
         now = datetime.now()
         time_since_last = (now - synapse.last_reinforced).total_seconds() / 3600  # 小时
-        
+
         if time_since_last < 1:  # 1小时内
             time_factor = 1.2
         elif time_since_last < 24:  # 1天内
             time_factor = 1.0
         else:
             time_factor = 0.8  # 超过1天，降低增强效果
-        
+
         # 4. 重要性因子：重要记忆增强更多
         importance_factor = 1.0 + synapse.importance * 0.3
-        
+
         # 5. 惊讶度调制器 (v3, Titans 门控)
         # modulator > 0 → 增强（惊讶，新知识），< 0 → 削弱（可预测，已掌握）
         modulator_factor = 1.0 + modulator * 0.5  # [-1, 1] → [0.5, 1.5]
-        
+
         # 综合计算
         ltp_strength = (
             base_strength *
@@ -133,12 +133,12 @@ class AdaptiveLTP_LTD:
             importance_factor *
             modulator_factor
         )
-        
+
         # 确保不超过最大权重
         new_weight = synapse.weight + ltp_strength
         if new_weight > self.params.max_weight:
             ltp_strength = self.params.max_weight - synapse.weight
-        
+
         # 记录日志
         self.adjustment_log.append({
             "type": "ltp",
@@ -149,9 +149,9 @@ class AdaptiveLTP_LTD:
             "modulator_factor": modulator_factor,
             "final_strength": ltp_strength
         })
-        
+
         return max(0, ltp_strength)
-    
+
     def _calc_memory_strength(self, synapse: SynapseState) -> float:
         """
         计算记忆强度 S（艾宾浩斯曲线参数）
@@ -204,23 +204,23 @@ class AdaptiveLTP_LTD:
         if days_unused is None:
             now = datetime.now()
             days_unused = (now - synapse.last_reinforced).total_seconds() / 86400
-        
+
         # 1. 计算当前艾宾浩斯保留率
         retention = self._calc_retention(synapse, days_unused)
-        
+
         # 2. 期望权重 = 理论保留率 × 原始强度
         # 原始强度 ≈ 最后一次加强后的权重（近似用当前权重+已衰减部分估算）
         decayed_portion = synapse.weight * (1 - retention)
-        
+
         # 3. LTD 衰减量 = 当前权重 × (1 - 保留率²) × 基础衰减率
         # 用平方放大低保留率的衰减，模拟"快忘期"
         base_rate = self.params.base_ltd_rate
         ltd_rate = synapse.weight * (1 - retention ** 2) * base_rate * 10
-        
+
         # 4. 确保不低于最小权重
         new_weight = max(synapse.weight - ltd_rate, self.params.min_weight)
         ltd_rate = synapse.weight - new_weight
-        
+
         # 记录日志
         self.adjustment_log.append({
             "type": "ltd_ebbinghaus",
@@ -229,9 +229,9 @@ class AdaptiveLTP_LTD:
             "retention": round(retention, 4),
             "final_rate": round(ltd_rate, 6)
         })
-        
+
         return max(0, ltd_rate)
-    
+
     def apply_ltp(
         self,
         synapse: SynapseState,
@@ -248,7 +248,7 @@ class AdaptiveLTP_LTD:
             更新后的突触状态
         """
         ltp_strength = self.calculate_ltp_strength(synapse, context)
-        
+
         return SynapseState(
             weight=min(synapse.weight + ltp_strength, self.params.max_weight),
             reinforcement_count=synapse.reinforcement_count + 1,
@@ -256,7 +256,7 @@ class AdaptiveLTP_LTD:
             importance=synapse.importance,
             created_at=synapse.created_at
         )
-    
+
     def apply_ltd(
         self,
         synapse: SynapseState,
@@ -273,7 +273,7 @@ class AdaptiveLTP_LTD:
             更新后的突触状态
         """
         ltd_rate = self.calculate_ltd_rate(synapse, days_unused)
-        
+
         return SynapseState(
             weight=max(synapse.weight - ltd_rate, self.params.min_weight),
             reinforcement_count=synapse.reinforcement_count,
@@ -281,19 +281,19 @@ class AdaptiveLTP_LTD:
             importance=synapse.importance,
             created_at=synapse.created_at
         )
-    
+
     def get_adjustment_stats(self) -> Dict[str, Any]:
         """获取调整统计"""
         if not self.adjustment_log:
             return {"total_adjustments": 0}
-        
+
         ltp_logs = [log for log in self.adjustment_log if log["type"] == "ltp"]
-        
+
         if not ltp_logs:
             return {"total_adjustments": len(self.adjustment_log)}
-        
+
         strengths = [log["final_strength"] for log in ltp_logs]
-        
+
         return {
             "total_adjustments": len(self.adjustment_log),
             "ltp_count": len(ltp_logs),
@@ -319,7 +319,7 @@ def apply_adaptive_ltd(synapse: SynapseState, days_unused: int = None) -> Synaps
 if __name__ == "__main__":
     # 测试
     adapter = AdaptiveLTP_LTD()
-    
+
     # 创建测试突触
     test_synapses = [
         SynapseState(
@@ -344,30 +344,30 @@ if __name__ == "__main__":
             created_at=datetime.now() - timedelta(days=15)
         ),
     ]
-    
+
     print("=" * 70)
     print("自适应 LTP/LTD 测试")
     print("=" * 70)
-    
+
     for i, synapse in enumerate(test_synapses):
         print(f"\n【突触 {i+1}】")
         print(f"  初始权重: {synapse.weight:.2f}")
         print(f"  激活次数: {synapse.reinforcement_count}")
         print(f"  重要性: {synapse.importance:.2f}")
-        
+
         # 计算 LTP
         ltp_strength = adapter.calculate_ltp_strength(synapse)
         print(f"  LTP 强度: {ltp_strength:.4f}")
-        
+
         # 计算 LTD
         days_unused = (datetime.now() - synapse.last_reinforced).days
         ltd_rate = adapter.calculate_ltd_rate(synapse, days_unused)
         print(f"  LTD 衰减率: {ltd_rate:.4f} (未使用 {days_unused} 天)")
-        
+
         # 应用 LTP 后的权重
         new_synapse = adapter.apply_ltp(synapse)
         print(f"  LTP 后权重: {new_synapse.weight:.2f}")
-    
+
     print("\n" + "=" * 70)
     print("调整统计")
     print("=" * 70)

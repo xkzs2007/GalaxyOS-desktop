@@ -11,12 +11,12 @@ from contextlib import asynccontextmanager
 
 class AsyncConnectionPool:
     """异步连接池"""
-    
+
     def __init__(self, db_path: str, max_connections: int = 10):
         self.db_path = db_path
         self.max_connections = max_connections
         self._semaphore = asyncio.Semaphore(max_connections)
-    
+
     @asynccontextmanager
     async def get_connection(self):
         """获取异步连接"""
@@ -52,14 +52,14 @@ async def async_batch_insert(db_path: str, table: str, records: List[dict]) -> i
     """异步批量插入"""
     if not records:
         return 0
-    
+
     async with AsyncConnectionPool(db_path).get_connection() as conn:
         columns = list(records[0].keys())
         placeholders = ','.join(['?' for _ in columns])
         sql = f"INSERT INTO {table} ({','.join(columns)}) VALUES ({placeholders})"
-        
+
         values = [tuple(r[col] for col in columns) for r in records]
         await conn.executemany(sql, values)
         await conn.commit()
-        
+
         return len(records)

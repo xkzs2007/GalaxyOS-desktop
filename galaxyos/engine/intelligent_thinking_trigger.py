@@ -37,7 +37,7 @@ class ThinkingSkill(Enum):
     CAVEMAN = "caveman"                                # 超压缩通信
     HANDOFF = "handoff"                                # 会话交接
     WRITE_SKILL = "write-a-skill"                      # 编写新 Skill
-    
+
     # 方法论技能 (qiushi)
     INVESTIGATION_FIRST = "investigation-first"         # 调查研究（没调查没有发言权）
     CONTRADICTION_ANALYSIS = "contradiction-analysis"   # 矛盾分析（抓主要矛盾）
@@ -50,7 +50,7 @@ class ThinkingSkill(Enum):
     ARMING_THOUGHT = "arming-thought"                   # 武装思想（理论武装）
     PROTRACTED_STRATEGY = "protracted-strategy"         # 持久战（长期主义）
     WORKFLOWS = "workflows"                             # 工作流
-  
+
     NONE = "none"                                      # 不需要
 
 @dataclass
@@ -78,14 +78,14 @@ class IntelligentThinkingTrigger:
     - 估计用户困惑程度
     - 综合决策需要的思考技能
     """
-    
+
     # 复杂度指标
     COMPLEXITY_INDICATORS = {
         "high": ["根本", "本质", "原理", "架构", "设计", "fundamental", "essence", "principle"],
         "medium": ["如何", "为什么", "怎么", "how", "why", "差异", "对比", "比较", "不同", "区别"],
         "low": ["是什么", "什么是", "what is"]
     }
-    
+
     # 问题类型特征（Matt Pocock 类型优先匹配，避免被通用类型抢断）
     QUESTION_TYPE_PATTERNS = {
         # 精确的 Matt Pocock 类型优先
@@ -121,13 +121,13 @@ class IntelligentThinkingTrigger:
         "compare": [r'比较', r'对比', r'类比', r'相比', r'compare', r'different.*from', r'similar'],
         "reverse": [r'逆向', r'反向', r'反过来', r'逆推', r'reverse', r'backward', r'倒着'],
     }
-    
+
     # 困惑指标
     CONFUSION_INDICATORS = [
         "不懂", "不理解", "困惑", "迷茫", "不清楚",
         "confused", "don't understand", "unclear"
     ]
-    
+
     # 技能映射（含 9 个思考技能 + 10 个 Matt Pocock + 11 个方法论）
     SKILL_MAPPING = {
         # ═══════════════════ 思考技能映射 ═══════════════════
@@ -150,7 +150,7 @@ class IntelligentThinkingTrigger:
         ("low", "procedure"): ThinkingSkill.BACKWARD_THINKING,
         ("medium", "compare"): ThinkingSkill.ANALOGICAL_THINKING,
         ("low", "compare"): ThinkingSkill.ANALOGICAL_THINKING,
-        
+
         # ═════════════ 方法论映射（qiushi + 思维技能补充）═════════
         ("high", "investigation"): ThinkingSkill.INVESTIGATION_FIRST,
         ("high", "conflict"): ThinkingSkill.CONTRADICTION_ANALYSIS,
@@ -183,7 +183,7 @@ class IntelligentThinkingTrigger:
         ("low", "planning"): ThinkingSkill.OVERALL_PLANNING,
         ("low", "collect"): ThinkingSkill.MASS_LINE,
         ("low", "automation"): ThinkingSkill.WORKFLOWS,
-        
+
         # ═══════════════ Matt Pocock 工程技能映射 ═══════════════
         ("high", "debug"): ThinkingSkill.DIAGNOSE,
         ("high", "architecture"): ThinkingSkill.IMPROVE_ARCH,
@@ -200,7 +200,7 @@ class IntelligentThinkingTrigger:
         ("low", "review"): ThinkingSkill.GRILL_WITH_DOCS,
         ("low", "code"): ThinkingSkill.DIAGNOSE,
         ("low", "prototype"): ThinkingSkill.PROTOTYPE,
-        
+
         # ═══════════════ 效率技能映射 ═══════════════
         ("medium", "compress"): ThinkingSkill.CAVEMAN,
         ("low", "compress"): ThinkingSkill.CAVEMAN,
@@ -216,7 +216,7 @@ class IntelligentThinkingTrigger:
         ("medium", "compare"): ThinkingSkill.ANALOGICAL_THINKING,
         ("low", "compare"): ThinkingSkill.ANALOGICAL_THINKING,
     }
-    
+
     # 所有技能 → SKILL.md 路径映射（Matt Pocock + 思考技能 + 方法论 + 效率类）
     MATT_POCOCK_SKILL_PATHS = {
         ThinkingSkill.DIAGNOSE: "diagnose/SKILL.md",
@@ -230,7 +230,7 @@ class IntelligentThinkingTrigger:
         ThinkingSkill.HANDOFF: "handoff/SKILL.md",
         ThinkingSkill.WRITE_SKILL: "write-a-skill/SKILL.md",
     }
-    
+
     # 思考技能 → SKILL.md 路径映射
     THINKING_SKILL_PATHS = {
         ThinkingSkill.FIRST_PRINCIPLES: "first-principles/SKILL.md",
@@ -242,7 +242,7 @@ class IntelligentThinkingTrigger:
         ThinkingSkill.DECISION_ENGINE: "decision-engine/SKILL.md",
         ThinkingSkill.PRODUCT_THINKING: "product-thinking/SKILL.md",
     }
-    
+
     # 方法论 (qiushi) → SKILL.md 路径映射
     METHODOLOGY_SKILL_PATHS = {
         ThinkingSkill.INVESTIGATION_FIRST: "investigation-first/SKILL.md",
@@ -257,13 +257,13 @@ class IntelligentThinkingTrigger:
         ThinkingSkill.PROTRACTED_STRATEGY: "protracted-strategy/SKILL.md",
         ThinkingSkill.WORKFLOWS: "workflows/SKILL.md",
     }
-    
+
     # 合并全部路径
     ALL_SKILL_PATHS = {}
     ALL_SKILL_PATHS.update(MATT_POCOCK_SKILL_PATHS)
     ALL_SKILL_PATHS.update(THINKING_SKILL_PATHS)
     ALL_SKILL_PATHS.update(METHODOLOGY_SKILL_PATHS)
-    
+
     def __init__(self, user_context: Optional[Dict] = None):
         """
         初始化智能触发器
@@ -273,7 +273,7 @@ class IntelligentThinkingTrigger:
         """
         self.user_context = user_context or {}
         self.analysis_log = []
-    
+
     def analyze_complexity(self, query: str) -> float:
         """
         分析查询复杂度（增强版 v2）
@@ -289,12 +289,12 @@ class IntelligentThinkingTrigger:
             复杂度 0-1
         """
         query_lower = query.lower()
-        
+
         # 原指标：各层级关键词命中
         high_hits = sum(1 for ind in self.COMPLEXITY_INDICATORS["high"] if ind in query_lower)
         medium_hits = sum(1 for ind in self.COMPLEXITY_INDICATORS["medium"] if ind in query_lower)
         low_hits = sum(1 for ind in self.COMPLEXITY_INDICATORS["low"] if ind in query_lower)
-        
+
         # 长度因素：中文无空格时用字符数（按20字符=1英文词折算）
         words = query.split()
         effective_word_count = len(words) if len(words) > 1 else max(1, len(query) // 4)
@@ -337,9 +337,9 @@ class IntelligentThinkingTrigger:
             type_complexity_boost * 0.25 +
             multi_factor * 0.15
         )
-        
+
         return min(complexity, 1.0)
-    
+
     def identify_question_type(self, query: str) -> str:
         """
         识别问题类型
@@ -351,14 +351,14 @@ class IntelligentThinkingTrigger:
             问题类型
         """
         query_lower = query.lower()
-        
+
         for qtype, patterns in self.QUESTION_TYPE_PATTERNS.items():
             for pattern in patterns:
                 if re.search(pattern, query_lower):
                     return qtype
-        
+
         return "general"
-    
+
     def estimate_confusion(self, query: str, context: Optional[Dict] = None) -> float:
         """
         估计用户困惑程度（增强版 v2）
@@ -376,23 +376,23 @@ class IntelligentThinkingTrigger:
             困惑程度 0-1
         """
         query_lower = query.lower()
-        
+
         # 1. 直接困惑表达
         direct_confusion = sum(1 for ind in self.CONFUSION_INDICATORS if ind in query_lower)
         direct_factor = min(direct_confusion / 2, 1.0)
-        
+
         # 2. 问号密度
         question_density = (query.count('?') + query.count('？')) / max(len(query.split()), 1)
         question_factor = min(question_density * 5, 1.0)
-        
+
         # 3. 用户历史纠正率
         history_factor = self.user_context.get("correction_rate", 0)
-        
+
         # 4. 上下文困惑
         context_factor = 0
         if context and "previous_confusion" in context:
             context_factor = context["previous_confusion"] * 0.3
-        
+
         # 5. 新增：问题类型困惑基线（分析/决策类天然有困惑度）
         query_type = self.identify_question_type(query)
         type_confusion_baseline = {
@@ -402,13 +402,13 @@ class IntelligentThinkingTrigger:
             "prototype": 0.10, "procedure": 0.05,
             "explanation": 0.05, "general": 0.0,
         }.get(query_type, 0.0)
-        
+
         # 6. 新增：长度困惑基线（>15字长 query 有基础困惑）
         # 中文无空格时用字符数折算
         _words = query.split()
         _eff_word_count = len(_words) if len(_words) > 1 else max(1, len(query) // 4)
         length_confusion = min(max(0, _eff_word_count - 15) / 30 * 0.15, 0.15)
-        
+
         # 综合计算（权重重新分配）
         confusion = (
             direct_factor * 0.25 +
@@ -418,9 +418,9 @@ class IntelligentThinkingTrigger:
             type_confusion_baseline * 0.2 +
             length_confusion * 0.1
         )
-        
+
         return min(confusion, 1.0)
-    
+
     def detect_thinking_need(
         self,
         query: str,
@@ -440,7 +440,7 @@ class IntelligentThinkingTrigger:
         complexity = self.analyze_complexity(query)
         question_type = self.identify_question_type(query)
         confusion = self.estimate_confusion(query, context)
-        
+
         # 确定复杂度级别
         if complexity > 0.7:
             complexity_level = "high"
@@ -448,11 +448,11 @@ class IntelligentThinkingTrigger:
             complexity_level = "medium"
         else:
             complexity_level = "low"
-        
+
         # 选择思考技能
         skill_key = (complexity_level, question_type)
         suggested_skill = self.SKILL_MAPPING.get(skill_key, ThinkingSkill.NONE)
-        
+
         # 特殊情况处理
         if confusion > 0.5:
             # 用户困惑，使用费曼技巧
@@ -461,25 +461,25 @@ class IntelligentThinkingTrigger:
         elif question_type == "decision" and complexity > 0.5:
             # 复杂决策，使用决策引擎
             suggested_skill = ThinkingSkill.DECISION_ENGINE
-            reasoning = f"复杂决策问题，使用决策引擎进行结构化分析"
+            reasoning = "复杂决策问题，使用决策引擎进行结构化分析"
         elif question_type == "evaluation" and suggested_skill == ThinkingSkill.NONE:
             # 评估问题，使用批判性思维
             suggested_skill = ThinkingSkill.CRITICAL_THINKING
             reasoning = "评估类问题，使用批判性思维分析证据和谬误"
         elif question_type == "debug" and suggested_skill == ThinkingSkill.NONE:
             suggested_skill = ThinkingSkill.DIAGNOSE
-            reasoning = f"调试诊断类问题，走 diagnose 工程诊断流程"
+            reasoning = "调试诊断类问题，走 diagnose 工程诊断流程"
         elif question_type == "architecture" and suggested_skill == ThinkingSkill.NONE:
             suggested_skill = ThinkingSkill.ZOOM_OUT
-            reasoning = f"架构类问题，先 zoom-out 全局视角再分析"
+            reasoning = "架构类问题，先 zoom-out 全局视角再分析"
         elif suggested_skill == ThinkingSkill.NONE:
             reasoning = "常规查询，不需要特殊思考技能"
         else:
             reasoning = f"复杂度 {complexity_level}，问题类型 {question_type}，建议使用 {suggested_skill.value}"
-        
+
         # 计算置信度
         confidence = 0.5 + complexity * 0.3 + (1 - confusion) * 0.2
-        
+
         # 记录日志
         analysis = QueryAnalysis(
             complexity=complexity,
@@ -489,7 +489,7 @@ class IntelligentThinkingTrigger:
             confidence=confidence,
             reasoning=reasoning
         )
-        
+
         self.analysis_log.append({
             "query": query[:50],
             "complexity": complexity,
@@ -498,24 +498,24 @@ class IntelligentThinkingTrigger:
             "skill": suggested_skill.value,
             "confidence": confidence
         })
-        
+
         return analysis
-    
+
     def get_analysis_stats(self) -> Dict[str, Any]:
         """获取分析统计"""
         if not self.analysis_log:
             return {"total_analyses": 0}
-        
+
         skills = {}
         complexities = []
         confusions = []
-        
+
         for log in self.analysis_log:
             skill = log["skill"]
             skills[skill] = skills.get(skill, 0) + 1
             complexities.append(log["complexity"])
             confusions.append(log["confusion"])
-        
+
         return {
             "total_analyses": len(self.analysis_log),
             "skill_distribution": skills,
@@ -544,7 +544,7 @@ def detect_thinking_skill(query: str, context: Dict = None) -> ThinkingSkill:
 if __name__ == "__main__":
     # 测试
     trigger = IntelligentThinkingTrigger()
-    
+
     test_queries = [
         ("什么是机器学习？", "简单定义查询"),
         ("如何从根本上解决系统性能问题？", "复杂问题解决"),
@@ -555,14 +555,14 @@ if __name__ == "__main__":
         ("为什么我的代码不工作？", "调试问题"),
         ("比较一下 Python 和 Java 的区别", "比较问题"),
     ]
-    
+
     print("=" * 70)
     print("智能思考技能触发测试")
     print("=" * 70)
-    
+
     for query, desc in test_queries:
         analysis = trigger.detect_thinking_need(query)
-        
+
         print(f"\n【{desc}】")
         print(f"  查询: {query}")
         print(f"  复杂度: {analysis.complexity:.2f}")
@@ -571,7 +571,7 @@ if __name__ == "__main__":
         print(f"  建议技能: {analysis.suggested_skill.value}")
         print(f"  置信度: {analysis.confidence:.2f}")
         print(f"  推理: {analysis.reasoning}")
-    
+
     print("\n" + "=" * 70)
     print("分析统计")
     print("=" * 70)

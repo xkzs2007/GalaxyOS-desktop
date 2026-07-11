@@ -71,7 +71,7 @@ class SkillInstaller:
 
         skills_dir = local_repo / "skills"
         if not skills_dir.exists():
-            report.details.append({"status": "failed", "message": f"skills/ directory not found"})
+            report.details.append({"status": "failed", "message": "skills/ directory not found"})
             return report
 
         scope_dir = self.USER_SCOPE_DIR if scope == "user" else Path(self.PROJECT_SCOPE_DIR)

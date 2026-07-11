@@ -68,7 +68,7 @@ class RetrievalEvaluator:
     4. 权威性：内容来源的可信度
     5. 连贯性：多个检索结果之间的一致性
     """
-    
+
     # 评分权重
     SCORE_WEIGHTS = {
         'relevance': 0.35,
@@ -77,14 +77,14 @@ class RetrievalEvaluator:
         'authority': 0.15,
         'coherence': 0.10
     }
-    
+
     # 决策阈值
     THRESHOLDS = {
         'use': 0.75,        # 高于此分数直接使用
         'discard': 0.35,    # 低于此分数丢弃
         'augment': 0.55,    # 低于此分数需要补充
     }
-    
+
     def __init__(self, config: Optional[Dict] = None):
         """
         初始化检索评估器
@@ -93,18 +93,18 @@ class RetrievalEvaluator:
             config: 配置字典
         """
         self.config = config or {}
-        
+
         # 自定义阈值
         self.thresholds = self.config.get('thresholds', self.THRESHOLDS)
-        
+
         # 权威来源列表
         self.authoritative_sources = self.config.get(
             'authoritative_sources',
             ['wikipedia.org', 'edu', 'gov', 'official', '官网']
         )
-        
+
         logger.info("Retrieval Evaluator initialized")
-    
+
     def evaluate(
         self,
         query: str,
@@ -124,14 +124,14 @@ class RetrievalEvaluator:
         """
         if not retrieved_docs:
             return self._empty_result("No documents to evaluate")
-        
+
         # 1. 计算各项得分
         relevance_scores = self._calculate_relevance_scores(query, retrieved_docs)
         coverage_score = self._calculate_coverage_score(query, retrieved_docs)
         freshness_score = self._calculate_freshness_scores(query, metadata, len(retrieved_docs))
         authority_scores = self._calculate_authority_scores(metadata, len(retrieved_docs))
         coherence_score = self._calculate_coherence_score(retrieved_docs)
-        
+
         # 2. 计算综合得分
         overall_scores = []
         for i in range(len(retrieved_docs)):
@@ -143,15 +143,15 @@ class RetrievalEvaluator:
                 self.SCORE_WEIGHTS['coherence'] * coherence_score
             )
             overall_scores.append(score)
-        
+
         # 3. 选择和丢弃文档
         selected_indices, discard_indices = self._select_documents(
             overall_scores, relevance_scores
         )
-        
+
         # 4. 计算平均得分
         avg_score = sum(overall_scores) / len(overall_scores)
-        
+
         retrieval_score = RetrievalScore(
             overall_score=round(avg_score, 3),
             relevance_score=round(sum(relevance_scores) / len(relevance_scores), 3),
@@ -160,23 +160,23 @@ class RetrievalEvaluator:
             authority_score=round(sum(authority_scores) / len(authority_scores), 3),
             coherence_score=round(coherence_score, 3)
         )
-        
+
         # 5. 决定行动
         action = self._determine_action(avg_score, selected_indices)
-        
+
         # 6. 生成建议
         suggestions = self._generate_suggestions(
             action, retrieval_score, selected_indices, discard_indices
         )
-        
+
         # 7. 生成推理说明
         reasoning = self._generate_reasoning(
             action, retrieval_score, selected_indices, discard_indices
         )
-        
+
         # 8. 计算置信度
         confidence = self._calculate_confidence(relevance_scores, coherence_score)
-        
+
         return EvaluationResult(
             action=action,
             score=retrieval_score,
@@ -186,56 +186,56 @@ class RetrievalEvaluator:
             reasoning=reasoning,
             suggestions=suggestions
         )
-    
+
     def _calculate_relevance_scores(
-        self, 
-        query: str, 
+        self,
+        query: str,
         docs: List[str]
     ) -> List[float]:
         """计算每个文档的相关性得分"""
         scores = []
-        
+
         # 提取查询关键词
         query_keywords = self._extract_keywords(query)
-        
+
         for doc in docs:
             # 关键词匹配
             doc_keywords = self._extract_keywords(doc)
             keyword_overlap = len(set(query_keywords) & set(doc_keywords))
             keyword_score = keyword_overlap / max(len(query_keywords), 1)
-            
+
             # 语义匹配（简化版）
             semantic_score = self._semantic_match_score(query, doc)
-            
+
             # 综合得分
             score = 0.6 * keyword_score + 0.4 * semantic_score
             scores.append(min(score, 1.0))
-        
+
         return scores
-    
+
     def _calculate_coverage_score(
-        self, 
-        query: str, 
+        self,
+        query: str,
         docs: List[str]
     ) -> float:
         """计算覆盖度得分"""
         # 提取查询的核心概念
         concepts = self._extract_core_concepts(query)
-        
+
         if not concepts:
             return 1.0
-        
+
         # 合并所有文档
         combined_text = " ".join(docs).lower()
-        
+
         # 计算覆盖的概念比例
         covered = sum(1 for c in concepts if c.lower() in combined_text)
-        
+
         return covered / len(concepts)
-    
+
     def _calculate_freshness_scores(
-        self, 
-        query: str, 
+        self,
+        query: str,
         metadata: Optional[List[Dict]],
         num_docs: int
     ) -> List[float]:
@@ -243,10 +243,10 @@ class RetrievalEvaluator:
         # 检查查询是否需要最新信息
         time_keywords = ['最新', '最近', '当前', '现在', '今年', '近期', '新闻']
         needs_fresh = any(kw in query for kw in time_keywords)
-        
+
         if not needs_fresh:
             return [1.0] * num_docs
-        
+
         if not metadata or len(metadata) < num_docs:
             # 无元数据或元数据不足，填充默认值
             if metadata:
@@ -262,7 +262,7 @@ class RetrievalEvaluator:
                         scores.append(0.5)
                 return scores
             return [0.5] * num_docs
-        
+
         scores = []
         for meta in metadata[:num_docs]:
             if 'date' in meta or 'timestamp' in meta:
@@ -270,45 +270,45 @@ class RetrievalEvaluator:
                 scores.append(0.8)
             else:
                 scores.append(0.5)
-        
+
         return scores
-    
+
     def _calculate_authority_scores(
-        self, 
+        self,
         metadata: Optional[List[Dict]],
         num_docs: int
     ) -> List[float]:
         """计算权威性得分"""
         if not metadata or len(metadata) < num_docs:
             return [0.5] * num_docs
-        
+
         scores = []
         for meta in metadata[:num_docs]:
             source = meta.get('source', '').lower()
-            
+
             # 检查是否来自权威来源
             is_authoritative = any(
                 auth in source for auth in self.authoritative_sources
             )
-            
+
             if is_authoritative:
                 scores.append(0.9)
             elif source:
                 scores.append(0.6)
             else:
                 scores.append(0.5)
-        
+
         # 确保返回正确数量的分数
         while len(scores) < num_docs:
             scores.append(0.5)
-        
+
         return scores[:num_docs]
-    
+
     def _calculate_coherence_score(self, docs: List[str]) -> float:
         """计算连贯性得分"""
         if len(docs) <= 1:
             return 1.0
-        
+
         # 检查文档之间的一致性
         # 简化版：检查是否有矛盾的关键词
         contradiction_pairs = [
@@ -317,45 +317,45 @@ class RetrievalEvaluator:
             ('正确', '错误'),
             ('真', '假')
         ]
-        
+
         combined = " ".join(docs)
         contradictions = 0
-        
+
         for word1, word2 in contradiction_pairs:
             if word1 in combined and word2 in combined:
                 contradictions += 1
-        
+
         # 矛盾越多，连贯性越低
         score = 1.0 - min(contradictions * 0.2, 0.5)
-        
+
         return score
-    
+
     def _select_documents(
-        self, 
+        self,
         overall_scores: List[float],
         relevance_scores: List[float]
     ) -> Tuple[List[int], List[int]]:
         """选择和丢弃文档"""
         selected = []
         discarded = []
-        
+
         for i, (overall, relevance) in enumerate(zip(overall_scores, relevance_scores)):
             if overall >= self.thresholds['discard'] and relevance >= 0.3:
                 selected.append(i)
             else:
                 discarded.append(i)
-        
+
         # 如果全部被丢弃，保留得分最高的一个
         if not selected and overall_scores:
             best_idx = overall_scores.index(max(overall_scores))
             selected.append(best_idx)
             discarded.remove(best_idx)
-        
+
         return selected, discarded
-    
+
     def _determine_action(
-        self, 
-        avg_score: float, 
+        self,
+        avg_score: float,
         selected_indices: List[int]
     ) -> RetrievalAction:
         """决定行动"""
@@ -369,16 +369,16 @@ class RetrievalEvaluator:
             return RetrievalAction.FALLBACK
         else:
             return RetrievalAction.REFINE
-    
+
     def _extract_keywords(self, text: str) -> List[str]:
         """提取关键词"""
         stopwords = {'的', '是', '在', '了', '和', '与', '或', '有', '我', '你', '他', '她', '它',
                      '这', '那', '什么', '怎么', '如何', '为什么', '哪', '吗', '呢', '吧', '一个', '一些'}
-        
+
         words = re.findall(r'[\u4e00-\u9fa5]+|[a-zA-Z]+', text.lower())
-        
+
         return [w for w in words if w not in stopwords and len(w) > 1]
-    
+
     def _extract_core_concepts(self, query: str) -> List[str]:
         """提取核心概念"""
         # 移除疑问词
@@ -386,20 +386,20 @@ class RetrievalEvaluator:
         cleaned = query
         for word in question_words:
             cleaned = cleaned.replace(word, '')
-        
+
         # 提取名词性短语
         concepts = re.findall(r'[\u4e00-\u9fa5]{2,}|[A-Za-z]{2,}', cleaned)
-        
+
         return [c for c in concepts if len(c) >= 2][:5]
-    
+
     def _semantic_match_score(self, query: str, doc: str) -> float:
         """语义匹配得分（简化版）"""
         query_lower = query.lower()
         doc_lower = doc.lower()
-        
+
         # 检查问题类型匹配
         score = 0.0
-        
+
         # 定义问题类型及其对应的内容指示词
         patterns = {
             '定义': (['什么是', '定义'], ['是指', '定义为', '是一种']),
@@ -407,14 +407,14 @@ class RetrievalEvaluator:
             '方法': (['如何', '怎么', '方法'], ['方法', '步骤', '首先']),
             '比较': (['区别', '差异', '比较'], ['不同', '区别', '相比'])
         }
-        
+
         for qtype, (query_patterns, doc_patterns) in patterns.items():
             if any(p in query_lower for p in query_patterns):
                 if any(p in doc_lower for p in doc_patterns):
                     score += 0.25
-        
+
         return min(score, 1.0)
-    
+
     def _generate_suggestions(
         self,
         action: RetrievalAction,
@@ -424,26 +424,26 @@ class RetrievalEvaluator:
     ) -> List[str]:
         """生成建议"""
         suggestions = []
-        
+
         if action == RetrievalAction.DISCARD:
             suggestions.append("检索结果质量过低，建议重新检索或使用Web搜索")
-        
+
         elif action == RetrievalAction.AUGMENT:
             suggestions.append("检索结果不够充分，建议补充检索")
             if score.coverage_score < 0.5:
                 suggestions.append("覆盖度不足，建议扩展查询关键词")
-        
+
         elif action == RetrievalAction.REFINE:
             suggestions.append("建议精炼检索结果，去除无关内容")
-        
+
         if score.freshness_score < 0.6:
             suggestions.append("内容时效性不足，建议检索最新资料")
-        
+
         if score.authority_score < 0.5:
             suggestions.append("来源权威性较低，建议核实信息")
-        
+
         return suggestions
-    
+
     def _generate_reasoning(
         self,
         action: RetrievalAction,
@@ -460,26 +460,26 @@ class RetrievalEvaluator:
             f"选中文档: {len(selected)}个",
             f"丢弃文档: {len(discarded)}个"
         ]
-        
+
         return "; ".join(parts)
-    
+
     def _calculate_confidence(
-        self, 
-        relevance_scores: List[float], 
+        self,
+        relevance_scores: List[float],
         coherence_score: float
     ) -> float:
         """计算置信度"""
         if not relevance_scores:
             return 0.5
-        
+
         avg_relevance = sum(relevance_scores) / len(relevance_scores)
-        
+
         # 得分方差越小，置信度越高
         variance = sum((s - avg_relevance) ** 2 for s in relevance_scores) / len(relevance_scores)
         consistency = 1.0 - min(variance * 2, 0.4)
-        
+
         return (avg_relevance + coherence_score + consistency) / 3
-    
+
     def _empty_result(self, reason: str) -> EvaluationResult:
         """返回空结果"""
         return EvaluationResult(
@@ -491,10 +491,10 @@ class RetrievalEvaluator:
             reasoning=reason,
             suggestions=["无检索结果，建议使用其他方式获取信息"]
         )
-    
+
     def get_selected_docs(
-        self, 
-        docs: List[str], 
+        self,
+        docs: List[str],
         result: EvaluationResult
     ) -> List[str]:
         """获取选中的文档"""
@@ -503,7 +503,7 @@ class RetrievalEvaluator:
 
 # 便捷函数
 def evaluate_retrieval(
-    query: str, 
+    query: str,
     docs: List[str],
     metadata: Optional[List[Dict]] = None
 ) -> EvaluationResult:
@@ -542,13 +542,13 @@ if __name__ == "__main__":
             ]
         }
     ]
-    
+
     evaluator = RetrievalEvaluator()
-    
+
     print("=" * 60)
     print("Retrieval Evaluator 测试")
     print("=" * 60)
-    
+
     for case in test_cases:
         result = evaluator.evaluate(case["query"], case["docs"])
         print(f"\n查询: {case['query']}")

@@ -35,28 +35,28 @@ class TaskMemoryBridge:
     2. 任务完成时记录到记忆
     3. 记忆检索时关联任务上下文
     """
-    
+
     def __init__(self, links_path: Optional[str] = None):
         if links_path is None:
             workspace = os.environ.get('OPENCLAW_WORKSPACE',
                                        Path(workspace()))
             links_path = str(Path(workspace) / 'memory' / 'task_memory_links.jsonl')
-        
+
         self.links_path = links_path
         self.links: List[TaskMemoryLink] = []
         self._load_links()
-    
+
     def _load_links(self):
         """加载关联"""
         if not Path(self.links_path).exists():
             return
-        
+
         with open(self.links_path, 'r', encoding='utf-8') as f:
             for line in f:
                 line = line.strip()
                 if not line:
                     continue
-                
+
                 try:
                     data = json.loads(line)
                     link = TaskMemoryLink(
@@ -68,13 +68,13 @@ class TaskMemoryBridge:
                     self.links.append(link)
                 except json.JSONDecodeError:
                     continue
-        
+
         logger.info(f"加载任务-记忆关联: {len(self.links)} 条")
-    
+
     def _save_links(self):
         """保存关联"""
         Path(self.links_path).parent.mkdir(parents=True, exist_ok=True)
-        
+
         with open(self.links_path, 'w', encoding='utf-8') as f:
             for link in self.links:
                 f.write(json.dumps({
@@ -83,7 +83,7 @@ class TaskMemoryBridge:
                     'link_type': link.link_type,
                     'created_at': link.created_at
                 }, ensure_ascii=False) + '\n')
-    
+
     def link_task_to_memory(self,
                             task_id: str,
                             memory_id: str,
@@ -104,17 +104,17 @@ class TaskMemoryBridge:
         )
         self.links.append(link)
         self._save_links()
-        
+
         logger.info(f"关联任务到记忆: {task_id} -> {memory_id}")
-    
+
     def get_memories_for_task(self, task_id: str) -> List[str]:
         """获取任务关联的记忆"""
         return [l.memory_id for l in self.links if l.task_id == task_id]
-    
+
     def get_tasks_for_memory(self, memory_id: str) -> List[str]:
         """获取记忆关联的任务"""
         return [l.task_id for l in self.links if l.memory_id == memory_id]
-    
+
     def record_task_completion(self,
                                 task_id: str,
                                 task_title: str,
@@ -138,15 +138,15 @@ class TaskMemoryBridge:
             'task_id': task_id,
             'type': 'task_completion'
         }
-        
+
         memory_id = memory_add_func(content, metadata)
-        
+
         # 创建关联
         self.link_task_to_memory(task_id, memory_id, 'completed_with')
-        
+
         return memory_id
-    
-    def get_task_context(self, 
+
+    def get_task_context(self,
                           task_title: str,
                           memory_search_func) -> List[Dict]:
         """
@@ -161,7 +161,7 @@ class TaskMemoryBridge:
         """
         # 搜索相关记忆
         results = memory_search_func(task_title, top_k=5)
-        
+
         return results
 
 

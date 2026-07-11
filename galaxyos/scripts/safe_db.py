@@ -2,7 +2,8 @@
 from safe_extension_loader import safe_load_extension
 
 # ── Centralized path resolution ──
-import os as _os, sys as _sys
+import os as _os
+import sys as _sys
 from galaxyos.shared.paths import workspace
 _ws_root = workspace()
 for _p in [_ws_root, "/workspace"]:
@@ -38,17 +39,17 @@ def get_vec_extension_path() -> Path:
 
 class SafeDB:
     """安全数据库连接类"""
-    
+
     def __init__(self, db_path: Optional[Path] = None, load_vec: bool = False):
         self.db_path = db_path or VECTORS_DB
         self.load_vec = load_vec
         self._conn = None
-    
+
     def connect(self) -> sqlite3.Connection:
         """获取数据库连接"""
         if self._conn is None:
             self._conn = sqlite3.connect(str(self.db_path))
-            
+
             # 尝试加载向量扩展
             if self.load_vec:
                 try:
@@ -61,15 +62,15 @@ class SafeDB:
                     pass
                 except Exception as e:
                     print(f"⚠️ 向量扩展加载失败: {e}")
-        
+
         return self._conn
-    
+
     def close(self):
         """关闭连接"""
         if self._conn:
             self._conn.close()
             self._conn = None
-    
+
     def execute(self, sql: str, params: tuple = ()) -> List[Tuple]:
         """执行查询（参数化）"""
         conn = self.connect()
@@ -79,7 +80,7 @@ class SafeDB:
             return cursor.fetchall()
         finally:
             pass  # 保持连接
-    
+
     def execute_many(self, sql: str, params_list: List[tuple]) -> int:
         """批量执行"""
         conn = self.connect()
@@ -90,7 +91,7 @@ class SafeDB:
             return cursor.rowcount
         finally:
             pass
-    
+
     def execute_script(self, script: str):
         """执行脚本"""
         conn = self.connect()
@@ -100,10 +101,10 @@ class SafeDB:
             conn.commit()
         finally:
             pass
-    
+
     def __enter__(self):
         return self
-    
+
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.close()
 
@@ -135,7 +136,7 @@ if __name__ == "__main__":
     print("安全数据库模块测试")
     print(f"数据库路径: {VECTORS_DB}")
     print(f"向量扩展: {get_vec_extension_path()}")
-    
+
     # 测试连接
     with SafeDB() as db:
         try:

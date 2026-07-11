@@ -11,7 +11,8 @@ import urllib.error
 from typing import Optional, Dict, Any, List
 
 # 配置文件路径
-import os as _os, sys as _sys
+import os as _os
+import sys as _sys
 from galaxyos.shared.paths import workspace
 _ws_root = workspace()
 for _p in [_ws_root, "/workspace"]:
@@ -32,7 +33,7 @@ def load_config() -> Dict[str, Any]:
 
 class LLMClient:
     """LLM 客户端 - 支持多种提供商"""
-    
+
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         """
         初始化 LLM 客户端
@@ -42,9 +43,9 @@ class LLMClient:
         """
         if config is None:
             config = load_config()
-        
+
         llm_config = config.get("llm", {})
-        
+
         # 从配置读取，如果没有则使用环境变量
         self.base_url = llm_config.get("base_url") or os.environ.get("LLM_BASE_URL", "")
         self.api_key = llm_config.get("api_key") or os.environ.get("LLM_API_KEY", "")
@@ -52,10 +53,10 @@ class LLMClient:
         self.max_tokens = llm_config.get("max_tokens", 150)
         self.temperature = llm_config.get("temperature", 0.5)
         self.provider = llm_config.get("provider", "openai-compatible")
-        
+
         if not self.api_key:
             print("警告: 未配置 LLM API 密钥，请设置配置文件或环境变量 LLM_API_KEY")
-    
+
     def chat(self, messages: List[Dict[str, str]], max_tokens: Optional[int] = None, temperature: Optional[float] = None) -> Optional[str]:
         """
         调用 LLM 进行对话
@@ -70,24 +71,24 @@ class LLMClient:
         """
         if not self.api_key:
             return None
-        
+
         max_tokens = max_tokens or self.max_tokens
         temperature = temperature or self.temperature
-        
+
         url = f"{self.base_url.rstrip('/')}/chat/completions"
-        
+
         data = {
             "model": self.model,
             "messages": messages,
             "max_tokens": max_tokens,
             "temperature": temperature
         }
-        
+
         headers = {
             "Content-Type": "application/json",
             "Authorization": f"Bearer {self.api_key}"
         }
-        
+
         try:
             req = urllib.request.Request(
                 url,
@@ -95,13 +96,13 @@ class LLMClient:
                 headers=headers,
                 method='POST'
             )
-            
+
             with urllib.request.urlopen(req, timeout=120) as resp:
                 result = json.loads(resp.read().decode('utf-8'))
                 if 'choices' in result and len(result['choices']) > 0:
                     return result['choices'][0].get('message', {}).get('content', '')
                 return None
-                    
+
         except urllib.error.HTTPError as e:
             print(f"HTTP 错误: {e.code} {e.reason}")
             return None
@@ -111,7 +112,7 @@ class LLMClient:
         except Exception as e:
             print(f"请求失败: {e}")
             return None
-    
+
     def analyze_conversation(self, conversation: str, task: str = "extract_preferences") -> Dict[str, Any]:
         """
         分析对话内容
@@ -170,11 +171,11 @@ class LLMClient:
 
 只返回 JSON，不要其他内容。"""
         }
-        
+
         prompt = prompts.get(task, prompts["summarize"]).format(conversation=conversation)
         messages = [{"role": "user", "content": prompt}]
         response = self.chat(messages, max_tokens=1000, temperature=0.3)
-        
+
         if response:
             try:
                 response = response.strip()
@@ -199,13 +200,13 @@ GLM5Client = LLMClient
 def main():
     """测试函数"""
     client = LLMClient()
-    
+
     if not client.api_key:
         print("请先配置 LLM API 密钥:")
         print(f"1. 复制配置示例: cp {path_resolver.LLM_CONFIG_EXAMPLE} {CONFIG_PATH}")
         print("2. 编辑配置文件，填入您的 API 密钥")
         return
-    
+
     print("=== 测试基本对话 ===")
     response = client.chat([{"role": "user", "content": "你好，请用一句话介绍自己"}])
     print(f"回复: {response}")

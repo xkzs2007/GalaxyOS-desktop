@@ -20,7 +20,8 @@ from datetime import datetime
 # 添加 core 目录
 
 # ── Centralized path resolution ──
-import os as _os, sys as _sys
+import os as _os
+import sys as _sys
 from galaxyos.shared.paths import workspace
 _ws_root = workspace()
 for _p in [_ws_root, "/workspace"]:
@@ -46,34 +47,34 @@ CONFIG_PATH = path_resolver.OPENCLAW_CONFIG
 
 class VectorRecovery:
     """向量化恢复管理器"""
-    
+
     def __init__(self):
         self.config = self._load_config()
         self.embedding_config = self._get_embedding_config()
-        
+
     def _load_config(self):
         """加载配置"""
         if CONFIG_PATH.exists():
             return json.loads(CONFIG_PATH.read_text())
         return {}
-    
+
     def _get_embedding_config(self):
         """获取 Embedding 配置"""
         plugin = self.config.get("plugins", {}).get("entries", {}).get("memory-tencentdb", {})
         return plugin.get("config", {}).get("embedding", {})
-    
+
     def check_extensions(self):
         """检查扩展状态"""
         print("\n" + "=" * 50)
         print("   1. 扩展状态检查")
         print("=" * 50)
-        
+
         # sqlite-vec
         if USE_VEC:
             print(f"✅ sqlite-vec 可用: {get_vec_version()}")
         else:
             print("❌ sqlite-vec 不可用")
-        
+
         # Qdrant
         if QDRANT_STORAGE.exists():
             files = list(QDRANT_STORAGE.glob("**/*"))
@@ -81,21 +82,21 @@ class VectorRecovery:
         else:
             QDRANT_STORAGE.mkdir(parents=True, exist_ok=True)
             print("✅ Qdrant 存储目录已创建")
-        
+
         # TF-IDF
         tfidf_db = TFIDF_STORAGE / "tfidf.db"
         if tfidf_db.exists():
-            print(f"✅ TF-IDF 数据库存在")
+            print("✅ TF-IDF 数据库存在")
         else:
             TFIDF_STORAGE.mkdir(parents=True, exist_ok=True)
             print("✅ TF-IDF 存储目录已创建")
-    
+
     def get_embedding(self, text):
         """调用 Gitee Embedding API"""
         if not self.embedding_config.get("apiKey"):
             print("❌ Embedding API Key 未配置")
             return None
-        
+
         try:
             response = requests.post(
                 f"{self.embedding_config.get('baseUrl', 'https://ai.gitee.com/v1')}/embeddings",
@@ -109,7 +110,7 @@ class VectorRecovery:
                 },
                 timeout=30
             )
-            
+
             if response.status_code == 200:
                 return response.json()["data"][0]["embedding"]
             else:
@@ -118,20 +119,20 @@ class VectorRecovery:
         except Exception as e:
             print(f"❌ Embedding 请求失败: {e}")
             return None
-    
+
     def vectorize_unprocessed(self):
         """向量化未处理的数据"""
         print("\n" + "=" * 50)
         print("   2. 向量化未处理数据")
         print("=" * 50)
-        
+
         if not USE_VEC:
             print("❌ 需要 sqlite-vec 扩展")
             return
-        
+
         conn = connect(str(VECTORS_DB))
         cursor = conn.cursor()
-        
+
         # 获取未向量化的 L0 对话
         cursor.execute("""
             SELECT record_id, message_text 
@@ -140,18 +141,18 @@ class VectorRecovery:
             ORDER BY timestamp DESC
         """)
         unprocessed = cursor.fetchall()
-        
+
         print(f"未向量化对话: {len(unprocessed)} 条")
-        
+
         if len(unprocessed) == 0:
             print("✅ 所有对话已向量化")
             conn.close()
             return
-        
+
         success = 0
         for i, (record_id, text) in enumerate(unprocessed):
             print(f"\r  处理中: {i+1}/{len(unprocessed)}", end="")
-            
+
             embedding = self.get_embedding(text)
             if embedding:
                 try:
@@ -164,19 +165,19 @@ class VectorRecovery:
                     success += 1
                 except Exception as e:
                     print(f"\n  ❌ 存储失败: {e}")
-        
+
         print(f"\n✅ 向量化完成: {success}/{len(unprocessed)} 条")
         conn.close()
-    
+
     def sync_to_tfidf(self):
         """同步到 TF-IDF 引擎"""
         print("\n" + "=" * 50)
         print("   3. 同步到 TF-IDF 引擎")
         print("=" * 50)
-        
+
         import re
         from collections import Counter
-        
+
         def tokenize(text):
             text = re.sub(r'[^\w\s\u4e00-\u9fff]', ' ', text.lower())
             tokens = []
@@ -186,60 +187,60 @@ class VectorRecovery:
                 else:
                     tokens.append(word)
             return tokens
-        
+
         # 连接数据库
         vec_conn = connect(str(VECTORS_DB))
         tfidf_conn = sqlite3.connect(str(TFIDF_STORAGE / "tfidf.db"))
-        
+
         vec_cursor = vec_conn.cursor()
         tfidf_cursor = tfidf_conn.cursor()
-        
+
         # 获取 L1 记忆
         vec_cursor.execute("SELECT record_id, content FROM l1_records")
         records = vec_cursor.fetchall()
-        
+
         print(f"同步 L1 记忆: {len(records)} 条")
-        
+
         for record_id, content in records:
             tokens = tokenize(content)
             token_json = json.dumps(tokens, ensure_ascii=False)
-            
+
             tfidf_cursor.execute('''
                 INSERT OR REPLACE INTO documents (id, content, tokens, updated_at)
                 VALUES (?, ?, ?, datetime('now'))
             ''', (record_id, content, token_json))
-            
+
             term_freq = Counter(tokens)
             for term, freq in term_freq.items():
                 tfidf_cursor.execute('''
                     INSERT OR REPLACE INTO term_freq (doc_id, term, freq)
                     VALUES (?, ?, ?)
                 ''', (record_id, term, freq))
-                
+
                 tfidf_cursor.execute('''
                     INSERT INTO vocabulary (term, doc_freq) VALUES (?, 1)
                     ON CONFLICT(term) DO UPDATE SET doc_freq = doc_freq + 1
                 ''', (term,))
-        
+
         tfidf_conn.commit()
-        
+
         # 统计
         tfidf_cursor.execute("SELECT COUNT(*) FROM documents")
         doc_count = tfidf_cursor.fetchone()[0]
         tfidf_cursor.execute("SELECT COUNT(*) FROM vocabulary")
         vocab_count = tfidf_cursor.fetchone()[0]
-        
+
         print(f"✅ TF-IDF 同步完成: {doc_count} 文档, {vocab_count} 词汇")
-        
+
         vec_conn.close()
         tfidf_conn.close()
-    
+
     def configure_qdrant_sync(self):
         """配置 Qdrant 云端同步"""
         print("\n" + "=" * 50)
         print("   4. 配置 Qdrant 云端同步")
         print("=" * 50)
-        
+
         # 创建 Qdrant 配置
         qdrant_config = {
             "version": "1.0.0",
@@ -262,11 +263,11 @@ class VectorRecovery:
                 "model": self.embedding_config.get("model", "Qwen3-Embedding-8B")
             }
         }
-        
+
         config_path = QDRANT_STORAGE / "qdrant_config.json"
         config_path.write_text(json.dumps(qdrant_config, indent=2, ensure_ascii=False))
         print(f"✅ Qdrant 配置已保存: {config_path}")
-        
+
         # 创建同步脚本
         sync_script = QDRANT_STORAGE / "sync_to_cloud.py"
         sync_script.write_text(f'''#!/usr/bin/env python3
@@ -299,62 +300,62 @@ if __name__ == "__main__":
     sync_vectors()
 ''')
         print(f"✅ 同步脚本已创建: {sync_script}")
-    
+
     def show_status(self):
         """显示最终状态"""
         print("\n" + "=" * 50)
         print("   5. 最终状态")
         print("=" * 50)
-        
+
         conn = connect(str(VECTORS_DB))
         cursor = conn.cursor()
-        
+
         cursor.execute("SELECT COUNT(*) FROM l0_conversations")
         l0_total = cursor.fetchone()[0]
-        
+
         cursor.execute("SELECT COUNT(*) FROM l0_vec_rowids")
         l0_vec = cursor.fetchone()[0]
-        
+
         cursor.execute("SELECT COUNT(*) FROM l1_records")
         l1_total = cursor.fetchone()[0]
-        
+
         cursor.execute("SELECT COUNT(*) FROM l1_vec_rowids")
         l1_vec = cursor.fetchone()[0]
-        
+
         conn.close()
-        
-        print(f"\nL0 对话层:")
+
+        print("\nL0 对话层:")
         print(f"  总数: {l0_total}")
         print(f"  向量: {l0_vec}")
         print(f"  覆盖率: {l0_vec*100//max(l0_total,1)}%")
-        
-        print(f"\nL1 记忆层:")
+
+        print("\nL1 记忆层:")
         print(f"  总数: {l1_total}")
         print(f"  向量: {l1_vec}")
         print(f"  覆盖率: {l1_vec*100//max(l1_total,1)}%")
-        
-        print(f"\n三引擎状态:")
-        print(f"  ✅ sqlite-vec (主引擎)")
-        print(f"  ✅ Qdrant (副引擎)")
-        print(f"  ✅ TF-IDF (备份引擎)")
-        
-        print(f"\n云端同步:")
-        print(f"  ✅ Gitee Embedding API")
-        print(f"  ✅ Qdrant 配置完成")
+
+        print("\n三引擎状态:")
+        print("  ✅ sqlite-vec (主引擎)")
+        print("  ✅ Qdrant (副引擎)")
+        print("  ✅ TF-IDF (备份引擎)")
+
+        print("\n云端同步:")
+        print("  ✅ Gitee Embedding API")
+        print("  ✅ Qdrant 配置完成")
 
 def main():
     print("=" * 50)
     print("   AI 长时记忆系统完整恢复")
     print("=" * 50)
     print(f"时间: {datetime.now().isoformat()}")
-    
+
     recovery = VectorRecovery()
     recovery.check_extensions()
     recovery.vectorize_unprocessed()
     recovery.sync_to_tfidf()
     recovery.configure_qdrant_sync()
     recovery.show_status()
-    
+
     print("\n" + "=" * 50)
     print("   ✅ 完整恢复完成！")
     print("=" * 50)

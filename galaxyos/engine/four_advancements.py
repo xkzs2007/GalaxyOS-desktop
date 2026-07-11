@@ -5,7 +5,14 @@ RAPTOR(2401.18059) + GraphRAG(2404.16130) + Generative Agents(2304.03442) + Tool
 用法：由 claw_worker.py 在启动时自动加载
 """
 
-import os, json, sqlite3, logging, time, threading, re, hashlib
+import os
+import json
+import sqlite3
+import logging
+import time
+import threading
+import re
+import hashlib
 from datetime import datetime
 from collections import defaultdict
 from typing import Optional, List, Dict, Any
@@ -24,7 +31,7 @@ def _get_flash():
     global _flash_client
     if _flash_client:
         return _flash_client
-    
+
     try:
         from openai import OpenAI
         cfg_path = os.path.join(WORKSPACE, 'skills', 'xiaoyi-claw-omega-final',
@@ -61,17 +68,17 @@ def _flash_chat(prompt: str, max_tokens: int = 300) -> str:
 # ===== 1. RAPTOR — 分层摘要树 =====
 class RAPTOREngine:
     """arXiv:2401.18059 — 将 DAG 节点聚类成多层摘要树"""
-    
+
     def __init__(self):
         self._tree_built = False
         self._summaries = {}
         self._lock = threading.Lock()
-    
+
     def build_tree(self) -> dict:
         """扫描 DAG 库，建摘要树"""
         if not os.path.exists(DAG_DB):
             return {"status": "skipped", "reason": "no dag db"}
-        
+
         with self._lock:
             try:
                 conn = sqlite3.connect(DAG_DB)
@@ -79,16 +86,16 @@ class RAPTOREngine:
                 cursor.execute("SELECT node_id, content, importance_score FROM dag_nodes ORDER BY timestamp DESC LIMIT 200")
                 rows = cursor.fetchall()
                 conn.close()
-                
+
                 if not rows:
                     return {"status": "skipped", "reason": "empty"}
-                
+
                 # 按 importance 分组聚类
                 clusters = defaultdict(list)
                 for nid, content, importance in rows:
                     imp_level = 'high' if (importance or 0) > 0.7 else 'medium' if (importance or 0) > 0.4 else 'low'
                     clusters[imp_level].append((nid, content))
-                
+
                 for level, nodes in clusters.items():
                     texts = [c for _, c in nodes if c]
                     if not texts:
@@ -99,7 +106,7 @@ class RAPTOREngine:
                         self._summaries[level] = summary
                     else:
                         self._summaries[level] = f"[RAPTOR-{level}] {len(nodes)}个节点"
-                
+
                 self._tree_built = True
                 return {"status": "ok", "clusters": {k: len(v) for k, v in clusters.items()}, "summaries": list(self._summaries.keys())}
             except Exception as e:
@@ -109,12 +116,12 @@ class RAPTOREngine:
 # ===== 2. GraphRAG — 自动实体/社区提取 =====
 class GraphRAGEngine:
     """arXiv:2404.16130 — 从记忆/文档中自动提取实体关系并检测社区"""
-    
+
     def __init__(self):
         self._nlp = None
         self._entities = {}
         self._lock = threading.Lock()
-    
+
     def _lazy_nlp(self):
         if self._nlp: return True
         try:
@@ -123,15 +130,15 @@ class GraphRAGEngine:
             return True
         except Exception:
             return False
-    
+
     def extract_from_dag(self) -> dict:
         """从 DAG 节点中提取实体三元组"""
         if not self._lazy_nlp():
             return {"status": "skipped", "reason": "no nlp"}
-        
+
         if not os.path.exists(DAG_DB):
             return {"status": "skipped", "reason": "no dag"}
-        
+
         with self._lock:
             try:
                 conn = sqlite3.connect(DAG_DB)
@@ -139,7 +146,7 @@ class GraphRAGEngine:
                 cursor.execute("SELECT content FROM dag_nodes ORDER BY timestamp DESC LIMIT 100")
                 rows = cursor.fetchall()
                 conn.close()
-                
+
                 for (content,) in rows:
                     if not content:
                         continue
@@ -157,7 +164,7 @@ class GraphRAGEngine:
                                 self._entities[name]['contexts'].append(content[:200])
                     except Exception:
                         continue
-                
+
                 communities = {}
                 for ent_name, ent_data in self._entities.items():
                     if ent_data['count'] > 1:
@@ -165,7 +172,7 @@ class GraphRAGEngine:
                         if comm not in communities:
                             communities[comm] = []
                         communities[comm].append(ent_name)
-                
+
                 return {"status": "ok", "entities": len(self._entities), "communities": len(communities)}
             except Exception as e:
                 logger.warning(f"GraphRAG extract error: {e}")
@@ -174,44 +181,44 @@ class GraphRAGEngine:
 # ===== 3. Generative Agents — 反思层 =====
 class ReflectionEngine:
     """arXiv:2304.03442 — 记忆流 + 反思 + 规划"""
-    
+
     def __init__(self):
         self._reflections = []
         self._reflections_path = os.path.join(WORKSPACE, '.learnings', 'reflections_ga.jsonl')
-    
+
     def reflect(self, recent_memories: list) -> dict:
         """分析近期记忆，提炼高层次反思"""
         if not recent_memories:
             return {"status": "skipped"}
-        
+
         texts = [m if isinstance(m, str) else m.get('content', str(m)) for m in recent_memories[:20]]
         if not texts:
             return {"status": "skipped"}
-        
+
         batch = "\n".join(f"- {t[:200]}" for t in texts[-10:])
         prompt = f"分析以下近期记忆，提炼3个高层次反思（每点不超过50字）：\n{batch}"
-        
+
         result = _flash_chat(prompt)
         if not result:
             return {"status": "no_flash"}
-        
+
         reflection = {
             "time": datetime.now().isoformat(),
             "summary": result[:500],
             "memory_count": len(texts)
         }
         self._reflections.append(reflection)
-        
+
         os.makedirs(os.path.dirname(self._reflections_path), exist_ok=True)
         with open(self._reflections_path, 'a') as f:
             f.write(json.dumps(reflection, ensure_ascii=False) + '\n')
-        
+
         return {"status": "ok", "reflection": result[:200]}
 
 # ===== 4. Toolformer — 智能工具路由 =====
 class ToolformerEngine:
     """arXiv:2302.04761 — 让模型自动判断用哪个工具"""
-    
+
     def route(self, query: str) -> dict:
         """关键词匹配路由（简化实现）"""
         tools = [
@@ -221,19 +228,19 @@ class ToolformerEngine:
             {"name": "code_analysis", "desc": "代码分析", "keywords": ["代码", "bug", "报错", "错误", "修复"]},
             {"name": "health_check", "desc": "系统健康检查", "keywords": ["健康", "状态", "检查", "status"]},
         ]
-        
+
         query_lower = query.lower()
         for tool in tools:
             if any(kw in query_lower for kw in tool['keywords']):
                 return {"tool": tool['name'], "reason": f"匹配: {tool['name']}"}
-        
+
         return {"tool": "general", "reason": "常规回答"}
 
 
 # ===== 统一入口 =====
 class FourAdvancements:
     """四个论文方向统一管理器"""
-    
+
     def __init__(self):
         self.raptor = RAPTOREngine()
         self.graphrag = GraphRAGEngine()
@@ -241,7 +248,7 @@ class FourAdvancements:
         self.toolformer = ToolformerEngine()
         self._thread = None
         self._running = False
-    
+
     def start_background(self, interval: int = 600):
         if self._running:
             return
@@ -249,7 +256,7 @@ class FourAdvancements:
         self._thread = threading.Thread(target=self._run_loop, args=(interval,), daemon=True)
         self._thread.start()
         logger.info(f"FourAdvancements started (interval={interval}s)")
-    
+
     def _run_loop(self, interval: int):
         while self._running:
             try:
@@ -279,21 +286,21 @@ class FourAdvancements:
             except Exception:
                 pass
             time.sleep(interval)
-    
+
     def stop(self):
         self._running = False
-    
+
     def get_status(self) -> dict:
         return {
             "raptor_tree_built": self.raptor._tree_built,
             "graphrag_entities": len(self.graphrag._entities),
             "reflection_count": len(self.reflection._reflections),
         }
-    
+
     def search(self, query: str, top_k: int = 3) -> list:
         """搜索所有论文引擎的产出作为证据源"""
         results = []
-        
+
         # RAPTOR 摘要树匹配
         if self.raptor._tree_built and self.raptor._summaries:
             q_lower = query.lower()
@@ -306,7 +313,7 @@ class FourAdvancements:
                     })
                     if len(results) >= top_k:
                         break
-        
+
         # GraphRAG 实体匹配
         if self.graphrag._entities:
             q_lower = query.lower()
@@ -320,7 +327,7 @@ class FourAdvancements:
                     })
                     if len(results) >= top_k:
                         break
-        
+
         # Reflection 反思经验匹配
         if self.reflection._reflections:
             q_lower = query.lower()
@@ -334,7 +341,7 @@ class FourAdvancements:
                     })
                     if len(results) >= top_k:
                         break
-        
+
         # Toolformer 工具路由（用于 Control 阶段）
         tool_match = self.toolformer.route(query)
         if tool_match and tool_match.get('tool') and tool_match['tool'] != 'general':
@@ -343,7 +350,7 @@ class FourAdvancements:
                 "score": 0.5,
                 "source": "toolformer"
             })
-        
+
         return results
 
 

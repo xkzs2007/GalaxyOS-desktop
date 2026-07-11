@@ -662,7 +662,7 @@ def _resolve_python_runtime(
 
     if not probed:
         warn(f"找到 {len(candidates)} 个候选，但都无法执行 -c")
-        info(f"建议手动指定: --python /path/to/python3.12", indent=1)
+        info("建议手动指定: --python /path/to/python3.12", indent=1)
         return candidates[0]  # 返回当前解释器
 
     # 评分
@@ -778,7 +778,7 @@ def check_torch_stack(interactive_offer: bool = True) -> Dict[str, Any]:
     # hnswlib 特殊：编译失败时用预编译 cpXXX wheel
     if "hnswlib" in missing:
         py_tag = f"cp{sys.version_info.major}{sys.version_info.minor}"
-        info(f"hnswlib 编译常失败，优先用预编译 wheel (libs/hnswlib-*.tar.gz)：", indent=1)
+        info("hnswlib 编译常失败，优先用预编译 wheel (libs/hnswlib-*.tar.gz)：", indent=1)
         info(f"  tar xzf libs/hnswlib-0.8.0-{py_tag}-x86_64.tar.gz -C $SITE_PACKAGES", indent=2)
 
     # v2026.6.11+: 互动模式自动询问是否装
@@ -849,7 +849,7 @@ def fix_torch_stack(
         if r.returncode != 0 and not quiet:
             err(f"PyG 安装失败: {r.stderr[-500:]}")
         else:
-            ok(f"PyG 生态安装完成")
+            ok("PyG 生态安装完成")
 
     # PyTorch CPU 版
     if "torch" in missing:
@@ -861,7 +861,7 @@ def fix_torch_stack(
         if r.returncode != 0 and not quiet:
             err(f"PyTorch 安装失败: {r.stderr[-500:]}")
         else:
-            ok(f"PyTorch CPU 安装完成")
+            ok("PyTorch CPU 安装完成")
 
     # hnswlib / faiss / ncps（纯 PyPI 包，走清华即可）
     other = [p for p in missing if p in ("hnswlib", "faiss", "ncps")]
@@ -1210,7 +1210,7 @@ def check_services() -> Dict[str, Any]:
                 sock.connect(str(actual_uds))
                 sock.close()
                 results["worker"]["ping"] = True
-                ok(f"Worker UDS 可连接 (REST 探测失败但 socket live)")
+                ok("Worker UDS 可连接 (REST 探测失败但 socket live)")
             except Exception as e2:
                 err(f"Worker 不可达: REST={e}; UDS={e2}")
     else:
@@ -2017,7 +2017,7 @@ def check_lfm_weights() -> Dict[str, Any]:
     """检查 LFM2.5-1.2B-Thinking 真实权重是否存在"""
     heading("🧠 模块检查：LFM2.5 真实权重")
     results = {"present": False, "size_mb": 0, "model_path": ""}
-    
+
     candidates = [
         WORKSPACE / "models" / "LFM2.5-1.2B",
         WORKSPACE / "skills" / "xiaoyi-claw-omega-final" / "models" / "LFM2.5-1.2B",
@@ -2036,7 +2036,7 @@ def check_lfm_weights() -> Dict[str, Any]:
                 if (mp / extra).exists():
                     results[f"has_{extra.replace('.', '_')}"] = True
             return results
-    
+
     warn("LFM2.5-1.2B 权重未下载（管线 2 将降级到随机 NumPy）", indent=1)
     info("使用 --download-lfm 一键下载", indent=2)
     return results
@@ -2151,7 +2151,10 @@ def _setup_rust(use_make: bool = True):
     """跨平台安装 Rust：Windows / Linux / macOS
     使用 TUNA 镜像加速，自动识别 ARM64/x86_64。
     """
-    import subprocess, sys, os, platform
+    import subprocess
+    import sys
+    import os
+    import platform
     from pathlib import Path
 
     print()
@@ -2260,23 +2263,23 @@ def _check_v82_pipelines_impl() -> Dict[str, Any]:
     """验证 v8.2 四条液态神经网络管线的模块初始化"""
     heading("🔬 v8.2 液态神经网络管线初始化")
     results = {"pipelines": {}, "total": 0, "ok": 0, "fail": 0}
-    
+
     for p in [str(galaxy_scripts), str(galaxy_engine)]:
         if os.path.isdir(p):
             sys.path.insert(0, p)
-    
+
     try:
         from paper_integration_v81 import V81IntegrationAddon
         addon = V81IntegrationAddon()
         addon._lazy_init_all()
-        
+
         pipeline_checks = {
             "p1_engram_memory": ["engram", "engram_heat", "dag_liquid_strategy", "dag_node_ranker", "kan_ltc_merger"],
             "p2_lfm_reasoning": ["lfm_network", "lfm_edge", "lfm_engram"],
             "p3_ssm_tracking": ["mamba3", "liquid_ssm", "ssm_kan", "lgct"],
             "p4_continual_learning": ["neural_ode", "ode_rnn", "moe_engram", "sparsity", "liquid_weight", "lipschitz", "ewc"],
         }
-        
+
         for pipeline, components in pipeline_checks.items():
             ok_count = sum(1 for c in components if getattr(addon, c, None) is not None)
             total = len(components)
@@ -2290,7 +2293,7 @@ def _check_v82_pipelines_impl() -> Dict[str, Any]:
                 else:
                     results["fail"] += 1
             results["total"] += total
-            
+
             pipeline_names = {
                 "p1_engram_memory": "管线1: 记忆增强（Engram/DAG/KAN/LTC）",
                 "p2_lfm_reasoning": "管线2: LFM 推理引擎",
@@ -2302,7 +2305,7 @@ def _check_v82_pipelines_impl() -> Dict[str, Any]:
             else:
                 missing = [c for c in components if getattr(addon, c, None) is None]
                 warn(f"{pipeline_names.get(pipeline, pipeline)}: {ok_count}/{total} (缺: {', '.join(missing)})")
-        
+
         # LFM 权重类型
         lfm = addon.lfm_network
         if lfm is not None and hasattr(lfm, '_forward_text'):
@@ -2314,11 +2317,11 @@ def _check_v82_pipelines_impl() -> Dict[str, Any]:
         else:
             warn("  LFM: 未加载")
             results["lfm_type"] = "none"
-        
+
     except Exception as e:
         results["error"] = str(e)[:200]
         err(f"V81IntegrationAddon 初始化失败: {e}", indent=1)
-    
+
     return results
 
 
@@ -2330,14 +2333,14 @@ def check_v82_modules() -> Dict[str, Any]:
     """验证 v8.2 新增模块的导入和加载状态"""
     heading("🧬 v8.2 神经记忆 & 梦境学习模块")
     results: Dict[str, Any] = {"modules": {}, "ok": 0, "fail": 0}
-    
+
     modules_to_check = [
         ("TitansNeuralMemory", "titans_neural_memory", "在线神经记忆(遗忘门+更新门,2048-d)"),
         ("CrossModalMemoryBinder", "cross_modal_memory", "跨模态记忆绑定(文本/图像→2048)"),
         ("DreamDrivenLearner", "dream_driven_learner", "梦境驱动学习(对比学习adapter)"),
         ("AdaptiveSynapsePruner", "memory_synapse_network", "自适应突触修剪(多因子保留分)"),
     ]
-    
+
     for cls_name, module, desc in modules_to_check:
         try:
             spec = importlib.util.spec_from_file_location(
@@ -2385,7 +2388,7 @@ def check_v82_modules() -> Dict[str, Any]:
             results["modules"][cls_name] = {"ok": False, "error": str(e)[:200]}
             results["fail"] += 1
             warn(f"{cls_name} ({desc}): {e}", indent=1)
-    
+
     # 检查持久化目录
     learnings_path = WORKSPACE / ".learnings"
     if learnings_path.exists():
@@ -2399,7 +2402,7 @@ def check_v82_modules() -> Dict[str, Any]:
                 ok(f"{label} 持久化目录: {p}")
     else:
         info(".learnings/ 目录未创建（首次运行后自动生成）")
-    
+
     # 检查自动循环集成状态
     try:
         # 验证 memory_consolidation.py 中的集成
@@ -2422,7 +2425,7 @@ def check_v82_modules() -> Dict[str, Any]:
             info("memory_consolidation.py 不在引擎目录，跳过自动循环检查")
     except Exception as e:
         info(f"自动循环检查跳过: {e}")
-    
+
     return results
 
 
@@ -2513,7 +2516,7 @@ def check_v84_modules() -> Dict[str, Any]:
                 warn("  MODULE_REGISTRY 缺少 skill_graph 条目")
                 results["warn"] += 1
             if "dag_liquid_fusion" in mr:
-                ok(f"  MODULE_REGISTRY[dag_liquid_fusion] ✅")
+                ok("  MODULE_REGISTRY[dag_liquid_fusion] ✅")
         else:
             warn("unified_coordinator.py 未找到")
             results["warn"] += 1
@@ -2859,11 +2862,11 @@ def _install_plugin_guide():
     else:
         err("GalaxyOS 插件文件不完整")
         info(f"期望路径: {ext_dir}", indent=1)
-        info(f"需要文件: openclaw.plugin.json + plugin-bootstrap.cjs + index.js + scripts/", indent=1)
+        info("需要文件: openclaw.plugin.json + plugin-bootstrap.cjs + index.js + scripts/", indent=1)
         info("", indent=1)
         info("手动安装:", indent=1)
         info(f"  1. GalaxyOS 插件路径: {EXT_DIR}", indent=1)
-        info(f"  2. 重启 Gateway: supervisorctl restart openclaw-gateway", indent=1)
+        info("  2. 重启 Gateway: supervisorctl restart openclaw-gateway", indent=1)
 
     # 检查 Worker（多 worker 模式，socket 为 claw-worker-worker-N.sock）
     if VAR_DIR.exists():
@@ -2986,7 +2989,7 @@ def _apply_cspl_patch():
             script = _candidate / "patches" / "cspl_patch.py"
             break
     else:
-        err(f"CSPL 补丁脚本不存在，请确认 patches/cspl_patch.py 存在")
+        err("CSPL 补丁脚本不存在，请确认 patches/cspl_patch.py 存在")
         return
     if not script.exists():
         err(f"CSPL 补丁脚本不存在: {script}")
@@ -3613,7 +3616,7 @@ def main():
                 warn(f"Git 操作异常: {e}", indent=1)
                 info("使用本地代码继续...", indent=1)
         else:
-            warn(f"未找到 Git 仓库", indent=1)
+            warn("未找到 Git 仓库", indent=1)
             info("使用本地代码继续...", indent=1)
 
         # 硬件检测 + 环境检测（轻量）

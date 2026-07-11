@@ -511,7 +511,7 @@ class TreeOfThought:
 
         # 根据不同类型 prompt 生成对应回复
         if "请给出" in prompt or "精炼" in prompt:
-            return f"基于当前分析，建议优先考虑实际可行的方案。关键在于验证假设、分步推进。"
+            return "基于当前分析，建议优先考虑实际可行的方案。关键在于验证假设、分步推进。"
 
         if "评估" in prompt or "评分" in prompt:
             return "0.6"
@@ -523,7 +523,7 @@ class TreeOfThought:
                 thoughts.append(f"{i+1}. 进一步分析问题的关键约束条件和可用资源")
             return "\n".join(thoughts)
 
-        return f"针对问题进行分析，需要考虑多个维度。"
+        return "针对问题进行分析，需要考虑多个维度。"
 
     # ========================================================================
     # 解析辅助

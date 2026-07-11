@@ -60,20 +60,20 @@ class CosplayContextConfig:
     contract_enabled: bool = True
     skill_replace_enabled: bool = True
     feedback_enabled: bool = True
-    
+
     # Boundary 参数
     boundary_window_size: int = 6           # 滑动窗口大小
     boundary_merge_gap: int = 3             # 相邻 segment 合并间距
-    
+
     # Contract 参数
     min_contract_confidence: float = 0.6    # contract 最小置信度
     max_contract_predicates: int = 10       # 每个 contract 最多保留 predicates
-    
+
     # Skill Replacement 参数
     replace_min_confidence: float = 0.75    # 替换所需的最小相似度
     replace_min_segment_len: int = 3        # 至少 3 个节点才考虑替换
     replace_max_segment_len: int = 50       # 最多 50 个节点一次替换
-    
+
     # Feedback 参数
     feedback_win_size: int = 20             # 反馈窗口（最近 N 次压缩）
     decay_hours: float = 72                 # 反馈衰减半衰期（小时）
@@ -89,20 +89,20 @@ class CosplayContextAdapter:
 
     四合一集成入口。懒加载边界检测器 + Skill Bank。
     """
-    
+
     _instance: Optional["CosplayContextAdapter"] = None
-    
+
     def __init__(self, config: Optional[CosplayContextConfig] = None):
         self.config = config or CosplayContextConfig()
-        
+
         # 懒加载引用
         self._boundary_detector = None
         self._skill_bank = None
         self._nlp_extractor = None
-        
+
         # 反馈跟踪
         self._feedback_buffer: List[Dict] = []
-        
+
         # LTC 液态整合（可选）
         self._ltc_strategy: Optional[Any] = None
         if _HAS_LTC:
@@ -110,7 +110,7 @@ class CosplayContextAdapter:
                 self._ltc_strategy = LTCDAGCompactStrategy()
             except Exception:
                 self._ltc_strategy = None
-        
+
         # 统计
         self.stats = {
             "total_compacts": 0,
@@ -121,15 +121,15 @@ class CosplayContextAdapter:
             "estimated_tokens_saved": 0,
             "last_cycle_time": 0.0,
         }
-    
+
     @classmethod
     def get_instance(cls, config: Optional[CosplayContextConfig] = None) -> "CosplayContextAdapter":
         if cls._instance is None:
             cls._instance = cls(config)
         return cls._instance
-    
+
     # ── 懒加载 ──────────────────────────────────────────────
-    
+
     def _ensure_boundary(self):
         if self._boundary_detector is None and self.config.boundary_enabled:
             try:
@@ -143,7 +143,7 @@ class CosplayContextAdapter:
                 self._nlp_extractor = NLPPredicateExtractor()
             except Exception as e:
                 logger.warning(f"Boundary detector 加载失败: {e}")
-    
+
     def _ensure_skill_bank(self):
         if self._skill_bank is None and self.config.contract_enabled:
             try:
@@ -151,11 +151,11 @@ class CosplayContextAdapter:
                 self._skill_bank = get_skill_bank()
             except Exception as e:
                 logger.warning(f"Skill bank 加载失败: {e}")
-    
+
     # ════════════════════════════════════════════════════════════
     # 1. Boundary-Aware Compression
     # ════════════════════════════════════════════════════════════
-    
+
     def segment_nodes_by_boundary(self, nodes: List[Any]) -> List[Dict]:
         """
         用 Boundary Detection 把 DAG nodes 按意图边界分组。
@@ -180,11 +180,11 @@ class CosplayContextAdapter:
                 "combined_text": text,
                 "keywords": self._fallback_keywords(text),
             }]
-        
+
         self._ensure_boundary()
         if self._boundary_detector is None:
             return self._no_boundary_fallback(nodes)
-        
+
         try:
             # 把 DAG nodes 转成边界检测器要的 dict 格式
             node_dicts = []
@@ -199,13 +199,13 @@ class CosplayContextAdapter:
                     "timestamp": getattr(n, 'timestamp', time.time()),
                     "_node": n,
                 })
-            
+
             # 运行边界检测
             boundaries = self._boundary_detector.detect(node_dicts)
-            
+
             if not boundaries:
                 return self._no_boundary_fallback(nodes)
-            
+
             # 按 boundary 分组
             segments = []
             for b in boundaries:
@@ -214,7 +214,7 @@ class CosplayContextAdapter:
                 seg_nodes = nodes[start:end]
                 if not seg_nodes:
                     continue
-                
+
                 # NLP predicates
                 predicates = []
                 if self._nlp_extractor:
@@ -230,12 +230,12 @@ class CosplayContextAdapter:
                                 predicates = features[-1].get("predicates", [])
                     except Exception:
                         pass
-                
+
                 combined = "\n".join(
                     f"[{getattr(n, 'role', '?')}] {getattr(n, 'content', '')[:500]}"
                     for n in seg_nodes
                 )
-                
+
                 segments.append({
                     "segment_id": b.segment_id if hasattr(b, 'segment_id') else len(segments),
                     "intent": b.intent_label if hasattr(b, 'intent_label') else "unknown",
@@ -244,17 +244,17 @@ class CosplayContextAdapter:
                     "keywords": predicates or self._fallback_keywords(combined),
                     "confidence": getattr(b, 'confidence', 0.5),
                 })
-            
+
             if not segments:
                 return self._no_boundary_fallback(nodes)
-            
+
             self.stats["total_boundary_segments"] += len(segments)
             return segments
-            
+
         except Exception as e:
             logger.warning(f"Boundary segmentation 失败: {e}")
             return self._no_boundary_fallback(nodes)
-    
+
     def _no_boundary_fallback(self, nodes) -> List[Dict]:
         """兜底：全部当一个 segment"""
         if not nodes:
@@ -271,7 +271,7 @@ class CosplayContextAdapter:
             "keywords": self._fallback_keywords(text),
             "confidence": 0.0,
         }]
-    
+
     def _fallback_keywords(self, text: str, max_kw: int = 5) -> List[str]:
         """简单关键词提取兜底"""
         try:
@@ -289,11 +289,11 @@ class CosplayContextAdapter:
         for w in filtered:
             freq[w] += 1
         return [w for w, _ in sorted(freq.items(), key=lambda x: -x[1])[:max_kw]]
-    
+
     # ════════════════════════════════════════════════════════════
     # 2. Contract-Aware Summarization
     # ════════════════════════════════════════════════════════════
-    
+
     def get_contract_instructions(self, keywords: List[str]) -> Optional[Dict]:
         """
         查 Skill Bank 获取匹配技能的 contract 说明。
@@ -304,53 +304,53 @@ class CosplayContextAdapter:
         """
         if not self.config.contract_enabled or not keywords:
             return None
-        
+
         self._ensure_skill_bank()
         if self._skill_bank is None:
             return None
-        
+
         try:
             # 用关键词检索技能（返回 dict 列表，每个有 skill_id/name/score/contract_literals）
             skills = self._skill_bank.retrieve_skills(keywords, top_k=3)
             if not skills:
                 return None
-            
+
             best_dict = skills[0]
             best_score = best_dict.get("score", 0.0)
             if best_score < self.config.min_contract_confidence:
                 return None
-            
+
             # 从 _skills 取原始对象拿到 contract
             best_id = best_dict.get("skill_id", "")
             best_skill_obj = self._skill_bank._skills.get(best_id) if hasattr(self._skill_bank, '_skills') else None
             if best_skill_obj is None:
                 return None
-            
+
             contract = getattr(best_skill_obj, 'contract', None)
             if contract is None:
                 return None
-            
+
             predicates_keep = []
             if hasattr(contract, 'eff_add') and contract.eff_add:
                 for literal in sorted(contract.eff_add, key=lambda l: contract.support.get(l, 0) if hasattr(contract, 'support') else 0, reverse=True)[:self.config.max_contract_predicates]:
                     freq = contract.support.get(literal, 0) / max(1, contract.n_instances)
                     predicates_keep.append(f"{literal} ({freq:.0%})")
-            
+
             if not predicates_keep:
                 return None
-            
+
             self.stats["total_contract_summaries"] += 1
             return {
                 "skill_name": best_dict.get("name", "unknown"),
                 "predicates_keep": predicates_keep,
                 "confidence": best_score,
             }
-            
+
         except Exception as e:
             logger.debug(f"Contract lookup 失败: {e}")
             return None
-    
-    def augment_summary_with_contract(self, summary_text: str, 
+
+    def augment_summary_with_contract(self, summary_text: str,
                                        contract_info: Optional[Dict]) -> str:
         """
         把 contract 信息注入到摘要文本中。
@@ -360,21 +360,21 @@ class CosplayContextAdapter:
         """
         if not contract_info or not self.config.contract_enabled:
             return summary_text
-        
+
         predicates = contract_info.get("predicates_keep", [])
         if not predicates:
             return summary_text
-        
+
         skill_name = contract_info.get("skill_name", "技能")
         predicate_str = "，".join(predicates[:5])
-        
+
         augmented = f"{summary_text}\n\n【{skill_name} 契约关键上下文】{predicate_str}"
         return augmented[:2000]  # 防止太长
-    
+
     # ════════════════════════════════════════════════════════════
     # 3. Skill Replacement
     # ════════════════════════════════════════════════════════════
-    
+
     def try_skill_replace(self, segment: Dict) -> Optional[str]:
         """
         尝试用技能 token 替换整段对话。
@@ -385,59 +385,59 @@ class CosplayContextAdapter:
         """
         if not self.config.skill_replace_enabled:
             return None
-        
+
         seg_nodes = segment.get("nodes", [])
         if len(seg_nodes) < self.config.replace_min_segment_len:
             return None
         if len(seg_nodes) > self.config.replace_max_segment_len:
             return None
-        
+
         self._ensure_skill_bank()
         if self._skill_bank is None:
             return None
-        
+
         try:
             keywords = segment.get("keywords", [])
             if not keywords:
                 return None
-            
+
             skills = self._skill_bank.retrieve_skills(keywords, top_k=3)
             if not skills:
                 return None
-            
+
             best_dict = skills[0]
             best_score = best_dict.get("score", 0.0)
             if best_score < self.config.replace_min_confidence:
                 return None
-            
+
             # LfmSkill 没有 is_confirmed/status 属性，skills 都有 contract 所以直接放行
             skill_name = best_dict.get("name", "unknown")
             n_instances = best_dict.get("n_instances", 0)
             pass_rate = 1.0  # 已毕业的技能默认高通过率
-            
+
             # 提取 segment 里的关键短语（工具调用名、查询词等）
             combined = segment.get("combined_text", "")
             key_phrases = self._fallback_keywords(combined, max_kw=3)
             phrases_str = f"「{' '.join(key_phrases)}」" if key_phrases else ""
-            
+
             replace_text = f"[Skill: {skill_name}] {phrases_str} (实例数:{n_instances}, 通过率:{pass_rate:.0%})"
-            
+
             self.stats["total_skill_replacements"] += 1
             # 估算省了多少 token（按 segment 原文的 3/4 算节省）
             original_tokens = len(combined) // 4
             replaced_tokens = len(replace_text) // 4
             self.stats["estimated_tokens_saved"] += max(0, original_tokens - replaced_tokens)
-            
+
             return replace_text
-            
+
         except Exception as e:
             logger.debug(f"Skill replace 失败: {e}")
             return None
-    
+
     # ════════════════════════════════════════════════════════════
     # 4. Feedback-Driven Compression
     # ════════════════════════════════════════════════════════════
-    
+
     def record_compact_result(self, compact_info: Dict):
         """
         记录一次压缩的结果，供反馈分析。
@@ -449,21 +449,21 @@ class CosplayContextAdapter:
         """
         if not self.config.feedback_enabled:
             return
-        
+
         compact_info["timestamp"] = time.time()
         self._feedback_buffer.append(compact_info)
-        
+
         # 保持窗口大小
         if len(self._feedback_buffer) > self.config.feedback_win_size * 2:
             self._feedback_buffer = self._feedback_buffer[-self.config.feedback_win_size:]
-    
+
     def record_expand_event(self, summary_node_id: str):
         """
         记录用户展开了一个摘要节点（正向信号：压缩有用）。
         """
         if not self.config.feedback_enabled:
             return
-        
+
         # 找到相应的压缩记录，标记为 used
         found = False
         for entry in reversed(self._feedback_buffer):
@@ -472,10 +472,10 @@ class CosplayContextAdapter:
                 entry["last_expanded"] = time.time()
                 found = True
                 break
-        
+
         if found:
             self.stats["total_feedback_events"] += 1
-    
+
     def get_feedback_stats(self) -> Dict:
         """
         分析反馈缓冲区，计算压缩质量指标。
@@ -491,18 +491,18 @@ class CosplayContextAdapter:
                 "avg_saving_token": 0, "contract_rate": 0.0,
                 "skill_replace_rate": 0.0, "adjustments": [],
             }
-        
+
         buf = self._feedback_buffer[-self.config.feedback_win_size:]
         n = len(buf)
         if n == 0:
             return {"total_segments": 0}
-        
+
         n_expanded = sum(1 for e in buf if e.get("expanded", 0) > 0)
         total_orig = sum(e.get("original_token", 0) for e in buf)
         total_summary = sum(e.get("summary_token", 0) for e in buf)
         n_contract = sum(1 for e in buf if e.get("contract_guided", False))
         n_skill = sum(1 for e in buf if e.get("skill_replaced", False))
-        
+
         stats = {
             "total_segments": n,
             "expanded_rate": n_expanded / n,
@@ -511,7 +511,7 @@ class CosplayContextAdapter:
             "skill_replace_rate": n_skill / n,
             "adjustments": [],
         }
-        
+
         # 根据反馈生成调整建议
         if n_expanded / max(1, n) > 0.3:
             # 展开率太高 → 压缩得太狠了，需要保留更多信息
@@ -523,9 +523,9 @@ class CosplayContextAdapter:
             stats["adjustments"].append(
                 "expand_rate_low: 建议增加 skill replace 力度"
             )
-        
+
         return stats
-    
+
     def apply_feedback_to_skill_bank(self) -> int:
         """
         将反馈信号写入 Skill Bank 的 refine_effects_contract()。
@@ -535,15 +535,15 @@ class CosplayContextAdapter:
         """
         if not self.config.feedback_enabled:
             return 0
-        
+
         self._ensure_skill_bank()
         if self._skill_bank is None:
             return 0
-        
+
         stats = self.get_feedback_stats()
         if stats["total_segments"] < 5:
             return 0  # 数据不够，不调
-        
+
         refined_count = 0
         try:
             # 高展开率 → 调低 merge 阈值，让更多技能被合并（保留更多 predicates）
@@ -552,23 +552,23 @@ class CosplayContextAdapter:
                     old = self._skill_bank.config.merge_eff_jaccard_thresh
                     self._skill_bank.config.merge_eff_jaccard_thresh = max(0.4, old - 0.05)
                     refined_count += 1
-            
+
             # 低展开率 + 高 contract 率 → 可以多压缩
             if stats["expanded_rate"] < 0.05 and stats["contract_rate"] > 0.5:
                 if hasattr(self._skill_bank, 'config'):
                     old = self._skill_bank.config.retire_max_unused_days
                     self._skill_bank.config.retire_max_unused_days = min(120, old + 10)
                     refined_count += 1
-            
+
         except Exception as e:
             logger.debug(f"Feedback apply 失败: {e}")
-        
+
         return refined_count
-    
+
     # ════════════════════════════════════════════════════════════
     # 一站式入口
     # ════════════════════════════════════════════════════════════
-    
+
     # ── LTC 辅助方法 ──────────────────────────────────────
 
     def _get_ltc_intensities(self, segments: List[Dict]) -> List[float]:
@@ -733,7 +733,7 @@ class CosplayContextAdapter:
         self.stats["last_cycle_time"] = time.time() - t0
         self.stats["total_compacts"] += 1
         return result
-    
+
     def summary(self) -> Dict:
         """状态摘要"""
         return {

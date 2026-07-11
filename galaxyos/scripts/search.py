@@ -5,7 +5,8 @@ import os
 import json
 
 # ── Centralized path resolution ──
-import os as _os, sys as _sys
+import os as _os
+import sys as _sys
 from galaxyos.shared.paths import workspace
 _ws_root = workspace()
 for _p in [_ws_root, "/workspace"]:
@@ -38,7 +39,7 @@ def load_config():
         "llm_key": os.environ.get("LLM_API_KEY", ""),
         "llm_uid": os.environ.get("LLM_UID", ""),
     }
-    
+
     # 从配置文件加载
     if CONFIG_PATH.exists():
         try:
@@ -52,7 +53,7 @@ def load_config():
             config["llm_key"] = llm.get("api_key", config["llm_key"])
         except:
             pass
-    
+
     # 从 openclaw.json 加载
     if OPENCLAW_JSON.exists():
         try:
@@ -63,7 +64,7 @@ def load_config():
             config["embedding_key"] = emb.get("apiKey", config["embedding_key"])
         except:
             pass
-    
+
     return config
 
 # 加载配置
@@ -89,28 +90,28 @@ summarizer = ResultSummarizer(_config["llm_url"], _config["llm_key"], _config["l
 def search(query: str, use_llm: bool = True, explain: bool = False, summarize: bool = False) -> dict:
     """统一搜索"""
     start = time.time()
-    
+
     # 1. 查询理解
     understanding = QueryUnderstanding.analyze(query)
     search_hints = QueryUnderstanding.get_search_hints(understanding)
-    
+
     # 2. 查询改写
     rewritten_query, corrections = QueryRewriter.rewrite(query)
     synonym_expansions = QueryRewriter.get_synonym_expansions(rewritten_query)
-    
+
     # 3. 语言检测
     lang_info = LanguageDetector.get_search_strategy(query)
-    
+
     # 4. 智能路由
     base_mode = QueryRouter.select_mode(rewritten_query, use_llm)
     recommended_mode = query_history.get_recommended_mode(rewritten_query)
     mode = recommended_mode if recommended_mode else base_mode
-    
+
     # 根据查询理解调整模式
     if understanding["intent"][0] == "explain":
         mode = "full"
         explain = True
-    
+
     # 5. 检查缓存
     cache_key = hashlib.md5(f"{rewritten_query}_{mode}_{lang_info['language']}".encode()).hexdigest()
     cached = cache_manager.get(cache_key)
@@ -126,10 +127,10 @@ def search(query: str, use_llm: bool = True, explain: bool = False, summarize: b
             "elapsed_ms": (time.time() - start) * 1000,
             "results": cached["results"]
         }
-    
+
     # 6. 动态权重
     vector_weight, fts_weight = DynamicWeights.calculate(rewritten_query)
-    
+
     # 7. 执行搜索
     if mode == "fast":
         embedding = embedding_engine.get(rewritten_query)
@@ -140,40 +141,40 @@ def search(query: str, use_llm: bool = True, explain: bool = False, summarize: b
         all_queries = [rewritten_query] + expanded + synonym_expansions
         embeddings = embedding_engine.batch(all_queries)
         vec_results, fts_results = search_engine.parallel_search(embeddings[0], " ".join(all_queries))
-    
+
     # 8. RRF 混合检索
     merged = rrf_fusion.fuse(vec_results, fts_results)
-    
+
     # 9. 语义去重
     merged = deduplicator.deduplicate(merged)
-    
+
     # 10. LLM 重排序
     if mode == "full" and merged:
         merged = llm_engine.rerank(rewritten_query, merged)
-    
+
     # 11. 应用反馈学习
     merged = feedback_learner.apply_feedback(rewritten_query, merged)
-    
+
     # 12. 结果解释
     explanation = None
     if explain and merged:
         explanation = explainer.explain(rewritten_query, merged)
-    
+
     # 13. 结果摘要
     summary = None
     if summarize and merged:
         summary = summarizer.summarize(rewritten_query, merged)
-    
+
     # 14. 缓存结果
     cache_manager.set(cache_key, {
-        "results": merged[:10], 
+        "results": merged[:10],
         "time": datetime.now().isoformat()
     })
-    
+
     # 15. 记录历史
     elapsed_ms = (time.time() - start) * 1000
     query_history.record(query, mode, elapsed_ms, len(merged))
-    
+
     return {
         "query": query,
         "rewritten": rewritten_query,
@@ -201,37 +202,37 @@ def main():
     explain = "--explain" in sys.argv
     summarize = "--summarize" in sys.argv
     query = sys.argv[1] if len(sys.argv) > 1 and not sys.argv[1].startswith("--") else ""
-    
+
     if not query:
         print("用法: search.py '查询' [--no-llm] [--explain] [--summarize]")
         sys.exit(1)
-    
+
     result = search(query, use_llm, explain, summarize)
-    
+
     print(f"查询: {result['query']}")
     if result.get('rewritten') != result['query']:
         print(f"改写: {result['rewritten']}")
-    
+
     # 显示查询理解
     u = result.get('understanding', {})
     print(f"意图: {u.get('intent', ['unknown', 0])[0]}")
     print(f"实体: {', '.join([e['value'] for e in u.get('entities', [])]) or '无'}")
     print(f"语言: {result.get('language', 'unknown')}")
     print(f"模式: {result['mode']} (智能路由)")
-    
+
     if result.get("cached"):
-        print(f"缓存命中")
+        print("缓存命中")
     if result.get("expanded"):
         print(f"扩展词: {', '.join(result['expanded'])}")
     print(f"耗时: {result['elapsed_ms']:.0f}ms")
     print(f"结果: {len(result.get('results', []))} 条\n")
-    
+
     if result.get("summary"):
         print(f"📝 摘要: {result['summary']}\n")
-    
+
     if result.get("explanation"):
         print(f"💡 {result['explanation']}\n")
-    
+
     for i, r in enumerate(result["results"][:5], 1):
         rrf_info = ""
         if "rrf_score" in r:

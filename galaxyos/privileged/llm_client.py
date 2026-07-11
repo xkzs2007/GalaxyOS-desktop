@@ -34,7 +34,8 @@ import logging
 from typing import Optional, Dict, Any, List, AsyncGenerator
 from collections import Counter
 
-import os as _os, sys as _sys
+import os as _os
+import sys as _sys
 from galaxyos.shared.paths import galaxyos_home, workspace
 _ws_root = workspace()
 for _p in [_ws_root, "/workspace"]:

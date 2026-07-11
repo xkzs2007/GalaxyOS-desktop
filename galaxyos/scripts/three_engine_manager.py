@@ -14,7 +14,8 @@ from datetime import datetime
 # 添加 core 目录到路径
 
 # ── Centralized path resolution ──
-import os as _os, sys as _sys
+import os as _os
+import sys as _sys
 from galaxyos.shared.paths import workspace
 _ws_root = workspace()
 for _p in [_ws_root, "/workspace"]:
@@ -40,15 +41,15 @@ CONFIG_PATH = path_resolver.OPENCLAW_CONFIG
 
 class ThreeEngineManager:
     """三引擎管理器"""
-    
+
     def __init__(self):
         self.config = self._load_config()
-        
+
     def _load_config(self) -> dict:
         if CONFIG_PATH.exists():
             return json.loads(CONFIG_PATH.read_text())
         return {}
-    
+
     def check_sqlite_vec(self) -> dict:
         """检查 sqlite-vec 主引擎"""
         result = {"name": "sqlite-vec", "status": "unknown", "stats": {}}
@@ -58,20 +59,20 @@ class ThreeEngineManager:
                     conn = connect(str(VECTORS_DB))
                 else:
                     conn = sqlite3.connect(str(VECTORS_DB))
-                
+
                 cursor = conn.cursor()
-                
+
                 # 获取版本信息
                 if is_vec_available():
                     result["version"] = get_vec_version()
-                
+
                 # 获取向量数量
                 cursor.execute("SELECT COUNT(*) FROM l0_vec_rowids")
                 l0_count = cursor.fetchone()[0]
-                
+
                 cursor.execute("SELECT COUNT(*) FROM l1_vec_rowids")
                 l1_count = cursor.fetchone()[0]
-                
+
                 result["status"] = "healthy"
                 result["stats"] = {
                     "l0_vectors": l0_count,
@@ -86,7 +87,7 @@ class ThreeEngineManager:
             result["status"] = "error"
             result["error"] = str(e)
         return result
-    
+
     def check_qdrant(self) -> dict:
         """检查 Qdrant 副引擎"""
         result = {"name": "qdrant", "status": "unknown", "stats": {}}
@@ -107,7 +108,7 @@ class ThreeEngineManager:
             result["status"] = "error"
             result["error"] = str(e)
         return result
-    
+
     def check_tfidf(self) -> dict:
         """检查 TF-IDF 备份引擎"""
         result = {"name": "tfidf", "status": "unknown", "stats": {}}
@@ -116,13 +117,13 @@ class ThreeEngineManager:
             if tfidf_db.exists():
                 conn = sqlite3.connect(str(tfidf_db))
                 cursor = conn.cursor()
-                
+
                 cursor.execute("SELECT COUNT(*) FROM documents")
                 doc_count = cursor.fetchone()[0]
-                
+
                 cursor.execute("SELECT COUNT(*) FROM vocabulary")
                 vocab_count = cursor.fetchone()[0]
-                
+
                 result["status"] = "healthy"
                 result["stats"] = {
                     "documents": doc_count,
@@ -136,7 +137,7 @@ class ThreeEngineManager:
             result["status"] = "error"
             result["error"] = str(e)
         return result
-    
+
     def get_status(self) -> dict:
         """获取三引擎状态"""
         return {
@@ -145,23 +146,23 @@ class ThreeEngineManager:
             "secondary": self.check_qdrant(),
             "backup": self.check_tfidf()
         }
-    
+
     def print_status(self):
         """打印状态报告"""
         status = self.get_status()
-        
+
         print("=" * 60)
         print("   三引擎向量架构状态报告")
         print("=" * 60)
         print(f"检查时间: {status['timestamp']}")
         print()
-        
+
         engines = [
             ("主引擎", status["primary"]),
             ("副引擎", status["secondary"]),
             ("备份引擎", status["backup"])
         ]
-        
+
         for label, engine in engines:
             status_icon = "✅" if engine["status"] in ["healthy", "available", "initialized"] else "❌"
             print(f"{status_icon} {label}: {engine['name']} ({engine['status']})")
@@ -171,14 +172,14 @@ class ThreeEngineManager:
             if engine.get("error"):
                 print(f"   - 错误: {engine['error']}")
             print()
-        
+
         # 计算整体健康度
-        healthy_count = sum(1 for e in [status["primary"], status["secondary"], status["backup"]] 
+        healthy_count = sum(1 for e in [status["primary"], status["secondary"], status["backup"]]
                           if e["status"] in ["healthy", "available", "initialized"])
-        
+
         print("-" * 60)
         print(f"整体健康度: {healthy_count}/3 引擎可用")
-        
+
         if healthy_count == 3:
             print("状态: 🟢 全部正常")
         elif healthy_count >= 2:

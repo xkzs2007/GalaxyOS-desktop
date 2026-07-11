@@ -73,21 +73,21 @@ class Action:
     priority: ActionPriority
     status: ActionStatus
     horizon: PlanHorizon
-    
+
     # 时间信息
     created_at: datetime
     deadline: Optional[datetime] = None
     estimated_duration: Optional[int] = None  # 分钟
-    
+
     # 关联信息
     source_memory_ids: List[str] = field(default_factory=list)
     source_insight_ids: List[str] = field(default_factory=list)
     dependencies: List[str] = field(default_factory=list)  # 依赖的其他行动 ID
-    
+
     # 元数据
     tags: List[str] = field(default_factory=list)
     metadata: Dict[str, Any] = field(default_factory=dict)
-    
+
     def to_dict(self) -> Dict:
         return {
             "id": self.id,
@@ -105,7 +105,7 @@ class Action:
             "tags": self.tags,
             "metadata": self.metadata
         }
-    
+
     @classmethod
     def from_dict(cls, data: Dict) -> 'Action':
         return cls(
@@ -140,10 +140,10 @@ class Plan:
     actions: List[Action]
     created_at: datetime
     updated_at: datetime
-    
+
     # 关联
     source_insights: List[str] = field(default_factory=list)
-    
+
     def to_dict(self) -> Dict:
         return {
             "id": self.id,
@@ -169,7 +169,7 @@ class PlanningEngine:
     3. 动态调整计划
     4. 与反思机制联动
     """
-    
+
     def __init__(
         self,
         memory_stream: MemoryStream,
@@ -188,11 +188,11 @@ class PlanningEngine:
         self.reflection_engine = reflection_engine
         self.llm_client = llm_client
         self.retriever = MemoryRetriever()
-        
+
         # 计划存储
         self.plans: Dict[str, Plan] = {}
         self.actions: Dict[str, Action] = {}
-    
+
     def plan(
         self,
         context: str,
@@ -214,21 +214,21 @@ class PlanningEngine:
         """
         # 1. 检索相关记忆
         relevant_memories = self._retrieve_relevant_memories(context)
-        
+
         # 2. 获取反思洞察
         insights = []
         if use_reflections and self.reflection_engine:
             insights = self._get_recent_insights()
-        
+
         # 3. 生成行动项
         actions = self._generate_actions(
-            context, 
-            relevant_memories, 
-            insights, 
+            context,
+            relevant_memories,
+            insights,
             horizon,
             max_actions
         )
-        
+
         # 4. 创建计划
         now = datetime.now(timezone.utc)
         plan = Plan(
@@ -241,17 +241,17 @@ class PlanningEngine:
             updated_at=now,
             source_insights=[i.id for i in insights]
         )
-        
+
         # 5. 存储计划
         self.plans[plan.id] = plan
         for action in actions:
             self.actions[action.id] = action
-        
+
         # 6. 将计划存入记忆流
         self._store_plan_as_memory(plan)
-        
+
         return plan
-    
+
     def get_next_actions(self, limit: int = 5) -> List[Action]:
         """
         获取下一步要执行的行动
@@ -262,7 +262,7 @@ class PlanningEngine:
             a for a in self.actions.values()
             if a.status == ActionStatus.PENDING
         ]
-        
+
         # 排序：优先级 > 截止时间
         priority_order = {
             ActionPriority.CRITICAL: 0,
@@ -270,16 +270,16 @@ class PlanningEngine:
             ActionPriority.MEDIUM: 2,
             ActionPriority.LOW: 3
         }
-        
+
         pending_actions.sort(
             key=lambda a: (
                 priority_order.get(a.priority, 3),
                 a.deadline or datetime.max.replace(tzinfo=timezone.utc)
             )
         )
-        
+
         return pending_actions[:limit]
-    
+
     def update_action_status(
         self,
         action_id: str,
@@ -288,17 +288,17 @@ class PlanningEngine:
         """更新行动状态"""
         if action_id not in self.actions:
             return None
-        
+
         action = self.actions[action_id]
         action.status = status
-        
+
         # 更新关联计划
         for plan in self.plans.values():
             if action_id in [a.id for a in plan.actions]:
                 plan.updated_at = datetime.now(timezone.utc)
-        
+
         return action
-    
+
     def replan(
         self,
         plan_id: str,
@@ -311,13 +311,13 @@ class PlanningEngine:
         """
         if plan_id not in self.plans:
             return None
-        
+
         old_plan = self.plans[plan_id]
-        
+
         # 获取已完成和未完成的行动
         completed = [a for a in old_plan.actions if a.status == ActionStatus.COMPLETED]
         pending = [a for a in old_plan.actions if a.status == ActionStatus.PENDING]
-        
+
         # 生成新的行动项
         new_context = f"{old_plan.description}\n调整原因: {reason}"
         new_plan = self.plan(
@@ -325,30 +325,30 @@ class PlanningEngine:
             horizon=old_plan.horizon,
             max_actions=len(pending) + 5
         )
-        
+
         # 合并已完成的行动
         new_plan.actions = completed + new_plan.actions
         new_plan.updated_at = datetime.now(timezone.utc)
-        
+
         return new_plan
-    
+
     def get_daily_plan(self) -> Plan:
         """生成今日计划"""
         today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         context = f"今日计划 ({today})"
-        
+
         return self.plan(
             context,
             horizon=PlanHorizon.IMMEDIATE,
             max_actions=10
         )
-    
+
     def get_status(self) -> Dict[str, Any]:
         """获取规划引擎状态"""
         total_actions = len(self.actions)
         pending = len([a for a in self.actions.values() if a.status == ActionStatus.PENDING])
         completed = len([a for a in self.actions.values() if a.status == ActionStatus.COMPLETED])
-        
+
         return {
             "total_plans": len(self.plans),
             "total_actions": total_actions,
@@ -356,37 +356,37 @@ class PlanningEngine:
             "completed_actions": completed,
             "completion_rate": completed / total_actions if total_actions > 0 else 0
         }
-    
+
     # ==================== 私有方法 ====================
-    
+
     def _retrieve_relevant_memories(self, context: str) -> List[Memory]:
         """检索相关记忆"""
         all_memories = self.memory_stream.get_all()
-        
+
         # 排除计划类记忆（避免循环）
         non_plan_memories = [
             m for m in all_memories
             if m.memory_type != MemoryType.PLAN
         ]
-        
+
         return self.retriever.retrieve_for_planning(
             non_plan_memories,
             context,
             top_k=20
         )
-    
+
     def _get_recent_insights(self) -> List[Insight]:
         """获取最近的反思洞察"""
         if not self.reflection_engine:
             return []
-        
+
         # 从记忆流中获取最近的反思记忆
         reflections = self.memory_stream.get_by_type(MemoryType.REFLECTION)
         recent = [
             m for m in reflections
             if (datetime.now(timezone.utc) - m.created_at).total_seconds() < 7 * 24 * 3600  # 一周内
         ]
-        
+
         # 转换为 Insight 格式
         insights = []
         for m in recent[:5]:
@@ -398,9 +398,9 @@ class PlanningEngine:
                 confidence=m.metadata.get("confidence", 0.7),
                 tags=m.metadata.get("tags", [])
             ))
-        
+
         return insights
-    
+
     def _generate_actions(
         self,
         context: str,
@@ -412,7 +412,7 @@ class PlanningEngine:
         """生成行动项"""
         # 构建提示词
         prompt = self._build_planning_prompt(context, memories, insights, horizon)
-        
+
         # 调用 LLM
         if self.llm_client:
             response = self._call_llm(prompt)
@@ -420,9 +420,9 @@ class PlanningEngine:
         else:
             # 无 LLM 时使用规则生成
             actions = self._rule_based_actions(context, memories, insights, horizon)
-        
+
         return actions[:max_actions]
-    
+
     def _build_planning_prompt(
         self,
         context: str,
@@ -435,19 +435,19 @@ class PlanningEngine:
             f"- [{m.memory_type.value}] {m.content}"
             for m in memories[:20]
         ]
-        
+
         insight_summaries = [
             f"- {i.content}"
             for i in insights
         ]
-        
+
         horizon_desc = {
             PlanHorizon.IMMEDIATE: "几小时内完成",
             PlanHorizon.SHORT_TERM: "几天内完成",
             PlanHorizon.MEDIUM_TERM: "几周内完成",
             PlanHorizon.LONG_TERM: "几个月内完成"
         }
-        
+
         return f"""你是一个具有规划能力的 AI 助手。请基于以下信息制定行动计划。
 
 ## 目标
@@ -469,7 +469,7 @@ class PlanningEngine:
 4. 以 JSON 格式输出：{{"actions": [{{"title": "...", "description": "...", "priority": "high/medium/low", "estimated_duration": 60}}]}}
 
 请输出你的行动计划："""
-    
+
     def _call_llm(self, prompt: str) -> str:
         """调用 LLM"""
         if hasattr(self.llm_client, 'generate'):
@@ -480,7 +480,7 @@ class PlanningEngine:
             return self.llm_client(prompt)
         else:
             raise ValueError("Invalid LLM client")
-    
+
     def _parse_llm_actions(
         self,
         response: str,
@@ -494,10 +494,10 @@ class PlanningEngine:
             if json_match:
                 data = json.loads(json_match.group())
                 actions_data = data.get("actions", [])
-                
+
                 actions = []
                 now = datetime.now(timezone.utc)
-                
+
                 for i, item in enumerate(actions_data):
                     priority_str = item.get("priority", "medium").lower()
                     priority_map = {
@@ -506,7 +506,7 @@ class PlanningEngine:
                         "medium": ActionPriority.MEDIUM,
                         "low": ActionPriority.LOW
                     }
-                    
+
                     action = Action(
                         id=f"action_{now.strftime('%Y%m%d%H%M%S')}_{i}",
                         title=item.get("title", f"行动 {i+1}"),
@@ -520,13 +520,13 @@ class PlanningEngine:
                         source_insight_ids=[i.id for i in insights[:3]]
                     )
                     actions.append(action)
-                
+
                 return actions
         except Exception as e:
             print(f"[PlanningEngine] 解析 LLM 响应失败: {e}")
-        
+
         return self._rule_based_actions("", memories, insights, horizon)
-    
+
     def _rule_based_actions(
         self,
         context: str,
@@ -537,7 +537,7 @@ class PlanningEngine:
         """基于规则的行动生成"""
         actions = []
         now = datetime.now(timezone.utc)
-        
+
         # 从记忆中提取待办事项
         for m in memories[:5]:
             if "需要" in m.content or "应该" in m.content or "计划" in m.content:
@@ -551,7 +551,7 @@ class PlanningEngine:
                     created_at=now,
                     source_memory_ids=[m.id]
                 ))
-        
+
         # 从洞察中生成行动
         for insight in insights[:3]:
             actions.append(Action(
@@ -564,7 +564,7 @@ class PlanningEngine:
                 created_at=now,
                 source_insight_ids=[insight.id]
             ))
-        
+
         # 默认行动
         if not actions:
             actions.append(Action(
@@ -576,18 +576,18 @@ class PlanningEngine:
                 horizon=horizon,
                 created_at=now
             ))
-        
+
         return actions
-    
+
     def _store_plan_as_memory(self, plan: Plan):
         """将计划存入记忆流"""
         action_summary = "\n".join([
             f"- [{a.priority.value}] {a.title}"
             for a in plan.actions
         ])
-        
+
         content = f"[计划] {plan.title}\n\n行动项:\n{action_summary}"
-        
+
         self.memory_stream.add(
             content=content,
             memory_type=MemoryType.PLAN,
@@ -629,34 +629,34 @@ def plan(
     """
     if memory_stream is None:
         memory_stream = MemoryStream()
-    
+
     engine = PlanningEngine(memory_stream, llm_client=llm_client)
     plan_obj = engine.plan(context)
-    
+
     return plan_obj.actions
 
 
 if __name__ == "__main__":
     # 测试代码
     stream = MemoryStream()
-    
+
     # 添加测试记忆
     stream.add("需要学习 Docker 容器技术", MemoryType.OBSERVATION, importance=7.0)
     stream.add("项目需要容器化部署", MemoryType.OBSERVATION, importance=8.0)
     stream.add("已经学习了 Kubernetes 基础", MemoryType.ACTION, importance=6.0)
-    
+
     # 创建规划引擎
     engine = PlanningEngine(stream)
-    
+
     # 生成计划
     plan_obj = engine.plan("学习容器技术并应用到项目中")
-    
+
     print(f"计划: {plan_obj.title}")
     print(f"行动数: {len(plan_obj.actions)}")
     print("\n行动列表:")
     for action in plan_obj.actions:
         print(f"  [{action.priority.value}] {action.title}")
-    
+
     # 获取下一步行动
     next_actions = engine.get_next_actions()
     print(f"\n下一步行动: {len(next_actions)} 个")

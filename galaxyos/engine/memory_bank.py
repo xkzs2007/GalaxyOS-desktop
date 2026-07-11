@@ -50,19 +50,19 @@ class BankMemory:
     source: str = "unknown"
     metadata: Dict = field(default_factory=dict)
     tags: List[str] = field(default_factory=list)
-    
+
     def __post_init__(self):
         if not self.created_at:
             self.created_at = datetime.now(timezone.utc).isoformat()
         if not self.last_accessed:
             self.last_accessed = self.created_at
-    
+
     def get_age_days(self) -> float:
         """获取记忆年龄（天）"""
         created = datetime.fromisoformat(self.created_at.replace('Z', '+00:00'))
         age = datetime.now(timezone.utc) - created
         return age.total_seconds() / 86400
-    
+
     def get_retention_score(self) -> float:
         """
         计算保留分数
@@ -76,19 +76,19 @@ class BankMemory:
         """
         # 基础分数
         base_score = self.importance * 0.4 + self.emotional_weight * 0.2
-        
+
         # 访问频率加成
         access_bonus = min(0.2, self.access_count * 0.02)
-        
+
         # 时间衰减
         age_days = self.get_age_days()
         time_decay = np.exp(-age_days / 365)  # 一年后衰减到 37%
-        
+
         # 综合分数
         score = (base_score + access_bonus) * self.decay_factor * time_decay
-        
+
         return min(1.0, max(0.0, score))
-    
+
     def to_dict(self) -> Dict:
         """转换为字典"""
         return {
@@ -105,7 +105,7 @@ class BankMemory:
             "metadata": self.metadata,
             "tags": self.tags
         }
-    
+
     @classmethod
     def from_dict(cls, data: Dict) -> 'BankMemory':
         """从字典创建"""
@@ -135,9 +135,9 @@ class MemoryBank:
     - 批量操作
     - 记忆统计和分析
     """
-    
+
     EMBEDDING_DIM = 128  # 嵌入维度
-    
+
     def __init__(self, db_path: str = None):
         """
         初始化记忆银行
@@ -145,15 +145,15 @@ class MemoryBank:
         Args:
             db_path: 数据库路径
         """
-        self.db_path = Path(db_path or 
+        self.db_path = Path(db_path or
             Path(workspace()) / ".memgpt" / "memory_bank.db")
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        
+
         self.lock = threading.RLock()
         self._embedding_cache: Dict[str, List[float]] = {}
-        
+
         self._init_db()
-    
+
     def _init_db(self):
         """初始化数据库"""
         with sqlite3.connect(self.db_path) as conn:
@@ -174,7 +174,7 @@ class MemoryBank:
                     tags TEXT
                 )
             """)
-            
+
             # 向量索引表（简化版，实际应用中应使用专门的向量数据库）
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS embeddings (
@@ -183,7 +183,7 @@ class MemoryBank:
                     FOREIGN KEY (memory_id) REFERENCES memories(id) ON DELETE CASCADE
                 )
             """)
-            
+
             # 索引
             conn.execute("""
                 CREATE INDEX IF NOT EXISTS idx_importance ON memories(importance)
@@ -196,11 +196,11 @@ class MemoryBank:
                     importance * decay_factor
                 )
             """)
-            
+
             conn.commit()
-    
+
     # ==================== 嵌入函数 ====================
-    
+
     def _compute_embedding(self, text: str) -> List[float]:
         """
         计算文本嵌入
@@ -212,49 +212,49 @@ class MemoryBank:
         """
         # 使用哈希生成伪向量（仅用于演示）
         words = re.findall(r'[\u4e00-\u9fff]+|[a-zA-Z]+|\d+', text.lower())
-        
+
         embedding = np.zeros(self.EMBEDDING_DIM)
-        
+
         for word in words:
             # 使用单词哈希作为索引
             hash_val = int(hashlib.md5(word.encode()).hexdigest()[:8], 16)
             idx = hash_val % self.EMBEDDING_DIM
-            
+
             # TF-IDF 风格的权重
             embedding[idx] += 1.0 / (1 + words.count(word))
-        
+
         # 归一化
         norm = np.linalg.norm(embedding)
         if norm > 0:
             embedding = embedding / norm
-        
+
         return embedding.tolist()
-    
+
     def _cosine_similarity(self, vec1: List[float], vec2: List[float]) -> float:
         """计算余弦相似度"""
         a = np.array(vec1)
         b = np.array(vec2)
-        
+
         dot = np.dot(a, b)
         norm_a = np.linalg.norm(a)
         norm_b = np.linalg.norm(b)
-        
+
         if norm_a == 0 or norm_b == 0:
             return 0.0
-        
+
         return dot / (norm_a * norm_b)
-    
+
     def _embedding_to_blob(self, embedding: List[float]) -> bytes:
         """嵌入向量转二进制"""
         return np.array(embedding, dtype=np.float32).tobytes()
-    
+
     def _blob_to_embedding(self, blob: bytes) -> List[float]:
         """二进制转嵌入向量"""
         arr = np.frombuffer(blob, dtype=np.float32)
         return arr.tolist()
-    
+
     # ==================== CRUD 操作 ====================
-    
+
     def store(
         self,
         content: str,
@@ -281,12 +281,12 @@ class MemoryBank:
         with self.lock:
             # 生成 ID
             memory_id = f"bank_{datetime.now().strftime('%Y%m%d%H%M%S')}_{hashlib.md5(content.encode()).hexdigest()[:8]}"
-            
+
             now = datetime.now(timezone.utc).isoformat()
-            
+
             # 计算嵌入
             embedding = self._compute_embedding(content)
-            
+
             # 存储到数据库
             with sqlite3.connect(self.db_path) as conn:
                 conn.execute("""
@@ -306,20 +306,20 @@ class MemoryBank:
                     json.dumps(metadata or {}, ensure_ascii=False),
                     json.dumps(tags or [], ensure_ascii=False)
                 ))
-                
+
                 # 存储嵌入
                 conn.execute("""
                     INSERT INTO embeddings (memory_id, embedding)
                     VALUES (?, ?)
                 """, (memory_id, self._embedding_to_blob(embedding)))
-                
+
                 conn.commit()
-            
+
             # 缓存嵌入
             self._embedding_cache[memory_id] = embedding
-            
+
             return memory_id
-    
+
     def retrieve(self, memory_id: str) -> Optional[BankMemory]:
         """
         检索单条记忆
@@ -336,12 +336,12 @@ class MemoryBank:
                 cursor = conn.execute("""
                     SELECT * FROM memories WHERE id = ?
                 """, (memory_id,))
-                
+
                 row = cursor.fetchone()
-                
+
                 if not row:
                     return None
-                
+
                 memory = BankMemory(
                     id=row["id"],
                     content=row["content"],
@@ -356,12 +356,12 @@ class MemoryBank:
                     metadata=json.loads(row["metadata"]) if row["metadata"] else {},
                     tags=json.loads(row["tags"]) if row["tags"] else []
                 )
-                
+
                 # 更新访问信息
                 self._touch(memory_id)
-                
+
                 return memory
-    
+
     def search(
         self,
         query: str,
@@ -388,25 +388,25 @@ class MemoryBank:
         with self.lock:
             # 计算查询嵌入
             query_embedding = self._compute_embedding(query)
-            
+
             # 加载所有候选记忆
             with sqlite3.connect(self.db_path) as conn:
                 conn.row_factory = sqlite3.Row
-                
+
                 # 构建查询
                 sql = "SELECT * FROM memories WHERE importance >= ?"
                 params = [min_importance]
-                
+
                 if source:
                     sql += " AND source = ?"
                     params.append(source)
-                
+
                 cursor = conn.execute(sql, params)
                 rows = cursor.fetchall()
-            
+
             # 计算相似度
             results = []
-            
+
             for row in rows:
                 memory = BankMemory(
                     id=row["id"],
@@ -422,17 +422,17 @@ class MemoryBank:
                     metadata=json.loads(row["metadata"]) if row["metadata"] else {},
                     tags=json.loads(row["tags"]) if row["tags"] else []
                 )
-                
+
                 # 标签过滤
                 if tags:
                     if not any(tag in memory.tags for tag in tags):
                         continue
-                
+
                 # 保留分数过滤
                 retention = memory.get_retention_score()
                 if retention < min_retention:
                     continue
-                
+
                 # 获取嵌入
                 if memory.id in self._embedding_cache:
                     embedding = self._embedding_cache[memory.id]
@@ -449,25 +449,25 @@ class MemoryBank:
                             self._embedding_cache[memory.id] = embedding
                         else:
                             embedding = self._compute_embedding(memory.content)
-                
+
                 # 计算相似度
                 similarity = self._cosine_similarity(query_embedding, embedding)
-                
+
                 # 综合分数 = 相似度 * 保留分数
                 combined_score = similarity * (0.5 + 0.5 * retention)
-                
+
                 if combined_score > 0.05:  # 阈值
                     results.append((memory, combined_score))
-            
+
             # 排序
             results.sort(key=lambda x: x[1], reverse=True)
-            
+
             # 更新访问信息
             for memory, _ in results[:top_k]:
                 self._touch(memory.id)
-            
+
             return results[:top_k]
-    
+
     def update(
         self,
         memory_id: str,
@@ -483,66 +483,66 @@ class MemoryBank:
             memory = self.retrieve(memory_id)
             if not memory:
                 return False
-            
+
             # 构建更新
             updates = []
             params = []
-            
+
             if content is not None:
                 updates.append("content = ?")
                 params.append(content)
                 # 重新计算嵌入
                 embedding = self._compute_embedding(content)
                 self._embedding_cache[memory_id] = embedding
-            
+
             if importance is not None:
                 updates.append("importance = ?")
                 params.append(importance)
-            
+
             if emotional_weight is not None:
                 updates.append("emotional_weight = ?")
                 params.append(emotional_weight)
-            
+
             if metadata is not None:
                 updates.append("metadata = ?")
                 params.append(json.dumps(metadata, ensure_ascii=False))
-            
+
             if tags is not None:
                 updates.append("tags = ?")
                 params.append(json.dumps(tags, ensure_ascii=False))
-            
+
             if not updates:
                 return True
-            
+
             params.append(memory_id)
-            
+
             with sqlite3.connect(self.db_path) as conn:
                 sql = f"UPDATE memories SET {', '.join(updates)} WHERE id = ?"
                 conn.execute(sql, params)
-                
+
                 # 更新嵌入
                 if content is not None:
                     conn.execute("""
                         UPDATE embeddings SET embedding = ?
                         WHERE memory_id = ?
                     """, (self._embedding_to_blob(embedding), memory_id))
-                
+
                 conn.commit()
-            
+
             return True
-    
+
     def delete(self, memory_id: str) -> bool:
         """删除记忆"""
         with self.lock:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.execute("DELETE FROM memories WHERE id = ?", (memory_id,))
                 conn.commit()
-                
+
                 if memory_id in self._embedding_cache:
                     del self._embedding_cache[memory_id]
-                
+
                 return cursor.rowcount > 0
-    
+
     def _touch(self, memory_id: str):
         """更新访问信息"""
         now = datetime.now(timezone.utc).isoformat()
@@ -553,9 +553,9 @@ class MemoryBank:
                 WHERE id = ?
             """, (now, memory_id))
             conn.commit()
-    
+
     # ==================== 批量操作 ====================
-    
+
     def batch_store(self, memories: List[Dict]) -> List[str]:
         """
         批量存储
@@ -578,7 +578,7 @@ class MemoryBank:
             )
             ids.append(memory_id)
         return ids
-    
+
     def batch_delete(self, memory_ids: List[str]) -> int:
         """批量删除"""
         count = 0
@@ -586,9 +586,9 @@ class MemoryBank:
             if self.delete(mid):
                 count += 1
         return count
-    
+
     # ==================== 记忆衰减与巩固 ====================
-    
+
     def apply_decay(self, decay_rate: float = 0.99):
         """
         应用记忆衰减
@@ -604,7 +604,7 @@ class MemoryBank:
                     WHERE consolidated = 0
                 """, (decay_rate,))
                 conn.commit()
-    
+
     def consolidate(self, threshold: float = 0.7):
         """
         记忆巩固
@@ -622,7 +622,7 @@ class MemoryBank:
                     SELECT * FROM memories WHERE consolidated = 0
                 """)
                 rows = cursor.fetchall()
-            
+
             for row in rows:
                 memory = BankMemory(
                     id=row["id"],
@@ -638,14 +638,14 @@ class MemoryBank:
                     metadata={},
                     tags=[]
                 )
-                
+
                 if memory.get_retention_score() >= threshold:
                     with sqlite3.connect(self.db_path) as conn:
                         conn.execute("""
                             UPDATE memories SET consolidated = 1 WHERE id = ?
                         """, (memory.id,))
                         conn.commit()
-    
+
     def cleanup(self, min_retention: float = 0.1, max_age_days: int = 365):
         """
         清理低价值记忆
@@ -663,9 +663,9 @@ class MemoryBank:
                 conn.row_factory = sqlite3.Row
                 cursor = conn.execute("SELECT * FROM memories")
                 rows = cursor.fetchall()
-            
+
             to_delete = []
-            
+
             for row in rows:
                 memory = BankMemory(
                     id=row["id"],
@@ -681,25 +681,25 @@ class MemoryBank:
                     metadata={},
                     tags=[]
                 )
-                
+
                 # 巩固的记忆不删除
                 if memory.consolidated:
                     continue
-                
+
                 # 检查保留分数
                 if memory.get_retention_score() < min_retention:
                     to_delete.append(memory.id)
                     continue
-                
+
                 # 检查年龄
                 if memory.get_age_days() > max_age_days and memory.access_count == 0:
                     to_delete.append(memory.id)
-            
+
             # 批量删除
             return self.batch_delete(to_delete)
-    
+
     # ==================== 统计与分析 ====================
-    
+
     def stats(self) -> Dict:
         """获取统计信息"""
         with self.lock:
@@ -707,15 +707,15 @@ class MemoryBank:
                 # 总数
                 cursor = conn.execute("SELECT COUNT(*) FROM memories")
                 total = cursor.fetchone()[0]
-                
+
                 # 平均重要性
                 cursor = conn.execute("SELECT AVG(importance) FROM memories")
                 avg_importance = cursor.fetchone()[0] or 0
-                
+
                 # 巩固数量
                 cursor = conn.execute("SELECT COUNT(*) FROM memories WHERE consolidated = 1")
                 consolidated = cursor.fetchone()[0]
-                
+
                 # 按来源统计
                 cursor = conn.execute("""
                     SELECT source, COUNT(*) as cnt 
@@ -723,14 +723,14 @@ class MemoryBank:
                     GROUP BY source
                 """)
                 by_source = {row[0]: row[1] for row in cursor.fetchall()}
-                
+
                 # 最近访问
                 cursor = conn.execute("""
                     SELECT COUNT(*) FROM memories 
                     WHERE last_accessed > datetime('now', '-7 days')
                 """)
                 recent_accessed = cursor.fetchone()[0]
-                
+
                 return {
                     "total_memories": total,
                     "consolidated_memories": consolidated,
@@ -739,7 +739,7 @@ class MemoryBank:
                     "recent_accessed": recent_accessed,
                     "cache_size": len(self._embedding_cache)
                 }
-    
+
     def get_memories_by_importance(self, limit: int = 100) -> List[BankMemory]:
         """按重要性获取记忆"""
         with self.lock:
@@ -750,9 +750,9 @@ class MemoryBank:
                     ORDER BY importance DESC 
                     LIMIT ?
                 """, (limit,))
-                
+
                 rows = cursor.fetchall()
-                
+
                 return [BankMemory(
                     id=row["id"],
                     content=row["content"],
@@ -767,12 +767,12 @@ class MemoryBank:
                     metadata=json.loads(row["metadata"]) if row["metadata"] else {},
                     tags=json.loads(row["tags"]) if row["tags"] else []
                 ) for row in rows]
-    
+
     def get_memories_by_age(self, max_age_days: int = 30) -> List[BankMemory]:
         """获取指定天数内的记忆"""
         with self.lock:
             cutoff = (datetime.now(timezone.utc) - timedelta(days=max_age_days)).isoformat()
-            
+
             with sqlite3.connect(self.db_path) as conn:
                 conn.row_factory = sqlite3.Row
                 cursor = conn.execute("""
@@ -780,9 +780,9 @@ class MemoryBank:
                     WHERE created_at > ?
                     ORDER BY created_at DESC
                 """, (cutoff,))
-                
+
                 rows = cursor.fetchall()
-                
+
                 return [BankMemory(
                     id=row["id"],
                     content=row["content"],
@@ -804,7 +804,7 @@ class MemoryBank:
 def main():
     """命令行接口"""
     import argparse
-    
+
     parser = argparse.ArgumentParser(description="记忆银行")
     parser.add_argument("command", choices=[
         "store", "retrieve", "search", "delete", "stats", "decay", "cleanup"
@@ -815,11 +815,11 @@ def main():
     parser.add_argument("--importance", type=float, default=0.5, help="重要性")
     parser.add_argument("--top-k", type=int, default=10, help="返回数量")
     parser.add_argument("--tags", nargs="+", help="标签")
-    
+
     args = parser.parse_args()
-    
+
     bank = MemoryBank()
-    
+
     if args.command == "store":
         if not args.content:
             print("错误: 需要提供 --content")
@@ -830,7 +830,7 @@ def main():
             tags=args.tags
         )
         print(f"✅ 已存储: {memory_id}")
-    
+
     elif args.command == "retrieve":
         if not args.id:
             print("错误: 需要提供 --id")
@@ -842,7 +842,7 @@ def main():
             print(f"保留分数: {memory.get_retention_score():.3f}")
         else:
             print("❌ 未找到")
-    
+
     elif args.command == "search":
         if not args.query:
             print("错误: 需要提供 --query")
@@ -851,23 +851,23 @@ def main():
         print(f"找到 {len(results)} 条记忆:")
         for memory, score in results:
             print(f"  [{score:.3f}] {memory.content[:50]}...")
-    
+
     elif args.command == "delete":
         if not args.id:
             print("错误: 需要提供 --id")
             return
         success = bank.delete(args.id)
         print(f"{'✅ 已删除' if success else '❌ 未找到'}")
-    
+
     elif args.command == "stats":
         stats = bank.stats()
         import json
         print(json.dumps(stats, indent=2, ensure_ascii=False))
-    
+
     elif args.command == "decay":
         bank.apply_decay()
         print("✅ 已应用记忆衰减")
-    
+
     elif args.command == "cleanup":
         deleted = bank.cleanup()
         print(f"✅ 已清理 {deleted} 条低价值记忆")

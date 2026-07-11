@@ -39,30 +39,30 @@ class AutoLearner:
     3. 从交互模式中学习习惯
     4. 自动更新用户画像
     """
-    
+
     def __init__(self, learning_path: Optional[str] = None):
         if learning_path is None:
             workspace = os.environ.get('OPENCLAW_WORKSPACE',
                                        Path(workspace()))
             learning_path = str(Path(workspace) / 'memory' / 'learning_events.jsonl')
-        
+
         self.learning_path = learning_path
         self.events: List[LearningEvent] = []
         self.preferences: Dict[str, Any] = {}
         self.patterns: Dict[str, int] = {}
         self._load_events()
-    
+
     def _load_events(self):
         """加载学习事件"""
         if not Path(self.learning_path).exists():
             return
-        
+
         with open(self.learning_path, 'r', encoding='utf-8') as f:
             for line in f:
                 line = line.strip()
                 if not line:
                     continue
-                
+
                 try:
                     data = json.loads(line)
                     event = LearningEvent(
@@ -76,15 +76,15 @@ class AutoLearner:
                     self.events.append(event)
                 except json.JSONDecodeError:
                     continue
-        
+
         # 重建偏好和模式
         self._rebuild_state()
         logger.info(f"加载学习事件: {len(self.events)} 条")
-    
+
     def _save_events(self):
         """保存学习事件"""
         Path(self.learning_path).parent.mkdir(parents=True, exist_ok=True)
-        
+
         with open(self.learning_path, 'w', encoding='utf-8') as f:
             for event in self.events:
                 f.write(json.dumps({
@@ -95,28 +95,28 @@ class AutoLearner:
                     'learned_at': event.learned_at,
                     'applied': event.applied
                 }, ensure_ascii=False) + '\n')
-    
+
     def _rebuild_state(self):
         """重建状态"""
         self.preferences = {}
         self.patterns = {}
-        
+
         for event in self.events:
             if event.event_type == 'preference':
                 key = event.context.get('key', '')
                 value = event.context.get('value')
                 if key:
                     self.preferences[key] = value
-            
+
             elif event.event_type == 'pattern':
                 pattern = event.content
                 self.patterns[pattern] = self.patterns.get(pattern, 0) + 1
-    
+
     def _generate_id(self) -> str:
         """生成事件 ID"""
         import uuid
         return f"learn_{uuid.uuid4().hex[:8]}"
-    
+
     def learn_preference(self, key: str, value: Any, context: Optional[Dict] = None):
         """
         学习偏好
@@ -134,15 +134,15 @@ class AutoLearner:
             learned_at=datetime.now().isoformat(),
             applied=False
         )
-        
+
         self.events.append(event)
         self.preferences[key] = value
         self._save_events()
-        
+
         logger.info(f"学习偏好: {key} = {value}")
-    
-    def learn_correction(self, 
-                          original: str, 
+
+    def learn_correction(self,
+                          original: str,
                           corrected: str,
                           context: Optional[Dict] = None):
         """
@@ -161,12 +161,12 @@ class AutoLearner:
             learned_at=datetime.now().isoformat(),
             applied=False
         )
-        
+
         self.events.append(event)
         self._save_events()
-        
+
         logger.info(f"学习纠正: {original} -> {corrected}")
-    
+
     def learn_feedback(self,
                         feedback_type: str,
                         content: str,
@@ -187,12 +187,12 @@ class AutoLearner:
             learned_at=datetime.now().isoformat(),
             applied=False
         )
-        
+
         self.events.append(event)
         self._save_events()
-        
+
         logger.info(f"学习反馈: {feedback_type} - {content}")
-    
+
     def learn_pattern(self, pattern: str, context: Optional[Dict] = None):
         """
         学习模式
@@ -209,13 +209,13 @@ class AutoLearner:
             learned_at=datetime.now().isoformat(),
             applied=False
         )
-        
+
         self.events.append(event)
         self.patterns[pattern] = self.patterns.get(pattern, 0) + 1
         self._save_events()
-        
+
         logger.info(f"学习模式: {pattern}")
-    
+
     def extract_preferences_from_text(self, text: str) -> List[Dict]:
         """
         从文本中提取偏好
@@ -227,7 +227,7 @@ class AutoLearner:
             提取的偏好列表
         """
         preferences = []
-        
+
         # 偏好模式
         patterns = [
             (r'我喜欢(.+)', 'like'),
@@ -238,7 +238,7 @@ class AutoLearner:
             (r'我总是(.+)', 'always'),
             (r'我从不(.+)', 'never'),
         ]
-        
+
         for pattern, pref_type in patterns:
             matches = re.findall(pattern, text)
             for match in matches:
@@ -247,9 +247,9 @@ class AutoLearner:
                     'value': match.strip(),
                     'source': text[:100]
                 })
-        
+
         return preferences
-    
+
     def auto_learn_from_interaction(self,
                                      user_input: str,
                                      assistant_response: str,
@@ -270,7 +270,7 @@ class AutoLearner:
                 value=pref['value'],
                 context={'source': pref['source']}
             )
-        
+
         # 学习反馈
         if user_feedback:
             feedback_type = 'neutral'
@@ -278,27 +278,27 @@ class AutoLearner:
                 feedback_type = 'positive'
             elif any(kw in user_feedback for kw in ['不对', '错了', '不好', 'wrong', 'bad']):
                 feedback_type = 'negative'
-            
+
             self.learn_feedback(feedback_type, user_feedback)
-        
+
         # 学习交互模式
         if len(user_input) > 10:
             # 简单模式：用户输入长度分布
             length_category = 'short' if len(user_input) < 50 else 'medium' if len(user_input) < 200 else 'long'
             self.learn_pattern(f"input_length:{length_category}")
-    
+
     def get_preference(self, key: str, default: Any = None) -> Any:
         """获取偏好"""
         return self.preferences.get(key, default)
-    
+
     def get_all_preferences(self) -> Dict[str, Any]:
         """获取所有偏好"""
         return self.preferences.copy()
-    
+
     def get_patterns(self, min_count: int = 2) -> Dict[str, int]:
         """获取模式"""
         return {k: v for k, v in self.patterns.items() if v >= min_count}
-    
+
     def get_recent_learnings(self, limit: int = 10) -> List[Dict]:
         """获取最近的学习"""
         recent = self.events[-limit:]
@@ -311,7 +311,7 @@ class AutoLearner:
             }
             for e in reversed(recent)
         ]
-    
+
     def get_stats(self) -> Dict[str, Any]:
         """获取统计信息"""
         return {

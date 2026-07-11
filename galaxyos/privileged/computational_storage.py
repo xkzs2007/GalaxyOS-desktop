@@ -1355,7 +1355,7 @@ class ComputationalStorageDetector:
         print("=== 计算存储设备检测 ===")
         print(f"存储类型: {self.info['storage_type']}")
         print(f"推荐模式: {self.info['recommended_mode']}")
-        print(f"\n计算存储能力:")
+        print("\n计算存储能力:")
         print(f"  CSD (计算存储设备): {'✅' if self.info['csd_available'] else '❌'}")
         print(f"  PIM (HBM-PIM 存内处理): {'✅' if self.info['pim_available'] else '❌'}")
         print(f"  CIM (ReRAM 存内计算): {'✅' if self.info['cim_available'] else '❌'}")

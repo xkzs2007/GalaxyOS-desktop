@@ -99,7 +99,7 @@ class ValueGate:
           {"检索增强": "...", "分层记忆": "...", "ssp:记忆预测": "..."}
         """
         sections: Dict[str, str] = {}
-        
+
         # 先尝试按 [xxx] 分组
         matches = self._SECTION_PATTERN.findall(injection)
         if matches:

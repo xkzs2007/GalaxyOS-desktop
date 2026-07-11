@@ -26,7 +26,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 
-import os as _os, sys as _sys
+import os as _os
+import sys as _sys
 from galaxyos.shared.paths import workspace
 _ws_root = workspace()
 for _p in [_ws_root, "/workspace"]:

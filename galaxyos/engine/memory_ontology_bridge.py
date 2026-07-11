@@ -27,7 +27,7 @@ class Entity:
     relations: List[Dict[str, Any]]
 
 
-@dataclass  
+@dataclass
 class MemoryEntityLink:
     """记忆与实体的关联"""
     memory_id: str
@@ -39,32 +39,32 @@ class MemoryEntityLink:
 
 class OntologyReader:
     """知识图谱读取器"""
-    
+
     def __init__(self, graph_path: Optional[str] = None):
         if graph_path is None:
-            workspace = os.environ.get('OPENCLAW_WORKSPACE', 
+            workspace = os.environ.get('OPENCLAW_WORKSPACE',
                                        Path(workspace()))
             graph_path = str(Path(workspace) / 'memory' / 'ontology' / 'graph.jsonl')
-        
+
         self.graph_path = graph_path
         self.entities: Dict[str, Entity] = {}
         self._load_graph()
-    
+
     def _load_graph(self):
         """加载知识图谱"""
         if not Path(self.graph_path).exists():
             logger.warning(f"知识图谱文件不存在: {self.graph_path}")
             return
-        
+
         with open(self.graph_path, 'r', encoding='utf-8') as f:
             for line in f:
                 line = line.strip()
                 if not line:
                     continue
-                
+
                 try:
                     data = json.loads(line)
-                    
+
                     # 处理 op 格式: {"op":"create","entity":{...}}
                     if 'op' in data:
                         op = data.get('op')
@@ -100,57 +100,57 @@ class OntologyReader:
                         self.entities[entity.id] = entity
                 except json.JSONDecodeError:
                     continue
-        
+
         logger.info(f"加载知识图谱: {len(self.entities)} 个实体")
-    
+
     def get_entity(self, entity_id: str) -> Optional[Entity]:
         """获取实体"""
         return self.entities.get(entity_id)
-    
+
     def search_entities(self, query: str, entity_type: Optional[str] = None) -> List[Entity]:
         """搜索实体（简单关键词匹配）"""
         results = []
         query_lower = query.lower()
-        
+
         for entity in self.entities.values():
             if entity_type and entity.type != entity_type:
                 continue
-            
+
             # 匹配名称
             if query_lower in entity.name.lower():
                 results.append(entity)
                 continue
-            
+
             # 匹配属性
             for key, value in entity.properties.items():
                 if isinstance(value, str) and query_lower in value.lower():
                     results.append(entity)
                     break
-        
+
         return results
-    
+
     def get_related_entities(self, entity_id: str, relation_type: Optional[str] = None) -> List[Tuple[Entity, str]]:
         """获取关联实体"""
         entity = self.entities.get(entity_id)
         if not entity:
             return []
-        
+
         related = []
         for rel in entity.relations:
             if relation_type and rel.get('type') != relation_type:
                 continue
-            
+
             target_id = rel.get('target')
             target_entity = self.entities.get(target_id)
             if target_entity:
                 related.append((target_entity, rel.get('type', 'related')))
-        
+
         return related
 
 
 class EntityExtractor:
     """实体提取器"""
-    
+
     # 实体类型关键词
     ENTITY_PATTERNS = {
         'Person': [
@@ -179,12 +179,12 @@ class EntityExtractor:
             r'(?:华为|腾讯|阿里|百度|字节)',
         ],
     }
-    
+
     def __init__(self):
         self.patterns = {}
         for entity_type, patterns in self.ENTITY_PATTERNS.items():
             self.patterns[entity_type] = [re.compile(p) for p in patterns]
-    
+
     def extract(self, text: str) -> List[Tuple[str, str, float]]:
         """
         从文本中提取实体
@@ -193,17 +193,17 @@ class EntityExtractor:
             List of (entity_name, entity_type, confidence)
         """
         results = []
-        
+
         for entity_type, patterns in self.patterns.items():
             for pattern in patterns:
                 matches = pattern.findall(text)
                 for match in matches:
                     if isinstance(match, tuple):
                         match = match[0] if match else ''
-                    
+
                     if match and len(match) > 1:
                         results.append((match, entity_type, 0.7))
-        
+
         # 去重
         seen = set()
         unique_results = []
@@ -212,7 +212,7 @@ class EntityExtractor:
             if key not in seen:
                 seen.add(key)
                 unique_results.append((name, etype, conf))
-        
+
         return unique_results
 
 
@@ -224,33 +224,33 @@ class MemoryOntologyBridge:
     1. 从记忆中提取实体并关联到知识图谱
     2. 检索记忆时注入相关知识图谱信息
     """
-    
-    def __init__(self, 
+
+    def __init__(self,
                  graph_path: Optional[str] = None,
                  links_path: Optional[str] = None):
         self.ontology = OntologyReader(graph_path)
         self.extractor = EntityExtractor()
-        
+
         if links_path is None:
             workspace = os.environ.get('OPENCLAW_WORKSPACE',
                                        Path(workspace()))
             links_path = str(Path(workspace) / 'memory' / 'ontology' / 'memory_links.jsonl')
-        
+
         self.links_path = links_path
         self.links: List[MemoryEntityLink] = []
         self._load_links()
-    
+
     def _load_links(self):
         """加载记忆-实体关联"""
         if not Path(self.links_path).exists():
             return
-        
+
         with open(self.links_path, 'r', encoding='utf-8') as f:
             for line in f:
                 line = line.strip()
                 if not line:
                     continue
-                
+
                 try:
                     data = json.loads(line)
                     link = MemoryEntityLink(
@@ -263,13 +263,13 @@ class MemoryOntologyBridge:
                     self.links.append(link)
                 except json.JSONDecodeError:
                     continue
-        
+
         logger.info(f"加载记忆-实体关联: {len(self.links)} 条")
-    
+
     def _save_links(self):
         """保存记忆-实体关联"""
         Path(self.links_path).parent.mkdir(parents=True, exist_ok=True)
-        
+
         with open(self.links_path, 'w', encoding='utf-8') as f:
             for link in self.links:
                 f.write(json.dumps({
@@ -279,8 +279,8 @@ class MemoryOntologyBridge:
                     'relation': link.relation,
                     'confidence': link.confidence
                 }, ensure_ascii=False) + '\n')
-    
-    def link_memory_to_entities(self, 
+
+    def link_memory_to_entities(self,
                                  memory_id: str,
                                  memory_content: str,
                                  auto_create: bool = True) -> List[MemoryEntityLink]:
@@ -297,12 +297,12 @@ class MemoryOntologyBridge:
         """
         # 提取实体
         extracted = self.extractor.extract(memory_content)
-        
+
         links = []
         for entity_name, entity_type, confidence in extracted:
             # 查找现有实体
             existing = self.ontology.search_entities(entity_name, entity_type)
-            
+
             if existing:
                 entity = existing[0]
             elif auto_create:
@@ -318,7 +318,7 @@ class MemoryOntologyBridge:
                 self.ontology.entities[entity_id] = entity
             else:
                 continue
-            
+
             # 创建关联
             link = MemoryEntityLink(
                 memory_id=memory_id,
@@ -329,10 +329,10 @@ class MemoryOntologyBridge:
             )
             links.append(link)
             self.links.append(link)
-        
+
         self._save_links()
         return links
-    
+
     def get_entities_for_memory(self, memory_id: str) -> List[Tuple[Entity, str, float]]:
         """
         获取记忆关联的实体
@@ -341,15 +341,15 @@ class MemoryOntologyBridge:
             List of (entity, relation, confidence)
         """
         results = []
-        
+
         for link in self.links:
             if link.memory_id == memory_id:
                 entity = self.ontology.get_entity(link.entity_id)
                 if entity:
                     results.append((entity, link.relation, link.confidence))
-        
+
         return results
-    
+
     def get_memories_for_entity(self, entity_id: str) -> List[Tuple[str, str, float]]:
         """
         获取实体关联的记忆
@@ -358,14 +358,14 @@ class MemoryOntologyBridge:
             List of (memory_id, relation, confidence)
         """
         results = []
-        
+
         for link in self.links:
             if link.entity_id == entity_id:
                 results.append((link.memory_id, link.relation, link.confidence))
-        
+
         return results
-    
-    def enhance_search_results(self, 
+
+    def enhance_search_results(self,
                                 results: List[Dict],
                                 query: str) -> List[Dict]:
         """
@@ -380,18 +380,18 @@ class MemoryOntologyBridge:
         """
         # 从查询中提取实体
         query_entities = self.extractor.extract(query)
-        
+
         enhanced_results = []
         for result in results:
             memory_id = result.get('id', '')
-            
+
             # 获取记忆关联的实体
             linked_entities = self.get_entities_for_memory(memory_id)
-            
+
             # 计算实体匹配分数
             entity_boost = 0.0
             matched_entities = []
-            
+
             for entity, relation, confidence in linked_entities:
                 for qe_name, qe_type, qe_conf in query_entities:
                     if entity.type == qe_type and qe_name.lower() in entity.name.lower():
@@ -401,20 +401,20 @@ class MemoryOntologyBridge:
                             'type': entity.type,
                             'relation': relation
                         })
-            
+
             # 增强结果
             enhanced = result.copy()
             enhanced['entity_boost'] = entity_boost
             enhanced['matched_entities'] = matched_entities
             enhanced['enhanced_score'] = result.get('score', 0) + entity_boost
-            
+
             enhanced_results.append(enhanced)
-        
+
         # 重新排序
         enhanced_results.sort(key=lambda x: x.get('enhanced_score', 0), reverse=True)
-        
+
         return enhanced_results
-    
+
     def get_entity_context(self, entity_name: str) -> Dict[str, Any]:
         """
         获取实体的上下文信息
@@ -426,13 +426,13 @@ class MemoryOntologyBridge:
             实体上下文信息
         """
         entities = self.ontology.search_entities(entity_name)
-        
+
         if not entities:
             return {'found': False, 'name': entity_name}
-        
+
         entity = entities[0]
         related = self.ontology.get_related_entities(entity.id)
-        
+
         return {
             'found': True,
             'id': entity.id,

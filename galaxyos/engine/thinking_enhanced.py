@@ -60,7 +60,7 @@ class ReflexionEngine:
     - 当 R-CCAM Judge 低分时，分析失败原因，存储反思三元组
     - 下次遇到相似问题，注入反思经验，避免重复犯错
     """
-    
+
     def __init__(self):
         self.reflexions_path = Path(_WORKSPACE) / ".learnings" / "reflexions.jsonl"
         self.reflexions_path.parent.mkdir(parents=True, exist_ok=True)
@@ -68,7 +68,7 @@ class ReflexionEngine:
             self.reflexions_path.touch()
         self._cache: List[ReflexionEntry] = []
         self._load()
-    
+
     def _load(self):
         try:
             with open(self.reflexions_path, "r") as f:
@@ -78,7 +78,7 @@ class ReflexionEngine:
                         self._cache.append(ReflexionEntry(**data))
         except Exception:
             pass
-    
+
     def _save(self, entry: ReflexionEntry):
         try:
             with open(self.reflexions_path, "a") as f:
@@ -86,7 +86,7 @@ class ReflexionEngine:
             self._cache.append(entry)
         except Exception:
             pass
-    
+
     def record(
         self,
         question: str,
@@ -107,7 +107,7 @@ class ReflexionEngine:
         failure_pattern = "unknown"
         root_cause = ""
         fix_strategy = ""
-        
+
         if flash_client:
             try:
                 analysis_prompt = f"""分析以下回答存在的问题：
@@ -140,11 +140,11 @@ class ReflexionEngine:
                     fix_strategy = data.get("fix_strategy", "")
             except Exception:
                 pass
-        
+
         # 计算置信度下降
         avg = (scores.get("faithfulness",5) + scores.get("relevance",5) + scores.get("completeness",5)) / 3
         confidence_drop = round((10 - avg) / 10, 2)
-        
+
         entry = ReflexionEntry(
             id=f"RFX-{int(time.time())}-{os.urandom(4).hex()}",
             question=question[:200],
@@ -157,7 +157,7 @@ class ReflexionEngine:
         )
         self._save(entry)
         return entry
-    
+
     def retrieve(self, query: str, top_k: int = 3) -> List[ReflexionEntry]:
         """
         检索相关反思经验（关键词匹配）
@@ -171,7 +171,7 @@ class ReflexionEngine:
         """
         if not self._cache or not query:
             return []
-        
+
         query_words = set(query.lower())
         scored = []
         for entry in self._cache:
@@ -179,14 +179,14 @@ class ReflexionEngine:
             overlap = len(query_words & q_words)
             if overlap > 0:
                 scored.append((overlap / max(len(q_words), 1), entry))
-        
+
         scored.sort(key=lambda x: x[0], reverse=True)
         results = [e for s, e in scored[:top_k] if s > 0.05]
         for e in results:
             e.hit_count += 1
-        
+
         return results
-    
+
     def format_context(self, entries: List[ReflexionEntry]) -> str:
         """将反思记录格式化为注入上下文"""
         if not entries:
@@ -215,9 +215,9 @@ class SelfRefineLoop:
     4. 根据反馈修正回答
     5. 重复直到全部达标或达到最大轮次
     """
-    
+
     MAX_REFINE_ITERATIONS = 3
-    
+
     def __init__(self, llm_flash=None):
         self.llm_flash = llm_flash
         self.refine_prompt_template = """你之前对以下问题给出了回答。请根据自我反馈优化它。
@@ -230,7 +230,7 @@ class SelfRefineLoop:
 {feedback}
 
 请给出优化后的回答。直接输出优化结果，不要解释。"""
-    
+
     def refine(
         self,
         question: str,
@@ -250,21 +250,21 @@ class SelfRefineLoop:
         """
         if not self.llm_flash or not judge_func:
             return initial_answer, []
-        
+
         current_answer = initial_answer
         history = []
-        
+
         for i in range(self.MAX_REFINE_ITERATIONS):
             scores, feedback = judge_func(question, current_answer)
             history.append({"iteration": i + 1, "scores": scores, "feedback": feedback})
-            
+
             # 检查是否全部达标
             if all(s >= 7 for s in [scores.get("faithfulness", 0), scores.get("relevance", 0), scores.get("completeness", 0)]):
                 break
-            
+
             if i == self.MAX_REFINE_ITERATIONS - 1:
                 break
-            
+
             # 根据反馈修正
             try:
                 refine_prompt = self.refine_prompt_template.format(
@@ -282,7 +282,7 @@ class SelfRefineLoop:
                     current_answer = refined
             except Exception:
                 break
-        
+
         return current_answer, history
 
 
@@ -298,16 +298,16 @@ class MultiPathExplorer:
     3. Flash 评分选最佳路径
     4. 最佳路径交给 Pro/Flash 精加工输出
     """
-    
+
     PERSPECTIVES = [
         "从事实性角度分析",
         "从用户实际需求角度给出实用建议",
         "将问题拆解为子步骤逐步推理",
     ]
-    
+
     def __init__(self, llm_flash=None):
         self.llm_flash = llm_flash
-    
+
     def explore(self, question: str) -> Dict[str, Any]:
         """
         多路径探索
@@ -323,10 +323,10 @@ class MultiPathExplorer:
             }
         """
         result = {"paths": [], "best_answer": "", "path_count": 0}
-        
+
         if not self.llm_flash:
             return result
-        
+
         paths = []
         for perspective in self.PERSPECTIVES:
             try:
@@ -340,17 +340,17 @@ class MultiPathExplorer:
                 paths.append({"perspective": perspective, "reasoning": reasoning[:300]})
             except Exception:
                 paths.append({"perspective": perspective, "reasoning": ""})
-        
+
         if not paths:
             return result
-        
+
         # Flash 评分选择最优路径
         try:
             judge_prompt = "以下是3个AI助手对同一问题的不同回答路径。请选择最佳路径（返回JSON格式）：\n"
             for i, p in enumerate(paths):
                 judge_prompt += f"\n路径{i+1}: {p['perspective']}\n回答: {p['reasoning'][:200]}\n"
             judge_prompt += '\n请返回JSON: {"best_path": 1, "reason": "简要原因"}'
-            
+
             rsp = self.llm_flash.chat.completions.create(
                 model="deepseek-v4-flash",
                 messages=[{"role": "user", "content": judge_prompt}],
@@ -370,11 +370,11 @@ class MultiPathExplorer:
             # 默认选第一条
             if paths:
                 paths[0]["score"] = 1.0
-        
+
         result["paths"] = paths
         result["path_count"] = len([p for p in paths if p["reasoning"]])
         result["best_answer"] = paths[0]["reasoning"] if paths else ""
-        
+
         return result
 
 
@@ -387,10 +387,10 @@ class FlashNLP:
     手搓规则只做 0ms 层（分词、关键词抽取），
     语义理解全部交给 Flash。
     """
-    
+
     def __init__(self, llm_flash=None):
         self.llm_flash = llm_flash
-    
+
     def resolve_coref(self, text: str, context: str = "") -> Dict[str, str]:
         """
         指代消解（Flash 版）
@@ -400,7 +400,7 @@ class FlashNLP:
         if not self.llm_flash:
             from nlp_enhanced import CoreferenceResolver
             return CoreferenceResolver().resolve(text, context)
-        
+
         try:
             prompt = f"""分析以下对话中代词指代的对象。
 
@@ -410,7 +410,7 @@ class FlashNLP:
 返回JSON格式：{{"代词": "指代对象", ...}}
 注意：只返回存在的代词和它指代的对象。
 示例：{{"它": "DAG上下文管理器", "他": "用户"}}"""
-            
+
             rsp = self.llm_flash.chat.completions.create(
                 model="deepseek-v4-flash",
                 messages=[{"role": "user", "content": prompt}],
@@ -423,9 +423,9 @@ class FlashNLP:
                 return json.loads(jm.group())
         except Exception:
             pass
-        
+
         return {}
-    
+
     def detect_comparison(self, text: str) -> Optional[Dict]:
         """
         对比检测（Flash 版）
@@ -438,7 +438,7 @@ class FlashNLP:
             if r:
                 return asdict(r)
             return None
-        
+
         try:
             prompt = f"""检测以下句子是否包含比较或对比关系。
 
@@ -447,7 +447,7 @@ class FlashNLP:
 如果是比较句，返回JSON：
 {{"has_comparison": true, "subject_a": "主体A", "subject_b": "主体B", "dimension": "比较维度", "relation": ">/</=/>="}}
 如果不是，返回：{{"has_comparison": false}}"""
-            
+
             rsp = self.llm_flash.chat.completions.create(
                 model="deepseek-v4-flash",
                 messages=[{"role": "user", "content": prompt}],
@@ -462,9 +462,9 @@ class FlashNLP:
                     return data
         except Exception:
             pass
-        
+
         return None
-    
+
     def analyze_intent(self, text: str) -> Dict:
         """
         意图分析（Flash 版）
@@ -474,7 +474,7 @@ class FlashNLP:
         """
         if not self.llm_flash:
             return {"intent": "query", "confidence": 0.5}
-        
+
         try:
             prompt = f"""分析用户输入的意图类型。
 
@@ -482,7 +482,7 @@ class FlashNLP:
 
 返回JSON：
 {{"intent": "query|action|compare|analyze|clarify|confirm|other", "confidence": 0.8, "complexity": "low|medium|high", "brief": "一句话概括（10字内）"}}"""
-            
+
             rsp = self.llm_flash.chat.completions.create(
                 model="deepseek-v4-flash",
                 messages=[{"role": "user", "content": prompt}],
@@ -495,7 +495,7 @@ class FlashNLP:
                 return json.loads(jm.group())
         except Exception:
             pass
-        
+
         return {"intent": "query", "confidence": 0.5}
 
 
@@ -520,19 +520,19 @@ class ThinkingEnhanced:
       · 普通闲聊（无任务执行） — 碎片交流
       · SOUL.md / IDENTITY.md — 预设定义，非体验
     """
-    
+
     def __init__(self, llm_flash=None):
         self.reflexion = ReflexionEngine()
         self.refine = SelfRefineLoop(llm_flash)
         self.multipath = MultiPathExplorer(llm_flash)
         self.flash_nlp = FlashNLP(llm_flash)
         self._llm_flash = llm_flash
-    
+
     def _load_experience_data(self) -> Dict[str, list]:
         """从过滤后的数据源加载体验样本"""
         ws = _WORKSPACE
         data = {"reflexions": [], "verified": [], "implicit": [], "performance": []}
-        
+
         # 1. reflexions.jsonl — 失败→根因→修复
         rfx_path = os.path.join(ws, ".learnings", "reflexions.jsonl")
         if os.path.exists(rfx_path):
@@ -544,7 +544,7 @@ class ThinkingEnhanced:
                             data["reflexions"].append(json.loads(line))
                         except Exception:
                             pass
-        
+
         # 2. verified_memories.jsonl — 用户验证结果
         vm_path = os.path.join(ws, ".learnings", "verified_memories.jsonl")
         if os.path.exists(vm_path):
@@ -556,7 +556,7 @@ class ThinkingEnhanced:
                             data["verified"].append(json.loads(line))
                         except Exception:
                             pass
-        
+
         # 3. implicit_preferences.jsonl — 隐式反馈
         ip_path = os.path.join(ws, ".learnings", "implicit_preferences.jsonl")
         if os.path.exists(ip_path):
@@ -568,7 +568,7 @@ class ThinkingEnhanced:
                             data["implicit"].append(json.loads(line))
                         except Exception:
                             pass
-        
+
         # 4. performance_metrics.jsonl — 执行性能
         pm_path = os.path.join(ws, ".learnings", "performance_metrics.jsonl")
         if os.path.exists(pm_path):
@@ -580,9 +580,9 @@ class ThinkingEnhanced:
                             data["performance"].append(json.loads(line))
                         except Exception:
                             pass
-        
+
         return data
-    
+
     def introspect(self, max_samples: int = 30) -> Dict[str, Any]:
         """
         内在元认知：从体验数据归纳经验模式
@@ -591,19 +591,19 @@ class ThinkingEnhanced:
         """
         if not self._llm_flash:
             return {"success": False, "reason": "Flash 客户端不可用"}
-        
+
         data = self._load_experience_data()
         total = sum(len(v) for v in data.values())
         if total == 0:
             return {"success": False, "reason": "无体验数据"}
-        
+
         # 采样：每种类型最多取 max_samples/4 条
         import random
         sample = {}
         for key, items in data.items():
             _limit = max(max_samples // 4, 5)
             sample[key] = items[-_limit:] if len(items) <= _limit else random.sample(items, _limit)
-        
+
         # 构造归纳提示
         prompt_lines = ["你是一个AI Agent的内在元认知系统。请从以下体验数据中归纳出可复用的经验模式。"]
         prompt_lines.append("\n注意：这些是系统亲身经历的真实体验，不是外部知识。")
@@ -615,28 +615,28 @@ class ThinkingEnhanced:
             rc = r.get("root_cause", "")[:60]
             fs = r.get("fix_strategy", "")[:60]
             prompt_lines.append(f"  [{p}] 问题:{q} | 根因:{rc} | 修复:{fs}")
-        
+
         prompt_lines.append("\n=== 用户验证记录（正确/纠正标记） ===")
         for v in sample["verified"][:8]:
             content = v.get("content", "")[:80]
             conf = v.get("confidence", 0)
             status = "✅" if conf >= 0.7 else "❌" if conf < 0.3 else "⚠️"
             prompt_lines.append(f"  {status} {content}")
-        
+
         prompt_lines.append("\n=== 隐式偏好信号 ===")
         for ip in sample["implicit"][:5]:
             signal = ip.get("signal", "")[:60]
             ctx = ip.get("context", "")[:60]
             prompt_lines.append(f"  信号:{signal} | 上下文:{ctx}")
-        
+
         prompt_lines.append("\n=== 执行性能 ===")
         for pm in sample["performance"][:5]:
             op = pm.get("operation", "")[:40]
             ok = pm.get("success", False)
             ms = pm.get("duration_ms", 0)
             prompt_lines.append(f"  {'✅' if ok else '❌'} {op} ({ms}ms)")
-        
-        prompt_lines.append(f"""
+
+        prompt_lines.append("""
 \n你正在以用户的视角审视这些体验数据。用户（xkzs2007）是一位工程严谨主义者，其核心特质如下：
 
 **用户视角特征：**
@@ -665,9 +665,9 @@ class ThinkingEnhanced:
 用简洁、有立场的话总结出最多3条可执行的经验模式。
 
 输出JSON格式：
-{{\
+{\
   "patterns": [
-    {{\
+    {\
       "scenario": "什么场景下发生",
       "pattern": "反复出现的规律（矛盾分析结果）",
       "first_principles_cause": "根本原因",
@@ -675,15 +675,15 @@ class ThinkingEnhanced:
       "activate": "参数|人格|知识|无",
       "confidence": "低|中|高",
       "evidence": "基于哪些数据得出"
-    }}
+    }
   ],
   "system_impact": "调整后的系统变化",
   "self_critique": "本次分析的局限性"
-}}
+}
 """)
-        
+
         prompt = "\n".join(prompt_lines)
-        
+
         try:
             rsp = self._llm_flash.chat.completions.create(
                 model="deepseek-v4-flash",
@@ -707,9 +707,9 @@ class ThinkingEnhanced:
                 return result
         except Exception as e:
             return {"success": False, "reason": f"归纳失败: {e}"}
-        
+
         return {"success": False, "reason": "无法解析归纳结果"}
-    
+
     def evolve(self) -> Dict[str, Any]:
         """
         内在元认知进化：运行 introspect 后将结果写入 .learnings/
@@ -719,11 +719,11 @@ class ThinkingEnhanced:
         result = self.introspect()
         if not result.get("success"):
             return result
-        
+
         # 写入 self_evolution.jsonl（追加模式）
         evo_path = os.path.join(_WORKSPACE, ".learnings", "self_evolution.jsonl")
         os.makedirs(os.path.dirname(evo_path), exist_ok=True)
-        
+
         entry = {
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "patterns": result.get("patterns", []),
@@ -737,7 +737,7 @@ class ThinkingEnhanced:
         except Exception as e:
             result["success"] = False
             result["reason"] = f"写入失败: {e}"
-        
+
         return result
 
 
@@ -763,16 +763,16 @@ if __name__ == "__main__":
     results = te.reflexion.retrieve("小艺Claw记忆系统架构")
     print(f"检索到 {len(results)} 条反思经验")
     print(te.reflexion.format_context(results))
-    
+
     print("\n=== 测试: MultiPath 探索 ===")
     # 无 Flash 时的降级测试
     result = te.multipath.explore("Python和Java的对比")
     print(f"探索路径数: {result['path_count']}")
-    
+
     print("\n=== 测试: Flash NLP (无Flash降级) ===")
     cr = te.flash_nlp.resolve_coref("它好用吗", "小艺Claw系统")
     print(f"指代消解: {cr}")
     cmp = te.flash_nlp.detect_comparison("小艺Claw比腾讯云插件更方便")
     print(f"对比检测: {'有' if cmp else '无'}")
-    
+
     print("\n✅ 基础测试完成（Flash 版需运行时注入 llm_flash 客户端）")

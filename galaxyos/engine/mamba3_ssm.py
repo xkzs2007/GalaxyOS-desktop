@@ -444,8 +444,8 @@ def test_mimo_multi_channel():
     u_seq = np.random.randn(30, 2).astype(np.float32)
     y_seq = ssm.forward(u_seq)
     assert y_seq.shape == (30, 6), f"MIMO 输出形状错误: {y_seq.shape}"
-    print(f"✅ MIMO 多通道: (2→8维状态×8通道→6维输出)")
-    print(f"   输入: (30, 2), 输出: (30, 6)")
+    print("✅ MIMO 多通道: (2→8维状态×8通道→6维输出)")
+    print("   输入: (30, 2), 输出: (30, 6)")
     print(f"   输出范围: [{y_seq.min():.3f}, {y_seq.max():.3f}]")
 
 

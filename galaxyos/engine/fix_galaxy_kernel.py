@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """调查 Galaxy Kernel 引用的所有模块，输出实际可用的类和函数"""
-import sys, importlib, inspect, os
+import sys
+import importlib
+import inspect
+import os
 from galaxyos.shared.paths import workspace
 
 _ws = os.environ.get("OPENCLAW_WORKSPACE", workspace())
@@ -59,13 +62,13 @@ for mod_name, info in checks.items():
     print(f"\n{'='*60}")
     print(f"模块: {mod_name}")
     print(f"{'='*60}")
-    
+
     mod_path = os.path.join(SCRIPTS, f"{mod_name}.py")
     if not os.path.exists(mod_path):
         print(f"  ❌ 文件不存在: {mod_path}")
         continue
-    print(f"  ✅ 文件存在")
-    
+    print("  ✅ 文件存在")
+
     try:
         spec = importlib.util.spec_from_file_location(mod_name, mod_path)
         mod = importlib.util.module_from_spec(spec)
@@ -82,18 +85,18 @@ for mod_name, info in checks.items():
         if classes: print(f"  定义中的类: {classes}")
         if funcs: print(f"  定义中的顶层函数: {funcs}")
         continue
-    
+
     # 列出所有公共类和函数
-    members = [(n, o) for n, o in inspect.getmembers(mod) 
+    members = [(n, o) for n, o in inspect.getmembers(mod)
                if not n.startswith('_') and (inspect.isclass(o) or inspect.isfunction(o))]
     if members:
-        print(f"  可导出成员:")
+        print("  可导出成员:")
         for n, o in members:
             kind = 'class' if inspect.isclass(o) else 'function'
             print(f"    {kind}: {n}")
     else:
-        print(f"  警告: 无公共成员")
-    
+        print("  警告: 无公共成员")
+
     # 检查预期的导入是否可用
     for imp in info['imports']:
         if hasattr(mod, imp):

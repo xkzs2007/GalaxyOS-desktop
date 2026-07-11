@@ -96,8 +96,8 @@ class NgramHashTable:
     lookup(ngram) = E[hash(ngram) % N]
     其中 E ∈ R^{N×d} 是可学习的嵌入表
     """
-    
-    def __init__(self, num_slots: int = 65536, 
+
+    def __init__(self, num_slots: int = 65536,
                  embed_dim: int = 64,
                  ngram_n: int = 2,
                  persist_path: str = ""):
@@ -105,16 +105,16 @@ class NgramHashTable:
         self.embed_dim = embed_dim          # 嵌入维度
         self.ngram_n = ngram_n               # N-gram 的 N
         self.persist_path = persist_path     # 持久化路径
-        
+
         # 嵌入表: num_slots × embed_dim
         self._table: Dict[int, np.ndarray] = {}  # hash → embedding
         self._meta: Dict[int, dict] = {}          # hash → metadata
         self._hit_count: Dict[int, int] = {}      # hash → 命中次数
-        
+
         # 如果持久化路径存在且文件存在, 加载
         if persist_path and os.path.exists(persist_path):
             self._load()
-    
+
     def lookup(self, ngram: str) -> Tuple[Optional[np.ndarray], bool]:
         """O(1) 查找 N-gram 嵌入
         
@@ -122,21 +122,21 @@ class NgramHashTable:
             (embedding_or_None, 是否命中)
         """
         h = _stable_hash(ngram, self.num_slots)
-        
+
         if h in self._table:
             self._hit_count[h] = self._hit_count.get(h, 0) + 1
             return self._table[h], True
-        
+
         return None, False
-    
-    def insert(self, ngram: str, embedding: np.ndarray, 
+
+    def insert(self, ngram: str, embedding: np.ndarray,
                metadata: dict = None):
         """插入 N-gram → 嵌入映射"""
         h = _stable_hash(ngram, self.num_slots)
         self._table[h] = embedding
         self._meta[h] = metadata or {}
         self._hit_count[h] = 0
-    
+
     def get_or_create(self, ngram: str, default_fn=None) -> np.ndarray:
         """查找或创建嵌入
         
@@ -145,17 +145,17 @@ class NgramHashTable:
         emb, hit = self.lookup(ngram)
         if emb is not None:
             return emb
-        
+
         # 未命中：创建新嵌入
         if default_fn:
             emb = default_fn()
         else:
             emb = np.random.randn(self.embed_dim).astype(np.float32)
             emb = emb / (np.linalg.norm(emb) + 1e-8)  # 归一化
-        
+
         self.insert(ngram, emb)
         return emb
-    
+
     def batch_lookup(self, ngrams: List[str]) -> Tuple[np.ndarray, np.ndarray]:
         """批量 O(1) 查找
         
@@ -165,15 +165,15 @@ class NgramHashTable:
         B = len(ngrams)
         embs = np.zeros((B, self.embed_dim), dtype=np.float32)
         hits = np.zeros(B, dtype=bool)
-        
+
         for i, ng in enumerate(ngrams):
             emb, hit = self.lookup(ng)
             if emb is not None:
                 embs[i] = emb
                 hits[i] = True
-        
+
         return embs, hits
-    
+
     def get_hit_rate(self) -> float:
         """缓存命中率"""
         total = sum(self._hit_count.values())
@@ -182,7 +182,7 @@ class NgramHashTable:
         # 每个插入算一次"机会"，命中 / (命中 + 机会)
         opportunities = len(self._table) * 10  # 近似
         return min(1.0, total / (total + opportunities))
-    
+
     def get_top_ngrams(self, k: int = 10) -> List[Tuple[str, int]]:
         """返回命中次数最高的 N-gram"""
         # 需要反向映射：hash → ngram
@@ -193,15 +193,15 @@ class NgramHashTable:
             meta = self._meta.get(h, {})
             result.append((meta.get("ngram", f"<hash:{h}>"), cnt))
         return result
-    
+
     def save(self, path: str = None):
         """持久化哈希表"""
         save_path = path or self.persist_path
         if not save_path:
             return
-        
+
         os.makedirs(os.path.dirname(save_path) or ".", exist_ok=True)
-        
+
         data = {
             "num_slots": self.num_slots,
             "embed_dim": self.embed_dim,
@@ -210,27 +210,27 @@ class NgramHashTable:
             "meta": {str(k): v for k, v in self._meta.items()},
             "hit_count": {str(k): v for k, v in self._hit_count.items()},
         }
-        
+
         with open(save_path, "w") as f:
             json.dump(data, f)
-        
+
         logger.info(f"Engram 哈希表已保存: {save_path} "
                     f"({len(self._table)} 槽位, {sum(self._hit_count.values())} 命中)")
-    
+
     def _load(self):
         """从文件加载哈希表"""
         try:
             with open(self.persist_path, "r") as f:
                 data = json.load(f)
-            
+
             self.num_slots = data.get("num_slots", self.num_slots)
             self.embed_dim = data.get("embed_dim", self.embed_dim)
             self.ngram_n = data.get("ngram_n", self.ngram_n)
-            self._table = {int(k): np.array(v, dtype=np.float32) 
+            self._table = {int(k): np.array(v, dtype=np.float32)
                           for k, v in data.get("table", {}).items()}
             self._meta = {int(k): v for k, v in data.get("meta", {}).items()}
             self._hit_count = {int(k): v for k, v in data.get("hit_count", {}).items()}
-            
+
             logger.info(f"Engram 哈希表已加载: {self.persist_path} "
                         f"({len(self._table)} 槽位)")
         except Exception as e:
@@ -250,7 +250,7 @@ class EngramConfig:
     persist_path: str = ""           # 持久化路径
     use_torch: bool = True           # 是否使用 PyTorch 加速
     prefetch_enabled: bool = True    # 运行时预取（论文特色）
-    
+
     def __post_init__(self):
         if not TORCH_AVAILABLE:
             self.use_torch = False
@@ -271,7 +271,7 @@ class EngramMemory:
     - 与 LTC/CfC 的"动态时序建模"互补
     - 与 MemoryOS 的 HeatTracker 结合，用 O(1) 查找替代部分热度计算
     """
-    
+
     def __init__(self, config: EngramConfig = None):
         self.config = config or EngramConfig()
         self._table = NgramHashTable(
@@ -280,21 +280,21 @@ class EngramMemory:
             ngram_n=self.config.ngram_n,
             persist_path=self.config.persist_path,
         )
-        
+
         # 访问记录（用于预取）
         self._access_history: List[str] = []
         self._max_history: int = 1000
-        
+
         # 统计
         self._total_lookups = 0
         self._cache_hits = 0
         self._prefetch_hits = 0
-        
+
         logger.info(f"Engram 条件记忆已初始化: "
                     f"slots={self.config.num_slots}, "
                     f"dim={self.config.embed_dim}, "
                     f"ngram_n={self.config.ngram_n}")
-    
+
     def lookup(self, text: str) -> Tuple[Optional[np.ndarray], dict]:
         """条件记忆查找
         
@@ -316,32 +316,32 @@ class EngramMemory:
             }
         """
         self._total_lookups += 1
-        
+
         # 1. 分词 + N-gram
         tokens = _tokenize(text)
         if len(tokens) < self.config.ngram_n:
             return None, {"hit": False, "hit_rate": 0.0, "ngrams": [], "reason": "太短"}
-        
+
         ngrams = _ngrams(tokens, self.config.ngram_n)
         B = len(ngrams)
-        
+
         # 2. 批量查找
         embs, hits = self._table.batch_lookup(ngrams)
         hit_count = int(hits.sum())
         hit_rate = hit_count / B if B > 0 else 0.0
-        
+
         # 更新统计
         self._cache_hits += hit_count
         self._access_history.extend(ngrams[-3:])  # 只保留最近的
         if len(self._access_history) > self._max_history:
             self._access_history = self._access_history[-self._max_history:]
-        
+
         # 3. 聚合嵌入
         if hit_count > 0:
             # 有命中的 N-gram → 平均它们的嵌入
             hit_embs = embs[hits]
             agg_emb = hit_embs.mean(axis=0)
-            
+
             # 找到最高匹配
             top_idx = int(hits.argmax()) if hits.any() else 0
             top_ngram = ngrams[top_idx]
@@ -349,11 +349,11 @@ class EngramMemory:
             # 没有命中 → 用 MLP 或随机生成
             agg_emb = None
             top_ngram = ""
-        
+
         # 4. 预取（论文特色：确定性寻址支持 host memory 预取）
         if self.config.prefetch_enabled and hit_rate > 0:
             self._prefetch(ngrams)
-        
+
         info = {
             "hit": hit_count > 0,
             "hit_rate": hit_rate,
@@ -362,9 +362,9 @@ class EngramMemory:
             "top_match": top_ngram,
             "embedding_norm": float(np.linalg.norm(agg_emb)) if agg_emb is not None else 0.0,
         }
-        
+
         return agg_emb, info
-    
+
     def remember(self, text: str, embedding: np.ndarray = None):
         """将文本存入条件记忆
         
@@ -374,9 +374,9 @@ class EngramMemory:
         tokens = _tokenize(text)
         if len(tokens) < self.config.ngram_n:
             return
-        
+
         ngrams = _ngrams(tokens, self.config.ngram_n)
-        
+
         # 如果没有提供嵌入，生成一个
         if embedding is None and self.config.embed_dim == 2048:
             try:
@@ -390,20 +390,20 @@ class EngramMemory:
         if embedding is None:
             embedding = np.random.randn(self.config.embed_dim).astype(np.float32)
             embedding = embedding / (np.linalg.norm(embedding) + 1e-8)
-        
+
         # 将嵌入分给所有 N-gram（论文中的 N-gram 分片）
         per_ngram = embedding / math.sqrt(len(ngrams))
-        
+
         for ng in ngrams:
             self._table.get_or_create(ng, default_fn=lambda: per_ngram.copy())
-    
-    def batch_remember(self, texts: List[str], 
+
+    def batch_remember(self, texts: List[str],
                        embeddings: List[np.ndarray] = None):
         """批量存入条件记忆"""
         for i, text in enumerate(texts):
             emb = embeddings[i] if embeddings else None
             self.remember(text, emb)
-    
+
     def forget(self, text: str):
         """遗忘特定文本的条件记忆
         
@@ -412,15 +412,15 @@ class EngramMemory:
         tokens = _tokenize(text)
         if len(tokens) < self.config.ngram_n:
             return
-        
+
         ngrams = _ngrams(tokens, self.config.ngram_n)
-        
+
         # 重设命中的槽位（论文中没有显式 forget，这里做 soft forget）
         for ng in ngrams:
             h = _stable_hash(ng, self.config.num_slots)
             if h in self._table._table:
                 self._table._table[h] = np.zeros(self.config.embed_dim, dtype=np.float32)
-    
+
     def _prefetch(self, ngrams: List[str]):
         """运行时预取（论文特色）
         
@@ -434,7 +434,7 @@ class EngramMemory:
         for ng in ngrams:
             self._table.lookup(ng)  # 热访问
             self._prefetch_hits += 1
-    
+
     def get_hit_rate(self) -> float:
         """转发到 NgramHashTable"""
         return self._table.get_hit_rate()
@@ -453,11 +453,11 @@ class EngramMemory:
             "ngram_n": self.config.ngram_n,
             "persist_path": self.config.persist_path or "无",
         }
-    
+
     def save(self, path: str = None):
         """持久化"""
         self._table.save(path)
-    
+
     def load(self, path: str = None):
         """加载"""
         load_path = path or self.config.persist_path
@@ -487,8 +487,8 @@ class EngramEnhancedHeatTracker:
     当 Engram 命中率高时，说明该内容是"常见模式"，
     作为静态知识应该获得更高保留优先级。
     """
-    
-    def __init__(self, engram: EngramMemory, 
+
+    def __init__(self, engram: EngramMemory,
                  decay_hours: float = 24.0,
                  boost_on_access: float = 0.1,
                  engram_boost_factor: float = 0.3,
@@ -499,13 +499,13 @@ class EngramEnhancedHeatTracker:
         self.engram_boost_factor = engram_boost_factor
         self.max_heat = max_heat
         self._nodes: Dict[str, Dict] = {}
-    
+
     def record_access(self, node_id: str, content: str = "",
                       now: float = None, session_id: str = ""):
         """记录一次访问（Engram 增强版）"""
         if now is None:
             now = time.time()
-        
+
         key = f"{node_id}#{session_id}" if session_id else node_id
         if key not in self._nodes:
             self._nodes[key] = {
@@ -514,28 +514,28 @@ class EngramEnhancedHeatTracker:
                 "last_access": now,
                 "access_count": 0,
             }
-        
+
         node = self._nodes[key]
         hours_since = (now - node["last_access"]) / 3600
-        
+
         # 1. 时效性衰减
         if hours_since > 0:
             decay = math.exp(-hours_since / self.decay_hours)
             node["heat"] *= decay
-        
+
         # 2. 基础升温
         boost = self.boost_on_access
-        
+
         # 3. Engram 增强
         if content:
             _, info = self.engram.lookup(content)
             if info["hit"]:
                 boost += self.engram_boost_factor * info["hit_rate"]
-        
+
         node["heat"] = min(self.max_heat, node["heat"] + boost)
         node["last_access"] = now
         node["access_count"] += 1
-    
+
     def get_heat(self, node_id: str, now: float = None, session_id: str = "") -> float:
         """获取热度（Engram 增强版）"""
         key = f"{node_id}#{session_id}" if session_id else node_id
@@ -543,30 +543,30 @@ class EngramEnhancedHeatTracker:
         if not node:
             # 用 Engram 尝试查找
             return 0.0
-        
+
         if now is None:
             now = time.time()
-        
+
         hours_since = (now - node["last_access"]) / 3600
         decayed = node["heat"] * math.exp(-hours_since / self.decay_hours)
         return decayed
-    
+
     def should_keep(self, node_id: str, threshold: float = 0.3,
                     session_id: str = "") -> bool:
         return self.get_heat(node_id, session_id=session_id) >= threshold
-    
+
     def get_top_nodes(self, k: int = 10, session_id: str = "") -> List[str]:
         prefix = f"#{session_id}" if session_id else ""
         items = [(nid, self.get_heat(nid)) for nid in self._nodes
                  if not session_id or nid.endswith(prefix)]
         items.sort(key=lambda x: -x[1])
         return [nid for nid, _ in items[:k]]
-    
+
     def get_status(self, session_id: str = "") -> dict:
         prefix = f"#{session_id}" if session_id else ""
         nodes = {k: v for k, v in self._nodes.items()
                  if not session_id or k.endswith(prefix)}
-        
+
         return {
             "total_nodes": len(nodes),
             "hot": sum(1 for n in nodes.values() if n["heat"] >= 1.0),
@@ -586,33 +586,33 @@ def test_engram():
         ngram_n=2,
         persist_path="/tmp/engram_test.json",
     )
-    
+
     mem = EngramMemory(config)
-    
+
     # 记忆几个文本
     texts = [
         "今天天气很好适合出门散步",
         "明天要开会记得准备材料",
         "神经网络模型训练需要大量数据",
     ]
-    
+
     for t in texts:
         mem.remember(t)
-    
+
     # 查找已知文本
     emb, info = mem.lookup("今天天气")
     assert info["hit"], "应该命中已知 N-gram"
     print(f"✅ 已知文本命中: hit_rate={info['hit_rate']:.2f}")
-    
+
     # 查找未知文本
     emb, info = mem.lookup("量子计算是新兴领域")
     print(f"未知文本: hit={info['hit']}, top={info.get('top_match', '')}")
-    
+
     # 系统状态
     status = mem.get_status()
     print(f"系统状态: {status['filled_slots']}/{status['total_slots']} 槽位已填充")
     print(f"命中率: {status['hit_rate']:.2f}")
-    
+
     print("✅ Engram 基础测试通过")
     return mem
 
@@ -622,24 +622,24 @@ def test_engram():
 def test_engram_heat_integration():
     """测试 Engram + HeatTracker 融合"""
     engram = EngramMemory(EngramConfig(num_slots=128, embed_dim=8, ngram_n=2))
-    
+
     # 先记忆一些模式
     for text in ["高频模式A", "高频模式B", "高频模式A", "高频模式A"]:
         engram.remember(text)
-    
+
     tracker = EngramEnhancedHeatTracker(engram)
-    
+
     # 记录访问（含 Engram 模式匹配的内容）
     tracker.record_access("node1", content="高频模式A相关的内容", session_id="s1")
     tracker.record_access("node2", content="完全不相关的内容", session_id="s1")
-    
+
     heat1 = tracker.get_heat("node1", session_id="s1")
     heat2 = tracker.get_heat("node2", session_id="s1")
-    
+
     print(f"node1 (有 Engram 命中) heat={heat1:.3f}")
     print(f"node2 (无 Engram 命中) heat={heat2:.3f}")
     assert heat1 > heat2, "Engram 命中的节点应该获得额外热度"
-    
+
     print("✅ Engram + HeatTracker 融合测试通过")
 
 

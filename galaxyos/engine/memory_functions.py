@@ -38,12 +38,12 @@ class MemoryFunctions:
     这些函数设计为可被 LLM 直接调用，
     实现 MemGPT 论文中的自主内存管理能力。
     """
-    
+
     def __init__(self, memory_manager: MemGPTMemory = None, workspace_path: str = None):
         self.memory = memory_manager or MemGPTMemory(workspace_path)
-    
+
     # ==================== 核心记忆操作 ====================
-    
+
     def core_memory_append(
         self,
         content: str,
@@ -77,32 +77,32 @@ class MemoryFunctions:
                 "LOW": MemoryPriority.LOW
             }
             mem_priority = priority_map.get(priority.upper(), MemoryPriority.HIGH)
-            
+
             # 构建元数据
             metadata = {}
             if section:
                 metadata["section"] = section
-            
+
             # 添加到核心记忆
             memory_id = self.memory.core_memory.add(
                 content=content,
                 priority=mem_priority,
                 metadata=metadata
             )
-            
+
             return {
                 "success": True,
                 "memory_id": memory_id,
                 "message": f"已添加到核心记忆 [{section or '默认'}]"
             }
-        
+
         except Exception as e:
             return {
                 "success": False,
                 "memory_id": None,
                 "message": f"添加失败: {str(e)}"
             }
-    
+
     def core_memory_replace(
         self,
         old_content: str,
@@ -133,37 +133,37 @@ class MemoryFunctions:
         try:
             # 搜索匹配的记忆
             memories = self.memory.core_memory.get_all()
-            
+
             for m in memories:
                 # 检查分区
                 if section and m.metadata.get("section") != section:
                     continue
-                
+
                 # 检查内容匹配
                 if old_content in m.content or m.content in old_content:
                     # 更新内容
                     success = self.memory.core_memory.update(m.id, new_content)
-                    
+
                     if success:
                         return {
                             "success": True,
                             "memory_id": m.id,
-                            "message": f"已更新核心记忆"
+                            "message": "已更新核心记忆"
                         }
-            
+
             return {
                 "success": False,
                 "memory_id": None,
                 "message": "未找到匹配的核心记忆"
             }
-        
+
         except Exception as e:
             return {
                 "success": False,
                 "memory_id": None,
                 "message": f"替换失败: {str(e)}"
             }
-    
+
     def core_memory_delete(
         self,
         content_pattern: str = None,
@@ -187,12 +187,12 @@ class MemoryFunctions:
         """
         try:
             deleted_count = 0
-            
+
             if memory_id:
                 # 直接删除指定 ID
                 if self.memory.core_memory.remove(memory_id):
                     deleted_count = 1
-            
+
             elif section:
                 # 删除整个分区
                 memories = self.memory.core_memory.get_all()
@@ -200,7 +200,7 @@ class MemoryFunctions:
                     if m.metadata.get("section") == section:
                         if self.memory.core_memory.remove(m.id):
                             deleted_count += 1
-            
+
             elif content_pattern:
                 # 按内容匹配删除
                 memories = self.memory.core_memory.get_all()
@@ -209,22 +209,22 @@ class MemoryFunctions:
                         if self.memory.core_memory.remove(m.id):
                             deleted_count += 1
                             break  # 只删除第一条
-            
+
             return {
                 "success": deleted_count > 0,
                 "deleted_count": deleted_count,
                 "message": f"已删除 {deleted_count} 条核心记忆"
             }
-        
+
         except Exception as e:
             return {
                 "success": False,
                 "deleted_count": 0,
                 "message": f"删除失败: {str(e)}"
             }
-    
+
     # ==================== 归档记忆操作 ====================
-    
+
     def archival_memory_insert(
         self,
         content: str,
@@ -262,20 +262,20 @@ class MemoryFunctions:
                 tags=tags or [],
                 metadata=metadata or {}
             )
-            
+
             return {
                 "success": True,
                 "memory_id": memory_id,
                 "message": f"已存入归档记忆 (重要性: {importance})"
             }
-        
+
         except Exception as e:
             return {
                 "success": False,
                 "memory_id": None,
                 "message": f"插入失败: {str(e)}"
             }
-    
+
     def archival_memory_search(
         self,
         query: str,
@@ -313,14 +313,14 @@ class MemoryFunctions:
                 top_k=top_k,
                 min_importance=min_importance
             )
-            
+
             # 标签过滤
             if tags:
                 memories = [
                     m for m in memories
                     if any(tag in m.tags for tag in tags)
                 ]
-            
+
             results = [
                 {
                     "id": m.id,
@@ -332,14 +332,14 @@ class MemoryFunctions:
                 }
                 for m in memories
             ]
-            
+
             return {
                 "success": True,
                 "results": results,
                 "count": len(results),
                 "message": f"找到 {len(results)} 条相关记忆"
             }
-        
+
         except Exception as e:
             return {
                 "success": False,
@@ -347,7 +347,7 @@ class MemoryFunctions:
                 "count": 0,
                 "message": f"搜索失败: {str(e)}"
             }
-    
+
     def archival_memory_delete(
         self,
         memory_id: str = None,
@@ -371,53 +371,53 @@ class MemoryFunctions:
         """
         try:
             deleted_count = 0
-            
+
             if memory_id:
                 # 直接删除
                 if self.memory.archival_memory.delete(memory_id):
                     deleted_count = 1
-            
+
             elif older_than_days or max_importance is not None:
                 # 批量删除
                 memories = self.memory.archival_memory.get_recent(limit=1000)
-                
+
                 cutoff_date = None
                 if older_than_days:
                     cutoff_date = datetime.now(timezone.utc) - timedelta(days=older_than_days)
-                
+
                 for m in memories:
                     should_delete = False
-                    
+
                     # 检查日期
                     if cutoff_date:
                         m_date = datetime.fromisoformat(m.created_at.replace('Z', '+00:00'))
                         if m_date < cutoff_date:
                             should_delete = True
-                    
+
                     # 检查重要性
                     if max_importance is not None:
                         if m.importance < max_importance:
                             should_delete = True
-                    
+
                     if should_delete:
                         if self.memory.archival_memory.delete(m.id):
                             deleted_count += 1
-            
+
             return {
                 "success": deleted_count > 0,
                 "deleted_count": deleted_count,
                 "message": f"已删除 {deleted_count} 条归档记忆"
             }
-        
+
         except Exception as e:
             return {
                 "success": False,
                 "deleted_count": 0,
                 "message": f"删除失败: {str(e)}"
             }
-    
+
     # ==================== 对话历史操作 ====================
-    
+
     def conversation_search(
         self,
         query: str,
@@ -439,7 +439,7 @@ class MemoryFunctions:
         """
         try:
             results = []
-            
+
             # 搜索工作记忆中的消息
             working_context = self.memory.working_memory.get_context(include_summary=True)
             if query.lower() in working_context.lower():
@@ -448,7 +448,7 @@ class MemoryFunctions:
                     "content": working_context[:500],
                     "relevance": "high"
                 })
-            
+
             # 搜索归档记忆
             if search_archival:
                 archival_results = self.memory.archival_memory.search(query, top_k=5)
@@ -460,22 +460,22 @@ class MemoryFunctions:
                         "importance": m.importance,
                         "created_at": m.created_at
                     })
-            
+
             return {
                 "success": True,
                 "results": results,
                 "message": f"找到 {len(results)} 条相关记录"
             }
-        
+
         except Exception as e:
             return {
                 "success": False,
                 "results": [],
                 "message": f"搜索失败: {str(e)}"
             }
-    
+
     # ==================== 记忆迁移操作 ====================
-    
+
     def memory_promote(self, memory_id: str) -> Dict:
         """
         将归档记忆提升到核心记忆
@@ -491,18 +491,18 @@ class MemoryFunctions:
         """
         try:
             success = self.memory.promote_to_core(memory_id)
-            
+
             return {
                 "success": success,
                 "message": "已提升到核心记忆" if success else "提升失败，记忆不存在"
             }
-        
+
         except Exception as e:
             return {
                 "success": False,
                 "message": f"提升失败: {str(e)}"
             }
-    
+
     def memory_demote(self, memory_id: str) -> Dict:
         """
         将核心记忆降级到归档记忆
@@ -520,18 +520,18 @@ class MemoryFunctions:
             # 从核心记忆获取
             memories = self.memory.core_memory.get_all()
             target = None
-            
+
             for m in memories:
                 if m.id == memory_id:
                     target = m
                     break
-            
+
             if not target:
                 return {
                     "success": False,
                     "message": "未找到核心记忆"
                 }
-            
+
             # 添加到归档
             self.memory.archival_memory.add(
                 content=target.content,
@@ -539,23 +539,23 @@ class MemoryFunctions:
                 metadata=target.metadata,
                 tags=target.tags
             )
-            
+
             # 从核心移除
             self.memory.core_memory.remove(memory_id)
-            
+
             return {
                 "success": True,
                 "message": "已降级到归档记忆"
             }
-        
+
         except Exception as e:
             return {
                 "success": False,
                 "message": f"降级失败: {str(e)}"
             }
-    
+
     # ==================== 统计与诊断 ====================
-    
+
     def memory_stats(self) -> Dict:
         """
         获取记忆系统统计
@@ -570,17 +570,17 @@ class MemoryFunctions:
         """
         stats = self.memory.stats()
         recommendations = []
-        
+
         # 分析并给出建议
         if stats["core_memory"]["utilization"] > 0.8:
             recommendations.append("核心记忆接近满载，建议清理或降级低优先级记忆")
-        
+
         if stats["working_memory"]["utilization"] > 0.8:
             recommendations.append("工作记忆接近满载，将自动压缩旧对话")
-        
+
         if stats["archival_memory"]["total_memories"] > 1000:
             recommendations.append("归档记忆较多，建议定期清理低重要性记忆")
-        
+
         return {
             **stats,
             "recommendations": recommendations
@@ -666,7 +666,7 @@ def forget(memory_id: str) -> bool:
 def main():
     """命令行接口"""
     import argparse
-    
+
     parser = argparse.ArgumentParser(description="内存管理函数")
     parser.add_argument("command", choices=[
         "append", "replace", "insert", "search", "promote", "demote", "stats"
@@ -679,29 +679,29 @@ def main():
     parser.add_argument("--importance", type=float, default=0.5, help="重要性")
     parser.add_argument("--section", help="分区")
     parser.add_argument("--tags", nargs="+", help="标签")
-    
+
     args = parser.parse_args()
-    
+
     funcs = MemoryFunctions()
-    
+
     if args.command == "append":
         if not args.content:
             print("错误: 需要提供 --content")
             return
         result = funcs.core_memory_append(
-            args.content, 
+            args.content,
             section=args.section,
             priority="HIGH" if args.importance >= 0.7 else "MEDIUM"
         )
         print(f"{'✅' if result['success'] else '❌'} {result['message']}")
-    
+
     elif args.command == "replace":
         if not args.old or not args.new:
             print("错误: 需要提供 --old 和 --new")
             return
         result = funcs.core_memory_replace(args.old, args.new, args.section)
         print(f"{'✅' if result['success'] else '❌'} {result['message']}")
-    
+
     elif args.command == "insert":
         if not args.content:
             print("错误: 需要提供 --content")
@@ -712,7 +712,7 @@ def main():
             tags=args.tags
         )
         print(f"{'✅' if result['success'] else '❌'} {result['message']}")
-    
+
     elif args.command == "search":
         if not args.query:
             print("错误: 需要提供 --query")
@@ -721,21 +721,21 @@ def main():
         print(f"找到 {result['count']} 条记忆:")
         for r in result["results"]:
             print(f"  [{r['importance']:.2f}] {r['content'][:50]}...")
-    
+
     elif args.command == "promote":
         if not args.id:
             print("错误: 需要提供 --id")
             return
         result = funcs.memory_promote(args.id)
         print(f"{'✅' if result['success'] else '❌'} {result['message']}")
-    
+
     elif args.command == "demote":
         if not args.id:
             print("错误: 需要提供 --id")
             return
         result = funcs.memory_demote(args.id)
         print(f"{'✅' if result['success'] else '❌'} {result['message']}")
-    
+
     elif args.command == "stats":
         stats = funcs.memory_stats()
         import json

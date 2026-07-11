@@ -21,7 +21,8 @@ from concurrent.futures import ThreadPoolExecutor
 # 配置
 
 # ── Centralized path resolution ──
-import os as _os, sys as _sys
+import os as _os
+import sys as _sys
 from galaxyos.shared.paths import workspace
 _ws_root = workspace()
 for _p in [_ws_root, "/workspace"]:
@@ -91,7 +92,7 @@ class IncrementalCache:
         self.ttl = ttl
         self.index_file = self.cache_dir / "cache_index.json"
         self.index = self._load_index()
-    
+
     def _load_index(self):
         if self.index_file.exists():
             try:
@@ -99,22 +100,22 @@ class IncrementalCache:
             except:
                 return {}
         return {}
-    
+
     def _save_index(self):
         self.index_file.write_text(json.dumps(self.index, ensure_ascii=False))
-    
+
     def get(self, key):
         if key not in self.index:
             return None
-        
+
         entry = self.index[key]
         cached_time = datetime.fromisoformat(entry["time"])
-        
+
         # 检查过期
         if datetime.now() - cached_time > timedelta(seconds=self.ttl):
             self.delete(key)
             return None
-        
+
         # 读取压缩数据
         cache_file = self.cache_dir / f"{key}.cache"
         if cache_file.exists():
@@ -124,15 +125,15 @@ class IncrementalCache:
             except:
                 return None
         return None
-    
+
     def set(self, key, data):
         # 压缩数据
         compressed = self._compress(data)
-        
+
         # 写入文件
         cache_file = self.cache_dir / f"{key}.cache"
         cache_file.write_bytes(compressed)
-        
+
         # 更新索引
         self.index[key] = {
             "time": datetime.now().isoformat(),
@@ -140,7 +141,7 @@ class IncrementalCache:
             "hits": 0
         }
         self._save_index()
-    
+
     def delete(self, key):
         cache_file = self.cache_dir / f"{key}.cache"
         if cache_file.exists():
@@ -148,18 +149,18 @@ class IncrementalCache:
         if key in self.index:
             del self.index[key]
             self._save_index()
-    
+
     def _compress(self, data):
         """压缩数据"""
         json_str = json.dumps(data, ensure_ascii=False)
         compressed = gzip.compress(json_str.encode())
         return compressed
-    
+
     def _decompress(self, compressed):
         """解压数据"""
         json_str = gzip.decompress(compressed).decode()
         return json.loads(json_str)
-    
+
     def cleanup_expired(self):
         """清理过期缓存"""
         expired_keys = []
@@ -167,10 +168,10 @@ class IncrementalCache:
             cached_time = datetime.fromisoformat(entry["time"])
             if datetime.now() - cached_time > timedelta(seconds=self.ttl):
                 expired_keys.append(key)
-        
+
         for key in expired_keys:
             self.delete(key)
-        
+
         return len(expired_keys)
 
 # ============ 3. LLM 响应缓存 ============
@@ -233,7 +234,7 @@ def analyze_query_complexity(query):
         len(query.split()) <= 2,  # 词数少
         any(kw in query for kw in ["推送", "配置", "设置", "状态"]),  # 常见关键词
     ]
-    
+
     # 复杂查询特征
     complex_patterns = [
         len(query) > 30,  # 长查询
@@ -241,10 +242,10 @@ def analyze_query_complexity(query):
         "?" in query or "？" in query,  # 疑问句
         any(kw in query for kw in ["比较", "分析", "为什么", "如何"]),  # 分析类
     ]
-    
+
     simple_score = sum(simple_patterns)
     complex_score = sum(complex_patterns)
-    
+
     if complex_score > simple_score:
         return "complex"  # 复杂查询，使用完整模式
     elif simple_score >= 2:
@@ -256,9 +257,9 @@ def select_search_mode(query, use_llm):
     """智能选择搜索模式"""
     if not use_llm:
         return "fast"
-    
+
     complexity = analyze_query_complexity(query)
-    
+
     if complexity == "simple":
         return "fast"  # 简单查询走快速模式
     elif complexity == "complex":
@@ -298,14 +299,14 @@ def get_embedding_batch(texts):
     results = []
     uncached = []
     uncached_indices = []
-    
+
     for i, text in enumerate(texts):
         # 检查预计算
         precomputed = get_precomputed_vector(text)
         if precomputed:
             results.append(precomputed)
             continue
-        
+
         # 检查缓存
         if text in embedding_cache:
             results.append(embedding_cache[text])
@@ -313,19 +314,19 @@ def get_embedding_batch(texts):
             results.append(None)
             uncached.append(text)
             uncached_indices.append(i)
-    
+
     if uncached:
         data = json.dumps({
             "input": uncached,
             "model": "Qwen3-Embedding-8B",
             "dimensions": 4096
         }).encode('utf-8')
-        
+
         req = urllib.request.Request(
             GITEE_API, data=data,
             headers={"Content-Type": "application/json", "Authorization": f"Bearer {GITEE_KEY}"}
         )
-        
+
         try:
             with urllib.request.urlopen(req, timeout=15) as resp:
                 result = json.loads(resp.read().decode('utf-8'))
@@ -337,7 +338,7 @@ def get_embedding_batch(texts):
                     set_precomputed_vector(uncached[j], embedding)
         except:
             pass
-    
+
     return results
 
 def llm_expand_query(query):
@@ -346,7 +347,7 @@ def llm_expand_query(query):
     cached = get_llm_expand_cache(query)
     if cached:
         return cached
-    
+
     data = {
         "model": "LLM_GLM5",
         "messages": [{"role": "user", "content": f"将以下查询扩展为3个相关搜索词，每行一个，不要编号：\n{query}"}],
@@ -354,7 +355,7 @@ def llm_expand_query(query):
         "temperature": 0.3,
         "stream": True
     }
-    
+
     headers = {
         "Content-Type": "application/json",
         "Accept": "text/event-stream",
@@ -362,13 +363,13 @@ def llm_expand_query(query):
         "x-uid": GLM5_UID,
         "x-api-key": GLM5_KEY
     }
-    
+
     try:
         req = urllib.request.Request(
             GLM5_URL, data=json.dumps(data).encode('utf-8'),
             headers=headers, method='POST'
         )
-        
+
         full_content = ""
         with urllib.request.urlopen(req, timeout=30) as resp:
             for line in resp:
@@ -381,7 +382,7 @@ def llm_expand_query(query):
                             full_content += delta.get('content', '')
                     except:
                         pass
-        
+
         terms = [l.strip() for l in full_content.strip().split('\n') if l.strip()][:3]
         # 缓存结果
         set_llm_expand_cache(query, terms)
@@ -393,22 +394,22 @@ def llm_rerank(query, results):
     """LLM 重排序（带缓存）"""
     if not results or len(results) <= 1:
         return results
-    
+
     # 计算结果哈希
     results_hash = hashlib.md5(
         "".join([r["record_id"] for r in results[:8]]).encode()
     ).hexdigest()[:8]
-    
+
     # 检查缓存
     cached_order = get_llm_rerank_cache(query, results_hash)
     if cached_order:
         return [results[i] for i in cached_order if i < len(results)]
-    
+
     results_text = "\n".join([
         f"{i+1}. [{r['type']}] {r['content'][:60]}..."
         for i, r in enumerate(results[:8])
     ])
-    
+
     data = {
         "model": "LLM_GLM5",
         "messages": [{"role": "user", "content": f"根据查询'{query}'对以下结果排序，返回编号列表（逗号分隔）：\n{results_text}"}],
@@ -416,7 +417,7 @@ def llm_rerank(query, results):
         "temperature": 0.1,
         "stream": True
     }
-    
+
     headers = {
         "Content-Type": "application/json",
         "Accept": "text/event-stream",
@@ -424,13 +425,13 @@ def llm_rerank(query, results):
         "x-uid": GLM5_UID,
         "x-api-key": GLM5_KEY
     }
-    
+
     try:
         req = urllib.request.Request(
             GLM5_URL, data=json.dumps(data).encode('utf-8'),
             headers=headers, method='POST'
         )
-        
+
         full_content = ""
         with urllib.request.urlopen(req, timeout=20) as resp:
             for line in resp:
@@ -443,7 +444,7 @@ def llm_rerank(query, results):
                             full_content += delta.get('content', '')
                     except:
                         pass
-        
+
         order = [int(x.strip()) - 1 for x in full_content.split(',') if x.strip().isdigit()]
         if order and max(order) < len(results):
             # 缓存结果
@@ -451,7 +452,7 @@ def llm_rerank(query, results):
             return [results[i] for i in order if i < len(results)]
     except:
         pass
-    
+
     return results
 
 def search_vector(query, embedding):
@@ -459,10 +460,10 @@ def search_vector(query, embedding):
     if not embedding:
         results["vector"] = []
         return
-    
+
     vec_hex = struct.pack(f'{len(embedding)}f', *embedding).hex()
     sql = f"SELECT v.record_id, r.content, r.type, r.scene_name, v.distance FROM l1_vec v JOIN l1_records r ON v.record_id = r.record_id WHERE v.embedding MATCH X'{vec_hex}' AND k = 10 ORDER BY v.distance ASC;"
-    
+
     try:
         result = subprocess.run(
             f'sqlite3 -cmd ".load {VEC_EXT}" "{VECTORS_DB}" "{sql}"', shell=False, capture_output=True, text=True, timeout=5
@@ -494,7 +495,7 @@ def search_fts(query):
     tokens = query.replace('，', ' ').replace('、', ' ').split()
     fts_query = " OR ".join(tokens)
     sql = f"SELECT record_id, content, type, scene_name FROM l1_fts WHERE l1_fts MATCH '{fts_query}' ORDER BY rank LIMIT 10;"
-    
+
     try:
         result = subprocess.run(
             f'sqlite3 "{VECTORS_DB}" "{sql}"', shell=False, capture_output=True, text=True, timeout=5
@@ -519,18 +520,18 @@ def merge_results():
     """合并去重"""
     seen = set()
     merged = []
-    
+
     for r in results["vector"]:
         if r["record_id"] not in seen:
             r["source"] = "vector"
             merged.append(r)
             seen.add(r["record_id"])
-    
+
     for r in results["fts"]:
         if r["record_id"] not in seen:
             merged.append(r)
             seen.add(r["record_id"])
-    
+
     merged.sort(key=lambda x: (x.get("score", 0)), reverse=True)
     return merged
 
@@ -543,16 +544,16 @@ inc_cache = IncrementalCache(CACHE_DIR)
 def main():
     use_llm = "--no-llm" not in sys.argv
     query = sys.argv[1] if len(sys.argv) > 1 and not sys.argv[1].startswith("--") else ""
-    
+
     if not query:
         print("用法: ultimate_search.py '查询' [--no-llm]")
         sys.exit(1)
-    
+
     start = time.time()
-    
+
     # 智能路由
     mode = select_search_mode(query, use_llm)
-    
+
     # 检查增量缓存
     cache_key = hashlib.md5(f"{query}_{mode}".encode()).hexdigest()
     cached = inc_cache.get(cache_key)
@@ -564,7 +565,7 @@ def main():
         for i, r in enumerate(cached[:5], 1):
             print(f"{i}. [{r.get('t', '?')}] {r.get('c', '')[:80]}...")
         return
-    
+
     # 根据模式执行
     if mode == "fast":
         # 快速模式：仅向量+FTS
@@ -578,22 +579,22 @@ def main():
         expanded_terms = llm_expand_query(query) if use_llm else [query]
         all_queries = [query] + (expanded_terms if use_llm else [])
         all_embeddings = get_embedding_batch(all_queries)
-        
+
         with ThreadPoolExecutor(max_workers=2) as executor:
             executor.submit(search_vector, query, all_embeddings[0])
             executor.submit(search_fts, " ".join(all_queries))
-        
+
         merged = merge_results()
-        
+
         if use_llm and merged:
             merged = llm_rerank(query, merged)
-    
+
     # 压缩并缓存结果
     compressed = compress_results(merged)
     inc_cache.set(cache_key, compressed)
-    
+
     elapsed = (time.time() - start) * 1000
-    
+
     print(f"查询: {query}")
     print(f"模式: {mode} (智能路由)")
     if use_llm and mode != "fast":
@@ -601,7 +602,7 @@ def main():
     print(f"耗时: {elapsed:.0f}ms")
     print(f"向量结果: {len(results['vector'])} 条")
     print(f"FTS结果: {len(results['fts'])} 条\n")
-    
+
     for i, r in enumerate(merged[:5], 1):
         score = f"相似度: {r.get('score', 0):.2f}" if 'score' in r else ""
         print(f"{i}. [{r.get('type', '?')}] {score}")
