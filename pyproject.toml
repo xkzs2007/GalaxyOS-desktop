@@ -92,7 +92,7 @@ Repository = "https://github.com/xkzs2007/GalaxyOS-desktop"
 Issues = "https://github.com/xkzs2007/GalaxyOS-desktop/issues"
 
 [tool.hatch.build.targets.wheel]
-packages = ["galaxyos", "extensions"]
+packages = ["galaxyos"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

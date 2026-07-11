@@ -17,8 +17,9 @@ from __future__ import annotations
 #  版本号 — 单一定义点
 # ═══════════════════════════════════════════════════════════════════
 
-__version__ = "8.1.1"  # synced from config.version
-VERSION_TUPLE = (8, 1, 1)
+__version__ = "0.1.4"  # synced from pyproject.toml
+GALAXYOS_VERSION = __version__
+VERSION_TUPLE = (0, 1, 4)
 VERSION_CODENAME = "Cognitive Nexus"  # synced from config.version
 
 VERSION_INFO = {

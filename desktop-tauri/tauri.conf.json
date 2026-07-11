@@ -1,5 +1,5 @@
 {
-  "$schema": "https://raw.githubusercontent.com/nicegui/tauri-v2/main/tooling/cli/schema.json",
+  "$schema": "https://raw.githubusercontent.com/tauri-apps/tauri/dev/crates/tauri-config-schema/schema.json",
   "productName": "GalaxyOS Desktop",
   "version": "0.1.4",
   "identifier": "com.galaxyos.desktop",
@@ -7,7 +7,7 @@
     "beforeDevCommand": "",
     "devUrl": "http://localhost:3000",
     "beforeBuildCommand": "",
-    "frontendDist": "../_eval/agent-studio/frontend/dist"
+    "frontendDist": "../galaxyos/frontend/dist"
   },
   "app": {
     "withGlobalTauri": true,
@@ -20,11 +20,11 @@
         "minHeight": 600,
         "resizable": true,
         "fullscreen": false,
-        "url": "http://localhost:3000"
+        "url": "/"
       }
     ],
     "security": {
-      "csp": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self' http://127.0.0.1:* ws://127.0.0.1:*"
+      "csp": "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'self' http://127.0.0.1:* ws://127.0.0.1:*"
     }
   },
   "bundle": {
@@ -34,7 +34,7 @@
       "icons/32x32.png",
       "icons/128x128.png",
       "icons/128x128@2x.png",
-      "icons/icon.icns",
+
       "icons/icon.ico"
     ],
     "resources": [],
