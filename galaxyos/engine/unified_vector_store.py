@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Dict, Any, List, Optional, Tuple
 from dataclasses import dataclass
 from abc import ABC, abstractmethod
+from galaxyos.shared.paths import galaxyos_home
 
 logger = logging.getLogger(__name__)
 
@@ -547,7 +548,7 @@ class UnifiedVectorStore:
         self.dim = dim
         
         # 默认路径
-        openclaw_home = os.environ.get('OPENCLAW_HOME', Path.home() / '.openclaw')
+        openclaw_home = os.environ.get('OPENCLAW_HOME', Path(galaxyos_home()))
         if db_path is None:
             db_path = str(Path(openclaw_home) / 'memory-tdai' / 'unified_vectors.db')
         if index_path is None:

@@ -33,6 +33,7 @@ from typing import List, Dict, Optional, Any, Tuple
 from collections import defaultdict, Counter
 from datetime import datetime, timedelta, timezone
 from dataclasses import dataclass, field
+from galaxyos.shared.paths import galaxyos_home
 
 logger = logging.getLogger(__name__)
 
@@ -164,7 +165,7 @@ class KoRaBehaviorEngine:
 
     def __init__(self, db_path: Optional[str] = None):
         self.db_path = db_path or str(
-            Path.home() / ".openclaw" / "kora_behavior.db"
+            Path(galaxyos_home()) / "kora_behavior.db"
         )
         self._lock = threading.Lock()
         self._init_db()

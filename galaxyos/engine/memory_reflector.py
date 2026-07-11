@@ -23,6 +23,7 @@ from typing import Optional, Dict, List, Any, Tuple
 from dataclasses import dataclass, asdict, field
 from enum import Enum
 import hashlib
+from galaxyos.shared.paths import workspace
 
 
 # ==================== 数据结构 ====================
@@ -148,7 +149,7 @@ class ReflectionRecorder:
     """反思记录器 - 记录错误、模式、改进"""
     
     def __init__(self, workspace_path: str = None):
-        self.workspace_path = Path(workspace_path or os.path.expanduser("~/.openclaw/workspace"))
+        self.workspace_path = Path(workspace_path or workspace())
         self.learnings_path = self.workspace_path / ".learnings"
         self.reflections_path = self.learnings_path / "REFLECTIONS.jsonl"
         self.patterns_path = self.learnings_path / "PATTERNS.jsonl"
@@ -428,7 +429,7 @@ class ImprovementGenerator:
     
     def __init__(self, recorder: ReflectionRecorder, workspace_path: str = None):
         self.recorder = recorder
-        self.workspace_path = Path(workspace_path or os.path.expanduser("~/.openclaw/workspace"))
+        self.workspace_path = Path(workspace_path or workspace())
     
     def analyze_error(self, error: Error, pattern: Optional[Pattern] = None) -> Improvement:
         """分析错误并生成改进建议"""
@@ -587,7 +588,7 @@ class RuleUpdater:
     
     def __init__(self, recorder: ReflectionRecorder, workspace_path: str = None):
         self.recorder = recorder
-        self.workspace_path = Path(workspace_path or os.path.expanduser("~/.openclaw/workspace"))
+        self.workspace_path = Path(workspace_path or workspace())
     
     def apply_improvement(self, improvement: Improvement) -> bool:
         """应用改进"""
@@ -741,7 +742,7 @@ class MemoryReflector:
     """
     
     def __init__(self, workspace_path: str = None):
-        self.workspace_path = Path(workspace_path or os.path.expanduser("~/.openclaw/workspace"))
+        self.workspace_path = Path(workspace_path or workspace())
         
         # 初始化组件
         self.recorder = ReflectionRecorder(str(self.workspace_path))

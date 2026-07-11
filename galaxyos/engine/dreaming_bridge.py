@@ -52,6 +52,7 @@ import logging
 from pathlib import Path
 from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional, Tuple
+from galaxyos.shared.paths import workspace
 
 logger = logging.getLogger(__name__)
 
@@ -66,7 +67,7 @@ class DreamingPaths:
     def __init__(self, workspace: str = None):
         ws = Path(workspace or os.environ.get(
             "OPENCLAW_WORKSPACE",
-            str(Path.home() / ".openclaw" / "workspace")))
+            str(Path(workspace()))))
         
         self.workspace = ws
         self.dreams_dir = ws / "memory" / ".dreams"

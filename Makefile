@@ -1,7 +1,7 @@
 # GalaxyOS — 开发命令速查
-# make all | make test | make coverage | make lint | make clean | make sync | make native
+# make all | make test | make coverage | make lint | make clean | make native
 
-.PHONY: all install test coverage lint clean install deps sync sync-dist bench native native-py native-libs
+.PHONY: all install test coverage lint clean install deps bench native native-py native-libs check-no-dupes
 
 PYTHON := python3
 VENV := .venv
@@ -56,24 +56,17 @@ clean:
 	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
 	find . -type f -name '*.pyc' -delete 2>/dev/null || true
 
-# ── sync: 从 galaxyos/engine/ 同步到 extensions/galaxyos/scripts/ + 自动编译 Rust ──
-sync:
-	@echo "🔁 Syncing galaxyos/engine/ → extensions/galaxyos/scripts/"
-	@mkdir -p extensions/galaxyos/scripts
-	@cp galaxyos/engine/*.py extensions/galaxyos/scripts/
-	@cp galaxyos/engine/pil_worker.py extensions/galaxyos/scripts/ 2>/dev/null || true
-	@if command -v cargo >/dev/null 2>&1; then \
-		$(MAKE) native; \
-		$(MAKE) native-py; \
+# ── check-no-dupes: 确保 scripts/ 与 engine/ 无重复 .py 文件 ──
+check-no-dupes:
+	@echo "� Checking for duplicate .py files between scripts/ and engine/..."
+	@dups=$$(comm -12 <(ls galaxyos/engine/*.py 2>/dev/null | xargs -n1 basename | sort) <(ls extensions/galaxyos/scripts/*.py 2>/dev/null | xargs -n1 basename | sort | grep -v '^__init__\.py$$' | grep -v '^_path_setup\.py$$' | grep -v '^claw_worker\.py$$')); \
+	if [ -n "$$dups" ]; then \
+		echo "❌ Duplicate files found:"; \
+		echo "$$dups"; \
+		exit 1; \
+	else \
+		echo "✅ No duplicates — scripts/ is a thin proxy to engine/"; \
 	fi
-	@echo "✅ Sync complete"
-
-# ── sync+dist: 同时复制并构建 JS dist ──
-sync-dist: sync
-	@echo "📦 Creating dist/ entry for extensions/galaxyos..."
-	@mkdir -p extensions/galaxyos/dist
-	@cp extensions/galaxyos/index.js extensions/galaxyos/dist/index.js 2>/dev/null || true
-	@echo "✅ dist/ ready"
 
 # ── bench: 认知效果评估（GAT 注意力权重 A/B 测试）──
 bench:

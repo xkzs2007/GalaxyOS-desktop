@@ -29,6 +29,7 @@ from typing import Optional, Dict, List, Any, Tuple, Set
 from dataclasses import dataclass, asdict, field
 from enum import Enum
 import math
+from galaxyos.shared.paths import workspace
 
 
 # ==================== 数据结构 ====================
@@ -891,7 +892,7 @@ class HallucinationGuard:
     
     def __init__(self, workspace_path: str = None):
         self.workspace_path = Path(workspace_path or 
-            os.path.expanduser("~/.openclaw/workspace"))
+            workspace())
         self.store_path = self.workspace_path / ".learnings" / "verified_memories.jsonl"
         
         # 确保目录存在

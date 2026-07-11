@@ -16,20 +16,21 @@ import pickle
 import time
 from typing import Dict, List, Optional, Any
 from pathlib import Path
+from galaxyos.shared.paths import workspace
 
 logger = logging.getLogger(__name__)
 
 # 持久化路径
 CLASSIFIER_PATH = os.path.join(
-    os.environ.get("WORKSPACE", os.path.expanduser("~/.openclaw/workspace")),
+    os.environ.get("WORKSPACE", workspace()),
     ".learnings", "adaptive_classifier.pkl"
 )
 VECTORIZER_PATH = os.path.join(
-    os.environ.get("WORKSPACE", os.path.expanduser("~/.openclaw/workspace")),
+    os.environ.get("WORKSPACE", workspace()),
     ".learnings", "adaptive_vectorizer.pkl"
 )
 FEEDBACK_PATH = os.path.join(
-    os.environ.get("WORKSPACE", os.path.expanduser("~/.openclaw/workspace")),
+    os.environ.get("WORKSPACE", workspace()),
     ".learnings", "adaptive_feedback.jsonl"
 )
 

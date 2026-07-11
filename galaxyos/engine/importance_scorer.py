@@ -13,6 +13,7 @@ from typing import Dict, Any, List, Optional
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 import math
+from galaxyos.shared.paths import workspace
 
 logger = logging.getLogger(__name__)
 
@@ -70,7 +71,7 @@ class ImportanceScorer:
         
         if stats_path is None:
             workspace = os.environ.get('OPENCLAW_WORKSPACE',
-                                       Path.home() / '.openclaw' / 'workspace')
+                                       Path(workspace()))
             stats_path = str(Path(workspace) / 'memory' / 'importance_stats.json')
         
         self.stats_path = stats_path

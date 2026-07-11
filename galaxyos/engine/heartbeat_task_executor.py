@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 import logging
+from galaxyos.shared.paths import workspace
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -58,7 +59,7 @@ class HeartbeatTaskExecutor:
         Args:
             workspace_dir: 工作空间目录
         """
-        self.workspace_dir = workspace_dir or os.path.expanduser("~/.openclaw/workspace")
+        self.workspace_dir = workspace_dir or workspace()
         self.proactive_tasks_dir = os.path.join(self.workspace_dir, "skills/proactive-tasks")
         self.memory_dir = os.path.join(self.workspace_dir, "memory")
         self.logs = []

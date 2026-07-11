@@ -26,6 +26,7 @@ from dataclasses import dataclass, field, asdict
 from enum import Enum
 import threading
 import re
+from galaxyos.shared.paths import workspace
 
 
 class MemoryType(Enum):
@@ -368,7 +369,7 @@ class ArchivalMemory:
     """
     
     def __init__(self, db_path: str = None):
-        self.db_path = Path(db_path or Path.home() / ".openclaw" / "workspace" / ".memgpt" / "archival.db")
+        self.db_path = Path(db_path or Path(workspace()) / ".memgpt" / "archival.db")
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         
         self.lock = threading.Lock()
@@ -620,7 +621,7 @@ class MemGPTMemory:
     """
     
     def __init__(self, workspace_path: str = None):
-        self.workspace_path = Path(workspace_path or Path.home() / ".openclaw" / "workspace")
+        self.workspace_path = Path(workspace_path or Path(workspace()))
         
         # 初始化三级内存
         self.core_memory = CoreMemory()

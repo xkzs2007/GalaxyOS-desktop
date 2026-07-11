@@ -12,10 +12,11 @@ import time
 import threading
 import os
 import http.client as http_client
+from galaxyos.shared.paths import galaxyos_home
 
 # ── 统一 var 路径解析（v7.0: galaxyos 优先，claw-core fallback）────
 _OPENCLAW_HOME = os.path.expanduser(
-    os.environ.get("OPENCLAW_HOME", "~/.openclaw"))
+    galaxyos_home())
 _GALAXYOS_VAR = os.path.join(_OPENCLAW_HOME, "extensions", "galaxyos", "var")
 _CLAW_CORE_VAR = os.path.join(_OPENCLAW_HOME, "extensions", "claw-core", "var")
 

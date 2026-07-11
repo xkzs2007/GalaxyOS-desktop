@@ -27,6 +27,7 @@ import numpy as np
 from typing import Dict, List, Optional, Tuple, Any
 from pathlib import Path
 from datetime import datetime, timezone, timedelta
+from galaxyos.shared.paths import workspace
 
 # ── 尝试加载 LFM embedding ──
 try:
@@ -51,7 +52,7 @@ class TitansNeuralMemory:
     """
 
     def __init__(self, workspace_path: str = None):
-        self.workspace_path = Path(workspace_path or os.path.expanduser("~/.openclaw/workspace"))
+        self.workspace_path = Path(workspace_path or workspace())
         self.memory_path = self.workspace_path / ".learnings" / "titans_memory"
 
         # 持久化路径

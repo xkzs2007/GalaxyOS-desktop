@@ -32,10 +32,11 @@ import socket as _socket
 import struct
 import threading
 import selectors
+from galaxyos.shared.paths import galaxyos_home, workspace
 
 # ========== 路径初始化 ==========
 WORKSPACE = os.environ.get("OPENCLAW_WORKSPACE",
-    os.path.expanduser("~/.openclaw/workspace"))
+    workspace())
 
 # 自动检测 GalaxyOS 仓库路径（galaxyos/engine/ 或 extensions/galaxyos/dist/scripts/）
 _THIS_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -147,7 +148,7 @@ def _push_to_session_index(session_node: dict):
 # ========== 三通道路径 ==========
 # v7.0: 统一使用 galaxyos/var/ 路径（claw-core/var 仅作为 fallback）
 _OPENCLAW_HOME = os.path.expanduser(
-    os.environ.get("OPENCLAW_HOME", "~/.openclaw"))
+    galaxyos_home())
 _GALAXYOS_VAR = os.path.join(_OPENCLAW_HOME, "extensions", "galaxyos", "var")
 _CLAW_CORE_VAR = os.path.join(_OPENCLAW_HOME, "extensions", "claw-core", "var")
 
@@ -1042,6 +1043,16 @@ class ClawWorker:
 
     def forget(self, p: dict) -> dict:
         """智能遗忘"""
+        try:
+            from galaxyos.shared.audit import get_audit_logger, AuditEvent
+            get_audit_logger().log(AuditEvent(
+                operator="claw_worker",
+                action="forget",
+                scope=f"memory_id={p.get('memory_id', '')}",
+                result="pending",
+            ))
+        except Exception:
+            pass
         entry = self._ensure_entry()
         memory_id = p.get("memory_id", "")
         if entry.memory and hasattr(entry.memory, 'forget'):

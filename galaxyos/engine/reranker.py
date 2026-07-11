@@ -4,6 +4,7 @@
 
 用法:
     from reranker import rerank_results
+from galaxyos.shared.paths import workspace
     reranked = rerank_results("查询", candidates, top_k=8)
 """
 
@@ -30,7 +31,7 @@ def _load_embedding_key() -> str:
     config_paths = [
         Path(__file__).parent.parent / "skills" / "llm-memory-integration" / "config" / "unified_config.json",
         Path(__file__).parent.parent.parent / "skills" / "llm-memory-integration" / "config" / "unified_config.json",
-        Path.home() / ".openclaw" / "workspace" / "skills" / "xiaoyi-claw-omega-final" / "skills" / "llm-memory-integration" / "config" / "unified_config.json",
+        Path(workspace()) / "skills" / "xiaoyi-claw-omega-final" / "skills" / "llm-memory-integration" / "config" / "unified_config.json",
     ]
     for cp in config_paths:
         if cp.exists():

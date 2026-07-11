@@ -15,6 +15,7 @@ import hashlib
 from typing import Dict, List, Any, Optional, Callable
 from pathlib import Path
 import logging
+from galaxyos.shared.paths import workspace
 
 logger = logging.getLogger("skill_curriculum")
 
@@ -37,7 +38,7 @@ class SkillCurriculum:
                  workspace: str = None):
         if workspace is None:
             workspace = os.environ.get("OPENCLAW_WORKSPACE",
-                                       str(Path.home() / ".openclaw" / "workspace"))
+                                       str(Path(workspace())))
         self.workspace = Path(workspace)
         
         # Skill 目录: name -> {category, path, description}

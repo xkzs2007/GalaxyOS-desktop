@@ -24,15 +24,16 @@ import logging
 from typing import Dict, List, Optional, Any
 from datetime import datetime, timezone
 from collections import defaultdict
+from galaxyos.shared.paths import workspace
 
 logger = logging.getLogger(__name__)
 
 EDIT_PATH = os.path.join(
-    os.environ.get("WORKSPACE", os.path.expanduser("~/.openclaw/workspace")),
+    os.environ.get("WORKSPACE", workspace()),
     ".learnings", "memory_edits.jsonl"
 )
 MERGED_PATH = os.path.join(
-    os.environ.get("WORKSPACE", os.path.expanduser("~/.openclaw/workspace")),
+    os.environ.get("WORKSPACE", workspace()),
     ".learnings", "merged_memories.jsonl"
 )
 
@@ -373,7 +374,7 @@ class MemoryEditor:
             logger.warning(f"locate: embedding client 不可用: {e}")
         candidates = []
         try:
-            ws = os.environ.get("WORKSPACE", os.path.expanduser("~/.openclaw/workspace"))
+            ws = os.environ.get("WORKSPACE", workspace())
             sys.path.insert(0, os.path.join(ws,
                 "skills/xiaoyi-claw-omega-final/skills/llm-memory-integration/core"))
             from unified_vector_store import get_vector_store

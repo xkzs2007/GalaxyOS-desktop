@@ -18,11 +18,12 @@ batch_backfill_ncps.py — 从 DAG 历史数据批量回接 NCPS 神经突触网
 import sys, os, json, re, time, hashlib, logging, math, random
 from typing import Dict, List, Tuple, Set, Optional
 from collections import defaultdict
+from galaxyos.shared.paths import workspace
 
 logging.basicConfig(level=logging.INFO, format='%(levelname)s:%(name)s:%(message)s')
 logger = logging.getLogger("backfill")
 
-WORKSPACE = os.path.expanduser("~/.openclaw/workspace")
+WORKSPACE = workspace()
 DAG_DB = os.path.expanduser("~/.openclaw/dag_context.db")
 
 # 要跳过的会话前缀（测试数据）

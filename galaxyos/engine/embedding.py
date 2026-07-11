@@ -7,6 +7,7 @@ import logging
 import os
 from pathlib import Path
 from typing import List, Optional
+from galaxyos.shared.paths import galaxyos_home
 
 # 初始化 logger
 logger = logging.getLogger(__name__)
@@ -30,7 +31,7 @@ class EmbeddingEngine:
         self.dimensions = dimensions
         self.cache = {}
         self.precomputed = {}
-        _openclaw_home = os.environ.get("OPENCLAW_HOME", str(Path.home() / ".openclaw"))
+        _openclaw_home = galaxyos_home()
         self.cache_dir = Path(os.environ.get("OPENCLAW_CACHE_DIR", os.path.join(_openclaw_home, "memory-tdai", ".cache")))
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self._load_precomputed()

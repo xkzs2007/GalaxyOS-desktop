@@ -35,7 +35,8 @@ from typing import Optional, Dict, Any, List, AsyncGenerator
 from collections import Counter
 
 import os as _os, sys as _sys
-_ws_root = _os.environ.get("OPENCLAW_WORKSPACE", _os.path.expanduser("~/.openclaw/workspace"))
+from galaxyos.shared.paths import galaxyos_home, workspace
+_ws_root = workspace()
 for _p in [_ws_root, "/workspace"]:
     if _p not in _sys.path:
         _sys.path.insert(0, _p)
@@ -43,7 +44,7 @@ import path_resolver
 logger = logging.getLogger(__name__)
 
 # 配置文件路径（v3.0.0 公私分离：优先使用环境变量）
-_OPENCLAW_HOME = os.environ.get("OPENCLAW_HOME", path_resolver.OPENCLAW_HOME)
+_OPENCLAW_HOME = galaxyos_home()
 CONFIG_PATH = os.environ.get(
     "OPENCLAW_LLM_CONFIG",
     os.path.join(_OPENCLAW_HOME, "workspace/skills/llm-memory-integration/config/llm_config.json")

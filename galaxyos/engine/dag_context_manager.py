@@ -31,13 +31,14 @@ from dataclasses import dataclass, field, asdict
 from collections import defaultdict, Counter
 from pathlib import Path
 from blob_arena import BlobArena, get_blob_arena, generate_memo
+from galaxyos.shared.paths import galaxyos_home, workspace
 
 logger = logging.getLogger(__name__)
 
 # ============================================================================
 # 数据库路径
 # ============================================================================
-DAG_DB_DIR = Path(os.path.expanduser("~/.openclaw"))
+DAG_DB_DIR = Path(galaxyos_home())
 DAG_DB_PATH = DAG_DB_DIR / "dag_context.db"
 
 
@@ -415,7 +416,7 @@ class DAGContextManager:
             # ── 同步到突触网络（双向桥接） ──
             try:
                 from memory_synapse_network import SynapseNetwork
-                _sn = SynapseNetwork(os.path.expanduser("~/.openclaw/workspace"))
+                _sn = SynapseNetwork(workspace())
                 _sn._load()
                 # 检查是否已存在相同内容的神经元（幂等）
                 _exists = False

@@ -27,6 +27,7 @@ import numpy as np
 from typing import Dict, List, Optional, Tuple, Any
 from pathlib import Path
 from datetime import datetime, timezone
+from galaxyos.shared.paths import workspace
 
 # ── LFM embedding 引擎 ──
 try:
@@ -45,7 +46,7 @@ class CrossModalMemoryBinder:
     """
 
     def __init__(self, workspace_path: str = None):
-        self.workspace_path = Path(workspace_path or os.path.expanduser("~/.openclaw/workspace"))
+        self.workspace_path = Path(workspace_path or workspace())
         self.bind_path = self.workspace_path / ".learnings" / "cross_modal"
         self.bind_path.mkdir(parents=True, exist_ok=True)
 

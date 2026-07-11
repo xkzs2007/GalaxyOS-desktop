@@ -22,6 +22,7 @@ from typing import Dict, List, Optional, Any, Tuple
 from datetime import datetime
 from dataclasses import dataclass, field
 from enum import Enum
+from galaxyos.shared.paths import workspace
 
 # 添加模块路径
 CORE_DIR = Path(__file__).parent
@@ -96,7 +97,7 @@ class MultiSourceCrossValidator:
     
     def __init__(self, workspace_path: str = None):
         self.workspace_path = Path(workspace_path or 
-            os.path.expanduser("~/.openclaw/workspace"))
+            workspace())
         
         # 加载记忆系统
         self._memories: List[Dict] = []
@@ -806,7 +807,7 @@ class EnhancedHallucinationGuard:
     
     def __init__(self, workspace_path: str = None):
         self.workspace_path = Path(workspace_path or 
-            os.path.expanduser("~/.openclaw/workspace"))
+            workspace())
         
         # 初始化组件
         self.cross_validator = MultiSourceCrossValidator(str(self.workspace_path))

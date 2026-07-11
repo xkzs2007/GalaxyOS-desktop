@@ -22,6 +22,7 @@ from typing import Dict, List, Optional, Tuple, Any
 
 import torch
 import numpy as np
+from galaxyos.shared.paths import workspace
 
 logger = logging.getLogger("gnn_graph_builder")
 
@@ -100,7 +101,7 @@ class SynapseGraphBuilder:
         feature_dim: int = 64,
         device: str = "cpu",
     ):
-        self.ws = workspace_path or os.path.expanduser("~/.openclaw/workspace")
+        self.ws = workspace_path or workspace()
         self.feature_dim = feature_dim
         self.device = torch.device(device)
         self._tokenizer = None  # 懒加载 jieba

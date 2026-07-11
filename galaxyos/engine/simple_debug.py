@@ -1,8 +1,9 @@
 import sys, os, struct, json, tempfile, time as _t
+from galaxyos.shared.paths import galaxyos_home
 
 def _resolve_rci_mmap():
     """解析 RCI shared state mmap 路径：优先 galaxyos/var"""
-    _home = os.path.expanduser(os.environ.get("OPENCLAW_HOME", "~/.openclaw"))
+    _home = os.path.expanduser(galaxyos_home())
     primary = os.path.join(_home, "extensions", "galaxyos", "var", "rci_shared_state")
     fallback = os.path.join(_home, "extensions", "claw-core", "var", "rci_shared_state")
     if os.path.isdir(os.path.dirname(primary)):

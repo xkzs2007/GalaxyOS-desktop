@@ -52,6 +52,7 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Dict, List, Any, Optional, Tuple, Set
 from dataclasses import dataclass, asdict, field
+from galaxyos.shared.paths import workspace
 
 logger = logging.getLogger(__name__)
 
@@ -147,7 +148,7 @@ class BioRhythmSleepConsolidator:
     def __init__(self, workspace_path: str = None, config: DreamSleepConfig = None):
         self.workspace = workspace_path or os.environ.get(
             "OPENCLAW_WORKSPACE",
-            os.path.expanduser("~/.openclaw/workspace"))
+            workspace())
         self.config = config or DreamSleepConfig()
         
         # 持久化路径

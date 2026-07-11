@@ -20,7 +20,8 @@ from typing import Optional, Set
 
 # ── Centralized path resolution ──
 import os as _os, sys as _sys
-_ws_root = _os.environ.get("OPENCLAW_WORKSPACE", _os.path.expanduser("~/.openclaw/workspace"))
+from galaxyos.shared.paths import galaxyos_home, workspace
+_ws_root = workspace()
 for _p in [_ws_root, "/workspace"]:
     if _p not in _sys.path:
         _sys.path.insert(0, _p)
@@ -33,7 +34,7 @@ sys.path.insert(0, str(SCRIPT_DIR))
 
 
 # 路径配置（v3.0.0 公私分离：优先使用环境变量）
-_OPENCLAW_HOME = Path(os.environ.get("OPENCLAW_HOME", str(path_resolver.OPENCLAW_HOME)))
+_OPENCLAW_HOME = Path(galaxyos_home())
 WORKSPACE = Path(os.environ.get("OPENCLAW_WORKSPACE", str(_OPENCLAW_HOME / "workspace")))
 MEMORY_DIR = WORKSPACE / "memory"
 PERSONA_FILE = MEMORY_DIR / "persona.md"

@@ -29,6 +29,7 @@ from dataclasses import dataclass, field, asdict
 from enum import Enum
 from collections import defaultdict
 import logging
+from galaxyos.shared.paths import workspace
 
 logger = logging.getLogger(__name__)
 
@@ -410,7 +411,7 @@ class ResilienceSystem:
     
     def __init__(self, workspace_path: str = None):
         self.workspace_path = Path(workspace_path or 
-            os.path.expanduser("~/.openclaw/workspace"))
+            workspace())
         self.core_path = self.workspace_path / "skills" / "xiaoyi-claw-omega-final" / "skills" / "llm-memory-integration" / "core"
         
         # 添加到 Python 路径

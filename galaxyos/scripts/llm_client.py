@@ -12,7 +12,8 @@ from typing import Optional, Dict, Any, List
 
 # 配置文件路径
 import os as _os, sys as _sys
-_ws_root = _os.environ.get("OPENCLAW_WORKSPACE", _os.path.expanduser("~/.openclaw/workspace"))
+from galaxyos.shared.paths import workspace
+_ws_root = workspace()
 for _p in [_ws_root, "/workspace"]:
     if _p not in _sys.path:
         _sys.path.insert(0, _p)

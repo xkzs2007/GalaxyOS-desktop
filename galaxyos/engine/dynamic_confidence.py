@@ -22,11 +22,12 @@ import logging
 from datetime import datetime, timezone
 from typing import Dict, List, Optional, Tuple, Any
 from collections import defaultdict
+from galaxyos.shared.paths import workspace
 
 logger = logging.getLogger(__name__)
 
 CALIBRATION_PATH = os.path.join(
-    os.environ.get("WORKSPACE", os.path.expanduser("~/.openclaw/workspace")),
+    os.environ.get("WORKSPACE", workspace()),
     ".learnings", "dynamic_confidence.jsonl"
 )
 

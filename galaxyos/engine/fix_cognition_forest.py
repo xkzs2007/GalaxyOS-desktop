@@ -22,12 +22,13 @@ import sqlite3
 import argparse
 import logging
 from pathlib import Path
+from galaxyos.shared.paths import workspace
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
 
 # ── 路径 ──
-WORKSPACE = os.path.expanduser("~/.openclaw/workspace")
+WORKSPACE = workspace()
 DIST_SCRIPTS = os.path.expanduser("~/.openclaw/extensions/claw-core/dist/scripts")
 DAG_DB = os.path.expanduser("~/.openclaw/dag_context.db")
 SKILLS_BASE = os.path.join(WORKSPACE, "skills")

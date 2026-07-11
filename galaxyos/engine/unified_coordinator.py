@@ -16,6 +16,7 @@ from typing import Dict, List, Optional, Any, Tuple, Callable
 from dataclasses import dataclass, field
 from enum import Enum
 import logging
+from galaxyos.shared.paths import workspace
 
 # 添加模块路径 - 使用绝对路径
 CORE_DIR = Path(__file__).parent.resolve()
@@ -1227,7 +1228,7 @@ class UnifiedCoordinator:
     
     def __init__(self, workspace_path: str = None):
         self.workspace_path = Path(workspace_path or 
-            os.path.expanduser("~/.openclaw/workspace"))
+            workspace())
         self.modules = MODULE_REGISTRY
         self._loaded_modules: Dict[str, Any] = {}
         self._layer_cache: Dict[int, List[str]] = {}

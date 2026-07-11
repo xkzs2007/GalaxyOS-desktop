@@ -300,6 +300,16 @@ class UnifiedEntry:
     
     def forget(self, memory_id: str) -> Dict[str, Any]:
         """智能遗忘"""
+        try:
+            from galaxyos.shared.audit import get_audit_logger, AuditEvent
+            get_audit_logger().log(AuditEvent(
+                operator="unified_entry",
+                action="forget",
+                scope=f"memory_id={memory_id}",
+                result="pending",
+            ))
+        except Exception:
+            pass
         if self.memory and hasattr(self.memory, 'forget'):
             return self.memory.forget(memory_id)
         return {"error": "遗忘功能不可用"}

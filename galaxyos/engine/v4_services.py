@@ -16,9 +16,10 @@ from concurrent.futures import ThreadPoolExecutor, Future
 from collections import defaultdict
 from datetime import datetime
 from typing import Optional, Dict, Any, List
+from galaxyos.shared.paths import workspace
 
 WORKSPACE = os.environ.get("OPENCLAW_WORKSPACE",
-    os.path.expanduser("~/.openclaw/workspace"))
+    workspace())
 DAG_DB = os.path.expanduser("~/.openclaw/dag_context.db")
 MMAP_PATH = os.environ.get("GALAXYOS_MMAP_PATH",
     os.path.join(os.environ.get("XDG_RUNTIME_DIR", "/dev/shm"), "claw_worker_mmap"))

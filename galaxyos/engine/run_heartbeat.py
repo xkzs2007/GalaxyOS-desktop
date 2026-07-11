@@ -16,6 +16,7 @@ import json
 import subprocess
 from pathlib import Path
 from datetime import datetime
+from galaxyos.shared.paths import workspace
 
 # 添加核心模块路径
 CORE_DIR = Path(__file__).parent.parent / "skills/llm-memory-integration/core"
@@ -125,7 +126,7 @@ if __name__ == "__main__":
         print("=" * 50)
         try:
             bp_result = subprocess.run(
-                ["python3", str(Path.home() / ".openclaw" / "workspace" / "skills" / "huawei-drive" / "scripts" / "smart_backup.py")],
+                ["python3", str(Path(workspace()) / "skills" / "huawei-drive" / "scripts" / "smart_backup.py")],
                 capture_output=True,
                 text=True,
                 timeout=60

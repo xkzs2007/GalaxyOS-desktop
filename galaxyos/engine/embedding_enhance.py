@@ -12,6 +12,7 @@ Embedding 增强模块 — 利用 bge-m3 (1024维) 扩展能力
 
 使用方法：
     from embedding_enhance import EmbeddingEnhancer
+from galaxyos.shared.paths import workspace
     ee = EmbeddingEnhancer()
     duplicates = ee.find_duplicates(memories)
 """
@@ -51,7 +52,7 @@ class EmbeddingEnhancer:
                 "config.json",
             ]
             ws = os.environ.get("OPENCLAW_WORKSPACE",
-                                 os.path.expanduser("~/.openclaw/workspace"))
+                                 workspace())
             for rel in candidates:
                 p = os.path.join(ws, rel)
                 if os.path.exists(p):

@@ -16,7 +16,8 @@ from typing import List, Optional, Dict, Any, Callable
 import re
 
 import os as _os, sys as _sys
-_ws_root = _os.environ.get("OPENCLAW_WORKSPACE", _os.path.expanduser("~/.openclaw/workspace"))
+from galaxyos.shared.paths import galaxyos_home, workspace
+_ws_root = workspace()
 for _p in [_ws_root, "/workspace"]:
     if _p not in _sys.path:
         _sys.path.insert(0, _p)
@@ -153,7 +154,7 @@ class CrossLingualEncoder:
                 return
 
             # 尝试从 llm_config 加载
-            _openclaw_home = os.environ.get("OPENCLAW_HOME", path_resolver.OPENCLAW_HOME)
+            _openclaw_home = galaxyos_home()
             config_path = os.environ.get(
                 "OPENCLAW_LLM_CONFIG",
                 os.path.join(_openclaw_home, "workspace/skills/llm-memory-integration/config/llm_config.json")

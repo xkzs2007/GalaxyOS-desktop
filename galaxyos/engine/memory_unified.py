@@ -12,6 +12,7 @@ import os
 from pathlib import Path
 from typing import List, Dict, Optional
 from datetime import datetime
+from galaxyos.shared.paths import workspace
 
 
 class UnifiedMemory:
@@ -70,7 +71,7 @@ class UnifiedMemory:
         """推送通知（保持原有实现，不桥接）"""
         try:
             if channel == "today-task":
-                push_script = Path.home() / ".openclaw" / "workspace" / "skills" / "today-task" / "scripts" / "task_push.py"
+                push_script = Path(workspace()) / "skills" / "today-task" / "scripts" / "task_push.py"
                 if push_script.exists():
                     temp_json = Path("/tmp/push_data.json")
                     data = {"title": title, "content": content, "timestamp": datetime.now().isoformat()}

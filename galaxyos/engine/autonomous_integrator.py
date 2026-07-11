@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Any
 from datetime import datetime
 import logging
+from galaxyos.shared.paths import workspace
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +35,7 @@ class AutonomousTasksIntegrator:
     
     def __init__(self, workspace_path: str = None):
         self.workspace_path = Path(workspace_path or 
-            os.path.expanduser("~/.openclaw/workspace"))
+            workspace())
         
         # 技能路径
         self.skills_dir = self.workspace_path / "skills"

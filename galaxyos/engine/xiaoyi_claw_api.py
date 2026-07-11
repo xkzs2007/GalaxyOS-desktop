@@ -17,10 +17,11 @@ import uuid
 import re
 import threading as _th_mod
 import sqlite3  # 修复 F-1: _retrieval_phase 行 2346 等处用 sqlite3 但顶部未 import
+from galaxyos.shared.paths import galaxyos_home, workspace
 
 # ── 统一 var 路径解析（v7.0: galaxyos 优先，claw-core fallback）────
 _OPENCLAW_HOME_API = os.path.expanduser(
-    os.environ.get("OPENCLAW_HOME", "~/.openclaw"))
+    galaxyos_home())
 _GALAXYOS_VAR_API = os.path.join(_OPENCLAW_HOME_API, "extensions", "galaxyos", "var")
 _CLAW_CORE_VAR_API = os.path.join(_OPENCLAW_HOME_API, "extensions", "claw-core", "var")
 
@@ -44,7 +45,7 @@ logger = logging.getLogger(__name__)
 # ── 工作区路径(确保整个模块统一可访问)─────────────────────────
 WORKSPACE = os.environ.get(
     "OPENCLAW_WORKSPACE",
-    str(Path.home() / ".openclaw" / "workspace"),
+    str(Path(workspace())),
 )
 
 # ── 10论文方向模块集成 (R-CCAM 五阶段调用) ──
@@ -268,7 +269,7 @@ class XiaoYiClawLLM:
             from unified_vector_store import UnifiedVectorStore
             import os
             from pathlib import Path
-            openclaw_home = os.environ.get('OPENCLAW_HOME', Path.home() / '.openclaw')
+            openclaw_home = os.environ.get('OPENCLAW_HOME', Path(galaxyos_home()))
             self.vector_store = UnifiedVectorStore(
                 backend='hnswlib',
                 index_path=str(Path(openclaw_home) / 'memory-tdai' / 'unified_vectors.hnsw'),
@@ -505,8 +506,8 @@ class XiaoYiClawLLM:
 
                 _candidate_paths = [
                     Path(__file__).parent.parent / "config" / "llm_config.json",
-                    Path.home() / ".openclaw" / "galaxyos" / "config" / "llm_config.json",
-                    Path.home() / ".openclaw" / "workspace" / "skills" / "xiaoyi-claw-omega-final" / "config" / "llm_config.json",
+                    Path(galaxyos_home()) / "galaxyos" / "config" / "llm_config.json",
+                    Path(workspace()) / "skills" / "xiaoyi-claw-omega-final" / "config" / "llm_config.json",
                 ]
                 _loaded_emb = None
                 for _p in _candidate_paths:
@@ -1221,6 +1222,17 @@ class XiaoYiClawLLM:
         Returns:
             删除数量
         """
+        try:
+            from galaxyos.shared.audit import get_audit_logger, AuditEvent
+            get_audit_logger().log(AuditEvent(
+                operator="system",
+                action="forget",
+                scope=f"memory_id={memory_id}" if memory_id else f"criteria={criteria}",
+                result="pending",
+            ))
+        except Exception:
+            pass
+
         count = 0
 
         # 单条删除
@@ -2091,7 +2103,7 @@ class XiaoYiClawLLM:
         # 1. LTC 平均兴奋度
         _avg_ltc = 0.5
         try:
-            _ws = getattr(self, '_workspace', os.path.expanduser("~/.openclaw/workspace"))
+            _ws = getattr(self, '_workspace', workspace())
             _core_dir = os.path.join(_ws, "GalaxyOS/skills/llm-memory-integration/core")
             sys.path.insert(0, _core_dir)
             from memory_consolidation import ConsolidationEngine
@@ -3022,9 +3034,9 @@ class XiaoYiClawLLM:
         try:
             if not state.analysis.get('persona_injected'):
                 persona_paths = [
-                    os.path.join(os.path.expanduser("~/.openclaw/workspace"), "persona.md"),
-                    os.path.join(os.path.expanduser("~/.openclaw/workspace"), "SOUL.md"),
-                    os.path.join(os.path.expanduser("~/.openclaw/workspace"), "IDENTITY.md"),
+                    os.path.join(workspace(), "persona.md"),
+                    os.path.join(workspace(), "SOUL.md"),
+                    os.path.join(workspace(), "IDENTITY.md"),
                 ]
                 persona_parts = []
                 for p in persona_paths:
@@ -4308,7 +4320,7 @@ class XiaoYiClawLLM:
                 pass
 
         # 读取上轮 Galaxy Kernel 分析结果（WORKSPACE/data/，与 claw_worker.py 一致）
-        _galaxy_ws = os.environ.get("OPENCLAW_WORKSPACE", os.path.expanduser("~/.openclaw/workspace"))
+        _galaxy_ws = os.environ.get("OPENCLAW_WORKSPACE", workspace())
         _galaxy_insights_path = os.path.join(_galaxy_ws, "data", "galaxy_kernel_insights.json")
         _galaxy_insights = {}
         try:

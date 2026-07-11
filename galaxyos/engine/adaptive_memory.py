@@ -19,6 +19,7 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Optional, Dict, List, Any
 from dataclasses import dataclass, asdict, field
+from galaxyos.shared.paths import workspace
 
 
 # ==================== 记忆参数 ====================
@@ -90,7 +91,7 @@ class PerformanceAnalyzer:
     """性能分析器"""
     
     def __init__(self, workspace_path: str = None):
-        self.workspace_path = Path(workspace_path or os.path.expanduser("~/.openclaw/workspace"))
+        self.workspace_path = Path(workspace_path or workspace())
         self.metrics_path = self.workspace_path / ".learnings" / "performance_metrics.jsonl"
         
         # 确保目录存在
@@ -350,7 +351,7 @@ class AdaptiveMemoryManager:
     """
     
     def __init__(self, workspace_path: str = None):
-        self.workspace_path = Path(workspace_path or os.path.expanduser("~/.openclaw/workspace"))
+        self.workspace_path = Path(workspace_path or workspace())
         self.params_path = self.workspace_path / ".learnings" / "memory_params.json"
         
         # 加载或初始化参数

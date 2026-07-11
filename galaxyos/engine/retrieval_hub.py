@@ -21,6 +21,7 @@
 import os, sys, json, logging, time, re, sqlite3, subprocess, threading, math
 from typing import List, Dict, Optional
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from galaxyos.shared.paths import workspace
 
 logger = logging.getLogger(__name__)
 
@@ -1141,7 +1142,7 @@ def _do_synapse(query: str) -> list:
       - > 2000         → jieba 关键词匹配（兜底）
     """
     try:
-        _ws = os.path.expanduser("~/.openclaw/workspace")
+        _ws = workspace()
         _syn_file = os.path.join(_ws, ".learnings/synapse_network/neurons.jsonl")
         _neuron_count = 0
         if os.path.exists(_syn_file):
@@ -1442,7 +1443,7 @@ def _do_synapse_fallback(query: str) -> list:
     """synapse 回退：jieba 关键词匹配 + 突触网络"""
     _r = []
     try:
-        _ws = os.path.expanduser("~/.openclaw/workspace")
+        _ws = workspace()
         _core_dir = os.path.join(
             _ws, "GalaxyOS/extensions/claw-core/dist/scripts")
         if _core_dir not in sys.path:
@@ -1489,7 +1490,7 @@ def _do_paper(query: str, top_k: int) -> list:
     """4. 论文引擎检索"""
     _r = []
     try:
-        _ws = os.path.expanduser("~/.openclaw/workspace")
+        _ws = workspace()
         # 按 worker 的 import 顺序（core 优先）
         _core_dir = os.path.join(_ws,
             "skills/xiaoyi-claw-omega-final/skills/llm-memory-integration/core")
@@ -1559,7 +1560,7 @@ def _do_cognitive(query: str, top_k: int, session_id: str = "") -> list:
     """7. 认知地图检索（LASAR 三类认知 query + 空间接近性）"""
     _r = []
     try:
-        _ws = os.path.expanduser("~/.openclaw/workspace")
+        _ws = workspace()
         _core_dir = os.path.join(_ws, "GalaxyOS/extensions/claw-core/dist/scripts")
         if _core_dir not in sys.path:
             sys.path.insert(0, _core_dir)
@@ -1844,7 +1845,7 @@ def _neural_rerank_dedup(
     if not merged:
         return merged
 
-    _ws = os.path.expanduser("~/.openclaw/workspace")
+    _ws = workspace()
     _core_dir = os.path.join(_ws, "GalaxyOS/skills/llm-memory-integration/core")
     sys.path.insert(0, _core_dir)
     sys.path.insert(0, os.path.join(_ws,

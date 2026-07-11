@@ -23,6 +23,7 @@ from pathlib import Path
 from collections import defaultdict
 from typing import List, Dict, Tuple
 from datetime import datetime, timezone
+from galaxyos.shared.paths import workspace
 
 logging.basicConfig(level=logging.WARNING)
 logger = logging.getLogger("benchmark")
@@ -31,7 +32,7 @@ import torch
 import numpy as np
 
 # 路径
-WORKSPACE = os.path.expanduser("~/.openclaw/workspace")
+WORKSPACE = workspace()
 SRC_DIR = os.path.join(
     WORKSPACE,
     "skills/xiaoyi-claw-omega-final/skills/llm-memory-integration/src",

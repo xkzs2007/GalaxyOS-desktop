@@ -5,10 +5,11 @@ from pathlib import Path
 import os
 import json
 import logging
+from galaxyos.shared.paths import galaxyos_home
 logger = logging.getLogger(__name__)
 
 # 默认反馈目录（v3.0.0 公私分离：优先使用环境变量）
-_OPENCLAW_HOME = os.environ.get("OPENCLAW_HOME", str(Path.home() / ".openclaw"))
+_OPENCLAW_HOME = galaxyos_home()
 DEFAULT_FEEDBACK_DIR = os.environ.get(
     "FEEDBACK_DIR",
     os.path.join(_OPENCLAW_HOME, "memory-tdai", "feedback")

@@ -36,6 +36,7 @@ import re
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, Any, List, Optional, Tuple
+from galaxyos.shared.paths import galaxyos_home
 
 # ── ANSI 颜色（必须定义在 UI 函数之前） ──
 G = "\033[92m"  # 绿
@@ -88,7 +89,7 @@ if _THIS_FILE.parent.parent.name == "galaxyos" and _THIS_FILE.parent.name == "sc
     _EXT_DIR = _THIS_FILE.parent.parent  # extensions/galaxyos/
     _OPENCLAW_HOME = _EXT_DIR.parent.parent  # ~/.openclaw/
 else:
-    _OPENCLAW_HOME = Path(os.environ.get("OPENCLAW_HOME", str(Path.home() / ".openclaw")))
+    _OPENCLAW_HOME = Path(galaxyos_home())
     _EXT_DIR = _OPENCLAW_HOME / "extensions" / "galaxyos"
 
 # 所有核心路径从插件根派生，不依赖旧 galaxyos/engine/ 布局
@@ -1248,7 +1249,7 @@ def check_services() -> Dict[str, Any]:
         warn("Gateway UDS socket 不存在")
 
     # ── DAG 数据库 ──
-    dag_db = Path.home() / ".openclaw" / "dag_context.db"
+    dag_db = Path(galaxyos_home()) / "dag_context.db"
     if dag_db.exists():
         results["dag"]["db"] = True
         size_mb = round(dag_db.stat().st_size / 1024 / 1024, 1)
@@ -3149,7 +3150,7 @@ def _backup_before_migrate(src_paths: List[str], backup_label: str) -> Optional[
     """迁移前创建回滚点。返回备份路径或 None。"""
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     backup_dir = (
-        Path.home() / ".openclaw" / "backups" / f"migrate_backup_{ts}_{backup_label}"
+        Path(galaxyos_home()) / "backups" / f"migrate_backup_{ts}_{backup_label}"
     )
     backup_dir.mkdir(parents=True, exist_ok=True)
     meta = {"created": ts, "label": backup_label, "sources": [], "restore_cmd": f"cp -a {backup_dir}/* <target_dir>/"}

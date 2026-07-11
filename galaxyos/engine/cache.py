@@ -7,11 +7,12 @@ from pathlib import Path
 from datetime import datetime, timedelta
 from typing import Optional
 import logging
+from galaxyos.shared.paths import galaxyos_home
 
 logger = logging.getLogger(__name__)
 
 # 默认缓存目录（v3.0.0 公私分离：优先使用环境变量）
-_OPENCLAW_HOME = os.environ.get("OPENCLAW_HOME", str(Path.home() / ".openclaw"))
+_OPENCLAW_HOME = galaxyos_home()
 DEFAULT_CACHE_DIR = os.environ.get(
     "CACHE_DIR",
     os.path.join(_OPENCLAW_HOME, "memory-tdai", ".cache")

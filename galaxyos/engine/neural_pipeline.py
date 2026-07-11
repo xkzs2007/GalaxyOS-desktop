@@ -31,6 +31,7 @@ from dataclasses import dataclass, field
 
 import torch
 import numpy as np
+from galaxyos.shared.paths import workspace
 
 logger = logging.getLogger("neural_pipeline")
 
@@ -145,9 +146,7 @@ class NeuralMemoryPipeline:
         SynapseGraphBuilder_cls, _, _, _ = _GNN_BUILDER
         CfCSynapseEngine_cls, NCPTopology_cls, _ = _CFC_ENGINE
 
-        self.workspace_path = workspace_path or os.path.expanduser(
-            "~/.openclaw/workspace"
-        )
+        self.workspace_path = workspace_path or workspace()
         self.gnn_type = gnn_type.lower()
         self.feature_dim = feature_dim
         self.hidden_dim = hidden_dim

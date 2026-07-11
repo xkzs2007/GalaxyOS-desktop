@@ -27,6 +27,7 @@ from datetime import datetime, timedelta
 from typing import List, Dict, Optional, Any, Tuple
 from dataclasses import dataclass, field
 from pathlib import Path
+from galaxyos.shared.paths import galaxyos_home
 
 logger = logging.getLogger(__name__)
 
@@ -117,7 +118,7 @@ class HierarchicalMemoryManager:
 
         # SQLite 持久化
         self.db_path = db_path or os.path.join(
-            os.path.expanduser("~/.openclaw"),
+            galaxyos_home(),
             "hierarchical_memory.db"
         )
         self._init_db()

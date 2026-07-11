@@ -9,10 +9,11 @@ import os, json, sqlite3, logging, time, threading, re, hashlib
 from datetime import datetime
 from collections import defaultdict
 from typing import Optional, List, Dict, Any
+from galaxyos.shared.paths import workspace
 
 logger = logging.getLogger(__name__)
 
-WORKSPACE = os.environ.get('OPENCLAW_WORKSPACE', os.path.expanduser('~/.openclaw/workspace'))
+WORKSPACE = os.environ.get('OPENCLAW_WORKSPACE', workspace())
 DAG_DB = os.path.expanduser("~/.openclaw/dag_context.db")
 
 # 全局 Flash 客户端（共享）

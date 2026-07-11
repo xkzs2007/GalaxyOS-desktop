@@ -8,12 +8,13 @@
 
 import json, sqlite3, subprocess, sys, time
 from pathlib import Path
+from galaxyos.shared.paths import galaxyos_home, workspace
 
-TENCENTDB = Path.home() / ".openclaw" / "memory-tdai"
+TENCENTDB = Path(galaxyos_home()) / "memory-tdai"
 VECTORS_DB = TENCENTDB / "vectors.db"
 UNIFIED_DB = TENCENTDB / "unified_vectors.db"
-UNIFIED_ENTRY = Path.home() / ".openclaw" / "workspace" / "skills" / "xiaoyi-claw-omega-final" / "scripts" / "unified_entry.py"
-WORKSPACE = Path.home() / ".openclaw" / "workspace"
+UNIFIED_ENTRY = Path(workspace()) / "skills" / "xiaoyi-claw-omega-final" / "scripts" / "unified_entry.py"
+WORKSPACE = Path(workspace())
 
 def get_unified_count():
     try:

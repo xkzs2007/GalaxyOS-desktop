@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Any
 from datetime import datetime
 import logging
+from galaxyos.shared.paths import workspace
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +34,7 @@ class RulesManager:
     
     def __init__(self, workspace_path: str = None):
         self.workspace_path = Path(workspace_path or 
-            os.path.expanduser("~/.openclaw/workspace"))
+            workspace())
         
         # 规则文件路径
         self.agents_md = self.workspace_path / "AGENTS.md"

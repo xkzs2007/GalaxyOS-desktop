@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Optional, Dict, List, Tuple
 from dataclasses import dataclass, asdict, field
 from enum import Enum
+from galaxyos.shared.paths import workspace
 
 
 # ==================== 情绪类型 ====================
@@ -221,7 +222,7 @@ class EmotionMemoryManager:
     """
     
     def __init__(self, workspace_path: str = None):
-        self.workspace_path = Path(workspace_path or os.path.expanduser("~/.openclaw/workspace"))
+        self.workspace_path = Path(workspace_path or workspace())
         self.emotion_memory_path = self.workspace_path / ".learnings" / "emotion_memories.jsonl"
         
         # 确保目录存在

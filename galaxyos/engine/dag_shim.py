@@ -11,6 +11,7 @@ DAG 上下文管理器 Shim — claw-bootstrap hook 调用入口
 
 import sys, os, json, time, argparse
 from pathlib import Path
+from galaxyos.shared.paths import workspace
 
 CORE_DIR = Path(__file__).parent.parent / "skills/xiaoyi-claw-omega-final/skills/llm-memory-integration/core"
 sys.path.insert(0, str(CORE_DIR))
@@ -24,7 +25,7 @@ except ImportError as e:
 
 
 def _get_dag():
-    ws = os.path.expanduser("~/.openclaw/workspace")
+    ws = workspace()
     return DAGContextManager(
         db_path=os.path.expanduser("~/.openclaw/dag_context.db"),
         max_context_tokens=240000,
@@ -35,7 +36,7 @@ def _get_dag():
 
 def init_dag(session_key: str) -> dict:
     """初始化 DAG + 注入人格节点"""
-    ws = os.path.expanduser("~/.openclaw/workspace")
+    ws = workspace()
     dag = _get_dag()
 
     persona_text = ""

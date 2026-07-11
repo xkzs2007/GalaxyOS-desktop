@@ -6,6 +6,7 @@ import hashlib
 import urllib.request
 from pathlib import Path
 import os
+from galaxyos.shared.paths import galaxyos_home
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +29,7 @@ class LLMEngine:
         self.key = key or DEFAULT_LLM_API_KEY
         self.uid = uid or DEFAULT_LLM_UID
         self.model = model
-        _openclaw_home = os.environ.get("OPENCLAW_HOME", str(Path.home() / ".openclaw"))
+        _openclaw_home = galaxyos_home()
         self.cache_dir = Path(cache_dir) if cache_dir else Path(os.environ.get("OPENCLAW_CACHE_DIR", os.path.join(_openclaw_home, "memory-tdai", ".cache")))
         self.cache_dir.mkdir(parents=True, exist_ok=True)
 

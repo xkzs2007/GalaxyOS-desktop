@@ -17,6 +17,7 @@ import traceback
 from typing import Dict, List, Any, Optional, Callable
 from pathlib import Path
 import logging
+from galaxyos.shared.paths import workspace
 
 logger = logging.getLogger("rlm_env")
 
@@ -82,7 +83,7 @@ class RLMEnvironment:
         
         if workspace is None:
             workspace = os.environ.get("OPENCLAW_WORKSPACE",
-                                       str(Path.home() / ".openclaw" / "workspace"))
+                                       str(Path(workspace())))
         self.workspace = workspace
     
     @property

@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from datetime import datetime
 import hashlib
 import re
+from galaxyos.shared.paths import workspace
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +49,7 @@ class BrainReader:
     def __init__(self, brain_path: Optional[str] = None):
         if brain_path is None:
             workspace = os.environ.get('OPENCLAW_WORKSPACE',
-                                       Path.home() / '.openclaw' / 'workspace')
+                                       Path(workspace()))
             brain_path = str(Path(workspace) / 'brain')
         
         self.brain_path = brain_path
@@ -170,7 +171,7 @@ class BrainMemorySync:
         
         if sync_records_path is None:
             workspace = os.environ.get('OPENCLAW_WORKSPACE',
-                                       Path.home() / '.openclaw' / 'workspace')
+                                       Path(workspace()))
             sync_records_path = str(Path(workspace) / 'memory' / 'brain_sync_records.jsonl')
         
         self.sync_records_path = sync_records_path
@@ -395,7 +396,7 @@ class BrainMemorySync:
                             metadata: Dict[str, Any]):
         """创建知识库条目"""
         workspace = os.environ.get('OPENCLAW_WORKSPACE',
-                                   Path.home() / '.openclaw' / 'workspace')
+                                   Path(workspace()))
         brain_path = Path(workspace) / 'brain' / category
         brain_path.mkdir(parents=True, exist_ok=True)
         

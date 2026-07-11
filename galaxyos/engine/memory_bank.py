@@ -26,6 +26,7 @@ from dataclasses import dataclass, field, asdict
 from enum import Enum
 import threading
 import re
+from galaxyos.shared.paths import workspace
 
 
 class MemoryBankError(Exception):
@@ -145,7 +146,7 @@ class MemoryBank:
             db_path: 数据库路径
         """
         self.db_path = Path(db_path or 
-            Path.home() / ".openclaw" / "workspace" / ".memgpt" / "memory_bank.db")
+            Path(workspace()) / ".memgpt" / "memory_bank.db")
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         
         self.lock = threading.RLock()

@@ -24,6 +24,7 @@ from typing import List, Dict, Optional, Any, Tuple
 from collections import defaultdict
 
 import numpy as np
+from galaxyos.shared.paths import workspace
 
 logger = logging.getLogger(__name__)
 
@@ -214,7 +215,7 @@ class HyperRouter:
             meta_lr: 元学习者学习率
         """
         base = os.environ.get("WORKSPACE",
-                              os.path.expanduser("~/.openclaw/workspace"))
+                              workspace())
         self.q_path = storage_path or os.path.join(
             base, ".learnings", "hyper_router.json"
         )

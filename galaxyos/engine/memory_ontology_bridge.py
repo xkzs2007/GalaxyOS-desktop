@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Dict, Any, List, Optional, Tuple
 from dataclasses import dataclass
 import re
+from galaxyos.shared.paths import workspace
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +43,7 @@ class OntologyReader:
     def __init__(self, graph_path: Optional[str] = None):
         if graph_path is None:
             workspace = os.environ.get('OPENCLAW_WORKSPACE', 
-                                       Path.home() / '.openclaw' / 'workspace')
+                                       Path(workspace()))
             graph_path = str(Path(workspace) / 'memory' / 'ontology' / 'graph.jsonl')
         
         self.graph_path = graph_path
@@ -232,7 +233,7 @@ class MemoryOntologyBridge:
         
         if links_path is None:
             workspace = os.environ.get('OPENCLAW_WORKSPACE',
-                                       Path.home() / '.openclaw' / 'workspace')
+                                       Path(workspace()))
             links_path = str(Path(workspace) / 'memory' / 'ontology' / 'memory_links.jsonl')
         
         self.links_path = links_path

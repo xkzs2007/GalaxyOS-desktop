@@ -21,11 +21,12 @@ import logging
 from typing import Dict, List, Optional, Any
 from datetime import datetime, timezone
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from galaxyos.shared.paths import workspace
 
 logger = logging.getLogger(__name__)
 
 DEBATE_PATH = os.path.join(
-    os.environ.get("WORKSPACE", os.path.expanduser("~/.openclaw/workspace")),
+    os.environ.get("WORKSPACE", workspace()),
     ".learnings", "debates.jsonl"
 )
 

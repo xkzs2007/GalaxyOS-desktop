@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Dict, List, Any, Optional, Tuple
 from datetime import datetime, timezone
 from dataclasses import dataclass, asdict
+from galaxyos.shared.paths import workspace
 
 # ── 尝试加载 Flash（xiaoYiClawLLM 的 llm_flash 复用 ──
 try:
@@ -31,7 +32,7 @@ try:
 except ImportError:
     _OPENAI_AVAILABLE = False
 
-_WORKSPACE = os.environ.get("OPENCLAW_WORKSPACE", os.path.expanduser("~/.openclaw/workspace"))
+_WORKSPACE = os.environ.get("OPENCLAW_WORKSPACE", workspace())
 
 # ==================== 1. Reflexion（反思系统） ====================
 

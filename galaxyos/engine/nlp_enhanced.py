@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Dict, List, Tuple, Optional, Any, Set
 from dataclasses import dataclass, field
 from collections import OrderedDict
+from galaxyos.shared.paths import workspace
 
 try:
     import jieba
@@ -224,7 +225,7 @@ class EntityLinker:
     def __init__(self, workspace_path: str = None):
         workspace = workspace_path or os.environ.get(
             "OPENCLAW_WORKSPACE",
-            os.path.expanduser("~/.openclaw/workspace"))
+            workspace())
         
         # 内置知识库
         self._builtin_entities = self._build_system_kb(workspace)

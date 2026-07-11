@@ -27,6 +27,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Any, Tuple
 from datetime import datetime, timezone
 import logging
+from galaxyos.shared.paths import workspace
 
 # 添加模块路径
 CORE_DIR = Path(__file__).parent
@@ -61,7 +62,7 @@ class XiaoyiMemoryV2:
     
     def __init__(self, workspace_path: str = None, enable_all_layers: bool = True):
         self.workspace_path = Path(workspace_path or 
-            os.path.expanduser("~/.openclaw/workspace"))
+            workspace())
         self.enable_all_layers = enable_all_layers
         
         # Layer 1: 核心模块（始终启用）

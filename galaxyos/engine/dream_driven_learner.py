@@ -30,6 +30,7 @@ import numpy as np
 from typing import Dict, List, Optional, Tuple, Any
 from pathlib import Path
 from datetime import datetime, timezone, timedelta
+from galaxyos.shared.paths import workspace
 
 
 class DreamDrivenLearner:
@@ -40,7 +41,7 @@ class DreamDrivenLearner:
     """
 
     def __init__(self, workspace_path: str = None):
-        self.workspace_path = Path(workspace_path or os.path.expanduser("~/.openclaw/workspace"))
+        self.workspace_path = Path(workspace_path or workspace())
         self.learn_path = self.workspace_path / ".learnings" / "dream_learning"
 
         # 持久化
@@ -456,7 +457,7 @@ def learn_from_dreams(dream_log_path: str = None,
     """快速执行梦境学习"""
     if dream_log_path is None:
         dream_log_path = os.path.join(
-            workspace_path or os.path.expanduser("~/.openclaw/workspace"),
+            workspace_path or workspace(),
             "memory/dreaming/dream_log.jsonl"
         )
     learner = get_learner(workspace_path)

@@ -21,7 +21,8 @@ import logging
 
 # ── Centralized path resolution ──
 import os as _os, sys as _sys
-_ws_root = _os.environ.get("OPENCLAW_WORKSPACE", _os.path.expanduser("~/.openclaw/workspace"))
+from galaxyos.shared.paths import galaxyos_home, workspace
+_ws_root = workspace()
 for _p in [_ws_root, "/workspace"]:
     if _p not in _sys.path:
         _sys.path.insert(0, _p)
@@ -97,7 +98,7 @@ def find_vec0_extension() -> Optional[str]:
             return str(builtin_path)
 
     # 搜索路径列表
-    _openclaw_home = Path(os.environ.get("OPENCLAW_HOME", str(path_resolver.OPENCLAW_HOME)))
+    _openclaw_home = Path(galaxyos_home())
     search_paths = [
         project_root,                                        # 本文件所在目录
         Path.cwd(),                                          # 当前工作目录

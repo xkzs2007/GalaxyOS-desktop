@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Dict, Any, List, Optional
 from dataclasses import dataclass
 from datetime import datetime
+from galaxyos.shared.paths import workspace
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +39,7 @@ class TaskMemoryBridge:
     def __init__(self, links_path: Optional[str] = None):
         if links_path is None:
             workspace = os.environ.get('OPENCLAW_WORKSPACE',
-                                       Path.home() / '.openclaw' / 'workspace')
+                                       Path(workspace()))
             links_path = str(Path(workspace) / 'memory' / 'task_memory_links.jsonl')
         
         self.links_path = links_path

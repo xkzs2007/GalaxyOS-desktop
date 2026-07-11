@@ -16,8 +16,7 @@ import os
 from functools import lru_cache
 from galaxyos.init.deployment_profile import get_profile
 
-# P1-2: openclaw_home() 的权威定义在 galaxyos.shared.paths，此处重导出以保持向后兼容
-from galaxyos.shared.paths import openclaw_home  # noqa: F401
+from galaxyos.shared.paths import galaxyos_home, openclaw_home  # noqa: F401
 
 
 @lru_cache(maxsize=1)
@@ -39,7 +38,7 @@ def var_dir() -> str:
     profile_var = profile.get("var_dir")
     if profile_var:
         return profile_var
-    return os.path.join(openclaw_home(), "var")
+    return os.path.join(galaxyos_home(), "var")
 
 
 @lru_cache(maxsize=1)
@@ -57,7 +56,7 @@ def ext_var_dir() -> str:
     profile_var = profile.get("var_dir")
     if profile_var:
         return profile_var
-    return os.path.join(openclaw_home(), "extensions", "galaxyos", "var")
+    return os.path.join(galaxyos_home(), "extensions", "galaxyos", "var")
 
 
 @lru_cache(maxsize=1)
@@ -85,8 +84,8 @@ def models_dir() -> str:
 
 
 def openclaw_path(*parts: str) -> str:
-    """构建 OPENCLAW_HOME 下的路径"""
-    return os.path.join(openclaw_home(), *parts)
+    """构建 GALAXYOS_HOME 下的路径"""
+    return os.path.join(galaxyos_home(), *parts)
 
 
 def workspace_path(*parts: str) -> str:
@@ -114,7 +113,7 @@ import platform as _platform
 def native_lib_dirs() -> list:
     """返回原生共享库搜索路径列表（含 ARM aarch64 路径）"""
     dirs = [
-        os.path.join(openclaw_home(), "lib"),
+        os.path.join(galaxyos_home(), "lib"),
         os.path.join(workspace(), "GalaxyOS", "lib"),
         "/opt/galaxyos/lib",
         "/usr/local/lib",
@@ -179,7 +178,8 @@ LLM_CONFIG_JSON = openclaw_path("llm_config.json")  # data_bridge, smart_process
 GALAXYOS_EXT_VAR = ext_var_dir()  # UDS/mmap/temp var dir (cloud-configurable)
 
 # ── Additional unified constants (P0-1: single source of truth) ──
-OPENCLAW_HOME = openclaw_home()  # constant form of openclaw_home()
+OPENCLAW_HOME = galaxyos_home()
+GALAXYOS_HOME = galaxyos_home()  # constant form of openclaw_home()
 OPENCLAW_CONFIG = openclaw_path("openclaw.json")  # top-level config file
 TDAI_CACHE_DIR = os.path.join(MEMORY_TDAI_DIR, ".cache")  # search cache under tdai
 ENGINE_DIR = os.path.dirname(os.path.abspath(__file__))  # galaxyos/engine/

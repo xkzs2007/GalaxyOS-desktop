@@ -22,6 +22,7 @@ import sys
 from pathlib import Path
 from typing import Dict, List, Optional, Any, Tuple
 from datetime import datetime, timezone
+from galaxyos.shared.paths import workspace
 
 
 class SelfEvolutionEngine:
@@ -40,7 +41,7 @@ class SelfEvolutionEngine:
         if workspace_path is None:
             workspace_path = os.environ.get(
                 'OPENCLAW_WORKSPACE',
-                str(Path.home() / '.openclaw' / 'workspace')
+                str(Path(workspace()))
             )
         self.workspace = Path(workspace_path)
         

@@ -14,6 +14,7 @@ import time
 import logging
 import re
 from typing import Dict, List, Optional, Any
+from galaxyos.shared.paths import workspace
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +35,7 @@ class PaperIntegration:
     def __init__(self, llm_flash=None, workspace: str = "", db_path: str = None):
         self.flash = llm_flash
         self.ws = workspace or os.environ.get(
-            "WORKSPACE", os.path.expanduser("~/.openclaw/workspace"))
+            "WORKSPACE", workspace())
         self.db_path = db_path or os.path.join(self.ws, 'temporal_kg.db')
         # ── 预加载: R-CCAM 全部模块, 消除首次调用延迟 ──
         self._preload_modules()

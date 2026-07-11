@@ -24,6 +24,7 @@ from enum import Enum
 import hashlib
 
 import torch
+from galaxyos.shared.paths import workspace
 
 # ═══ NLP 模块（可选导入） ═══
 _NLP_AVAILABLE = False
@@ -310,7 +311,7 @@ class SynapseNetwork:
     """突触网络管理器"""
     
     def __init__(self, workspace_path: str = None):
-        self.workspace_path = Path(workspace_path or os.path.expanduser("~/.openclaw/workspace"))
+        self.workspace_path = Path(workspace_path or workspace())
         self.network_path = self.workspace_path / ".learnings" / "synapse_network"
         
         # 数据文件

@@ -5,11 +5,12 @@ from pathlib import Path
 from datetime import datetime
 from typing import Dict, List, Optional
 import logging
+from galaxyos.shared.paths import galaxyos_home
 
 logger = logging.getLogger(__name__)
 
 # 默认历史目录（v3.0.0 公私分离：优先使用环境变量）
-_OPENCLAW_HOME = os.environ.get("OPENCLAW_HOME", str(Path.home() / ".openclaw"))
+_OPENCLAW_HOME = galaxyos_home()
 DEFAULT_HISTORY_DIR = os.environ.get(
     "HISTORY_DIR",
     os.path.join(_OPENCLAW_HOME, "memory-tdai", "history")

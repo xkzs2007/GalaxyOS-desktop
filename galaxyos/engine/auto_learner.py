@@ -13,6 +13,7 @@ from typing import Dict, Any, List, Optional
 from dataclasses import dataclass
 from datetime import datetime
 import re
+from galaxyos.shared.paths import workspace
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +43,7 @@ class AutoLearner:
     def __init__(self, learning_path: Optional[str] = None):
         if learning_path is None:
             workspace = os.environ.get('OPENCLAW_WORKSPACE',
-                                       Path.home() / '.openclaw' / 'workspace')
+                                       Path(workspace()))
             learning_path = str(Path(workspace) / 'memory' / 'learning_events.jsonl')
         
         self.learning_path = learning_path

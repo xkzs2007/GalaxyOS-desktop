@@ -25,6 +25,7 @@ import threading
 import re
 from typing import Dict, List, Optional, Any, Tuple
 from dataclasses import dataclass, field, asdict
+from galaxyos.shared.paths import workspace
 
 logger = logging.getLogger(__name__)
 
@@ -115,7 +116,7 @@ DEFAULT_ALIAS_MAP = {
 # 默认数据库路径
 # ============================================================================
 
-DEFAULT_DB_DIR = os.path.expanduser("~/.openclaw/workspace")
+DEFAULT_DB_DIR = workspace()
 DEFAULT_DB_PATH = os.path.join(DEFAULT_DB_DIR, "spatial_topology.db")
 
 

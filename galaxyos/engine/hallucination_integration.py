@@ -21,6 +21,7 @@ from typing import Dict, List, Optional, Any, Tuple
 
 # 导入防幻觉模块
 from hallucination_guard import (
+from galaxyos.shared.paths import workspace
     HallucinationGuard,
     VerifiedMemory,
     SourceType,
@@ -52,7 +53,7 @@ class HallucinationIntegratedMemory:
     
     def __init__(self, workspace_path: str = None):
         self.workspace_path = Path(workspace_path or 
-            os.path.expanduser("~/.openclaw/workspace"))
+            workspace())
         
         # 初始化防幻觉系统
         self.guard = HallucinationGuard(str(self.workspace_path))

@@ -24,11 +24,12 @@ import logging
 from typing import Dict, List, Optional, Any, Tuple
 from datetime import datetime, timezone
 from collections import OrderedDict
+from galaxyos.shared.paths import workspace
 
 logger = logging.getLogger(__name__)
 
 CONTEXT_PATH = os.path.join(
-    os.environ.get("WORKSPACE", os.path.expanduser("~/.openclaw/workspace")),
+    os.environ.get("WORKSPACE", workspace()),
     ".learnings", "context_layers.jsonl"
 )
 

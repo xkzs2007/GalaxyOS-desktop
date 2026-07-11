@@ -22,6 +22,7 @@ import hashlib
 import random
 import logging
 import numpy as np
+from galaxyos.shared.paths import workspace
 
 logger = logging.getLogger(__name__)
 from datetime import datetime, timezone, timedelta
@@ -68,7 +69,7 @@ class ConsolidationEngine:
     def __init__(self, workspace_path: str = None, config: ConsolidationConfig = None):
         self.workspace = workspace_path or os.environ.get(
             "OPENCLAW_WORKSPACE",
-            os.path.expanduser("~/.openclaw/workspace"))
+            workspace())
         self.config = config or ConsolidationConfig()
         
         # 持久化路径

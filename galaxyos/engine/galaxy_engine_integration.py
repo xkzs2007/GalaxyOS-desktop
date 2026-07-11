@@ -34,6 +34,7 @@ import json
 import logging
 from typing import Dict, List, Optional, Tuple, Any, Callable
 from pathlib import Path
+from galaxyos.shared.paths import workspace
 
 logger = logging.getLogger("galaxy_engine_integration")
 
@@ -641,7 +642,7 @@ class GalaxyEngineIntegration:
     def __init__(self, workspace: str = ""):
         self.ws = workspace or os.environ.get(
             "OPENCLAW_WORKSPACE", 
-            os.path.expanduser("~/.openclaw/workspace")
+            workspace()
         )
         
         # 子模块（均为 lazyload）
