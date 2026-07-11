@@ -98,7 +98,7 @@ jobs:
         with:
           repository: openJiuwen-ai/agent-studio
           path: agent-studio
-          ref: main
+          ref: v0.1.8
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -109,7 +109,7 @@ jobs:
         working-directory: agent-studio/frontend
         shell: bash
         run: |
-          npm install
+          npm install --legacy-peer-deps
           npx vite build --mode production
 
       - name: Copy Studio dist for Tauri
