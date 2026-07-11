@@ -1,6 +1,11 @@
 # GalaxyOS — 重型依赖（CI 可选，本地开发装）
 # 安装：pip install -r requirements-heavy.txt
 # 这层依赖 ~3GB（torch + CUDA + transformers），CI 中用 Docker 缓存
+#
+# Windows 注意：
+#   - hnswlib 编译需要 MSVC Build Tools (winget install Microsoft.VisualStudio.2022.BuildTools)
+#   - torch 建议用 CPU 版：pip install torch --index-url https://download.pytorch.org/whl/cpu
+#   - GPU 版需手动下载：pip install torch --index-url https://download.pytorch.org/whl/cu128
 
 # === Intel 数学库（预编译包，libs/ 中有 x86_64 tar.gz）===
 mkl==2026.0.0
