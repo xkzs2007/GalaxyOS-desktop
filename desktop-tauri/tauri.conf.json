@@ -1,5 +1,5 @@
 {
-  "$schema": "https://raw.githubusercontent.com/tauri-apps/tauri/dev/crates/tauri-config-schema/schema.json",
+
   "productName": "GalaxyOS Desktop",
   "version": "0.1.4",
   "identifier": "com.galaxyos.desktop",
@@ -7,7 +7,7 @@
     "beforeDevCommand": "",
     "devUrl": "http://localhost:3000",
     "beforeBuildCommand": "",
-    "frontendDist": "../galaxyos/frontend/dist"
+    "frontendDist": "../studio-dist"
   },
   "app": {
     "withGlobalTauri": true,
@@ -34,10 +34,11 @@
       "icons/32x32.png",
       "icons/128x128.png",
       "icons/128x128@2x.png",
-
       "icons/icon.ico"
     ],
-    "resources": [],
+    "resources": [
+      "../galaxyos-mcp-dist/**/*"
+    ],
     "externalBin": []
   }
 }

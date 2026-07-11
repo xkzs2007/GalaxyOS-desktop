@@ -38,12 +38,10 @@ pub fn stop_all(state: &AppState) -> Result<(), String> {
 }
 
 fn start_galaxyos_mcp(port: u16) -> Result<std::process::Child, String> {
-    let python = find_python()?;
-    Command::new(&python)
-        .args(["-m", "galaxyos.kernel.mcp_server_entry"])
+    let binary = find_galaxyos_binary()?;
+    Command::new(&binary)
+        .args(["--transport", "sse", "--host", "127.0.0.1", "--port", &port.to_string()])
         .env("GALAXYOS_MODE", "desktop")
-        .env("GALAXYOS_MCP_TRANSPORT", "sse")
-        .env("GALAXYOS_MCP_PORT", &port.to_string())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
@@ -60,6 +58,31 @@ fn start_studio(port: u16) -> Result<std::process::Child, String> {
         .stderr(Stdio::piped())
         .spawn()
         .map_err(|e| format!("Failed to start Studio: {}", e))
+}
+
+fn find_galaxyos_binary() -> Result<String, String> {
+    if let Ok(exe_dir) = std::env::current_exe() {
+        if let Some(dir) = exe_dir.parent() {
+            let bundled = dir.join("galaxyos-mcp");
+            let bundled_exe = dir.join("galaxyos-mcp.exe");
+            if bundled.exists() {
+                return Ok(bundled.to_string_lossy().to_string());
+            }
+            if bundled_exe.exists() {
+                return Ok(bundled_exe.to_string_lossy().to_string());
+            }
+            let resources_dir = dir.join("resources").join("galaxyos-mcp");
+            let resources_exe = dir.join("resources").join("galaxyos-mcp.exe");
+            if resources_dir.exists() {
+                return Ok(resources_dir.to_string_lossy().to_string());
+            }
+            if resources_exe.exists() {
+                return Ok(resources_exe.to_string_lossy().to_string());
+            }
+        }
+    }
+    let python = find_python()?;
+    Ok(python)
 }
 
 fn find_python() -> Result<String, String> {

@@ -90,8 +90,50 @@ jobs:
             args: ""
     runs-on: ${{ matrix.platform }}
     steps:
-      - name: Checkout
+      - name: Checkout GalaxyOS
         uses: actions/checkout@v4
+
+      - name: Checkout Agent Studio
+        uses: actions/checkout@v4
+        with:
+          repository: openJiuwen-ai/agent-studio
+          path: agent-studio
+          ref: main
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Build Studio frontend
+        working-directory: agent-studio/frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: Copy Studio dist for Tauri
+        shell: bash
+        run: |
+          mkdir -p studio-dist
+          cp -r agent-studio/frontend/dist/* studio-dist/
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install GalaxyOS + PyInstaller
+        shell: bash
+        run: |
+          pip install pyinstaller
+          pip install -r requirements-core.txt
+          pip install .
+
+      - name: Build GalaxyOS MCP with PyInstaller
+        shell: bash
+        run: |
+          pyinstaller galaxyos-mcp.spec --noconfirm
+          cp -r dist/galaxyos-mcp galaxyos-mcp-dist
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
@@ -107,11 +149,9 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libssl-dev
 
-      - name: Install Tauri CLI
-        run: cargo install tauri-cli --version "^2.0" || true
-
       - name: Build Tauri app
         working-directory: desktop-tauri
+        shell: bash
         run: cargo tauri build ${{ matrix.args }}
         env:
           TAURI_SIGNING_PRIVATE_KEY: ""
