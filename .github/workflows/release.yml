@@ -1,28 +1,4 @@
-name: Release Desktop
-
-# GalaxyOS desktop release pipeline.
-#
-# Triggers:
-#   - push tag v*    →  build all platforms + create GitHub release
-#   - workflow_dispatch →  manual trigger (build only, no release upload)
-#
-# Matrix:
-#   - windows-latest        →  GalaxyOS Setup *.exe (NSIS)        (Windows x64)
-#   - ubuntu-24.04          →  GalaxyOS-*.AppImage                (Linux x86_64)
-#
-# (Linux arm64 is built on cnb.cool — see .cnb.yml tag_push.)
-#
-# Ubuntu 24.04 (not 22.04) is required because ort-sys downloads a
-# prebuilt ONNX Runtime binary that needs glibc 2.38+ symbols
-# (__isoc23_strtoll etc.). ubuntu-22.04 has glibc 2.35 → linker
-# failure.
-#
-# Each matrix leg produces TWO artifacts:
-#   1. The Electron installer  (the .exe / .dmg / .AppImage users download)
-#   2. The standalone PyInstaller sidecar binary
-#      (galaxyos-sidecar-{platform}-{arch}{.exe})
-#      Useful for headless CI / server deployments and as a
-#      "smoke test" of the PyInstaller bundle on every platform.
+name: Release
 
 on:
   push:
@@ -32,470 +8,127 @@ on:
 
 permissions:
   contents: write
+  packages: write
 
-# Auto-cancel previous release runs when a new tag is pushed.
-# Without this, every `git push --tags` after `git tag -d` leaves
-# the previous run queued, and the 3 queued Release Desktop runs
-# end up fighting for runner slots — the user sees "Actions stuck
-# in queued" forever.
-#
-# group: release-{branch-or-tag} so manual main-branch runs don't
-# kill tag-triggered releases (or vice versa).
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  build:
-    name: Build ${{ matrix.label }}
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          # 2-platform matrix: Windows (NSIS installer) + Linux
-          # x64 (AppImage).
-          # macOS removed — GH macos runners are 7 GB RAM, too tight
-          # for electron-builder's dmg step.
-          # Linux arm64 removed — ubuntu-22.04-arm64 runner has
-          # extremely limited free-tier quota on GitHub (queue times
-          # of 30+ minutes are common). 90% of desktop users are on
-          # x64; arm64 Linux users can build from source or use the
-          # x64 AppImage via qemu/box86.
-          # If you need arm64 later, re-add the matrix leg and either
-          # use a self-hosted arm64 runner or wait out the queue.
-          - os: windows-latest
-            label: windows-x64
-            arch: x64
-            artifact: galaxyos-windows-x64
-            # electron-builder CLI for windows:
-            electron_builder_args: --win nsis --x64
-            sidecar_bin: galaxyos-sidecar.exe
-            sidecar_renamed: galaxyos-sidecar-windows-x64.exe
-          - os: ubuntu-24.04
-            label: linux-x64
-            arch: x64
-            artifact: galaxyos-linux-x64
-            # electron-builder CLI for linux x64. The bare `--linux
-            # AppImage` form is required (the shorthand `--AppImage`
-            # is rejected with "Unknown argument" on
-            # electron-builder 25).
-            #
-            # Ubuntu 24.04 (not 22.04) is required because the
-            # `ort-sys` crate downloads a prebuilt ONNX Runtime
-            # binary that references glibc 2.38+ symbols
-            # (__isoc23_strtoll / __isoc23_strtoull / __isoc23_strtol).
-            # ubuntu-22.04 has glibc 2.35 → linker fails with
-            # "undefined symbol: __isoc23_strtoll". ubuntu-24.04 has
-            # glibc 2.39 → links cleanly.
-            electron_builder_args: --linux AppImage --x64
-            sidecar_bin: galaxyos-sidecar
-            sidecar_renamed: galaxyos-sidecar-linux-x64
-
+  build-wheel:
+    name: Build Python wheel
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Python 3.12
+      - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-          cache: pip
 
-      - name: Set up Node 20
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          # No npm cache: this repo has no package-lock.json
-          # (desktop-shell/package.json is checked in but the lock
-          # file isn't). actions/setup-node@v4 fails the step when
-          # cache-dependency-path points at a missing file, so we
-          # skip the cache layer entirely. The downside is ~10s
-          # extra install time per run; the upside is no surprises.
+      - name: Install build tools
+        run: pip install hatchling build
 
-      - name: Install Linux runtime libs (for AppImage + PyInstaller)
-        if: runner.os == 'Linux'
-        shell: bash
+      - name: Build wheel + sdist
+        run: python -m build
+
+      - name: Verify wheel
         run: |
-          sudo apt-get update -qq
-          # Ubuntu 24.04 renamed some packages vs 22.04:
-          #   libasound2 → libasound2t64
-          # Install both with || true so this works on either runner.
-          sudo apt-get install -y -qq --no-install-recommends \
-            fakeroot rpm libfuse2 \
-            libnss3 libatk-bridge2.0-0 libgtk-3-0 \
-            python3-dev build-essential
-          sudo apt-get install -y -qq --no-install-recommends libasound2 || \
-            sudo apt-get install -y -qq --no-install-recommends libasound2t64
-
-      - name: Set up Rust toolchain (for lfm_server native build)
-        # lfm_server.rs is a Rust binary that ships alongside the
-        # Python sidecar — it runs LFM2.5-1.2B ONNX inference over a
-        # local IPC socket (UDS on Unix, TCP on Windows). We build it
-        # here so electron-builder can pick up the binary as an
-        # extraResource (see package.json build.extraResources).
-        # Uses dtolnay/rust-toolchain for fast, cache-friendly setup.
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ runner.os == 'Windows' && 'x86_64-pc-windows-msvc' || 'x86_64-unknown-linux-gnu' }}
-
-      - name: Cache Rust build (cargo)
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: extensions/galaxyos/native
-
-      - name: Build Rust native binaries (lfm_server + PyO3 cdylib)
-        shell: bash
-        run: |
-          set -e
-          cd extensions/galaxyos/native
-
-          # 1. Build lfm_server (standalone, no PyO3) — ships as extraResource
-          cargo build --release --bin lfm_server --no-default-features
-          if [ "$RUNNER_OS" = "Windows" ]; then
-            test -f target/release/lfm_server.exe
-            ls -lh target/release/lfm_server.exe
-          else
-            test -f target/release/lfm_server
-            ls -lh target/release/lfm_server
-          fi
-
-          # 2. Build cdylib (libgalaxyos_native) — pure-Rust shared lib.
-          #    The Python sidecar uses galaxyos_native.py (pure-Python shim)
-          #    which doesn't import the .so. --no-default-features skips
-          #    PyO3 linking (avoids CI failures with mismatched Python versions).
-          #    On Windows the output is galaxyos_native.dll; on Linux .so.
-          cargo build --release --lib --no-default-features
-          if [ "$RUNNER_OS" = "Windows" ]; then
-            test -f target/release/galaxyos_native.dll
-            ls -lh target/release/galaxyos_native.dll
-          else
-            test -f target/release/libgalaxyos_native.so
-            ls -lh target/release/libgalaxyos_native.so
-          fi
-
-      - name: Install Python deps + PyInstaller
-        # IMPORTANT: force bash on Windows. The windows-latest runner
-        # defaults to PowerShell, which doesn't support `\` line
-        # continuation — this is what was making the previous
-        # multi-line `pip install \` blocks fail with
-        # "Unexpected token '\' in expression or statement".
-        shell: bash
-        run: |
-          set -e
-          python -m pip install --upgrade pip
-          # Minimal curated dep set for the desktop sidecar. The
-          # sidecar's spec declares every import the binary needs;
-          # this list is the closure of those imports' direct deps.
-          # Pinned PyInstaller 6.6.0 to avoid the
-          # hooks-contrib -> hnswlib chain that fails to compile on
-          # Windows runners (no MSVC).
-          # Skip uvloop on Windows (Unix-only, no Windows wheel).
-          # Include tokenizers everywhere — prebuilt win_amd64
-          # wheels since 0.20.
-          if [ "$RUNNER_OS" = "Windows" ]; then
-            PACKAGES="pyinstaller==6.6.0 pyinstaller-hooks-contrib==2024.6 numpy scipy pydantic orjson httpx requests pyzmq pillow polars duckdb jieba tiktoken ncps openai psutil aiohttp scikit-learn"
-          else
-            PACKAGES="pyinstaller==6.6.0 pyinstaller-hooks-contrib==2024.6 numpy scipy pydantic orjson httpx requests pyzmq pillow polars duckdb jieba tiktoken ncps openai psutil aiohttp scikit-learn uvloop tokenizers"
-          fi
-          echo "=== Installing packages on $RUNNER_OS ==="
-          echo "$PACKAGES"
-          # Use a single-line pip install to avoid any shell parsing
-          # ambiguity across bash / PowerShell / sh.
-          python -m pip install -v $PACKAGES
-          python -c "import PyInstaller; print('PyInstaller', PyInstaller.__version__)"
-
-      - name: Bundle Python sidecar (PyInstaller)
-        working-directory: desktop-shell/python
-        shell: bash
-        run: |
-          pyinstaller --clean --noconfirm galaxyos-sidecar.spec
           ls -la dist/
-
-      - name: Rename sidecar with platform/arch suffix
-        working-directory: desktop-shell/python/dist
-        shell: bash
-        run: |
-          if [ -f "${{ matrix.sidecar_bin }}" ]; then
-            mv "${{ matrix.sidecar_bin }}" "${{ matrix.sidecar_renamed }}"
-          else
-            # Fail fast — previously the missing-binary case was
-            # silently swallowed by `ls -la` and only surfaced as
-            # an `if-no-files-found: error` on the upload step.
-            # That's too late; we want to fail at the source.
-            echo "ERROR: PyInstaller did not produce ${{ matrix.sidecar_bin }}" >&2
-            ls -la
-            exit 1
-          fi
-          ls -la
-
-      - name: Smoke test sidecar (POSIX only)
-        if: runner.os != 'Windows'
-        working-directory: desktop-shell/python/dist
-        shell: bash
-        # NOTE: a previous version of this step had
-        #   timeout 5s ./"${{ matrix.sidecar_renamed}}"
-        # with no space before `}}`, which expanded to
-        #   timeout 5s ./galaxyos-sidecar-linux-x64}
-        # (literal "}") and ran a non-existent file. The `|| true`
-        # mask hid the bug, so the smoke test silently passed.
-        run: |
-          chmod +x "${{ matrix.sidecar_renamed }}"
-          # Sidecar writes a healthcheck to stderr; just check it starts
-          # and shuts down cleanly within 5s. We send SIGTERM after.
-          if ! timeout 5s "./${{ matrix.sidecar_renamed }}" 2>&1 | head -20; then
-            echo "WARN: sidecar smoke test failed (likely missing optional deps at runtime)" >&2
-            echo "      continuing — the real validation happens when users run the app" >&2
-          fi
-
-      - name: Install npm deps (desktop-shell)
-        working-directory: desktop-shell
-        run: npm install --no-audit --no-fund
-
-      - name: Stage app icon (build/icon.png + build/icon.ico)
-        # electron-builder expects build/icon.png for the Electron
-        # app icon, and build/icon.ico for the NSIS installer icon
-        # (NSIS does NOT accept PNG — it requires Windows .ico
-        # format). The .ico is generated from the canonical
-        # renderer/icon.png (512x512 RGBA, git-tracked) using PIL.
-        #
-        # Both files live under build/ which is gitignored, so we
-        # regenerate them on every CI run.
-        working-directory: desktop-shell
-        shell: bash
-        run: |
-          mkdir -p build
-          cp renderer/icon.png build/icon.png
-          # Generate multi-size .ico from the PNG.
-          # PIL is available because step "Install Python deps" ran
-          # earlier and installed pillow.
           python -c "
-          from PIL import Image
-          im = Image.open('renderer/icon.png').convert('RGBA')
-          im.save('build/icon.ico', format='ICO',
-                  sizes=[(16,16),(32,32),(48,48),(64,64),(128,128),(256,256)])
-          print('build/icon.ico generated')
+          import zipfile, sys
+          wheels = [f for f in __import__('os').listdir('dist') if f.endswith('.whl')]
+          if not wheels:
+              print('ERROR: no wheel found in dist/'); sys.exit(1)
+          w = wheels[0]
+          with zipfile.ZipFile(f'dist/{w}') as z:
+              top = set(n.split('/')[0] for n in z.namelist() if '/' in n)
+              print(f'Wheel: {w}')
+              print(f'Top-level packages: {top}')
+              assert 'galaxyos' in top or any('galaxyos' in t for t in top), 'galaxyos package not in wheel!'
+          print('OK: wheel verified')
           "
-          ls -la build/
 
-      - name: Build Electron main + preload (esbuild)
-        working-directory: desktop-shell
-        # Use the esbuild CLI directly (not `node esbuild.config.mjs`).
-        # The .mjs config uses top-level await which silently fails
-        # on some Node versions when imported, leaving dist/main.cjs
-        # ungenerated. CLI invocations are explicit and surface any
-        # errors via exit code.
-        shell: bash
-        env:
-          # Release builds skip sourcemaps so the published app
-          # doesn't ship with .map files pointing at the source
-          # tree. Set GALAXYOS_RELEASE=1 and esbuild.config.mjs
-          # honours it (see esbuild.config.mjs).
-          GALAXYOS_RELEASE: '1'
-        run: |
-          mkdir -p dist
-          # Bundle src/main.ts -> dist/main.cjs (CJS for Electron).
-          # We pass the same externals as the .mjs config does —
-          # missing @jboltai/tokui here would force esbuild to
-          # inline the entire UMD bundle into main.cjs (huge).
-          npx esbuild src/main.ts \
-            --bundle \
-            --platform=node \
-            --target=node20 \
-            --format=cjs \
-            --outfile=dist/main.cjs \
-            --external:electron \
-            --external:fsevents \
-            --external:zeromq \
-            --external:@jboltai/tokui
-          # Bundle src/preload.ts -> dist/preload.cjs
-          npx esbuild src/preload.ts \
-            --bundle \
-            --platform=node \
-            --target=node20 \
-            --format=cjs \
-            --outfile=dist/preload.cjs \
-            --external:electron
-          # Sanity check — fail fast if either file is missing
-          test -f dist/main.cjs || { echo "ERROR: dist/main.cjs not produced"; exit 1; }
-          test -f dist/preload.cjs || { echo "ERROR: dist/preload.cjs not produced"; exit 1; }
-          ls -la dist/
-
-      - name: Stage PyInstaller sidecar for electron-builder
-        working-directory: desktop-shell
-        shell: bash
-        run: |
-          # electron-builder looks for python/dist/galaxyos-sidecar[.exe].
-          # We re-name our platform-tagged artifact back to the
-          # platform-native name electron-builder expects.
-          mkdir -p python/dist
-          if [ "${{ runner.os }}" = "Windows" ]; then
-            cp "python/dist/${{ matrix.sidecar_renamed }}" python/dist/galaxyos-sidecar.exe
-          else
-            cp "python/dist/${{ matrix.sidecar_renamed }}" python/dist/galaxyos-sidecar
-            chmod +x python/dist/galaxyos-sidecar
-          fi
-          ls -la python/dist/
-
-      - name: Build Electron installer
-        working-directory: desktop-shell
-        # Force bash on Windows. windows-latest defaults to
-        # PowerShell, which would choke on the `\` line
-        # continuation we used to use below.
-        shell: bash
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
-        run: |
-          # pipefail-safe: tail -50 exits early → SIGPIPE → exit 1 on GH Actions
-          set +o pipefail
-          npx electron-builder ${{ matrix.electron_builder_args }} --publish never 2>&1 | tail -50
-
-      - name: List release output
-        working-directory: desktop-shell
-        # Force bash on Windows. The default PowerShell on
-        # windows-latest doesn't recognise `ls -laR` (it treats
-        # `-laR` as a single parameter name and fails with
-        # "A parameter cannot be found that matches parameter
-        # name 'laR'").
-        shell: bash
-        run: |
-          echo "--- release/ (top level only) ---"
-          # Avoid `ls -laR` — it recurses into locales/ (50+ .pak
-          # files) and the pipe to `head -50` causes SIGPIPE under
-          # `set -o pipefail`, failing the step with exit code 2
-          # even though electron-builder already produced the
-          # AppImage / .exe successfully.
-          ls -la release/ 2>&1
-          echo ""
-          echo "--- release/linux-unpacked/ (top level) ---"
-          ls -la release/linux-unpacked/ 2>&1 | head -30 || true
-          echo ""
-          echo "--- release/win-unpacked/ (top level, if present) ---"
-          ls -la release/win-unpacked/ 2>&1 | head -30 || true
-          echo ""
-          echo "--- sidecar dist/ ---"
-          ls -la python/dist/ 2>&1 || true
-
-      - name: Upload sidecar binary
+      - name: Upload dist artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.artifact }}-sidecar
-          path: desktop-shell/python/dist/${{ matrix.sidecar_renamed }}
-          if-no-files-found: error
+          name: python-dist
+          path: dist/
 
-      - name: Upload Electron installer
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ matrix.artifact }}-installer
-          path: |
-            desktop-shell/release/*.exe
-            desktop-shell/release/*.dmg
-            desktop-shell/release/*.AppImage
-            desktop-shell/release/*.zip
-            desktop-shell/release/*.blockmap
-            desktop-shell/release/latest*.yml
-          if-no-files-found: error
-
-  release:
-    name: Publish GitHub Release
-    needs: build
-    if: startsWith(github.ref, 'refs/tags/v')
+  build-docker:
+    name: Build Docker image
     runs-on: ubuntu-latest
     steps:
-      - name: Download all artifacts
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract version from tag
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: Dockerfile.kernel
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  create-release:
+    needs: [build-wheel, build-docker]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download dist artifacts
         uses: actions/download-artifact@v4
         with:
-          path: artifacts
+          name: python-dist
+          path: dist/
 
-      - name: Show artifact tree
-        run: |
-          echo "--- artifacts/ ---"
-          find artifacts -maxdepth 4 -type f | sort
-
-      - name: Create / update GitHub release
+      - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
           name: GalaxyOS ${{ github.ref_name }}
-          generate_release_notes: true
           draft: false
-          prerelease: ${{ contains(github.ref_name, 'rc') || contains(github.ref_name, 'beta') }}
-          files: |
-            artifacts/**/*.exe
-            artifacts/**/*.dmg
-            artifacts/**/*.AppImage
-            artifacts/**/*.zip
-            artifacts/**/latest*.yml
+          prerelease: ${{ contains(github.ref_name, 'rc') || contains(github.ref_name, 'beta') || contains(github.ref_name, 'alpha') }}
+          generate_release_notes: true
+          files: dist/*
+          body: |
+            ## Installation
 
-  sync-to-cnb:
-    name: Mirror code + tags to cnb.cool
-    # Push the merged main branch + all tags back to the upstream
-    # cnb.cool fork (TIAMO.xianyao/galaxyos-desktop). This keeps the
-    # two remotes in sync without us having to remember `git push
-    # origin main --tags` after every release.
-    #
-    # Only runs on tag push (not workflow_dispatch from main) — we
-    # don't want to push back to cnb on every test build.
-    needs: release
-    if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout (full history + tags)
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          # IMPORTANT: when triggered by a tag push, actions/checkout
-          # checks out the tag's commit in detached HEAD state. It
-          # does NOT create a local `main` branch ref, so
-          # `git push cnb main` would fail with
-          # "src refspec main does not match any". We ref main
-          # explicitly so the local ref exists.
-          ref: main
+            ```bash
+            pip install galaxyos==${{ github.ref_name }}
+            ```
 
-      - name: Push main + tags to cnb.cool
-        run: |
-          # CNB_TOKEN secret: personal access token from cnb.cool
-          # (Settings → Access Tokens → repo scope). Stored as a GH
-          # Actions secret in this repo's Settings → Secrets.
-          #
-          # SANITIZE: Git 2.46+ refuses to parse https credential URLs
-          # that contain CR/LF in the password component and aborts
-          # the remote helper with exit 128 ("url contains a newline
-          # in its password component"). The token pasted into the GH
-          # Secrets UI frequently picks up a trailing newline from
-          # the clipboard / paste handler, so we strip \r and \n
-          # defensively before composing the remote URL.
-          RAW_TOKEN="${{ secrets.CNB_TOKEN }}"
-          CNB_TOKEN_CLEAN=$(printf '%s' "$RAW_TOKEN" | tr -d '\r\n')
-          if [ -z "$CNB_TOKEN_CLEAN" ]; then
-            echo "ERROR: CNB_TOKEN secret is empty after sanitization" >&2
-            exit 1
-          fi
-          # Diagnostic (no secret leak): print the sanitized length.
-          echo "CNB_TOKEN sanitized length: ${#CNB_TOKEN_CLEAN}"
-          git remote add cnb "https://x-access-token:${CNB_TOKEN_CLEAN}@cnb.cool/TIAMO.xianyao/galaxyos-desktop.git"
-          # Verify we have main locally (debug)
-          git branch --list main
-          git log --oneline -1 main
-          # --force-with-lease was tried first but fails with
-          # "[rejected] main -> main (stale info)" whenever cnb's
-          # main has been updated *between* the time this job
-          # checked out 88dcbe1 and the time we push — which is
-          # the common case now that we also push from the cnb
-          # side. Plain --force is acceptable here: cnb is a
-          # mirror, the GH side is the source of truth for
-          # release tags, and any race just means a slightly
-          # newer commit lands on cnb before this catch-up push
-          # overwrites it with the now-older GH-side commit. (We
-          # could try `git push --force-with-lease=refs/heads/main:refs/heads/main`
-          # to re-anchor the lease, but --force is simpler and
-          # the worst case is a one-commit rollback that the
-          # next sync fixes.)
-          echo "Pushing main..."
-          git push cnb main --force
-          echo "Pushing all tags..."
-          git push cnb --tags --force
-          echo "✓ Synced to cnb.cool"
-        env:
-          GIT_TERMINAL_PROMPT: '0'
+            With extras:
+            ```bash
+            pip install galaxyos[all]==${{ github.ref_name }}
+            ```
+
+            Docker:
+            ```bash
+            docker pull ghcr.io/xkzs2007/galaxyos-desktop:${{ github.ref_name }}
+            ```
