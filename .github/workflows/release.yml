@@ -100,6 +100,16 @@ jobs:
           path: agent-studio
           ref: v0.1.8
 
+      - name: Patch useAuth null safety
+        working-directory: agent-studio/frontend
+        shell: bash
+        run: |
+          sed -i 's/const store_response_msg = (response, authStateManager?: AuthStateManager) => {/const store_response_msg = (response, authStateManager?: AuthStateManager) => {\n  const rawUser = response?.data?.user;\n  if (!rawUser) { console.error("[useAuth] API response missing user object:", response); return; }/' packages/api-client/src/hooks/useAuth.ts
+          sed -i 's/response\.data\.user\./rawUser./g' packages/api-client/src/hooks/useAuth.ts
+          sed -i 's/rawUser\.user_id_str/rawUser.user_id_str || ""/g' packages/api-client/src/hooks/useAuth.ts
+          sed -i 's/rawUser\.username)/rawUser.username || "")/g' packages/api-client/src/hooks/useAuth.ts
+          sed -i 's/rawUser\.email)/rawUser.email || "")/g' packages/api-client/src/hooks/useAuth.ts
+
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
