@@ -2,6 +2,12 @@ use crate::AppState;
 use std::process::{Command, Stdio};
 use std::time::Duration;
 
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
+
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
+
 pub async fn start_all(state: &AppState) -> Result<(), String> {
     let galaxyos_port = state.galaxyos_port;
     let studio_port = state.studio_port;
@@ -39,25 +45,27 @@ pub fn stop_all(state: &AppState) -> Result<(), String> {
 
 fn start_galaxyos_mcp(port: u16) -> Result<std::process::Child, String> {
     let binary = find_galaxyos_binary()?;
-    Command::new(&binary)
-        .args(["--transport", "sse", "--host", "127.0.0.1", "--port", &port.to_string()])
+    let mut cmd = Command::new(&binary);
+    cmd.args(["--transport", "sse", "--host", "127.0.0.1", "--port", &port.to_string()])
         .env("GALAXYOS_MODE", "desktop")
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|e| format!("Failed to start GalaxyOS MCP: {}", e))
+        .stderr(Stdio::piped());
+    #[cfg(windows)]
+    cmd.creation_flags(CREATE_NO_WINDOW);
+    cmd.spawn().map_err(|e| format!("Failed to start GalaxyOS MCP: {}", e))
 }
 
 fn start_studio(port: u16) -> Result<std::process::Child, String> {
     let python = find_python()?;
     let module = find_studio_module()?;
-    Command::new(&python)
-        .args(["-m", &module])
+    let mut cmd = Command::new(&python);
+    cmd.args(["-m", &module])
         .env("PORT", &port.to_string())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|e| format!("Failed to start Studio: {}", e))
+        .stderr(Stdio::piped());
+    #[cfg(windows)]
+    cmd.creation_flags(CREATE_NO_WINDOW);
+    cmd.spawn().map_err(|e| format!("Failed to start Studio: {}", e))
 }
 
 fn find_galaxyos_binary() -> Result<String, String> {
