@@ -103,13 +103,14 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: '20'
 
       - name: Build Studio frontend
         working-directory: agent-studio/frontend
         shell: bash
         run: |
           npm install
+          npm audit fix || true
           npx vite build --mode production
 
       - name: Copy Studio dist for Tauri
