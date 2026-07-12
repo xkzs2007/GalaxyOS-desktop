@@ -110,6 +110,7 @@ jobs:
         shell: bash
         run: |
           npm install --legacy-peer-deps
+          npm install --legacy-peer-deps @mantine/core @mantine/hooks
           npx vite build --mode production
 
       - name: Copy Studio dist for Tauri
