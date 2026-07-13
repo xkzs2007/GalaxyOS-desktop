@@ -12,6 +12,7 @@ COPY requirements-core.txt .
 RUN pip install --no-cache-dir -r requirements-core.txt
 
 COPY galaxyos/ ./galaxyos/
+
 COPY skills/ ./skills/
 COPY pyproject.toml README.md .
 
@@ -20,11 +21,11 @@ RUN if [ "$INSTALL_HEAVY" = "1" ]; then \
         pip install --no-cache-dir faiss-cpu hnswlib onnxruntime transformers pandas; \
     fi
 
-RUN pip install --no-cache-dir ".[all]"
+RUN pip install --no-cache-dir .
 
 EXPOSE 8765
 
 HEALTHCHECK --interval=5s --timeout=3s --retries=5 \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8765/health')" || exit 1
+    CMD python -c "import socket; s=socket.socket(); s.connect(('localhost',8765)); s.close()" || exit 1
 
-CMD ["python", "-m", "galaxyos.kernel.mcp_server_entry", "--transport", "sse", "--host", "127.0.0.1", "--port", "8765"]
+CMD ["python", "-m", "galaxyos.kernel.mcp_server_entry"]
