@@ -1,0 +1,158 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  check-deps:
+    name: Dependency check (Python 3.12)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Install core dependencies
+        run: pip install -r requirements-core.txt
+
+      - name: Install openjiuwen with compatible versions
+        run: |
+          pip install "openjiuwen>=0.1.13"
+          pip install "pymilvus>=2.6.2,<2.6.10"
+
+      - name: Verify critical imports
+        run: |
+          python -c "import fastmcp; print('fastmcp:', fastmcp.__version__)"
+          python -c "import openjiuwen; print('openjiuwen:', openjiuwen.__version__)"
+          python -c "import starlette; print('starlette:', starlette.__version__)"
+          python -c "import uvicorn; print('uvicorn:', uvicorn.__version__)"
+          python -c "import numpy; print('numpy:', numpy.__version__)"
+          python -c "import pydantic; print('pydantic:', pydantic.__version__)"
+          python -c "from openjiuwen.harness.factory import create_deep_agent; print('openjiuwen.harness OK')"
+          python -c "from openjiuwen.harness.rails import SecurityRail, SysOperationRail; print('openjiuwen.rails OK')"
+          python -c "from openjiuwen.core.foundation.llm.model import Model; print('openjiuwen.core OK')"
+
+      - name: Verify GalaxyOS imports
+        run: |
+          pip install .
+          python -c "from galaxyos.kernel.mcp_server_entry import create_kernel, check_dependencies; print('mcp_server_entry OK')"
+          python -c "from galaxyos.kernel.agent_core_bridge import AgentCoreBridge; print('agent_core_bridge OK')"
+          python -c "from galaxyos.kernel.memory_sync_bridge import MemorySyncBridge; print('memory_sync_bridge OK')"
+
+      - name: Check no xiaoyi references in functional code
+        run: |
+          ! grep -r "from xiaoyi_claw_api\|import xiaoyi_claw_api\|from xiaoyi_memory\|import xiaoyi_memory" galaxyos/ --include="*.py" -l
+          ! grep -r "xiaoyi-claw-omega-final" galaxyos/ --include="*.py" -l
+
+  build-pyinstaller:
+    name: PyInstaller build (Windows)
+    runs-on: windows-latest
+    needs: check-deps
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Install dependencies
+        shell: bash
+        run: |
+          pip install pyinstaller
+          pip install -r requirements-core.txt
+          pip install "openjiuwen>=0.1.13"
+          pip install "pymilvus>=2.6.2,<2.6.10"
+          pip install .
+
+      - name: Build with PyInstaller
+        shell: bash
+        run: |
+          pyinstaller galaxyos-mcp.spec --noconfirm
+
+      - name: Verify build output
+        shell: bash
+        run: |
+          test -f dist/galaxyos-mcp/galaxyos-mcp.exe
+          test -d dist/galaxyos-mcp/_internal
+
+      - name: Upload PyInstaller artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: galaxyos-mcp-dist
+          path: dist/galaxyos-mcp/
+
+  build-tauri-dry-run:
+    name: Tauri build check (Windows)
+    runs-on: windows-latest
+    needs: build-pyinstaller
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Checkout Agent Studio
+        uses: actions/checkout@v4
+        with:
+          repository: openJiuwen-ai/agent-studio
+          path: agent-studio
+          ref: v0.1.8
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Build Studio frontend
+        working-directory: agent-studio/frontend
+        shell: bash
+        run: |
+          npm install
+          npm install @assistant-ui/react@^0.14.26 @assistant-ui/react-markdown@^0.14.5 @assistant-ui/react-ag-ui@^0.0.44
+          npm audit fix || true
+          npx vite build --mode production
+
+      - name: Copy Studio dist
+        shell: bash
+        run: |
+          mkdir -p studio-dist
+          cp -r agent-studio/frontend/dist/* studio-dist/
+
+      - name: Download galaxyos-mcp-dist
+        uses: actions/download-artifact@v4
+        with:
+          name: galaxyos-mcp-dist
+          path: galaxyos-mcp-dist
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop-tauri
+
+      - name: Build Tauri app
+        working-directory: desktop-tauri
+        shell: bash
+        run: cargo tauri build
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ""
+
+      - name: Upload Tauri artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tauri-windows-ci
+          path: desktop-tauri/target/release/bundle/nsis/*.exe

@@ -62,17 +62,20 @@ async-accel = [
     "uvloop>=0.19.0; sys_platform != 'win32'",
     "winloop>=0.6.0; sys_platform == 'win32'",
 ]
-mcp = [
-    "fastmcp>=0.1.0",
-]
-tokui = [
-    "fastapi>=0.110.0",
-    "uvicorn>=0.29.0",
-    "sse-starlette>=2.0.0",
-]
-all = [
-    "galaxyos[ml,neural,nlp,async-accel,mcp,tokui]",
-]
+ mcp = [
+     "fastmcp>=2.14.2,<3.0",
+ ]
+ tokui = [
+     "fastapi>=0.110.0",
+     "uvicorn>=0.29.0",
+     "sse-starlette>=2.0.0",
+ ]
+ openjiuwen = [
+     "openjiuwen>=0.1.13",
+ ]
+ all = [
+     "galaxyos[ml,neural,nlp,async-accel,mcp,tokui,openjiuwen]",
+ ]
 dev = [
     "pytest>=9.0.0",
     "pytest-cov>=5.0.0",

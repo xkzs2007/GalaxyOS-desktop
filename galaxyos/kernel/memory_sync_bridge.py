@@ -75,8 +75,53 @@ class MemorySyncBridge:
         self._pending_async_writes: List[Dict[str, Any]] = []
         self._audit_log: List[Dict[str, Any]] = []
         self._workspace_sessions: Dict[str, str] = {}
+        self._oj_context_engine = None
+        self._init_openjiuwen_context()
 
-    def _session_key(self, workspace_id: str) -> str:
+    def _init_openjiuwen_context(self) -> None:
+        try:
+            from openjiuwen.core.context_engine import ContextEngine
+            self._oj_context_engine = ContextEngine
+            logger.info("OpenJiuwen ContextEngine available for memory sync")
+        except ImportError:
+            logger.debug("OpenJiuwen ContextEngine not available, using in-memory fallback")
+
+    async def _write_to_oj_context(self, workspace_id: str, content: str, source: str, metadata: Optional[Dict[str, Any]] = None) -> bool:
+        if not self._oj_context_engine:
+            return False
+        try:
+            engine = self._oj_context_engine()
+            await engine.write(
+                key=f"galaxyos:{workspace_id}:{source}",
+                value=content,
+                metadata=metadata or {},
+            )
+            return True
+        except Exception as e:
+            logger.warning(f"OpenJiuwen context write failed: {e}")
+            return False
+
+    async def _recall_from_oj_context(self, workspace_id: str, query: str, top_k: int = 5) -> List[MemoryEntry]:
+        if not self._oj_context_engine:
+            return []
+        try:
+            engine = self._oj_context_engine()
+            results = await engine.search(query=query, top_k=top_k)
+            entries = []
+            for r in results:
+                entries.append(MemoryEntry(
+                    id=f"oj-{int(time.time() * 1000)}",
+                    workspace_id=workspace_id,
+                    content=r.get("value", ""),
+                    source=r.get("metadata", {}).get("source", "agent_core"),
+                    scope=MemoryScope.AGENT_CORE,
+                    memory_type="context",
+                    metadata={"score": r.get("score", 0), "source_layer": "openjiuwen_context"},
+                ))
+            return entries
+        except Exception as e:
+            logger.warning(f"OpenJiuwen context recall failed: {e}")
+            return []
         if workspace_id not in self._workspace_sessions:
             self._workspace_sessions[workspace_id] = f"ws:dm:{workspace_id}"
         return self._workspace_sessions[workspace_id]
@@ -220,14 +265,18 @@ class MemorySyncBridge:
                 logger.warning(f"DAG context assembly failed: {e}")
 
         ac_entries: List[MemoryEntry] = []
-        if semantic_enhancement and self._agent_core_context:
-            try:
-                ac_all = self._agent_core_store.get(workspace_id, [])
-                if query:
-                    ac_entries = [e for e in ac_all if query.lower() in e.content.lower()]
-                ac_entries = ac_entries[:max(0, top_k - len(ln_entries))]
-            except Exception:
-                ac_entries = []
+        if semantic_enhancement:
+            oj_entries = await self._recall_from_oj_context(workspace_id, query, top_k=max(3, top_k - len(ln_entries)))
+            ac_entries.extend(oj_entries)
+
+            if not oj_entries and self._agent_core_context:
+                try:
+                    ac_all = self._agent_core_store.get(workspace_id, [])
+                    if query:
+                        ac_entries = [e for e in ac_all if query.lower() in e.content.lower()]
+                    ac_entries = ac_entries[:max(0, top_k - len(ln_entries))]
+                except Exception:
+                    ac_entries = []
 
         all_entries = ln_entries + dag_entries + ac_entries
         seen_ids = set()
@@ -353,36 +402,30 @@ class MemorySyncBridge:
         pinned: bool,
         metadata: Optional[Dict[str, Any]],
     ) -> None:
-        for attempt in range(self.ASYNC_RETRY_MAX):
-            try:
-                ac_entry = MemoryEntry(
-                    id=entry_id,
-                    workspace_id=workspace_id,
-                    content=content,
-                    source=source,
-                    scope=MemoryScope.AGENT_CORE,
-                    skill_name=skill_name,
-                    pinned=pinned,
-                    timestamp=time.time(),
-                    metadata=metadata or {},
-                )
-                self._agent_core_store.setdefault(workspace_id, []).append(ac_entry)
-                self._audit("dual_write", workspace_id, entry_id, "agent_core", "success")
-                return
-            except Exception as e:
-                self._audit("dual_write", workspace_id, entry_id, "agent_core", f"attempt {attempt + 1} failed: {e}")
-                if attempt < self.ASYNC_RETRY_MAX - 1:
-                    await asyncio.sleep(self.ASYNC_RETRY_DELAY_S)
+        ac_entry = MemoryEntry(
+            id=entry_id,
+            workspace_id=workspace_id,
+            content=content,
+            source=source,
+            scope=MemoryScope.AGENT_CORE,
+            skill_name=skill_name,
+            pinned=pinned,
+            timestamp=time.time(),
+            metadata=metadata or {},
+        )
+        self._agent_core_store.setdefault(workspace_id, []).append(ac_entry)
 
-        self._pending_async_writes.append({
-            "workspace_id": workspace_id,
-            "entry_id": entry_id,
-            "content": content,
-            "source": source,
-            "skill_name": skill_name,
-            "pinned": pinned,
-            "metadata": metadata,
-        })
+        oj_written = await self._write_to_oj_context(
+            workspace_id=workspace_id,
+            content=content,
+            source=source,
+            metadata={"entry_id": entry_id, "skill_name": skill_name, "pinned": pinned, **(metadata or {})},
+        )
+
+        if oj_written:
+            self._audit("dual_write", workspace_id, entry_id, "agent_core", "success+oj_context")
+        else:
+            self._audit("dual_write", workspace_id, entry_id, "agent_core", "success+in_memory_fallback")
 
     def _persist_entry(self, workspace_id: str, entry: MemoryEntry) -> None:
         ws_dir = self._persist_dir / workspace_id

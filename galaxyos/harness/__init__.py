@@ -78,13 +78,13 @@ def create_galaxy_agent(
 
     ws = Workspace(root=workspace_path)
 
-    from galaxyos.engine.xiaoyi_claw_api import XiaoYiClawLLM
+    from galaxyos.kernel.agent_core_bridge import AgentCoreBridge
 
     merged_engine_config = dict(engine_config)
     if session_id:
         merged_engine_config["session_id"] = session_id
 
-    engine = XiaoYiClawLLM(config=merged_engine_config)
+    engine = AgentCoreBridge(config=merged_engine_config)
 
     agent = GalaxyAgent(
         engine=engine,

@@ -23,7 +23,7 @@ class GalaxyAgent:
     封装 R-CCAM 认知循环调用，通过 engine 实例委托所有核心逻辑。
 
     Args:
-        engine: XiaoYiClawLLM 引擎实例
+        engine: AgentCoreBridge 或兼容引擎实例
         workspace: Workspace 工作空间实例
         worker_pool_size: Worker 池大小
     """

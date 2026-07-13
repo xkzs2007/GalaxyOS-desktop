@@ -11,6 +11,7 @@ import argparse
 import asyncio
 import logging
 import sys
+import time
 
 logging.basicConfig(
     level=logging.INFO,
@@ -18,6 +19,18 @@ logging.basicConfig(
     stream=sys.stderr,
 )
 logger = logging.getLogger(__name__)
+
+REQUIRED_DEPS = ["fastmcp", "numpy", "pydantic"]
+
+
+def check_dependencies() -> list[str]:
+    missing = []
+    for dep in REQUIRED_DEPS:
+        try:
+            __import__(dep)
+        except ImportError:
+            missing.append(dep)
+    return missing
 
 
 def create_kernel():
@@ -56,6 +69,47 @@ def create_kernel():
     return server, bridge, memory_bridge, rccam
 
 
+def mount_health_endpoint(server, port: int):
+    try:
+        import uvicorn
+        from starlette.applications import Starlette
+        from starlette.responses import JSONResponse
+        from starlette.routing import Route
+
+        start_time = time.time()
+
+        async def health_handler(request):
+            return JSONResponse({
+                "status": "healthy",
+                "uptime_s": round(time.time() - start_time, 1),
+                "kernel": "running",
+            })
+
+        mcp_app = server.get_asgi_app() if hasattr(server, 'get_asgi_app') else None
+
+        if mcp_app is not None:
+            try:
+                mcp_app.routes.insert(0, Route("/health", health_handler))
+                logger.info("/health endpoint mounted on MCP ASGI app")
+                return
+            except Exception:
+                pass
+
+        health_app = Starlette(routes=[Route("/health", health_handler)])
+
+        async def run_health():
+            config = uvicorn.Config(health_app, host="127.0.0.1", port=port, log_level="warning")
+            srv = uvicorn.Server(config)
+            await srv.serve()
+
+        import threading
+        t = threading.Thread(target=lambda: asyncio.run(run_health()), daemon=True)
+        t.start()
+        logger.info(f"/health endpoint started on http://127.0.0.1:{port}/health")
+    except ImportError:
+        logger.warning("starlette/uvicorn not available, /health endpoint not mounted")
+
+
 def main():
     parser = argparse.ArgumentParser(description="GalaxyOS MCP Server")
     parser.add_argument("--transport", default="streamable_http", choices=["stdio", "sse", "streamable_http"])
@@ -63,12 +117,21 @@ def main():
     parser.add_argument("--port", type=int, default=8765)
     args = parser.parse_args()
 
+    missing = check_dependencies()
+    if missing:
+        logger.error(f"Missing dependencies: {', '.join(missing)}")
+        logger.error(f"Install with: pip install {' '.join(missing)}")
+        sys.exit(1)
+
     logger.info(f"Starting GalaxyOS MCP Server: transport={args.transport}, host={args.host}, port={args.port}")
 
     server, bridge, memory_bridge, rccam = create_kernel()
     server.create()
 
     logger.info(f"GalaxyOS MCP Server created: {server.get_tool_count()} tools registered")
+
+    if args.transport in ("sse", "streamable_http"):
+        mount_health_endpoint(server, args.port)
 
     if args.transport == "stdio":
         server.run_stdio()

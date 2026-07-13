@@ -20,7 +20,7 @@ pub fn run() {
             studio_process: Mutex::new(None),
             galaxyos_process: Mutex::new(None),
             studio_port: 3000,
-            galaxyos_port: 5760,
+            galaxyos_port: 8765,
         })
         .invoke_handler(tauri::generate_handler![
             commands::start_backends,
@@ -31,7 +31,7 @@ pub fn run() {
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 let state = handle.state::<AppState>();
-                let _ = backend::start_all(&state).await;
+                let _ = backend::start_all(&state, &handle).await;
             });
             Ok(())
         })
