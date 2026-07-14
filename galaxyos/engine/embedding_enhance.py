@@ -19,8 +19,9 @@ from galaxyos.shared.paths import workspace
 
 import numpy as np
 import logging
-from typing import List, Dict, Optional, Tuple, Set
+from typing import List, Dict, Optional, Tuple, Set, Any
 from collections import defaultdict
+from galaxyos.shared.paths import workspace
 
 logger = logging.getLogger("embedding_enhance")
 
@@ -227,6 +228,7 @@ class EmbeddingEnhancer:
                 # 只对没有置信度异常的记忆检测
                 if any(a["idx"] == idx for a in anomalies):
                     continue
+                assert v is not None
                 v_norm = v / (np.linalg.norm(v) + 1e-10)
                 cos_sim = float(np.dot(v_norm, center_norm))
                 distances.append((idx, cos_sim))
@@ -284,7 +286,7 @@ class EmbeddingEnhancer:
             labels = kmeans.fit_predict(vec_arr)
         except ImportError:
             # 没有 sklearn，使用简单阈值聚类
-            return self._simple_cluster(memories, vectors)
+            return self._simple_cluster(memories, vectors)  # type: ignore[arg-type]
 
         # 整理聚类结果
         clusters_dict: Dict[int, Dict] = {}
@@ -306,7 +308,7 @@ class EmbeddingEnhancer:
             sorted_items = sorted(
                 items_texts,
                 key=lambda x: float(np.dot(
-                    vectors[valid_idxs.index(x[0])] / (np.linalg.norm(vectors[valid_idxs.index(x[0])]) + 1e-10),
+                    vectors[valid_idxs.index(x[0])] / (np.linalg.norm(vectors[valid_idxs.index(x[0])]) + 1e-10),  # type: ignore[operator]
                     centroid_norm
                 )),
                 reverse=True
@@ -336,7 +338,7 @@ class EmbeddingEnhancer:
         # 简单聚合：相似度 > 0.85 视为同一簇
         threshold = 0.85
         assigned: Set[int] = set()
-        clusters = []
+        clusters: List[Any] = []
         valid_idxs = [i for i, _ in enumerate(vectors)]
 
         for i in range(len(vectors)):

@@ -71,7 +71,7 @@ class DynamicCRAGThreshold:
             thresholds: 自定义阈值配置
         """
         self.thresholds = thresholds or self.DEFAULT_THRESHOLDS
-        self.strategy_log = []
+        self.strategy_log: List[Any] = []
 
     def analyze_retrieval_scores(
         self,
@@ -223,7 +223,7 @@ class DynamicCRAGThreshold:
         if not self.strategy_log:
             return {"total_selections": 0}
 
-        strategies = {}
+        strategies: Dict[str, Any] = {}
         for log in self.strategy_log:
             s = log["strategy"]
             strategies[s] = strategies.get(s, 0) + 1

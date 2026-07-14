@@ -130,7 +130,7 @@ class NgramHashTable:
         return None, False
 
     def insert(self, ngram: str, embedding: np.ndarray,
-               metadata: dict = None):
+               metadata: Optional[dict] = None):
         """插入 N-gram → 嵌入映射"""
         h = _stable_hash(ngram, self.num_slots)
         self._table[h] = embedding
@@ -194,7 +194,7 @@ class NgramHashTable:
             result.append((meta.get("ngram", f"<hash:{h}>"), cnt))
         return result
 
-    def save(self, path: str = None):
+    def save(self, path: Optional[str] = None):
         """持久化哈希表"""
         save_path = path or self.persist_path
         if not save_path:
@@ -272,7 +272,7 @@ class EngramMemory:
     - 与 MemoryOS 的 HeatTracker 结合，用 O(1) 查找替代部分热度计算
     """
 
-    def __init__(self, config: EngramConfig = None):
+    def __init__(self, config: Optional[EngramConfig] = None):
         self.config = config or EngramConfig()
         self._table = NgramHashTable(
             num_slots=self.config.num_slots,
@@ -365,7 +365,7 @@ class EngramMemory:
 
         return agg_emb, info
 
-    def remember(self, text: str, embedding: np.ndarray = None):
+    def remember(self, text: str, embedding: Optional[np.ndarray] = None):
         """将文本存入条件记忆
         
         把文本的关键 N-gram 与嵌入关联起来。
@@ -398,7 +398,7 @@ class EngramMemory:
             self._table.get_or_create(ng, default_fn=lambda: per_ngram.copy())
 
     def batch_remember(self, texts: List[str],
-                       embeddings: List[np.ndarray] = None):
+                       embeddings: Optional[List[np.ndarray]] = None):
         """批量存入条件记忆"""
         for i, text in enumerate(texts):
             emb = embeddings[i] if embeddings else None
@@ -454,11 +454,11 @@ class EngramMemory:
             "persist_path": self.config.persist_path or "无",
         }
 
-    def save(self, path: str = None):
+    def save(self, path: Optional[str] = None):
         """持久化"""
         self._table.save(path)
 
-    def load(self, path: str = None):
+    def load(self, path: Optional[str] = None):
         """加载"""
         load_path = path or self.config.persist_path
         if load_path and os.path.exists(load_path):
@@ -501,7 +501,7 @@ class EngramEnhancedHeatTracker:
         self._nodes: Dict[str, Dict] = {}
 
     def record_access(self, node_id: str, content: str = "",
-                      now: float = None, session_id: str = ""):
+                      now: Optional[float] = None, session_id: str = ""):
         """记录一次访问（Engram 增强版）"""
         if now is None:
             now = time.time()
@@ -536,7 +536,7 @@ class EngramEnhancedHeatTracker:
         node["last_access"] = now
         node["access_count"] += 1
 
-    def get_heat(self, node_id: str, now: float = None, session_id: str = "") -> float:
+    def get_heat(self, node_id: str, now: Optional[float] = None, session_id: str = "") -> float:
         """获取热度（Engram 增强版）"""
         key = f"{node_id}#{session_id}" if session_id else node_id
         node = self._nodes.get(key)

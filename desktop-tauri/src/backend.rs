@@ -1,7 +1,7 @@
 use crate::AppState;
 use std::process::{Command, Stdio};
 use std::time::Duration;
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Emitter};
 
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;

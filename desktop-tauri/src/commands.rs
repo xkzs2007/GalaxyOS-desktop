@@ -1,8 +1,8 @@
 use crate::AppState;
 
 #[tauri::command]
-pub async fn start_backends(state: tauri::State<'_, AppState>) -> Result<String, String> {
-    crate::backend::start_all(&state).await?;
+pub async fn start_backends(state: tauri::State<'_, AppState>, handle: tauri::AppHandle) -> Result<String, String> {
+    crate::backend::start_all(&state, &handle).await?;
     Ok("ok".into())
 }
 

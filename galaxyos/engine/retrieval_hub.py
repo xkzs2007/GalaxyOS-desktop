@@ -1732,16 +1732,16 @@ def _assess_retrieval_quality(
     # 叠加 web 验证修正
     if web_verification and web_verification.get("agreement", 0) > 0:
         delta = float(web_verification.get("confidence_delta", 0))
-        base["confidence"] = max(0.0, min(1.0, float(base["confidence"]) + delta))
+        base["confidence"] = max(0.0, min(1.0, float(base["confidence"]) + delta))  # type: ignore[arg-type]
         base["web_verification"] = {
             "agreement": web_verification["agreement"],
             "reason": web_verification.get("reason", ""),
         }
         # 如果 web 验证高度一致但本地分数低 → 提升判断
-        if delta > 0 and base["judgment"] in ("ambiguous", "incorrect") and float(base["confidence"]) > 0.5:
+        if delta > 0 and base["judgment"] in ("ambiguous", "incorrect") and float(base["confidence"]) > 0.5:  # type: ignore[arg-type]
             base["judgment"] = "correct"
         # 如果 web 验证有差异且本地分数本就不高 → 降级
-        if delta < 0 and base["judgment"] == "correct" and float(base["confidence"]) < 0.5:
+        if delta < 0 and base["judgment"] == "correct" and float(base["confidence"]) < 0.5:  # type: ignore[arg-type]
             base["judgment"] = "ambiguous"
 
     return base

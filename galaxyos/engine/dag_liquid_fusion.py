@@ -80,7 +80,7 @@ class LTCConstantComputer:
         # 尝试连接 UDS lfm_server
         self._uds_ok = False
         self._uds_tried = False
-        self._uds_last_embedding = None
+        self._uds_last_embedding: Optional[np.ndarray] = None
         self._try_uds()
 
         # 动态参数
@@ -149,6 +149,8 @@ class LTCConstantComputer:
 
         # fallback: 原有随机权重
         self._ensure_initialized()
+        assert self._w_tau is not None
+        assert self._b_tau is not None
         depth_penalty = 1.0 / (1.0 + depth * 0.5)
         features = np.array([importance, heat, recency, depth_penalty], dtype=np.float32)
         gate = self._sigmoid(float(np.dot(self._w_tau, features) + self._b_tau[0]))

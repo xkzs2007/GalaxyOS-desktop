@@ -202,7 +202,7 @@ class VectorOps:
         但投影计算改用 torch 向量化操作。
         """
         chars = text.lower().strip()
-        features = {}
+        features: Dict[str, Any] = {}
 
         clean_chars = ''.join(c for c in chars if c.isalnum() or '\u4e00' <= c <= '\u9fff')
         if not clean_chars:
@@ -303,7 +303,7 @@ class AnchorHashMap:
             dtype=torch.float32, device=VectorOps._DEVICE)
         return mat, anchors
 
-    def find_nearby(self, vec: List[float], k: int = 5,
+    def find_nearby(self, vec: Union[str, List[float]], k: int = 5,
                     radius: float = 0.3) -> List[SpatialAnchor]:
         """在哈希表中找最近的 k 个锚点
 
@@ -745,7 +745,7 @@ class CognitiveMap:
         Returns:
             内省结果文本（你在一个什么类型的认知区域）
         """
-        vec = self.compute_anchor_vector(current_context)
+        vec: Union[str, List[float]] = self.compute_anchor_vector(current_context)
 
         if current_anchor and current_anchor in self._anchor_cache:
             vec = self._anchor_cache[current_anchor].anchor_vector
