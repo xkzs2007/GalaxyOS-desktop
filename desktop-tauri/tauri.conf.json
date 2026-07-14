@@ -1,7 +1,7 @@
 {
 
   "productName": "GalaxyOS Desktop",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "identifier": "com.galaxyos.desktop",
   "build": {
     "beforeDevCommand": "",
@@ -30,7 +30,6 @@
   "bundle": {
     "active": true,
     "targets": "all",
-    "defaultLanguage": "zh-CN",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -40,6 +39,12 @@
     "resources": [
       "../galaxyos-mcp-dist/**/*"
     ],
-    "externalBin": []
+    "externalBin": [],
+    "windows": {
+      "nsis": {
+        "installerLanguages": ["zh-CN", "en-US"],
+        "language": 2052
+      }
+    }
   }
 }
