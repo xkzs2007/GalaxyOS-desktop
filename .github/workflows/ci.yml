@@ -18,11 +18,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Checkout Agent Studio
-        uses: actions/checkout@v4
-        with:
-          repository: openJiuwen-ai/agent-studio
-          path: agent-studio
-          ref: v0.2.0.beta3.post2
+        run: git clone --depth 1 --branch v0.2.0.beta3.post2 https://github.com/openJiuwen-ai/agent-studio.git agent-studio
 
       - name: Set up Python 3.13
         uses: actions/setup-python@v5
@@ -74,11 +70,8 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Checkout Agent Studio
-        uses: actions/checkout@v4
-        with:
-          repository: openJiuwen-ai/agent-studio
-          path: agent-studio
-          ref: v0.2.0.beta3.post2
+        shell: bash
+        run: git clone --depth 1 --branch v0.2.0.beta3.post2 https://github.com/openJiuwen-ai/agent-studio.git agent-studio
 
       - name: Set up Python 3.13
         uses: actions/setup-python@v5
@@ -122,11 +115,8 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Checkout Agent Studio
-        uses: actions/checkout@v4
-        with:
-          repository: openJiuwen-ai/agent-studio
-          path: agent-studio
-          ref: v0.2.0.beta3.post2
+        shell: bash
+        run: git clone --depth 1 --branch v0.2.0.beta3.post2 https://github.com/openJiuwen-ai/agent-studio.git agent-studio
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
