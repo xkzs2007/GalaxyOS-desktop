@@ -101,11 +101,10 @@ jobs:
           ref: v0.2.0.beta3.post2
 
       - name: Patch useAuth null safety
-        working-directory: agent-studio/frontend
         shell: python
         run: |
           import pathlib
-          p = pathlib.Path("packages/api-client/src/hooks/useAuth.ts")
+          p = pathlib.Path("agent-studio/frontend/packages/api-client/src/hooks/useAuth.ts")
           t = p.read_text(encoding="utf-8")
           old = "const store_response_msg = (response, authStateManager?: AuthStateManager) => {\n  const user = {"
           new = 'const store_response_msg = (response, authStateManager?: AuthStateManager) => {\n  const rawUser = response?.data?.user;\n  if (!rawUser) { console.error("[useAuth] API response missing user object:", response); return; }\n  const user = {'
