@@ -171,9 +171,7 @@ DAG_DB = openclaw_path("dag_context.db")  # claw_helpers
 RCI_SHARED_STATE = openclaw_path("rci_shared_state.json")  # claw_helpers
 SKILLS_DIR = workspace_path("skills")  # capability_registry
 GALAXYOS_CAPABILITY = openclaw_path("capability")  # capability_registry
-XIAOYI_OMEGA_LLM_CONFIG = workspace_path(
-    "skills/xiaoyi-claw-omega-final/config/llm_config.json"
-)  # capability_registry
+XIAOYI_OMEGA_LLM_CONFIG = ""  # removed: legacy path no longer exists
 LLM_CONFIG_JSON = openclaw_path("llm_config.json")  # data_bridge, smart_processor
 GALAXYOS_EXT_VAR = ext_var_dir()  # UDS/mmap/temp var dir (cloud-configurable)
 

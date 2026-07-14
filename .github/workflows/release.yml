@@ -164,6 +164,10 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libssl-dev
 
+      - name: Install tauri-cli
+        shell: bash
+        run: cargo install tauri-cli --version "^2"
+
       - name: Build Tauri app
         working-directory: desktop-tauri
         shell: bash

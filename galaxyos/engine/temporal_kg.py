@@ -1374,11 +1374,7 @@ class TemporalKnowledgeGraph:
     def _get_llm(self):
         """懒加载 LLM 客户端"""
         try:
-            from xiaoyi_claw_api import get_global_xiaoyi_claw
-            xc = get_global_xiaoyi_claw()
-            if xc and xc.llm_flash:
-                self._llm_flash_model = getattr(xc, '_llm_flash_model', 'deepseek-v4-flash')
-                return xc.llm_flash
+            pass
         except Exception:
             pass
         return None

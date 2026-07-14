@@ -59,12 +59,7 @@ except ImportError as e:
     print(f"警告: workflow_engine 导入失败: {e}", file=sys.stderr)
     WORKFLOW_ENGINE_AVAILABLE = False
 
-try:
-    from xiaoyi_claw_api import XiaoYiClawLLM
-    XIAOYI_CLAW_AVAILABLE = True
-except ImportError as e:
-    print(f"警告: xiaoyi_claw_api 导入失败: {e}", file=sys.stderr)
-    XIAOYI_CLAW_AVAILABLE = False
+XIAOYI_CLAW_AVAILABLE = False
 
 try:
     from resilience_system import ResilienceSystem
@@ -1111,9 +1106,7 @@ class UnifiedEntry:
                 source = input_data.get("source", "") if isinstance(input_data, dict) else str(input_data or "")
                 if source:
                     try:
-                        from xiaoyi_claw_api import XiaoYiClawLLM
-                        claw = XiaoYiClawLLM()
-                        result = claw.understand_image(source)
+                        result = {"note": "image understanding unavailable", "source": source}
                     except Exception:
                         result = {"note": "image understanding unavailable", "source": source}
                 else:
@@ -1422,21 +1415,11 @@ class UnifiedEntry:
 
     def ocr_image(self, image_source: str) -> Dict[str, Any]:
         """OCR 文字识别"""
-        try:
-            from xiaoyi_claw_api import XiaoYiClawLLM
-            claw = XiaoYiClawLLM()
-            return claw.ocr_image(image_source)
-        except Exception as e:
-            return {"success": False, "error": str(e)}
+        return {"success": False, "error": "ocr unavailable"}
 
     def understand_image(self, image_source: str, mode: str = "general") -> Dict[str, Any]:
         """图像理解"""
-        try:
-            from xiaoyi_claw_api import XiaoYiClawLLM
-            claw = XiaoYiClawLLM()
-            return claw.understand_image(image_source, mode=mode)
-        except Exception as e:
-            return {"success": False, "error": str(e)}
+        return {"success": False, "error": "image understanding unavailable"}
 
 
 def main():
@@ -1540,26 +1523,7 @@ def main():
     elif args.command in ("process", "rccam"):
         # R-CCAM 认知循环（通过 CLI 降级路径）
         try:
-            from xiaoyi_claw_api import XiaoYiClawLLM
-            claw = XiaoYiClawLLM()
-            input_data = json.loads(args.input) if args.input else {}
-            result = claw.process(
-                user_input=input_data.get("user_input", args.query or ""),
-                max_cycles=input_data.get("max_cycles", 1),
-                store_memory=input_data.get("store_memory", True),
-                has_image=input_data.get("has_image", False),
-                image_source=input_data.get("image_source", "")
-            )
-            # 简化输出，只保留关键信息
-            output = {
-                "answer": result.get("answer", ""),
-                "strategy": result.get("strategy", ""),
-                "meta_strategy": result.get("meta_strategy", ""),
-                "cycle_count": result.get("cycle_count", 0),
-                "search_count": result.get("search_count", 0),
-                "session_key": result.get("session_key", ""),
-            }
-            result = output
+            result = {"error": "rccam unavailable (xiaoyi_claw_api removed)"}
         except Exception as e:
             result = {"error": str(e)}
 

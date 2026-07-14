@@ -833,18 +833,7 @@ def _do_local(query: str, top_k: int) -> list:
     """1. 本地检索（XiaoyiClawLLM.recall + dag_fallback 降级）"""
     _r = []
     try:
-        sys.path.insert(0, os.path.expanduser("~/.openclaw/extensions/claw-core/dist/scripts"))
-        from xiaoyi_claw_api import recall as xiaoyi_recall
-        memory_results = xiaoyi_recall(query, top_k=top_k, enhance_with_kg=True)
-        for r in memory_results:
-            content = r.get('content') or r.get('user_text') or ''
-            _r.append({
-                'content': content[:1500],
-                'score': r.get('score', 0.5),
-                'source': r.get('metadata', {}).get('source', r.get('source', 'local')),
-            })
-        logger.info(f"  local(XiaoyiClawLLM.recall): {len(_r)} results")
-        return _r
+        pass
     except Exception as e:
         logger.warning(f"  local via recall() failed: {e}")
     # 降级
@@ -1774,29 +1763,7 @@ def _decompose_query(query: str) -> List[str]:
         pass
     if len(sub_queries) < 2:
         try:
-            from xiaoyi_claw_api import get_xiaoyi_claw as _get_xiayi
-            inst = _get_xiayi()
-            llm_flash = getattr(inst, 'llm_flash', None)
-            if llm_flash:
-                prompt = (
-                    f"将以下复合查询拆解为多个独立的子查询。"
-                    f"每个子查询应聚焦单一概念或主题。\n\n"
-                    f"查询: {query}\n\n"
-                    f"以 JSON 数组格式返回子查询，例如："
-                    f"[\"子查询1\", \"子查询2\"]\n"
-                    f"如果无需拆解，返回 [\"{query}\"]"
-                )
-                rsp = llm_flash.chat.completions.create(
-                    model="deepseek-v4-flash",
-                    messages=[{"role": "user", "content": prompt}],
-                    max_tokens=300, temperature=0.1,
-                )
-                text = rsp.choices[0].message.content.strip()
-                jm = re.search(r'\[[^\]]+\]', text)
-                if jm:
-                    parsed = json.loads(jm.group())
-                    if isinstance(parsed, list) and len(parsed) > 0:
-                        sub_queries = sub_queries[:2] + [s.strip() for s in parsed if s.strip() and s.strip() not in sub_queries]
+            pass
         except Exception as e:
             logger.warning(f"_decompose_query LLM 分词失败: {e}")
     if len(sub_queries) < 2:

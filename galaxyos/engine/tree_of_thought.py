@@ -611,17 +611,7 @@ def get_tree_of_thought(
     """
     if llm_flash is None:
         try:
-            from xiaoyi_claw_api import get_global_xiaoyi_claw
-            xc = get_global_xiaoyi_claw()
-            if xc and hasattr(xc, 'llm_flash') and xc.llm_flash:
-                llm_flash = xc.llm_flash
-                model = getattr(xc, '_llm_flash_model', 'deepseek-v4-flash')
-                return TreeOfThought(
-                    llm_flash=llm_flash,
-                    llm_flash_model=model,
-                    max_branches=max_branches,
-                    max_depth=max_depth,
-                )
+            pass
         except Exception as e:
             logger.warning(f"从 xiaoyi_claw_api 获取 llm_flash 失败: {e}")
 

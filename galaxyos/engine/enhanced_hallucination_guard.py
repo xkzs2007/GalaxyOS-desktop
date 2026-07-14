@@ -427,34 +427,7 @@ class MultiSourceCrossValidator:
         results = []
 
         try:
-            from xiaoyi_claw_api import XiaoYiClawLLM
-            claw = XiaoYiClawLLM()
-            vlm_result = claw.verify_image_claim(image_source, claim)
-
-            if vlm_result.get('verified', False):
-                results.append(VerificationSource(
-                    source_type=SourceType.IMAGE_ANALYSIS,
-                    content=f"图像验证通过: {vlm_result.get('evidence', '')}",
-                    confidence=vlm_result.get('confidence', 0.7),
-                    timestamp=datetime.now().isoformat(),
-                    metadata={
-                        'image_source': image_source[:100] if len(image_source) > 100 else image_source,
-                        'claim': claim
-                    }
-                ))
-            else:
-                results.append(VerificationSource(
-                    source_type=SourceType.IMAGE_ANALYSIS,
-                    content=f"图像验证未通过: {vlm_result.get('evidence', '')}",
-                    confidence=1.0 - vlm_result.get('confidence', 0.5),
-                    timestamp=datetime.now().isoformat(),
-                    metadata={
-                        'image_source': image_source[:100] if len(image_source) > 100 else image_source,
-                        'claim': claim,
-                        'verified': False
-                    }
-                ))
-
+            pass
         except Exception as e:
             logger.warning(f"VLM 图像验证失败: {e}")
 
@@ -893,17 +866,7 @@ class EnhancedHallucinationGuard:
 
         # 2.1.5 调 recall() 补充证据（中文兼容，不受空格分词限制）
         try:
-            from xiaoyi_claw_api import XiaoYiClawLLM
-            _claw = XiaoYiClawLLM()
-            recall_results = _claw.recall(statement, top_k=3)
-            for r in recall_results:
-                content = r.get('content', r.get('result', ''))[:500]
-                if content and content not in [s.content for s in sources]:
-                    sources.append(VerificationSource(
-                        source_type=SourceType.INTERNAL_MEMORY,
-                        content=content,
-                        confidence=r.get('score', 0.5) * 0.8,
-                    ))
+            pass
         except Exception:
             pass
 

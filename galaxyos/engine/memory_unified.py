@@ -24,11 +24,7 @@ class UnifiedMemory:
     def _get_claw(self):
         """懒加载 XiaoYiClawLLM 实例"""
         if self._claw is None:
-            canonical = Path.home() / ".openclaw/workspace/skills/galaxyos-engine/skills/llm-memory-integration/core"
-            if str(canonical) not in sys.path:
-                sys.path.insert(0, str(canonical))
-            from xiaoyi_claw_api import get_xiaoyi_claw
-            self._claw = get_xiaoyi_claw()
+            raise RuntimeError("xiaoyi_claw_api has been removed; use openjiuwen equivalents")
         return self._claw
 
     def recall(self, query: str, max_results: int = 10) -> List[Dict]:

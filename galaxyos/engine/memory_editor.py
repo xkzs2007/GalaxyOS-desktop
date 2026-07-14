@@ -361,15 +361,7 @@ class MemoryEditor:
         }
         query_vector = None
         try:
-            sys.path.insert(0, os.path.dirname(__file__))
-            from xiaoyi_claw_api import get_xiaoyi_claw as _get_xiayi
-            inst = _get_xiayi()
-            if inst and hasattr(inst, 'embedding') and inst.embedding:
-                resp = inst.embedding.embeddings.create(
-                    input=[old_content],
-                    model=getattr(inst, 'embedding_model', 'bge-m3'),
-                )
-                query_vector = resp.data[0].embedding
+            pass
         except Exception as e:
             logger.warning(f"locate: embedding client 不可用: {e}")
         candidates = []

@@ -880,17 +880,7 @@ class DAGContextManager:
             _blob_id = ""
             if not summary_text:
                 try:
-                    from xiaoyi_claw_api import get_global_xiaoyi_claw
-                    _xc = get_global_xiaoyi_claw()
-                    if _xc and _xc.llm_flash:
-                        _flash_resp = _xc.llm_flash.chat.completions.create(
-                            model=_xc._llm_flash_model,
-                            messages=[{"role": "user",
-                                "content": f"请用中文为以下对话内容生成简洁的摘要，保留核心信息和关键结论：\n\n{combined_text[:3000]}\n\n摘要："}],
-                            max_tokens=256, temperature=0.1,
-                        )
-                        summary_text = _flash_resp.choices[0].message.content.strip()[:800]
-                        _method = "flash"
+                    pass
                 except Exception:
                     pass
             if not summary_text:
@@ -1611,20 +1601,7 @@ class DAGContextManager:
             # 降级到旧版 Flash 摘要（仍保留部分信息）
             _blob_id = ""
             try:
-                from xiaoyi_claw_api import get_global_xiaoyi_claw
-                _xc = get_global_xiaoyi_claw()
-                if _xc and _xc.llm_flash:
-                    _flash_resp = _xc.llm_flash.chat.completions.create(
-                        model=_xc._llm_flash_model,
-                        messages=[{"role": "user",
-                            "content": f"请为以下 R-CCAM 认知循环生成简洁摘要（保留核心结论和关键发现）：\n\n{full_text[:3000]}\n\n摘要："}],
-                        max_tokens=256, temperature=0.1,
-                    )
-                    _memo_text = _flash_resp.choices[0].message.content.strip()[:500]
-                    _method = "flash"
-                else:
-                    _memo_text = full_text[:300] + "..."
-                    _method = "rule_truncate"
+                pass
             except Exception:
                 _memo_text = full_text[:300] + "..."
                 _method = "rule_truncate"

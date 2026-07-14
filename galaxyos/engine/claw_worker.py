@@ -1324,8 +1324,7 @@ class ClawWorker:
             if not os.path.exists(dag_db):
                 dag_db = os.path.expanduser("~/.openclaw/dag_context.db")
             dag = DAGContextManager(db_path=dag_db)
-            from xiaoyi_memory import XiaoyiMemoryV2
-            memory = XiaoyiMemoryV2()
+            memory = None
             integration = DAGIntegration(dag, memory=memory)
             summary = integration.cross_session_memory_restore(session_key, recent_days)
 
