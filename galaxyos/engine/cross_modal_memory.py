@@ -45,7 +45,7 @@ class CrossModalMemoryBinder:
     输出均为 2048-dim 向量（LFM 空间）。
     """
 
-    def __init__(self, workspace_path: str = None):
+    def __init__(self, workspace_path: Optional[str] = None):
         self.workspace_path = Path(workspace_path or workspace())
         self.bind_path = self.workspace_path / ".learnings" / "cross_modal"
         self.bind_path.mkdir(parents=True, exist_ok=True)
@@ -78,6 +78,7 @@ class CrossModalMemoryBinder:
         """
         if not self._ensure_lfm():
             return self._fallback_embedding(text)
+        assert self._lfm is not None
         try:
             emb = self._lfm.embed_text(text[:512])
             if emb is not None and emb.shape == (self.embed_dim,):
@@ -156,6 +157,7 @@ class CrossModalMemoryBinder:
                         pass
 
             # 用视觉 encoder 生成 token
+            assert self._vision_model is not None
             vis_tokens = self._vision_model.visual_embed.forward(img)
             # mean pooling → 2048 dim（与 LFM 空间对齐需要线性投影）
             pooled = np.mean(vis_tokens, axis=0)  # (hidden_dim,)
@@ -235,9 +237,9 @@ class CrossModalMemoryBinder:
             return np.zeros(self.embed_dim, dtype=np.float32)
         if weights is None:
             weights = [1.0 / len(embeddings)] * len(embeddings)
-        weights = np.array(weights, dtype=np.float32)
-        weights = weights / weights.sum()
-        result = sum(w * emb for w, emb in zip(weights, embeddings))
+        w_arr = np.array(weights, dtype=np.float32)
+        w_arr = w_arr / w_arr.sum()
+        result = sum(w * emb for w, emb in zip(w_arr, embeddings))
         norm = np.linalg.norm(result)
         if norm > 0:
             result = result / norm
@@ -264,7 +266,7 @@ class CrossModalMemoryBinder:
 
 _BINDER: Optional[CrossModalMemoryBinder] = None
 
-def get_binder(workspace_path: str = None) -> CrossModalMemoryBinder:
+def get_binder(workspace_path: Optional[str] = None) -> CrossModalMemoryBinder:
     """获取/创建全局跨模态绑定器"""
     global _BINDER
     if _BINDER is None:

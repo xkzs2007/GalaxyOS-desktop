@@ -73,7 +73,7 @@ def _lfm_binary_path() -> Optional[str]:
     return None
 
 
-def lfm_start(model_dir: str = None, uds_path: str = None) -> str:
+def lfm_start(model_dir: Optional[str] = None, uds_path: Optional[str] = None) -> str:
     """Start the LFM server as a subprocess (跨平台).
     
     Args:
@@ -125,10 +125,10 @@ def lfm_start(model_dir: str = None, uds_path: str = None) -> str:
     start_ts = time.time()
     ready_line = None
     while time.time() - start_ts < 30:
-        line = _LFM_PROCESS.stdout.readline()
+        line = _LFM_PROCESS.stdout.readline()  # type: ignore[union-attr]
         if not line:
             # process died
-            stderr = _LFM_PROCESS.stderr.read()
+            stderr = _LFM_PROCESS.stderr.read()  # type: ignore[union-attr]
             raise RuntimeError("lfm_server exited early")  # stderr redacted (may contain paths)
         try:
             msg = json.loads(line.strip())
@@ -194,7 +194,7 @@ def _lfm_connect(timeout: float = 10) -> socket.socket:
         return sock
 
 
-def _lfm_request_blocking(method: str, params: dict = None, timeout: float = 30) -> dict:
+def _lfm_request_blocking(method: str, params: Optional[dict] = None, timeout: float = 30) -> dict:
     """
     Send a JSON-RPC request via IPC (跨平台: UDS 或 TCP).
 
@@ -268,7 +268,7 @@ def _lfm_request_blocking(method: str, params: dict = None, timeout: float = 30)
 
 # ── LFM high-level wrappers ──
 
-def lfm_ping() -> str:
+def lfm_ping() -> dict:
     """Ping the LFM server."""
     return _lfm_request_blocking("ping")
 
@@ -289,7 +289,7 @@ def lfm_get_state() -> dict:
     """Get current state info (initialized, total_seq_len, embedding)."""
     return _lfm_request_blocking("get_state")
 
-def lfm_get_hidden(input_ids: List[int], layers: List[int] = None) -> dict:
+def lfm_get_hidden(input_ids: List[int], layers: Optional[List[int]] = None) -> dict:
     """Feed tokens and return hidden states for specified layers.
     
     Returns dict like:
@@ -305,7 +305,7 @@ def lfm_reset_state() -> dict:
     """Reset stateful inference (clear conv_states, kv_caches, total_seq)."""
     return _lfm_request_blocking("reset_state")
 
-def lfm_request(method: str, params: dict = None, timeout: float = 30) -> dict:
+def lfm_request(method: str, params: Optional[dict] = None, timeout: float = 30) -> dict:
     """Legacy alias. Use the specific wrappers instead."""
     return _lfm_request_blocking(method, params, timeout)
 
@@ -344,7 +344,7 @@ def resize(data: bytes, width: int, height: int, keep_ratio: bool = True, fmt: s
         new_w, new_h = int(orig_w * ratio), int(orig_h * ratio)
     else:
         new_w, new_h = width, height
-    resized = img.resize((new_w, new_h), Image.LANCZOS)
+    resized = img.resize((new_w, new_h), Image.Resampling.LANCZOS)  # type: ignore[attr-defined]
     b64 = _encode_image(resized, fmt)
     return {"data_b64": b64, "size": [new_w, new_h]}
 

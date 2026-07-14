@@ -129,21 +129,21 @@ class HNSW_MN_Index:
 
         # 主索引
         self.main = None          # hnswlib.Index
-        self.main_nodes = []      # list[dict]
+        self.main_nodes: List[Dict[str, Any]] = []
         self.main_ready = False
 
         # 小索引
         self.mini = None          # hnswlib.Index
-        self.mini_nodes = []
+        self.mini_nodes: List[Dict[str, Any]] = []
         self.mini_ready = False
 
         # Session 级索引
         self.session_idx = None   # hnswlib.Index
-        self.session_nodes = []   # list[dict]
+        self.session_nodes: List[Dict[str, Any]] = []
         self.session_ready = False
 
         # 状态
-        self.last_rebuild = 0
+        self.last_rebuild: float = 0
         self.last_merge = time.time()
         self.last_db_check = 0
         self.total_nodes_db = 0
@@ -155,8 +155,8 @@ class HNSW_MN_Index:
         self._emb_dim = dim
 
         # 待追加队列
-        self._pending = []        # list[dict {content, source, phase, importance, timestamp}]
-        self._pending_session = []  # list[dict {session_text, cycle_id, timestamp}]
+        self._pending: List[Dict[str, Any]] = []
+        self._pending_session: List[Dict[str, Any]] = []
 
     def init_embedding(self):
         """懒加载 embedding 客户端"""
@@ -187,6 +187,7 @@ class HNSW_MN_Index:
         if not self._emb_client:
             if not self.init_embedding():
                 return []
+        assert self._emb_client is not None
         try:
             resp = self._emb_client.embeddings.create(
                 model=self._emb_model, input=texts, dimensions=self._emb_dim,
@@ -371,7 +372,7 @@ class HNSW_MN_Index:
         seen = set()
 
         # 通道 A：主索引
-        if self.main_ready and self.main_nodes:
+        if self.main_ready and self.main_nodes and self.main is not None:
             try:
                 k = min(top_k * 3, len(self.main_nodes))
                 labels, distances = self.main.knn_query(query_vec, k=k)
@@ -389,7 +390,7 @@ class HNSW_MN_Index:
                 logger.debug(f"MN-RU 主索引搜索失败: {e}")
 
         # 通道 B：小索引
-        if self.mini_ready and self.mini_nodes:
+        if self.mini_ready and self.mini_nodes and self.mini is not None:
             try:
                 k = min(top_k * 3, len(self.mini_nodes))
                 labels, distances = self.mini.knn_query(query_vec, k=k)
@@ -408,7 +409,7 @@ class HNSW_MN_Index:
                 logger.debug(f"MN-RU 小索引搜索失败: {e}")
 
         # 通道 C：session 索引
-        if self.session_ready and self.session_nodes:
+        if self.session_ready and self.session_nodes and self.session_idx is not None:
             try:
                 k = min(top_k * 2, len(self.session_nodes))
                 labels, distances = self.session_idx.knn_query(query_vec, k=k)
@@ -451,7 +452,7 @@ def _get_hnsw_mn():
 # ============================================================
 
 # 会话历史缓存（最近 N 轮）
-_SESSION_HISTORY_CACHE = {}  # session_id -> list of turns
+_SESSION_HISTORY_CACHE: Dict[str, List[Dict[str, Any]]] = {}
 _MAX_HISTORY_TURNS = 20
 
 def _update_session_history(session_id: str, user_input: str, answer: str = ""):
@@ -646,7 +647,7 @@ def _preprocess_query(query: str) -> Dict:
 
         logger.info(
             f"query_preprocess: '{query}'→ rewrite='{rewritten}' "
-            f"mode={mode} intent={result['intent'][0]} complexity={result['complexity']}"
+            f"mode={mode} intent={result['intent'][0]} complexity={result['complexity']}"  # type: ignore[index]
         )
     except ImportError as e:
         logger.warning(f"scripts_core 未找到，跳过查询预处理: {e}")
@@ -704,7 +705,7 @@ def _rrf_merge(all_results: List[List[Dict]], k: int = 10) -> List[Dict]:
 
     rrf_scores = {}
     item_map = {}
-    raw_scores = {}  # 保留原始相似度
+    raw_scores: Dict[str, List[float]] = {}  # 保留原始相似度
 
     for results in all_results:
         for i, r in enumerate(results):
@@ -1079,7 +1080,7 @@ def _do_dag(query: str, top_k: int, session_id: str = "") -> list:
 
 def _do_dag_fallback(query: str, top_k: int) -> list:
     """DAG 降级：FTS5 全文检索"""
-    _r = []
+    _r: List[Dict[str, Any]] = []
     try:
         dag_db = os.path.expanduser("~/.openclaw/dag_context.db")
         if not os.path.exists(dag_db):
@@ -1229,8 +1230,9 @@ def _do_synapse_full(query: str, _ws: str) -> list:
     _seeds = _onnx.find_seeds(query, top_k=5, min_score=0.15,
         candidates=[(nid, c) for nid, _, c in _candidates])
 
-    _r = []
-    _activated, _predicted = {}, []
+    _r: List[Dict[str, Any]] = []
+    _activated: Dict[str, float] = {}
+    _predicted: List[str] = []
     _gat_weights = {}  # neuron_id → GAT 注意力权重
     for _sid, _sc, _content in _seeds[:3]:
         try:
@@ -1439,7 +1441,7 @@ def _do_synapse_gat(query: str, _ws: str, _neuron_count: int) -> list:
 
 def _do_synapse_fallback(query: str) -> list:
     """synapse 回退：jieba 关键词匹配 + 突触网络"""
-    _r = []
+    _r: List[Dict[str, Any]] = []
     try:
         _ws = workspace()
         _core_dir = os.path.join(
@@ -1633,7 +1635,7 @@ def _do_web(query: str, max_web_results: int) -> list:
 def _verify_local_with_web(
     merged_results: List[Dict],
     web_results: List[Dict],
-) -> Dict[str, any]:
+) -> Dict[str, Any]:
     """
     用 web 搜索结果交叉验证本地检索的准确性。
     
@@ -1729,7 +1731,7 @@ def _assess_retrieval_quality(
 
     # 叠加 web 验证修正
     if web_verification and web_verification.get("agreement", 0) > 0:
-        delta = web_verification.get("confidence_delta", 0)
+        delta = float(web_verification.get("confidence_delta", 0))
         base["confidence"] = max(0.0, min(1.0, base["confidence"] + delta))
         base["web_verification"] = {
             "agreement": web_verification["agreement"],
@@ -1967,8 +1969,8 @@ def _recompose_results(sub_results: List[List[Dict]]) -> List[Dict]:
     valid = [r for r in sub_results if r]
     if len(valid) <= 1:
         return valid[0] if valid else []
-    scores = {}
-    sources = {}
+    scores: Dict[str, float] = {}
+    sources: Dict[str, Dict[str, Any]] = {}
     k = 60
     for results in valid:
         for i, r in enumerate(results):

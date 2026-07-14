@@ -432,10 +432,10 @@ class TreeOfThought:
         while current_idx is not None:
             node = self._all_nodes[current_idx]
             if node.is_backtrack:
-                current_idx = node.parent_idx
+                current_idx = node.parent_idx  # type: ignore[assignment]
                 continue
             path.append(node)
-            current_idx = node.parent_idx
+            current_idx = node.parent_idx  # type: ignore[assignment]
 
         path.reverse()
         return path

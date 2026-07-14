@@ -32,7 +32,7 @@ import math
 import logging
 import random
 from collections import deque, defaultdict
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Dict, List, Optional, Tuple, Deque
 from dataclasses import dataclass, field, asdict
 
@@ -769,7 +769,7 @@ class CfCSequencePredictor(nn.Module):
         Returns:
             训练历史
         """
-        full_history = {"loss": [], "cosine_sim": []}
+        full_history: Dict[str, List[Any]] = {"loss": [], "cosine_sim": []}
 
         for i, batch in enumerate(activation_sequences_batches):
             if verbose:
@@ -1121,7 +1121,7 @@ def generate_synthetic_training_data(
                 mid = rng.choice(cluster_mids)
             else:
                 mid = rng.choice(all_mids)
-                current_cluster = memory_clusters.get(mid)
+                current_cluster = memory_clusters.get(mid) or 0
 
             seq.append(mid)
 

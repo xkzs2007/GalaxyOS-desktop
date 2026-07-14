@@ -531,7 +531,7 @@ class ThinkingEnhanced:
     def _load_experience_data(self) -> Dict[str, list]:
         """从过滤后的数据源加载体验样本"""
         ws = _WORKSPACE
-        data = {"reflexions": [], "verified": [], "implicit": [], "performance": []}
+        data: Dict[str, list] = {"reflexions": [], "verified": [], "implicit": [], "performance": []}
 
         # 1. reflexions.jsonl — 失败→根因→修复
         rfx_path = os.path.join(ws, ".learnings", "reflexions.jsonl")

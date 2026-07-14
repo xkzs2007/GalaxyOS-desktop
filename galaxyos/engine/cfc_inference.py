@@ -71,14 +71,14 @@ class NCPTopology:
       motor   (3) — 输出层（检索结果、关联记忆）
     """
 
-    def __init__(self, neurons_data: List[dict] = None):
+    def __init__(self, neurons_data: Optional[List[dict]] = None):
         self.roles: Dict[str, NeuronRole] = {}
         self._role_counts = {r: 0 for r in ALL_ROLES}
 
         if neurons_data:
             self.assign_roles(neurons_data)
 
-    def assign_roles(self, neurons_data: List[dict], synapses_data: List[dict] = None):
+    def assign_roles(self, neurons_data: List[dict], synapses_data: Optional[List[dict]] = None):
         """
         基于图出度/入度自动分配 NCP 角色
 
@@ -264,7 +264,7 @@ class NeuronStateManager:
         states = [self.get_or_init(nid) for nid in neuron_ids]
         return torch.stack(states, dim=0)
 
-    def reset(self, neuron_ids: List[str] = None):
+    def reset(self, neuron_ids: Optional[List[str]] = None):
         """重置状态（用于新会话）"""
         if neuron_ids:
             for nid in neuron_ids:
@@ -956,7 +956,7 @@ if __name__ == "__main__":
 
     # 测试 4: 与预设对比
     print("4. 单条突触权重 vs 预设")
-    from services.ltc_synapse import PRESETS
+    from services.ltc_synapse import PRESETS  # type: ignore[attr-defined]
     test_syn = {"source_id": "n0", "target_id": "n1",
                 "last_reinforced": "", "weight": 0.5}
     w_cfc = engine.get_weight_for_synapse(test_syn)

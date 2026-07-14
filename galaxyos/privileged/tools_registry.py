@@ -18,8 +18,8 @@ class ToolDefinition:
     handler: Callable
     parameters: Dict[str, Any]
     returns: Dict[str, Any]
-    platform: list = None  # 支持的平台 ['linux', 'darwin', 'win32']
-    requires: list = None  # 依赖项
+    platform: Optional[list] = None
+    requires: Optional[list] = None
 
 
 class ToolsRegistry:
@@ -58,9 +58,9 @@ class ToolsRegistry:
                 if not skip_dep_check:
                     return False
                 # 标记缺失依赖但仍注册
-                tool._missing_deps = missing
+                tool._missing_deps = missing  # type: ignore[attr-defined]
         else:
-            tool._missing_deps = []
+            tool._missing_deps = []  # type: ignore[attr-defined]
 
         self._tools[tool.name] = tool
         self._categories[tool.category].append(tool.name)
@@ -70,13 +70,13 @@ class ToolsRegistry:
         """获取工具"""
         return self._tools.get(name)
 
-    def list_tools(self, category: str = None) -> list:
+    def list_tools(self, category: Optional[str] = None) -> list:
         """列出工具"""
         if category:
             return self._categories.get(category, [])
         return list(self._tools.keys())
 
-    def list_available_tools(self, category: str = None) -> list:
+    def list_available_tools(self, category: Optional[str] = None) -> list:
         """列出可用工具（依赖满足的）"""
         available = []
         for name, tool in self._tools.items():
@@ -85,7 +85,7 @@ class ToolsRegistry:
                     available.append(name)
         return available
 
-    def list_unavailable_tools(self, category: str = None) -> list:
+    def list_unavailable_tools(self, category: Optional[str] = None) -> list:
         """列出不可用工具（依赖缺失的）"""
         unavailable = []
         for name, tool in self._tools.items():
@@ -162,8 +162,8 @@ def register_tool(
     category: str,
     parameters: Dict[str, Any],
     returns: Dict[str, Any],
-    platform: list = None,
-    requires: list = None,
+    platform: Optional[list] = None,
+    requires: Optional[list] = None,
     skip_dep_check: bool = True
 ):
     """工具注册装饰器
@@ -231,7 +231,7 @@ def llm_chat(prompt: str, model: str = "gpt-4", stream: bool = False):
     Dependencies: scripts_core.llm.LLMEngine, llm_streaming.StreamingHandler
     """
     from .scripts_core.llm import LLMEngine
-    from .llm_streaming import StreamingHandler
+    from .llm_streaming import StreamingHandler  # type: ignore[attr-defined]
 
     engine = LLMEngine(model=model)
 
@@ -290,7 +290,7 @@ def search_hybrid(query: str, top_k: int = 10, vector_weight: float = 0.6):
     },
     returns={"type": "string", "description": "改写后的查询"}
 )
-def query_rewrite(query: str, context: list = None):
+def query_rewrite(query: str, context: Optional[list] = None):
     """查询改写
 
     Dependencies: scripts_core.rewriter.QueryRewriter

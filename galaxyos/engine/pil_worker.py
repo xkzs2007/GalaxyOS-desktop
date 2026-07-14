@@ -63,7 +63,7 @@ def resize(params: dict) -> dict:
     else:
         new_w, new_h = width, height
 
-    img = img.resize((new_w, new_h), Image.LANCZOS)
+    img = img.resize((new_w, new_h), Image.Resampling.LANCZOS)  # type: ignore[attr-defined]
     buf = io.BytesIO()
     img.save(buf, format=fmt, quality=85)
     result_bytes = buf.getvalue()

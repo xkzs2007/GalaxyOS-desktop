@@ -119,7 +119,7 @@ class SmartProcessor:
         return self._config.get('llm', {}).get('model', 'deepseek-v4-flash')
 
     def _call_flash(self, messages: list, max_tokens: int = 500,
-                     temperature: float = None, persona: str = "") -> str:
+                     temperature: Optional[float] = None, persona: str = "") -> str:
         """调用 Flash 模型，支持人格注入"""
         flash = self._get_flash()
         if flash:
@@ -148,7 +148,7 @@ class SmartProcessor:
             return ""
 
     def _call_pro(self, messages: list, max_tokens: int = 500,
-                   temperature: float = None, persona: str = "") -> str:
+                   temperature: Optional[float] = None, persona: str = "") -> str:
         """调用 Pro 模型，支持人格注入 + KV 缓存"""
         if not self.llm_pro:
             return ""

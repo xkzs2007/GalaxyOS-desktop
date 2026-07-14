@@ -861,7 +861,7 @@ class ClawWorker:
             try:
                 from galaxy_pipeline import build_pipeline, run_pipeline
                 _pipeline = build_pipeline()
-                _ctx: Dict[str, Any] = {}
+                _ctx = {}  # type: ignore[no-redef]
                 run_pipeline(_pipeline, query, session_id, top_k, result, _ctx, self)
             except Exception as e:
                 result["pipeline_error"] = str(e)

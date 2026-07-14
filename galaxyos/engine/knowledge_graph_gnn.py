@@ -15,9 +15,9 @@ try:
     from .graphsage_layer import GraphSAGE
     from .gat_layer import GAT
 except ImportError:
-    from graph_constructor import GraphConstructor, Entity, Relation
-    from graphsage_layer import GraphSAGE
-    from gat_layer import GAT
+    from graph_constructor import GraphConstructor, Entity, Relation  # type: ignore[no-redef]
+    from graphsage_layer import GraphSAGE  # type: ignore[no-redef]
+    from gat_layer import GAT  # type: ignore[no-redef]
 
 
 class KnowledgeGraphGNN(nn.Module):
@@ -280,7 +280,7 @@ class KnowledgeGraphGNN(nn.Module):
         # 实际上节点数从 feature_matrix 取更稳
         if self._feature_matrix is not None:
             n = self._feature_matrix.size(0)
-        adj_list = [[] for _ in range(n)]
+        adj_list: List[List[int]] = [[] for _ in range(n)]
         for s, d in zip(src.tolist(), dst.tolist()):
             if 0 <= s < n:
                 adj_list[s].append(d)
