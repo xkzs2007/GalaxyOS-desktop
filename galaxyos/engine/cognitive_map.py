@@ -27,7 +27,7 @@ import math
 import re
 import threading
 import numpy as np
-from typing import Dict, List, Optional, Any, Tuple, Callable
+from typing import Dict, List, Optional, Any, Tuple, Callable, Union
 from dataclasses import dataclass, field, asdict
 
 import torch
@@ -45,7 +45,7 @@ class SpatialAnchor:
     anchor_id: str
     node_id: str                  # 关联的 DAG 节点 ID
     context: str                  # 锚点的上下文描述
-    anchor_vector: str            # JSON 序列化的锚点向量（256 维，不依赖 numpy）
+    anchor_vector: Union[str, List[float]]  # JSON 序列化或原始列表（256 维，不依赖 numpy）
     dimension: int = 256          # 向量维度
     timestamp: float = 0.0        # 创建时间
     session_key: str = ""         # 会话 Key
@@ -611,7 +611,7 @@ class CognitiveMap:
                 return embedding + [0.0] * (self.dim - len(embedding))
         return VectorOps.randomized_projection(context, self.dim)
 
-    def get_nearby_anchors(self, anchor_vector: List[float],
+    def get_nearby_anchors(self, anchor_vector: Union[str, List[float]],
                             k: int = 5, radius: float = 0.3) -> List[SpatialAnchor]:
         """在认知空间中找最近的锚点（torch batch 实现）"""
         nearby = self.hash_map.find_nearby(anchor_vector, k=k, radius=radius)
@@ -760,7 +760,7 @@ class CognitiveMap:
         density = self.get_anchor_density(centroid)
 
         # 分析附近锚点的主题分布
-        topics = {}
+        topics: Dict[str, Any] = {}
         for a in nearby:
             # 从 context 中提取主题词（前几个非停用词字符）
             words = re.findall(r'[\u4e00-\u9fff]{2,}|[a-zA-Z]{3,}', a.context[:50])
@@ -1046,13 +1046,13 @@ class CognitiveMap:
         avg_importance = sum(a.importance for a in self._anchor_cache.values()) / max(total, 1)
 
         # 会话分布
-        session_dist = {}
+        session_dist: Dict[str, Any] = {}
         for a in self._anchor_cache.values():
             sk = a.session_key or "unknown"
             session_dist[sk] = session_dist.get(sk, 0) + 1
 
         # 聚类统计
-        cluster_dist = {}
+        cluster_dist: Dict[str, Any] = {}
         for a in self._anchor_cache.values():
             cid = a.cluster_id or "unclustered"
             cluster_dist[cid] = cluster_dist.get(cid, 0) + 1

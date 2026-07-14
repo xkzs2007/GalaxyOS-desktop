@@ -52,9 +52,9 @@ def resize(params: dict) -> dict:
     fmt = params.get("fmt", "JPEG")
 
     data = _b64_to_bytes(data_b64)
-    img = Image.open(io.BytesIO(data))
+    img: Any = Image.open(io.BytesIO(data))
     if img.mode == "RGBA":
-        img = img.convert("RGB")
+        img = img.convert("RGB")  # type: ignore[assignment]
 
     w, h = img.size
     if keep_ratio:
@@ -63,7 +63,7 @@ def resize(params: dict) -> dict:
     else:
         new_w, new_h = width, height
 
-    img = img.resize((new_w, new_h), Image.Resampling.LANCZOS)  # type: ignore[attr-defined]
+    img = img.resize((new_w, new_h), Image.Resampling.LANCZOS)  # type: ignore[attr-defined, assignment]
     buf = io.BytesIO()
     img.save(buf, format=fmt, quality=85)
     result_bytes = buf.getvalue()
@@ -78,16 +78,16 @@ def enhance(params: dict) -> dict:
     fmt = params.get("fmt", "JPEG")
 
     data = _b64_to_bytes(data_b64)
-    img = Image.open(io.BytesIO(data))
+    img: Any = Image.open(io.BytesIO(data))
     if img.mode == "RGBA":
-        img = img.convert("RGB")
+        img = img.convert("RGB")  # type: ignore[assignment]
 
     if brightness != 1.0:
-        img = ImageEnhance.Brightness(img).enhance(brightness)
+        img = ImageEnhance.Brightness(img).enhance(brightness)  # type: ignore[assignment]
     if contrast != 1.0:
-        img = ImageEnhance.Contrast(img).enhance(contrast)
+        img = ImageEnhance.Contrast(img).enhance(contrast)  # type: ignore[assignment]
     if sharpness != 1.0:
-        img = ImageEnhance.Sharpness(img).enhance(sharpness)
+        img = ImageEnhance.Sharpness(img).enhance(sharpness)  # type: ignore[assignment]
 
     buf = io.BytesIO()
     img.save(buf, format=fmt, quality=90)
@@ -99,14 +99,14 @@ def ocr_preprocess(params: dict) -> dict:
     fmt = params.get("fmt", "PNG")
 
     data = _b64_to_bytes(data_b64)
-    img = Image.open(io.BytesIO(data))
+    img: Any = Image.open(io.BytesIO(data))
     if img.mode == "RGBA":
-        img = img.convert("RGB")
+        img = img.convert("RGB")  # type: ignore[assignment]
 
-    img = img.convert("L")
-    img = img.filter(ImageFilter.MedianFilter(size=3))
-    img = ImageOps.autocontrast(img, cutoff=5)
-    img = ImageOps.equalize(img)
+    img = img.convert("L")  # type: ignore[assignment]
+    img = img.filter(ImageFilter.MedianFilter(size=3))  # type: ignore[assignment]
+    img = ImageOps.autocontrast(img, cutoff=5)  # type: ignore[assignment]
+    img = ImageOps.equalize(img)  # type: ignore[assignment]
 
     buf = io.BytesIO()
     img.save(buf, format=fmt)

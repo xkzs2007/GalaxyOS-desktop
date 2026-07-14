@@ -33,7 +33,7 @@ import logging
 import random
 from collections import deque, defaultdict
 from datetime import datetime, timezone, timedelta
-from typing import Dict, List, Optional, Tuple, Deque
+from typing import Dict, List, Optional, Tuple, Deque, Any
 from dataclasses import dataclass, field, asdict
 
 import torch
@@ -314,7 +314,7 @@ class CfCSequencePredictor(nn.Module):
         )
 
         # 训练状态
-        self._training_history: Dict[str, list] = {
+        self._training_history: Dict[str, Any] = {
             "loss": [],
             "cosine_sim": [],
             "epoch": 0,

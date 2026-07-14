@@ -24,7 +24,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Any
 
 # ── LFM IPC Client (跨平台: Unix=UDS, Windows=TCP) ───────────────────
 
@@ -319,9 +319,9 @@ except ImportError:
 def _load_image(data: bytes):
     if not _PIL_AVAILABLE:
         raise RuntimeError("PIL not available")
-    img = Image.open(io.BytesIO(data))
+    img: Any = Image.open(io.BytesIO(data))
     if img.mode == "RGBA":
-        img = img.convert("RGB")
+        img = img.convert("RGB")  # type: ignore[assignment]
     return img
 
 
