@@ -142,7 +142,7 @@ jobs:
           pip install -r requirements-core.txt
           pip install "openjiuwen>=0.1.13"
           pip install "pymilvus>=2.6.2,<2.6.10"
-          pip install "openjiuwen-studio>=0.1.5"
+          pip install --no-deps agent-studio/backend
           pip install .
 
       - name: Build GalaxyOS MCP with PyInstaller
