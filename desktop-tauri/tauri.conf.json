@@ -42,7 +42,7 @@
     "externalBin": [],
     "windows": {
       "nsis": {
-        "installerLanguages": ["zh-CN", "en-US"],
+
         "language": 2052
       }
     }
