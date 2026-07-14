@@ -101,19 +101,25 @@ jobs:
           ref: v0.2.0.beta3.post2
 
       - name: Patch useAuth null safety
-        shell: python
+        shell: bash
         run: |
+          python3 -c "
           import pathlib
-          p = pathlib.Path("agent-studio/frontend/packages/api-client/src/hooks/useAuth.ts")
-          t = p.read_text(encoding="utf-8")
-          old = "const store_response_msg = (response, authStateManager?: AuthStateManager) => {\n  const user = {"
-          new = 'const store_response_msg = (response, authStateManager?: AuthStateManager) => {\n  const rawUser = response?.data?.user;\n  if (!rawUser) { console.error("[useAuth] API response missing user object:", response); return; }\n  const user = {'
+          p = pathlib.Path('agent-studio/frontend/packages/api-client/src/hooks/useAuth.ts')
+          if not p.exists():
+            echo '::warning::useAuth.ts not found, skipping patch'
+            exit 0
+          t = p.read_text(encoding='utf-8')
+          old = 'const store_response_msg = (response, authStateManager?: AuthStateManager) => {\n  const user = {'
+          new = 'const store_response_msg = (response, authStateManager?: AuthStateManager) => {\n  const rawUser = response?.data?.user;\n  if (!rawUser) { console.error(\"[useAuth] API response missing user object:\", response); return; }\n  const user = {'
           t = t.replace(old, new)
-          t = t.replace("response.data.user.", "rawUser.")
-          t = t.replace("rawUser.user_id_str", 'rawUser.user_id_str || ""')
-          t = t.replace("rawUser.username)", 'rawUser.username || "")')
-          t = t.replace("rawUser.email)", 'rawUser.email || "")')
-          p.write_text(t, encoding="utf-8")
+          t = t.replace('response.data.user.', 'rawUser.')
+          t = t.replace('rawUser.user_id_str', 'rawUser.user_id_str || \"\"')
+          t = t.replace('rawUser.username)', 'rawUser.username || \"\")')
+          t = t.replace('rawUser.email)', 'rawUser.email || \"\")')
+          p.write_text(t, encoding='utf-8')
+          print('useAuth.ts patched successfully')
+          "
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
