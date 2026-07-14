@@ -39,12 +39,6 @@
     "resources": [
       "../galaxyos-mcp-dist/**/*"
     ],
-    "externalBin": [],
-    "windows": {
-      "nsis": {
-
-        "language": 2052
-      }
-    }
+    "externalBin": []
   }
 }
