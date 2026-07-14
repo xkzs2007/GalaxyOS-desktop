@@ -97,25 +97,49 @@ jobs:
         shell: bash
         run: git clone --depth 1 --branch v0.1.8 https://github.com/openJiuwen-ai/agent-studio.git agent-studio
 
-      - name: Patch useAuth null safety
+      - name: Patch Studio frontend for GalaxyOS desktop mode
         shell: bash
         run: |
           python3 -c "
           import pathlib, sys
-          p = pathlib.Path('agent-studio/frontend/packages/api-client/src/hooks/useAuth.ts')
-          if not p.exists():
-            print('WARNING: useAuth.ts not found, skipping patch')
-            sys.exit(0)
-          t = p.read_text(encoding='utf-8')
-          old = 'const store_response_msg = (response, authStateManager?: AuthStateManager) => {\n  const user = {'
-          new = 'const store_response_msg = (response, authStateManager?: AuthStateManager) => {\n  const rawUser = response?.data?.user;\n  if (!rawUser) { console.error(\"[useAuth] API response missing user object:\", response); return; }\n  const user = {'
-          t = t.replace(old, new)
-          t = t.replace('response.data.user.', 'rawUser.')
-          t = t.replace('rawUser.user_id_str', 'rawUser.user_id_str || \"\"')
-          t = t.replace('rawUser.username)', 'rawUser.username || \"\")')
-          t = t.replace('rawUser.email)', 'rawUser.email || \"\")')
-          p.write_text(t, encoding='utf-8')
-          print('useAuth.ts patched successfully')
+          base = pathlib.Path('agent-studio/frontend/src')
+
+          # 1. Patch App.tsx: GALAXYOS_MODE auto-login
+          app = base / 'App.tsx'
+          if app.exists():
+            t = app.read_text(encoding='utf-8')
+            # Add GALAXYOS_MODE import and auto-auth at top of ProtectedRoute
+            old_guard = 'const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {\n  const { isAuthenticated } = useAuthStore()'
+            new_guard = '''const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+            const { isAuthenticated, login } = useAuthStore()
+            const _galaxyos_mode = (window as any).__GALAXYOS_MODE__ || (typeof process !== 'undefined' && process.env?.VITE_GALAXYOS_MODE)
+            React.useEffect(() => {
+              if (_galaxyos_mode && !isAuthenticated) {
+                login({ id: 'galaxyos-local', username: 'GalaxyOS', email: 'local@galaxyos.ai', spaceId: 'default', role: 'admin', permissions: ['read', 'write', 'admin'] }, 'galaxyos-local-token')
+              }
+            }, [_galaxyos_mode, isAuthenticated, login])
+            if (_galaxyos_mode) return <>{children}</>'''
+            t = t.replace(old_guard, new_guard)
+            app.write_text(t, encoding='utf-8')
+            print('App.tsx patched: GALAXYOS_MODE auto-login')
+          else:
+            print('WARNING: App.tsx not found')
+
+          # 2. Patch useAuth.ts: null safety
+          auth = pathlib.Path('agent-studio/frontend/packages/api-client/src/hooks/useAuth.ts')
+          if auth.exists():
+            t = auth.read_text(encoding='utf-8')
+            old = 'const store_response_msg = (response, authStateManager?: AuthStateManager) => {\n  const user = {'
+            new = 'const store_response_msg = (response, authStateManager?: AuthStateManager) => {\n  const rawUser = response?.data?.user;\n  if (!rawUser) { console.error(\"[useAuth] API response missing user object:\", response); return; }\n  const user = {'
+            t = t.replace(old, new)
+            t = t.replace('response.data.user.', 'rawUser.')
+            t = t.replace('rawUser.user_id_str', 'rawUser.user_id_str || \"\"')
+            t = t.replace('rawUser.username)', 'rawUser.username || \"\")')
+            t = t.replace('rawUser.email)', 'rawUser.email || \"\")')
+            auth.write_text(t, encoding='utf-8')
+            print('useAuth.ts patched: null safety')
+          else:
+            print('WARNING: useAuth.ts not found')
           "
 
       - name: Set up Node.js
@@ -130,7 +154,7 @@ jobs:
           npm install
           npm install @assistant-ui/react@^0.14.26 @assistant-ui/react-markdown@^0.14.5 @assistant-ui/react-ag-ui@^0.0.44
           npm audit fix || true
-          npx vite build --mode production
+          VITE_GALAXYOS_MODE=true npx vite build --mode production
 
       - name: Copy Studio dist for Tauri
         shell: bash

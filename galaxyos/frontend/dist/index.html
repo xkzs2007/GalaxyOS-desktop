@@ -87,7 +87,11 @@
                 if (frontendOk && studioOk) {
                     statusEl.className = 'status ready';
                     statusEl.innerHTML = 'Studio 就绪，正在跳转...';
-                    setTimeout(() => { window.location.href = studioFrontendUrl; }, 500);
+                    setTimeout(() => {
+                        const url = new URL(studioFrontendUrl);
+                        url.searchParams.set('galaxyos_mode', 'true');
+                        window.location.href = url.toString();
+                    }, 500);
                     return;
                 }
 
