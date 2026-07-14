@@ -200,7 +200,9 @@ fn start_studio(port: u16) -> Result<std::process::Child, String> {
     let module = find_studio_module()?;
     let mut cmd = Command::new(&python);
     cmd.args(["-m", &module])
-        .env("PORT", &port.to_string())
+        .env("BACKEND_PORT", &port.to_string())
+        .env("DB_TYPE", "sqlite")
+        .env("GALAXYOS_MODE", "desktop")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     #[cfg(windows)]
@@ -244,6 +246,22 @@ fn find_galaxyos_binary() -> Result<BinaryResult, String> {
 }
 
 fn find_python() -> Result<String, String> {
+    if let Ok(exe_dir) = std::env::current_exe() {
+        if let Some(dir) = exe_dir.parent() {
+            let venv_python = dir.join(".venv313").join("Scripts").join("python.exe");
+            if venv_python.exists() {
+                return Ok(venv_python.to_string_lossy().to_string());
+            }
+            let project_root = dir.join("..").join(".venv313").join("Scripts").join("python.exe");
+            if project_root.exists() {
+                return Ok(project_root.to_string_lossy().to_string());
+            }
+        }
+    }
+    let venv_path = std::path::Path::new("../.venv313/Scripts/python.exe");
+    if venv_path.exists() {
+        return Ok(venv_path.to_string_lossy().to_string());
+    }
     for name in &["python3", "python"] {
         if Command::new(name)
             .arg("--version")
@@ -257,7 +275,7 @@ fn find_python() -> Result<String, String> {
 }
 
 fn find_studio_module() -> Result<String, String> {
-    Ok("openjiuwen_studio.server.main".to_string())
+    Ok("openjiuwen_studio.main".to_string())
 }
 
 async fn wait_for_health(port: u16, name: &str, max_secs: u64) -> Result<(), String> {

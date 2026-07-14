@@ -19,7 +19,7 @@ pub fn run() {
         .manage(AppState {
             studio_process: Mutex::new(None),
             galaxyos_process: Mutex::new(None),
-            studio_port: 3000,
+            studio_port: 8000,
             galaxyos_port: 8765,
         })
         .invoke_handler(tauri::generate_handler![

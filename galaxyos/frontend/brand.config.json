@@ -1,6 +1,6 @@
 {
   "productName": "GalaxyOS",
-  "tagline": "AI Agent Productivity System",
+  "tagline": "认知增强型桌面 AI Agent",
   "logo": "assets/galaxyos-logo.svg",
   "theme": {
     "primaryColor": "#6366f1",
@@ -14,22 +14,24 @@
     "errorColor": "#ef4444"
   },
   "welcome": {
-    "title": "Welcome to GalaxyOS",
-    "subtitle": "Fusion of PilotDeck + openJiuwen agent-core + mattpocock/skills",
-    "description": "Your AI Agent productivity system powered by ReActAgent, WorkflowAgent, and 20+ engineering skills."
+    "title": "欢迎来到 GalaxyOS",
+    "subtitle": "液态神经记忆 · R-CCAM 认知循环 · DAG 上下文融合",
+    "description": "基于 17 层认知架构的桌面 AI Agent，融合液态神经记忆、R-CCAM 自适应认知循环与 DAG 上下文融合引擎。"
   },
   "about": {
-    "version": "0.1.0",
+    "version": "0.1.5",
     "components": [
-      {"name": "PilotDeck", "description": "Agent Gateway & WorkSpace Management", "license": "MIT"},
-      {"name": "openJiuwen agent-core", "description": "Agent Execution Kernel (ReActAgent + WorkflowAgent)", "license": "Apache-2.0"},
-      {"name": "mattpocock/skills", "description": "Engineering Skill System (20+ skills)", "license": "MIT"}
+      {"name": "GalaxyOS 认知引擎", "description": "17 层认知架构 + 液态神经记忆 + R-CCAM", "license": "MIT"},
+      {"name": "GalaxyOS MCP Server", "description": "24 工具 MCP 协议服务 (FastMCP + streamable_http)", "license": "MIT"},
+      {"name": "TokUI 渲染器", "description": "DSL 流式推送 + 6 认知组件 (@jboltai/tokui)", "license": "MIT"},
+      {"name": "openJiuwen agent-core", "description": "Agent 执行内核 (ReActAgent + WorkflowAgent)", "license": "Apache-2.0"},
+      {"name": "openJiuwen Studio", "description": "零代码/低代码可视化 Agent 开发平台", "license": "Apache-2.0"}
     ]
   },
   "statusBar": {
-    "kernelRunning": "Agent Kernel Running",
-    "kernelStopped": "Agent Kernel Stopped",
-    "mcpConnected": "MCP Connected",
-    "mcpDisconnected": "MCP Disconnected"
+    "kernelRunning": "认知引擎运行中",
+    "kernelStopped": "认知引擎已停止",
+    "mcpConnected": "MCP 已连接",
+    "mcpDisconnected": "MCP 已断开"
   }
 }

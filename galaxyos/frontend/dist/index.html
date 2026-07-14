@@ -54,13 +54,14 @@
 <body>
     <div class="logo">G</div>
     <h1>GalaxyOS Desktop</h1>
-    <p class="subtitle">Cognitive Enhancement Engine</p>
+    <p class="subtitle">认知增强型桌面 AI Agent</p>
     <div id="status" class="status loading">
-        <span class="spinner"></span>Connecting to Studio...
+        <span class="spinner"></span>正在连接后端服务...
     </div>
     <script>
-        const studioUrl = 'http://localhost:3000';
-        const galaxyosUrl = 'http://localhost:5760';
+        const studioBackendUrl = 'http://localhost:8000';
+        const studioFrontendUrl = 'http://localhost:3000';
+        const galaxyosUrl = 'http://localhost:8765';
         const statusEl = document.getElementById('status');
 
         async function checkHealth(url) {
@@ -70,23 +71,47 @@
             } catch { return false; }
         }
 
+        async function checkStudioHealth() {
+            try {
+                const r = await fetch(studioBackendUrl + '/api/health', { signal: AbortSignal.timeout(3000) });
+                return r.ok;
+            } catch { return false; }
+        }
+
         async function connect() {
-            for (let i = 0; i < 30; i++) {
-                if (await checkHealth(studioUrl)) {
+            for (let i = 0; i < 60; i++) {
+                const galaxyosOk = await checkHealth(galaxyosUrl);
+                const studioOk = await checkStudioHealth();
+                const frontendOk = await checkHealth(studioFrontendUrl);
+
+                if (frontendOk && studioOk) {
                     statusEl.className = 'status ready';
-                    statusEl.innerHTML = 'Studio ready, redirecting...';
-                    setTimeout(() => { window.location.href = studioUrl; }, 500);
+                    statusEl.innerHTML = 'Studio 就绪，正在跳转...';
+                    setTimeout(() => { window.location.href = studioFrontendUrl; }, 500);
                     return;
                 }
+
+                if (galaxyosOk && studioOk && !frontendOk) {
+                    statusEl.className = 'status ready';
+                    statusEl.innerHTML = '后端就绪，Studio 前端启动中...';
+                } else if (galaxyosOk) {
+                    statusEl.className = 'status loading';
+                    statusEl.innerHTML = '<span class="spinner"></span>MCP 就绪，等待 Studio 后端...';
+                } else {
+                    statusEl.className = 'status loading';
+                    statusEl.innerHTML = '<span class="spinner"></span>正在启动 GalaxyOS 认知引擎...';
+                }
+
                 await new Promise(r => setTimeout(r, 2000));
             }
+
             const galaxyosOk = await checkHealth(galaxyosUrl);
             if (galaxyosOk) {
                 statusEl.className = 'status ready';
-                statusEl.innerHTML = 'GalaxyOS MCP ready (Studio not detected)';
+                statusEl.innerHTML = 'GalaxyOS MCP 就绪（Studio 未检测到）';
             } else {
                 statusEl.className = 'status error';
-                statusEl.innerHTML = 'Unable to connect to backends. Please check installation.';
+                statusEl.innerHTML = '无法连接后端服务，请检查安装。';
             }
         }
         connect();

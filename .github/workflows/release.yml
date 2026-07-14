@@ -98,7 +98,7 @@ jobs:
         with:
           repository: openJiuwen-ai/agent-studio
           path: agent-studio
-          ref: v0.1.8
+          ref: v0.2.0.beta3.post2
 
       - name: Patch useAuth null safety
         working-directory: agent-studio/frontend
@@ -133,7 +133,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: '3.13'
 
       - name: Install GalaxyOS + PyInstaller
         shell: bash
@@ -142,6 +142,7 @@ jobs:
           pip install -r requirements-core.txt
           pip install "openjiuwen>=0.1.13"
           pip install "pymilvus>=2.6.2,<2.6.10"
+          pip install "openjiuwen-studio>=0.1.5"
           pip install .
 
       - name: Build GalaxyOS MCP with PyInstaller
