@@ -95,7 +95,7 @@ jobs:
 
       - name: Checkout Agent Studio
         shell: bash
-        run: git clone --depth 1 --branch v0.2.0.beta3.post2 https://github.com/openJiuwen-ai/agent-studio.git agent-studio
+        run: git clone --depth 1 --branch v0.1.8 https://github.com/openJiuwen-ai/agent-studio.git agent-studio
 
       - name: Patch useAuth null safety
         shell: bash
