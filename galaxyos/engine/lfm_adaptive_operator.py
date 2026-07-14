@@ -147,7 +147,7 @@ class AdaptiveLinearOperator:
 
     def forward(self, x: np.ndarray,
                 causal_mask: bool = False,
-                return_weights: bool = False) -> np.ndarray:
+                return_weights: bool = False) -> Any:
         """自适应线性算子的前向传播
         
         LFM 核心计算:
@@ -379,7 +379,7 @@ class LFMNetwork:
 
     def forward(self, x: np.ndarray,
                 causal_mask: bool = False,
-                return_hidden: bool = False) -> np.ndarray:
+                return_hidden: bool = False) -> Any:
         """LFM 网络前向传播
         
         Args:
@@ -405,7 +405,7 @@ class LFMNetwork:
                 ffn_out = ffn_h @ self.ffn_w2[i].T + self.ffn_b2[i]
                 h = self._layer_norm(h + ffn_out, self.ln2_gamma[i], self.ln2_beta[i])
 
-            if return_hidden:
+            if return_hidden and hidden_states is not None:
                 hidden_states.append(h.copy())
 
         if return_hidden:
@@ -652,7 +652,7 @@ class RealLFMNetwork:
 
     _MODEL_PATH = '/home/sandbox/.openclaw/workspace/models/LFM2.5-1.2B'
 
-    def __init__(self, config: 'LFMConfig' = None):
+    def __init__(self, config: Optional['LFMConfig'] = None):
         self._model = None
         self._tokenizer = None
         self.config = config or LFMConfig(hidden_dim=256, num_layers=16)
@@ -706,6 +706,7 @@ class RealLFMNetwork:
             return {"reasoning_available": False}
         try:
             import torch
+            assert self._tokenizer is not None and self._model is not None
             inputs = self._tokenizer(text, return_tensors='pt')
             with torch.no_grad():
                 outputs = self._model(**inputs, output_hidden_states=True)
@@ -732,6 +733,7 @@ class RealLFMNetwork:
         try:
             import torch
             import numpy as np
+            assert self._tokenizer is not None and self._model is not None
             inputs = self._tokenizer(text, return_tensors="pt")
             with torch.no_grad():
                 outputs = self._model(**inputs, output_hidden_states=True)
@@ -748,6 +750,7 @@ class RealLFMNetwork:
             return ""
         try:
             import torch
+            assert self._tokenizer is not None and self._model is not None
             inputs = self._tokenizer(prompt, return_tensors='pt')
             input_len = inputs['input_ids'].shape[1]
             with torch.no_grad():

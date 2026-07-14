@@ -32,6 +32,7 @@ import socket as _socket
 import struct
 import threading
 import selectors
+from typing import Dict, Any, Optional, List
 from galaxyos.shared.paths import galaxyos_home, workspace
 
 # ========== 路径初始化 ==========
@@ -109,6 +110,9 @@ def _get_worker():
 
 # ═══ MN-RU 增量索引桥接（2407.07871 / 2404.13556）═══
 _RETRIEVAL_HUB_IMPORTED = False
+_MN_HNSW: Any = None
+_UPDATE_SESSION: Any = None
+_vector_api: Any = None
 def _ensure_retrieval_hub():
     """懒加载 retrieval_hub 中的 MN-RU 单例"""
     global _RETRIEVAL_HUB_IMPORTED
@@ -311,9 +315,9 @@ class SessionContext:
         self.session_key = session_key
         self._last_access = time.time()
         self._compact_lock = threading.Lock()
-        self._compact_state = {}
+        self._compact_state: Dict[str, Any] = {}
         self._dag_cache = None
-        self._memory_cache = {}
+        self._memory_cache: Dict[str, Any] = {}
 
     def touch(self):
         self._last_access = time.time()
@@ -1875,7 +1879,7 @@ def _dag_search(params):
 
 # ========== 主循环 ==========
 
-_METHODS = {}
+_METHODS: Dict[str, Any] = {}
 
 def _init_methods(worker):
     global _METHODS
@@ -2375,7 +2379,7 @@ def _mmap_write(cache_key, data):
 
 
 _shutdown_flag = False
-_galaxy_pending = []
+_galaxy_pending: List[Any] = []
 
 
 def _handle_shutdown(*_args):

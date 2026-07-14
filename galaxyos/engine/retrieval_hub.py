@@ -28,7 +28,7 @@ import sqlite3
 import subprocess
 import threading
 import math
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Any
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from galaxyos.shared.paths import workspace
 
@@ -1714,8 +1714,8 @@ def _verify_local_with_web(
 def _assess_retrieval_quality(
     query: str,
     results: List[Dict],
-    web_verification: Dict[str, any] = None,
-) -> Dict[str, any]:
+    web_verification: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
     if not results:
         base = {"judgment": "incorrect", "confidence": 0, "top_score": 0}
     else:
@@ -1976,7 +1976,7 @@ def _recompose_results(sub_results: List[List[Dict]]) -> List[Dict]:
             if rid not in scores:
                 scores[rid] = 0
                 sources[rid] = dict(r)
-            scores[rid] += 1 / (k + i + 1)
+            scores[rid] += 1.0 / (k + i + 1)
     ranked = sorted(scores.items(), key=lambda x: -x[1])
     merged = []
     for rid, score in ranked:
@@ -1991,7 +1991,7 @@ def _recompose_results(sub_results: List[List[Dict]]) -> List[Dict]:
 # Adaptive-RAG query 复杂度分类（降级用）
 # ============================================================
 
-def classify_query_complexity(query: str) -> Dict[str, any]:
+def classify_query_complexity(query: str) -> Dict[str, Any]:
     q_words = set(re.findall(r"[\w\u4e00-\u9fff]+", query.lower()))
     q_len = len(query)
     tech_words = {"代码", "bug", "api", "python", "架构", "配置", "部署",
@@ -2017,12 +2017,12 @@ def classify_query_complexity(query: str) -> Dict[str, any]:
 def retrieval_hub(
     query: str,
     top_k: int = 8,
-    include_web: bool = None,
+    include_web: Optional[bool] = None,
     max_web_results: int = 3,
     enable_crag: bool = True,
-    preprocessed: Dict = None,
+    preprocessed: Optional[Dict[str, Any]] = None,
     session_id: str = "",
-) -> Dict[str, any]:
+) -> Dict[str, Any]:
     """
     统一检索入口：五路并行（KG / local / DAG(MN-RU三通道) / synapse / paper），web 可选，RRF 融合 v2，质量评估。
 
@@ -2059,17 +2059,17 @@ def retrieval_hub(
         future_map["paper"] = pool.submit(_do_paper, effective_query, top_k)
         future_map["cognitive"] = pool.submit(_do_cognitive, effective_query, top_k, session_id)
     else:
-        future_map["cognitive"] = None
+        future_map["cognitive"] = None  # type: ignore[assignment]
 
     # web 默认关闭：本地记忆（五路）即可满足大部分查询，web 由调用方按需开启
     should_web = False if include_web is None else include_web
     if should_web:
         future_map["web"] = pool.submit(_do_web, effective_query, max_web_results)
     else:
-        future_map["web"] = None
+        future_map["web"] = None  # type: ignore[assignment]
 
     all_source_results = []
-    name_to_results = {}
+    name_to_results: Dict[str, list] = {}
 
     for name in ["kg", "local", "dag", "synapse", "paper", "cognitive", "web"]:
         fut = future_map.get(name)
@@ -2123,7 +2123,7 @@ def retrieval_hub(
     if web_results:
         web_verification = _verify_local_with_web(merged, web_results)
 
-    quality = _assess_retrieval_quality(effective_query, merged, web_verification)
+    quality = _assess_retrieval_quality(effective_query, merged, web_verification or {})
 
     local_scores = [r.get('score', 0) for r in name_to_results.get('local', [])[:3]]
     dag_scores = [r.get('score', 0) for r in name_to_results.get('dag', [])[:3]]

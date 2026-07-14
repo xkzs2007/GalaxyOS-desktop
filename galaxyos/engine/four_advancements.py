@@ -165,7 +165,7 @@ class GraphRAGEngine:
                     except Exception:
                         continue
 
-                communities = {}
+                communities: Dict[str, List[str]] = {}
                 for ent_name, ent_data in self._entities.items():
                     if ent_data['count'] > 1:
                         comm = hashlib.md5(ent_name.encode()).hexdigest()[:8]
