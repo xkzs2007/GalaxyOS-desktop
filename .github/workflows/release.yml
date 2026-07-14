@@ -102,13 +102,19 @@ jobs:
 
       - name: Patch useAuth null safety
         working-directory: agent-studio/frontend
-        shell: bash
+        shell: python
         run: |
-          sed -i 's/const store_response_msg = (response, authStateManager?: AuthStateManager) => {/const store_response_msg = (response, authStateManager?: AuthStateManager) => {\n  const rawUser = response?.data?.user;\n  if (!rawUser) { console.error("[useAuth] API response missing user object:", response); return; }/' packages/api-client/src/hooks/useAuth.ts
-          sed -i 's/response\.data\.user\./rawUser./g' packages/api-client/src/hooks/useAuth.ts
-          sed -i 's/rawUser\.user_id_str/rawUser.user_id_str || ""/g' packages/api-client/src/hooks/useAuth.ts
-          sed -i 's/rawUser\.username)/rawUser.username || "")/g' packages/api-client/src/hooks/useAuth.ts
-          sed -i 's/rawUser\.email)/rawUser.email || "")/g' packages/api-client/src/hooks/useAuth.ts
+          import pathlib
+          p = pathlib.Path("packages/api-client/src/hooks/useAuth.ts")
+          t = p.read_text(encoding="utf-8")
+          old = "const store_response_msg = (response, authStateManager?: AuthStateManager) => {\n  const user = {"
+          new = 'const store_response_msg = (response, authStateManager?: AuthStateManager) => {\n  const rawUser = response?.data?.user;\n  if (!rawUser) { console.error("[useAuth] API response missing user object:", response); return; }\n  const user = {'
+          t = t.replace(old, new)
+          t = t.replace("response.data.user.", "rawUser.")
+          t = t.replace("rawUser.user_id_str", 'rawUser.user_id_str || ""')
+          t = t.replace("rawUser.username)", 'rawUser.username || "")')
+          t = t.replace("rawUser.email)", 'rawUser.email || "")')
+          p.write_text(t, encoding="utf-8")
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
