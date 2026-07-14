@@ -39,7 +39,7 @@ jobs:
           pip install "pymilvus>=2.6.2,<2.6.10"
 
       - name: Install openjiuwen-studio from source (avoid PyPI version conflict)
-        run: pip install --no-deps agent-studio/backend
+        run: pip install --no-deps ./agent-studio/backend
 
       - name: Verify critical imports
         run: |
@@ -93,7 +93,7 @@ jobs:
           pip install -r requirements-core.txt
           pip install "openjiuwen>=0.1.13"
           pip install "pymilvus>=2.6.2,<2.6.10"
-          pip install --no-deps agent-studio/backend
+          pip install --no-deps ./agent-studio/backend
           pip install .
 
       - name: Build with PyInstaller
