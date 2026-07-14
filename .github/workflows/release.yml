@@ -101,11 +101,11 @@ jobs:
         shell: bash
         run: |
           python3 -c "
-          import pathlib
+          import pathlib, sys
           p = pathlib.Path('agent-studio/frontend/packages/api-client/src/hooks/useAuth.ts')
           if not p.exists():
-            echo '::warning::useAuth.ts not found, skipping patch'
-            exit 0
+            print('WARNING: useAuth.ts not found, skipping patch')
+            sys.exit(0)
           t = p.read_text(encoding='utf-8')
           old = 'const store_response_msg = (response, authStateManager?: AuthStateManager) => {\n  const user = {'
           new = 'const store_response_msg = (response, authStateManager?: AuthStateManager) => {\n  const rawUser = response?.data?.user;\n  if (!rawUser) { console.error(\"[useAuth] API response missing user object:\", response); return; }\n  const user = {'
