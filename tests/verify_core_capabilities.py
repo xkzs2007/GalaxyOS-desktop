@@ -1,7 +1,7 @@
 """
 GalaxyOS Desktop Agent — 核心能力保留验证脚本
 
-验证 Agent Studio 核心能力在 GalaxyOS 集成后仍然正常：
+验证 GalaxyOS 核心能力在 JiuwenSwarm 集成后仍然正常：
   1. WorkSpace 隔离
   2. 沙箱执行环境
   3. Milvus 向量数据库

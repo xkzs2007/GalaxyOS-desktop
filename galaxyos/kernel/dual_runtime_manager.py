@@ -1,13 +1,13 @@
 """
-DualRuntimeManager — Node.js Gateway + Python 内核双运行时进程管理
+DualRuntimeManager — Python 内核运行时进程管理
 
-适配 Agent Studio 架构：
+GalaxyOS 桌面端架构：
   1. 启动/停止 Python 内核（MCP Server 子进程）
   2. 支持 stdio / SSE / streamable_http 三种传输方式
   3. 健康检查（定期 + 按需）
   4. 自动重启（指数退避，最多3次）
   5. 优雅关闭
-  6. Agent Studio Gateway 集成状态报告
+  6. JiuwenSwarm AgentServer 集成状态报告
 """
 
 from __future__ import annotations

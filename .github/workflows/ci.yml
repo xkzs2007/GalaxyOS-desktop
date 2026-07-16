@@ -17,9 +17,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Checkout Agent Studio
-        run: git clone --depth 1 --branch v0.1.8 https://github.com/openJiuwen-ai/agent-studio.git agent-studio
-
       - name: Set up Python 3.13
         uses: actions/setup-python@v5
         with:
@@ -34,8 +31,8 @@ jobs:
           pip install "openjiuwen>=0.1.13"
           pip install "pymilvus>=2.6.2,<2.6.10"
 
-      - name: Install openjiuwen-studio from source (avoid PyPI version conflict)
-        run: pip install --no-deps ./agent-studio/backend
+      - name: Install JiuwenSwarm
+        run: pip install jiuwenswarm
 
       - name: Verify critical imports
         run: |
@@ -69,10 +66,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Checkout Agent Studio
-        shell: bash
-        run: git clone --depth 1 --branch v0.1.8 https://github.com/openJiuwen-ai/agent-studio.git agent-studio
-
       - name: Set up Python 3.13
         uses: actions/setup-python@v5
         with:
@@ -86,7 +79,7 @@ jobs:
           pip install -r requirements-core.txt
           pip install "openjiuwen>=0.1.13"
           pip install "pymilvus>=2.6.2,<2.6.10"
-          pip install --no-deps ./agent-studio/backend
+          pip install jiuwenswarm
           pip install .
 
       - name: Build with PyInstaller
@@ -114,29 +107,28 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Checkout Agent Studio
+      - name: Checkout JiuwenSwarm
         shell: bash
-        run: git clone --depth 1 --branch v0.1.8 https://github.com/openJiuwen-ai/agent-studio.git agent-studio
+        run: git clone --depth 1 https://github.com/openJiuwen-ai/jiuwenswarm.git jiuwenswarm
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
 
-      - name: Build Studio frontend
-        working-directory: agent-studio/frontend
+      - name: Build JiuwenSwarm Web Frontend
+        working-directory: jiuwenswarm/channels/web/frontend
         shell: bash
         run: |
           npm install
-          npm install @assistant-ui/react@^0.14.26 @assistant-ui/react-markdown@^0.14.5 @assistant-ui/react-ag-ui@^0.0.44
-          npm audit fix || true
-          VITE_GALAXYOS_MODE=true npx vite build --mode production
+          npm install @jboltai/tokui
+          npx vite build --mode production
 
-      - name: Copy Studio dist
+      - name: Copy Swarm dist
         shell: bash
         run: |
-          mkdir -p studio-dist
-          cp -r agent-studio/frontend/dist/* studio-dist/
+          mkdir -p swarm-dist
+          cp -r jiuwenswarm/channels/web/frontend/dist/* swarm-dist/
 
       - name: Download galaxyos-mcp-dist
         uses: actions/download-artifact@v4

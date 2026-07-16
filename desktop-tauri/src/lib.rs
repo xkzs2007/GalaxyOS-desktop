@@ -5,9 +5,9 @@ mod backend;
 mod commands;
 
 pub struct AppState {
-    studio_process: Mutex<Option<std::process::Child>>,
+    swarm_process: Mutex<Option<std::process::Child>>,
     galaxyos_process: Mutex<Option<std::process::Child>>,
-    studio_port: u16,
+    swarm_port: u16,
     galaxyos_port: u16,
 }
 
@@ -17,9 +17,9 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_process::init())
         .manage(AppState {
-            studio_process: Mutex::new(None),
+            swarm_process: Mutex::new(None),
             galaxyos_process: Mutex::new(None),
-            studio_port: 8000,
+            swarm_port: 19000,
             galaxyos_port: 8765,
         })
         .invoke_handler(tauri::generate_handler![

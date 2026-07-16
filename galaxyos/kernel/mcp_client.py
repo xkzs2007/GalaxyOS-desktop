@@ -1,5 +1,5 @@
 """
-GalaxyOS MCP Client — Agent Studio Gateway 端 MCP 客户端
+GalaxyOS MCP Client — JiuwenSwarm Gateway 端 MCP 客户端
 
 连接 GalaxyOS Python 内核 MCP Server，提供工具发现和调用能力：
   - 支持 stdio / SSE / streamable_http 三种传输方式
@@ -223,9 +223,8 @@ class GalaxyOSMCPClient:
             "claw_health", "claw_vector_info", "claw_events", "claw_store",
             "claw_verify", "claw_rccam", "claw_save_memory", "claw_compile_skill",
             "claw_asset_search", "claw_asset_register", "claw_node_invoke",
-            "skill_execute", "skill_install", "skill_discover",
-            "memory_write", "memory_recall", "llm_call",
-            "health_check", "agent_status", "tokui_render",
+            "skill_execute", "skill_install", "skill_discover", "skill_compile",
+            "llm_call", "tokui_render",
         ]
         return [MCPToolInfo(name=name) for name in default_tools]
 

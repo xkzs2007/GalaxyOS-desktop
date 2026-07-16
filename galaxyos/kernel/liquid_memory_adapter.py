@@ -54,7 +54,7 @@ class LiquidMemoryAdapter:
     """
     GalaxyOS 液态神经记忆适配器。
 
-    封装三层记忆写入/检索，作为 Agent Studio 记忆系统的增强后端。
+    封装三层记忆写入/检索，作为 GalaxyOS 记忆系统的核心后端。
 
     用法：
         adapter = LiquidMemoryAdapter(workspace_path="/path/to/workspace")

@@ -107,18 +107,16 @@ DAG_DB_PATH: str = os.path.join(WORKSPACE, "dag_context")
 CORE_DIR: str = os.path.join(WORKSPACE, "core")
 SKILLS_DIR: str = os.path.join(WORKSPACE, "skills")
 
-# ── Agent Studio 集成环境变量 ──
-
 @lru_cache(maxsize=1)
-def agent_studio_mode() -> str:
-    """运行模式: plugin (Agent Studio 插件) / desktop (独立桌面端)
+def run_mode() -> str:
+    """运行模式: desktop (独立桌面端，默认)
 
-    优先级链: GALAXYOS_MODE > 自动检测
+    优先级链: GALAXYOS_MODE > 默认 desktop
     """
     env = os.environ.get("GALAXYOS_MODE")
     if env in ("plugin", "desktop"):
         return env
-    return "plugin"
+    return "desktop"
 
 
 @lru_cache(maxsize=1)
@@ -169,7 +167,7 @@ def worker_port() -> int:
     return int(os.environ.get("GALAXYOS_WORKER_PORT", "5760"))
 
 
-AGENT_STUDIO_MODE: str = agent_studio_mode()
+RUN_MODE: str = run_mode()
 MCP_TRANSPORT: str = mcp_transport()
 MCP_HOST: str = mcp_host()
 MCP_PORT: int = mcp_port()

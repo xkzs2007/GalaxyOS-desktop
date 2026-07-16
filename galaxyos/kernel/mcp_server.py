@@ -3,7 +3,7 @@ GalaxyOS MCP Server — 基于 fastmcp 的 MCP Server 实现
 
 注册 MCP 工具：
   - 15 个 GalaxyOS 认知增强工具（galaxy_pool, claw_recall, claw_store 等）
-  - 8 个 Agent Studio 集成工具（skill_execute, skill_install, skill_discover, memory_write, memory_recall, llm_call, health_check, agent_status）
+  - 4 个 GalaxyOS 原生技能管理工具（skill_execute, skill_install, skill_discover, skill_compile）
 支持 stdio / SSE / streamable_http 三种传输方式
 """
 
@@ -135,9 +135,14 @@ class GalaxyOSMCPServer:
             self._record_call("claw_node_invoke")
             return json.dumps({"action": action, "status": "completed"}, ensure_ascii=False)
 
-    # ── 8 个 Agent Studio 集成工具 ──
+    # ── 4 个 GalaxyOS 原生技能管理工具 + LLM 路由 + 统一健康检查 ──
 
     def _register_integration_tools(self) -> None:
+        self._register_skill_tools()
+        self._register_llm_tool()
+        self._register_unified_tools()
+
+    def _register_skill_tools(self) -> None:
         @self._mcp.tool()
         async def skill_execute(skill_name: str, parameters: str = "{}", workspace_id: str = "default", agent_type: str = "auto", context: str = "{}") -> str:
             self._record_call("skill_execute")
@@ -158,21 +163,11 @@ class GalaxyOSMCPServer:
             return json.dumps({"skills": [], "workspace": workspace_id, "type": invocation_type, "query": query}, ensure_ascii=False)
 
         @self._mcp.tool()
-        async def memory_write(workspace_id: str, content: str, source: str = "user", scope: str = "session", skill_name: str = "", memory_type: str = "auto", pinned: bool = False) -> str:
-            self._record_call("memory_write")
-            if self._memory_bridge:
-                result = await self._memory_bridge.write(content=content, source=source, session_key=workspace_id, memory_type=memory_type)
-                return json.dumps(result, ensure_ascii=False)
-            return json.dumps({"status": "written", "workspace": workspace_id, "type": memory_type}, ensure_ascii=False)
+        async def skill_compile(skill_name: str, skill_content: str = "", workspace_id: str = "default") -> str:
+            self._record_call("skill_compile")
+            return json.dumps({"skill": skill_name, "compiled": True, "workspace": workspace_id}, ensure_ascii=False)
 
-        @self._mcp.tool()
-        async def memory_recall(workspace_id: str, query: str, top_k: int = 10, semantic_enhancement: bool = True, dag_context: bool = True) -> str:
-            self._record_call("memory_recall")
-            if self._memory_bridge:
-                result = await self._memory_bridge.recall(query=query, top_k=top_k, session_key=workspace_id)
-                return json.dumps(result, ensure_ascii=False)
-            return json.dumps({"results": [], "workspace": workspace_id, "query": query}, ensure_ascii=False)
-
+    def _register_llm_tool(self) -> None:
         @self._mcp.tool()
         async def llm_call(prompt: str, model: str = "", skill_name: str = "", workspace_id: str = "default", temperature: float = 0.7, max_tokens: int = 4096) -> str:
             self._record_call("llm_call")
@@ -181,30 +176,20 @@ class GalaxyOSMCPServer:
                 return json.dumps(result, ensure_ascii=False)
             return json.dumps({"status": "routed", "model": model or "default"}, ensure_ascii=False)
 
+    def _register_unified_tools(self) -> None:
         @self._mcp.tool()
-        async def health_check() -> str:
-            self._record_call("health_check")
+        async def claw_health() -> str:
+            self._record_call("claw_health")
             uptime = time.time() - self._start_time if self._start_time else 0
+            layers = {f"L{i}": "healthy" for i in range(1, 18)}
+            bridge_status = "connected" if self._bridge and getattr(self._bridge, "_running", False) else "disconnected"
             return json.dumps({
                 "status": "healthy",
                 "uptime_s": round(uptime),
-                "kernel": "running",
-                "mcp_transport": "active",
-                "tool_calls": self._tool_call_counts,
-                "layers_initialized": 17,
+                "layers": layers,
                 "worker_tier": {"hot": 2, "warm": 2, "cold": 1},
-            }, ensure_ascii=False)
-
-        @self._mcp.tool()
-        async def agent_status() -> str:
-            self._record_call("agent_status")
-            bridge_status = "connected" if self._bridge and getattr(self._bridge, "_running", False) else "disconnected"
-            return json.dumps({
-                "python_kernel": "running",
-                "mcp_communication": "active",
-                "agent_type": "react",
-                "routing_model": "balanced",
-                "bridge": bridge_status,
+                "agent_core_status": bridge_status,
+                "tool_calls": self._tool_call_counts,
             }, ensure_ascii=False)
 
     # ── TokUI 流式富 UI 渲染工具 ──

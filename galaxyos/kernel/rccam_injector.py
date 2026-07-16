@@ -1,7 +1,7 @@
 """
 RCCAMInjector — R-CCAM 五阶段认知循环注入器
 
-在 Agent Studio 的 Agent Loop 中注入 R-CCAM 五阶段认知循环：
+在 agent-core 的 Agent Loop 中注入 R-CCAM 五阶段认知循环：
   1. Retrieval: 液态神经记忆检索 + CRAG + GraphRAG + DAG 上下文组装
   2. Cognition: 分析检索结果 + 认知地图 + 因果推理
   3. Control: 策略选择 + 元认知调节
@@ -50,7 +50,7 @@ class RCCAMInjector:
     """
     R-CCAM 五阶段认知循环注入器。
 
-    在 Agent Studio 的 Agent Loop 中注入 R-CCAM 认知增强：
+    在 agent-core 的 Agent Loop 中注入 R-CCAM 认知增强：
     - on_pre_agent_reply: 触发 Retrieval 阶段，注入增强上下文
     - on_post_agent_reply: 触发 Memory 阶段，记忆巩固
 

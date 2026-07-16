@@ -1,5 +1,5 @@
 """
-SkillExecutor — 驱动 SKILL.md 步骤解析和执行（Agent Studio Agent Loop 适配版）
+SkillExecutor — 驱动 SKILL.md 步骤解析和执行（agent-core Agent Loop 适配版）
 
 适配变更：
   - 从独立驱动技能执行 → 步骤解析 + completion criterion 检查服务

@@ -14,12 +14,12 @@ pub async fn stop_backends(state: tauri::State<'_, AppState>) -> Result<String, 
 
 #[tauri::command]
 pub async fn check_health(state: tauri::State<'_, AppState>) -> Result<serde_json::Value, String> {
-    let studio_port = state.studio_port;
+    let swarm_port = state.swarm_port;
     let galaxyos_port = state.galaxyos_port;
     let client = reqwest::Client::new();
 
-    let studio_ok = client
-        .get(format!("http://127.0.0.1:{}/health", studio_port))
+    let agentserver_ok = client
+        .get(format!("http://127.0.0.1:{}/health", swarm_port))
         .timeout(std::time::Duration::from_secs(2))
         .send()
         .await
@@ -35,7 +35,7 @@ pub async fn check_health(state: tauri::State<'_, AppState>) -> Result<serde_jso
         .unwrap_or(false);
 
     Ok(serde_json::json!({
-        "studio": studio_ok,
+        "agentserver": agentserver_ok,
         "galaxyos": galaxyos_ok,
     }))
 }

@@ -1,7 +1,7 @@
 """
 DAGContextFusion — GalaxyOS DAG 上下文融合层
 
-将 GalaxyOS DAG 上下文管理器作为 Agent Studio ContextEngine 的增强实现注入。
+将 GalaxyOS DAG 上下文管理器作为 agent-core ContextEngine 的增强实现注入。
 
 核心能力：
   - assemble(): 融合 DAG 上下文（摘要节点回溯 + 时间衰减排序）和 agent-core 上下文
@@ -48,7 +48,7 @@ class DAGContextFusion:
     """
     GalaxyOS DAG 上下文融合层。
 
-    将 GalaxyOS DAG 上下文管理器作为 Agent Studio ContextEngine 的增强实现注入，
+    将 GalaxyOS DAG 上下文管理器作为 agent-core ContextEngine 的增强实现注入，
     提供 DAG 摘要节点回溯、时间衰减排序、COSPLAY 增强压缩等能力。
 
     用法：

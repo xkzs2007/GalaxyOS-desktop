@@ -1,17 +1,13 @@
 {
   "name": "galaxyos",
   "version": "8.6.0",
-  "description": "GalaxyOS 认知增强引擎 — Agent Studio 平台框架 + 液态神经记忆 + R-CCAM 认知循环 + 技能自演化 + 17 层认知架构",
+  "description": "GalaxyOS 认知增强引擎 — JiuwenSwarm 认知增强 Extension + 液态神经记忆 + R-CCAM 认知循环 + 技能自演化 + 17 层认知架构",
   "hooks": {
-    "on_plugin_load": "galaxyos.agent_studio.lifecycle:LifecycleHookManager.dispatch_agent_studio_event",
-    "on_plugin_unload": "galaxyos.agent_studio.lifecycle:LifecycleHookManager.dispatch_agent_studio_event",
-    "on_pre_tool_use": "galaxyos.agent_studio.lifecycle:LifecycleHookManager.dispatch_agent_studio_event",
-    "on_post_tool_use": "galaxyos.agent_studio.lifecycle:LifecycleHookManager.dispatch_agent_studio_event",
-    "on_pre_compaction": "galaxyos.agent_studio.lifecycle:LifecycleHookManager.dispatch_agent_studio_event",
-    "on_post_compaction": "galaxyos.agent_studio.lifecycle:LifecycleHookManager.dispatch_agent_studio_event",
-    "on_pre_agent_reply": "galaxyos.agent_studio.lifecycle:LifecycleHookManager.dispatch_agent_studio_event",
-    "on_post_agent_reply": "galaxyos.agent_studio.lifecycle:LifecycleHookManager.dispatch_agent_studio_event",
-    "on_user_prompt_submit": "galaxyos.agent_studio.lifecycle:LifecycleHookManager.dispatch_agent_studio_event"
+    "on_workflow_start": "galaxyos.kernel.workflow_hook_dispatcher:WorkflowHookDispatcher.on_workflow_start",
+    "on_workflow_step": "galaxyos.kernel.workflow_hook_dispatcher:WorkflowHookDispatcher.on_workflow_step",
+    "on_workflow_end": "galaxyos.kernel.workflow_hook_dispatcher:WorkflowHookDispatcher.on_workflow_end",
+    "on_tool_call": "galaxyos.kernel.workflow_hook_dispatcher:WorkflowHookDispatcher.on_tool_call",
+    "on_agent_reply": "galaxyos.kernel.workflow_hook_dispatcher:WorkflowHookDispatcher.on_agent_reply"
   },
   "commands": [
     {"name": "install-skills", "description": "Install mattpocock/skills + GalaxyOS skills to workspace"},
@@ -56,7 +52,7 @@
         },
         {
           "name": "claw_health",
-          "description": "系统健康检查（17 层架构 + Worker Tier + 记忆系统 + R-CCAM）",
+          "description": "系统健康检查（17 层架构 + Worker Tier + 记忆系统 + R-CCAM + Agent 运行时状态）",
           "policy": {"channels": ["dm", "group"], "roles": ["owner", "member"], "rateLimit": "30/min"}
         },
         {
@@ -67,7 +63,7 @@
         {
           "name": "claw_events",
           "description": "事件日志查询（基于 TKG 时序知识图谱）",
-          "policy": {"channels": ["dm"], "roles": ["owner", "member"], "rateLimit": "60/min"}
+          "policy": {"channels": ["dm"], "roles": ["owner"], "rateLimit": "60/min"}
         },
         {
           "name": "claw_store",
@@ -82,7 +78,7 @@
         {
           "name": "claw_rccam",
           "description": "R-CCAM 认知循环（Retrieval→Cognition→Control→Action→Memory）",
-          "policy": {"channels": ["dm"], "roles": ["owner", "member"], "rateLimit": "20/min"}
+          "policy": {"channels": ["dm"], "roles": ["owner"], "rateLimit": "20/min"}
         },
         {
           "name": "claw_save_memory",
@@ -111,7 +107,7 @@
         },
         {
           "name": "skill_execute",
-          "description": "技能执行（skill_name + parameters + workspace_id + agent_type）",
+          "description": "技能执行（经 AgentCoreBridge 路由到 ReActAgent/WorkflowAgent）",
           "policy": {"channels": ["dm"], "roles": ["owner", "member"], "rateLimit": "30/min"}
         },
         {
@@ -125,29 +121,14 @@
           "policy": {"channels": ["dm", "group"], "roles": ["owner", "member"], "rateLimit": "60/min"}
         },
         {
-          "name": "memory_write",
-          "description": "记忆写入（液态神经记忆 + DAG 上下文 + agent-core 上下文双写）",
-          "policy": {"channels": ["dm"], "roles": ["owner"], "rateLimit": "30/min"}
-        },
-        {
-          "name": "memory_recall",
-          "description": "记忆检索（液态神经记忆优先 + CRAG + DAG 上下文增强）",
-          "policy": {"channels": ["dm", "group"], "roles": ["owner", "member"], "rateLimit": "60/min"}
+          "name": "skill_compile",
+          "description": "技能编译（skill_name + skill_content + workspace_id）",
+          "policy": {"channels": ["dm"], "roles": ["owner"], "rateLimit": "10/min"}
         },
         {
           "name": "llm_call",
-          "description": "LLM 调用（经 Agent Studio 模型路由层路由）",
+          "description": "LLM 调用（经 GalaxyOS LLM Router 直接路由）",
           "policy": {"channels": ["dm"], "roles": ["owner", "member"], "rateLimit": "60/min"}
-        },
-        {
-          "name": "health_check",
-          "description": "Python 内核健康检查（17 层架构 + Worker Tier + MCP 通信 + 记忆系统 + R-CCAM）",
-          "policy": {"channels": ["dm", "group"], "roles": ["owner", "member"], "rateLimit": "30/min"}
-        },
-        {
-          "name": "agent_status",
-          "description": "Agent 内核运行状态查询",
-          "policy": {"channels": ["dm", "group"], "roles": ["owner", "member"], "rateLimit": "60/min"}
         },
         {
           "name": "tokui_render",
@@ -167,7 +148,7 @@
       "type": "string",
       "default": "streamable_http",
       "enum": ["stdio", "sse", "streamable_http"],
-      "description": "MCP transport protocol between Agent Studio Gateway and GalaxyOS Python kernel"
+      "description": "MCP transport protocol between JiuwenSwarm Gateway and GalaxyOS Python kernel"
     },
     "kernel.mcpHost": {
       "type": "string",
@@ -222,7 +203,7 @@
     "routing.defaultModel": {
       "type": "string",
       "default": "balanced",
-      "description": "Default model for LLM routing via Agent Studio model router"
+      "description": "Default model for LLM routing via GalaxyOS LLM Router"
     },
     "security.injectionScanEnabled": {
       "type": "boolean",
@@ -247,7 +228,7 @@
     "tokui.themeSync": {
       "type": "boolean",
       "default": true,
-      "description": "Sync TokUI theme with MUI theme (CSS variables mapping)"
+      "description": "Sync TokUI theme with desktop theme (CSS variables mapping)"
     },
     "tokui.maxChunkSize": {
       "type": "number",

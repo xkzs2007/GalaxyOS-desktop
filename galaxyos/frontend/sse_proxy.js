@@ -1,5 +1,5 @@
 /**
- * GalaxyOS Gateway SSE Proxy — Agent Studio Gateway 端 SSE 转发
+ * GalaxyOS Gateway SSE Proxy — JiuwenSwarm Gateway 端 SSE 转发
  *
  * 将来自 SSE Sidecar（端口 5758）的 tokui_chunk/tokui_error 事件
  * 透传到前端 EventSource 连接。

@@ -18,7 +18,9 @@ struct BinaryResult {
 struct StartupStatusEvent {
     stage: String,
     mcp_healthy: bool,
-    studio_healthy: bool,
+    agentserver_healthy: bool,
+    swarm_healthy: bool,
+    gateway_healthy: bool,
     agent_core_available: bool,
     fallback_active: bool,
     error: Option<StartupError>,
@@ -40,12 +42,14 @@ fn emit_status(handle: &AppHandle, event: StartupStatusEvent) {
 
 pub async fn start_all(state: &AppState, handle: &AppHandle) -> Result<(), String> {
     let galaxyos_port = state.galaxyos_port;
-    let studio_port = state.studio_port;
+    let swarm_port = state.swarm_port;
 
     emit_status(handle, StartupStatusEvent {
         stage: "McpStarting".into(),
         mcp_healthy: false,
-        studio_healthy: false,
+        agentserver_healthy: false,
+        swarm_healthy: false,
+        gateway_healthy: false,
         agent_core_available: false,
         fallback_active: false,
         error: None,
@@ -57,7 +61,9 @@ pub async fn start_all(state: &AppState, handle: &AppHandle) -> Result<(), Strin
             emit_status(handle, StartupStatusEvent {
                 stage: "Failed".into(),
                 mcp_healthy: false,
-                studio_healthy: false,
+                agentserver_healthy: false,
+                swarm_healthy: false,
+                gateway_healthy: false,
                 agent_core_available: false,
                 fallback_active: false,
                 error: Some(StartupError {
@@ -77,7 +83,9 @@ pub async fn start_all(state: &AppState, handle: &AppHandle) -> Result<(), Strin
             emit_status(handle, StartupStatusEvent {
                 stage: "McpReady".into(),
                 mcp_healthy: true,
-                studio_healthy: false,
+                agentserver_healthy: false,
+                swarm_healthy: false,
+                gateway_healthy: false,
                 agent_core_available: false,
                 fallback_active: false,
                 error: None,
@@ -87,7 +95,9 @@ pub async fn start_all(state: &AppState, handle: &AppHandle) -> Result<(), Strin
             emit_status(handle, StartupStatusEvent {
                 stage: "Failed".into(),
                 mcp_healthy: false,
-                studio_healthy: false,
+                agentserver_healthy: false,
+                swarm_healthy: false,
+                gateway_healthy: false,
                 agent_core_available: false,
                 fallback_active: false,
                 error: Some(StartupError {
@@ -102,61 +112,80 @@ pub async fn start_all(state: &AppState, handle: &AppHandle) -> Result<(), Strin
     }
 
     emit_status(handle, StartupStatusEvent {
-        stage: "StudioStarting".into(),
+        stage: "SwarmStarting".into(),
         mcp_healthy: true,
-        studio_healthy: false,
+        agentserver_healthy: false,
+        swarm_healthy: false,
+        gateway_healthy: false,
         agent_core_available: false,
         fallback_active: false,
         error: None,
     });
 
-    match start_studio(studio_port) {
-        Ok(studio_child) => {
-            *state.studio_process.lock().map_err(|e| e.to_string())? = Some(studio_child);
-            match wait_for_health(studio_port, "studio", 60).await {
+    match start_swarm_agentserver(swarm_port) {
+        Ok(swarm_child) => {
+            *state.swarm_process.lock().map_err(|e| e.to_string())? = Some(swarm_child);
+            match wait_for_health(swarm_port, "agentserver", 60).await {
                 Ok(_) => {
                     emit_status(handle, StartupStatusEvent {
-                        stage: "StudioReady".into(),
+                        stage: "SwarmReady".into(),
                         mcp_healthy: true,
-                        studio_healthy: true,
+                        agentserver_healthy: true,
+                        swarm_healthy: true,
+                        gateway_healthy: true,
                         agent_core_available: true,
                         fallback_active: false,
                         error: None,
                     });
-                    log::info!("All backends started: galaxyos=:{} studio=:{}", galaxyos_port, studio_port);
+                    log::info!("All backends started: galaxyos=:{} agentserver=:{}", galaxyos_port, swarm_port);
                 }
                 Err(e) => {
-                    log::warn!("Studio health check failed: {}, continuing without Studio", e);
+                    log::warn!("AgentServer health check failed: {}, degrading to SwarmDegraded", e);
                     emit_status(handle, StartupStatusEvent {
-                        stage: "McpReady".into(),
+                        stage: "SwarmDegraded".into(),
                         mcp_healthy: true,
-                        studio_healthy: false,
+                        agentserver_healthy: false,
+                        swarm_healthy: false,
+                        gateway_healthy: false,
                         agent_core_available: true,
-                        fallback_active: false,
+                        fallback_active: true,
                         error: None,
                     });
                 }
             }
         }
         Err(e) => {
-            log::warn!("Studio start failed: {}, continuing without Studio", e);
+            log::warn!("AgentServer start failed: {}, degrading to SwarmDegraded", e);
             emit_status(handle, StartupStatusEvent {
-                stage: "McpReady".into(),
+                stage: "SwarmDegraded".into(),
                 mcp_healthy: true,
-                studio_healthy: false,
+                agentserver_healthy: false,
+                swarm_healthy: false,
+                gateway_healthy: false,
                 agent_core_available: true,
-                fallback_active: false,
+                fallback_active: true,
                 error: None,
             });
         }
     }
+
+    emit_status(handle, StartupStatusEvent {
+        stage: "AgentCoreReady".into(),
+        mcp_healthy: true,
+        agentserver_healthy: state.swarm_process.lock().map(|g| g.is_some()).unwrap_or(false),
+        swarm_healthy: state.swarm_process.lock().map(|g| g.is_some()).unwrap_or(false),
+        gateway_healthy: state.swarm_process.lock().map(|g| g.is_some()).unwrap_or(false),
+        agent_core_available: true,
+        fallback_active: false,
+        error: None,
+    });
 
     log::info!("GalaxyOS MCP started on port {}", galaxyos_port);
     Ok(())
 }
 
 pub fn stop_all(state: &AppState) -> Result<(), String> {
-    if let Ok(mut guard) = state.studio_process.lock() {
+    if let Ok(mut guard) = state.swarm_process.lock() {
         if let Some(ref mut child) = *guard {
             let _ = child.kill();
         }
@@ -195,19 +224,18 @@ fn start_galaxyos_mcp(port: u16) -> Result<std::process::Child, String> {
     cmd.spawn().map_err(|e| format!("Failed to start GalaxyOS MCP: {}", e))
 }
 
-fn start_studio(port: u16) -> Result<std::process::Child, String> {
+fn start_swarm_agentserver(port: u16) -> Result<std::process::Child, String> {
     let python = find_python()?;
-    let module = find_studio_module()?;
     let mut cmd = Command::new(&python);
-    cmd.args(["-m", &module])
-        .env("BACKEND_PORT", &port.to_string())
-        .env("DB_TYPE", "sqlite")
+    cmd.args(["-m", "jiuwenswarm.server.app_agentserver"])
+        .env("AGENTSERVER_HOST", "127.0.0.1")
+        .env("AGENTSERVER_PORT", &port.to_string())
         .env("GALAXYOS_MODE", "desktop")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     #[cfg(windows)]
     cmd.creation_flags(CREATE_NO_WINDOW);
-    cmd.spawn().map_err(|e| format!("Failed to start Studio: {}", e))
+    cmd.spawn().map_err(|e| format!("Failed to start AgentServer: {}", e))
 }
 
 fn find_galaxyos_binary() -> Result<BinaryResult, String> {
@@ -272,10 +300,6 @@ fn find_python() -> Result<String, String> {
         }
     }
     Err("Python not found".into())
-}
-
-fn find_studio_module() -> Result<String, String> {
-    Ok("openjiuwen_studio.main".to_string())
 }
 
 async fn wait_for_health(port: u16, name: &str, max_secs: u64) -> Result<(), String> {
