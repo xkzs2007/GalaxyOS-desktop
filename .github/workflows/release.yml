@@ -103,7 +103,7 @@ jobs:
           node-version: '20'
 
       - name: Build JiuwenSwarm Web Frontend
-        working-directory: jiuwenswarm/channels/web/frontend
+        working-directory: jiuwenswarm/jiuwenswarm/channels/web/frontend
         shell: bash
         run: |
           npm install
@@ -114,7 +114,7 @@ jobs:
         shell: bash
         run: |
           mkdir -p swarm-dist
-          cp -r jiuwenswarm/channels/web/frontend/dist/* swarm-dist/
+          cp -r jiuwenswarm/jiuwenswarm/channels/web/frontend/dist/* swarm-dist/
 
       - name: Set up Python
         uses: actions/setup-python@v5
