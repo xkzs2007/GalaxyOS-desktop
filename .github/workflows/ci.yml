@@ -109,7 +109,7 @@ jobs:
 
       - name: Checkout JiuwenSwarm
         shell: bash
-        run: git clone --depth 1 https://github.com/openJiuwen-ai/jiuwenswarm.git jiuwenswarm
+        run: GIT_LFS_SKIP_SMUDGE=1 git clone --depth 1 https://github.com/openJiuwen-ai/jiuwenswarm.git jiuwenswarm
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
