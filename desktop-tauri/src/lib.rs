@@ -3,6 +3,9 @@ use std::sync::Mutex;
 
 mod backend;
 mod commands;
+mod eui_neo;
+
+use eui_neo::{EuiNeoContext, NativeRenderSurfaceManager};
 
 pub struct AppState {
     swarm_agentserver: Mutex<Option<std::process::Child>>,
@@ -12,10 +15,14 @@ pub struct AppState {
     gateway_port: u16,
     galaxyos_port: u16,
     locale: Mutex<String>,
+    eui_neo_context: Mutex<EuiNeoContext>,
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let surface_manager = NativeRenderSurfaceManager::new();
+    let native_available = false;
+
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_process::init())
@@ -27,6 +34,11 @@ pub fn run() {
             gateway_port: 19000,
             galaxyos_port: 8765,
             locale: Mutex::new("zh".into()),
+            eui_neo_context: Mutex::new(EuiNeoContext {
+                native_available,
+                surfaces: std::collections::HashMap::new(),
+                surface_manager,
+            }),
         })
         .invoke_handler(tauri::generate_handler![
             commands::start_backends,
@@ -35,6 +47,11 @@ pub fn run() {
             commands::get_locale,
             commands::set_locale,
             commands::get_supported_locales,
+            eui_neo::render_native,
+            eui_neo::create_surface,
+            eui_neo::destroy_surface,
+            eui_neo::update_surface,
+            eui_neo::check_eui_neo_health,
         ])
         .setup(|app| {
             let handle = app.handle().clone();
