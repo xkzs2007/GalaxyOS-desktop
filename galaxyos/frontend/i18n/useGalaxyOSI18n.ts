@@ -1,15 +1,17 @@
 import { useTranslation } from 'react-i18next';
 import { useCallback } from 'react';
 
+type TFunction = ReturnType<typeof useTranslation>['t'];
+
 interface UseI18nReturn {
-  t: ReturnType<typeof useTranslation>['0']['t'];
+  t: TFunction;
   locale: string;
   setLocale: (locale: string) => Promise<void>;
   loading: boolean;
 }
 
 export function useGalaxyOSI18n(): UseI18nReturn {
-  const { t, i18n } = useTranslation();
+  const { t, i18n, ready } = useTranslation();
 
   const setLocale = useCallback(async (locale: string) => {
     await i18n.changeLanguage(locale);
@@ -26,6 +28,6 @@ export function useGalaxyOSI18n(): UseI18nReturn {
     t,
     locale: i18n.language,
     setLocale,
-    loading: !i18n.isInitialized,
+    loading: !ready,
   };
 }

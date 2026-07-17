@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 
 interface MemoryPanelProps {
   engramCount: number;
@@ -17,6 +18,7 @@ const MemoryPanel: React.FC<MemoryPanelProps> = ({
   onSearch,
   onFilter,
 }) => {
+  const { t } = useTranslation('memory-panel');
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState('all');
 
@@ -43,10 +45,10 @@ const MemoryPanel: React.FC<MemoryPanelProps> = ({
   return (
     <div className="tokui-memory-panel" style={{ padding: '12px', background: '#fafafa', borderRadius: '8px', border: '1px solid #e0e0e0' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-        <span style={{ fontWeight: 600, fontSize: '14px' }}>液态神经记忆</span>
+        <span style={{ fontWeight: 600, fontSize: '14px' }}>{t('title')}</span>
         <span style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '12px', color: statusColor[consolidationStatus] }}>
           <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: statusColor[consolidationStatus], display: 'inline-block' }} />
-          {consolidationStatus === 'active' ? '巩固中' : consolidationStatus === 'completed' ? '已巩固' : '空闲'}
+          {consolidationStatus === 'active' ? t('consolidating') : consolidationStatus === 'completed' ? t('consolidated') : t('idle')}
         </span>
       </div>
 
@@ -89,7 +91,7 @@ const MemoryPanel: React.FC<MemoryPanelProps> = ({
               cursor: 'pointer',
             }}
           >
-            {type === 'all' ? '全部' : type.charAt(0).toUpperCase() + type.slice(1)}
+            {type === 'all' ? t('all') : type.charAt(0).toUpperCase() + type.slice(1)}
           </button>
         ))}
       </div>
@@ -100,7 +102,7 @@ const MemoryPanel: React.FC<MemoryPanelProps> = ({
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-          placeholder="搜索记忆..."
+          placeholder={t('search_placeholder')}
           style={{
             flex: 1,
             padding: '4px 8px',
@@ -122,12 +124,12 @@ const MemoryPanel: React.FC<MemoryPanelProps> = ({
             cursor: 'pointer',
           }}
         >
-          搜索
+          {t('search_button')}
         </button>
       </div>
 
       <div style={{ fontSize: '11px', color: '#888', marginTop: '6px' }}>
-        共 {total} 条记忆
+        {t('memory_count', { count: total })}
       </div>
     </div>
   );

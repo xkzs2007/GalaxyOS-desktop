@@ -200,12 +200,19 @@ impl NativeEventBridge {
     }
 }
 
+const FFI_TIMEOUT_MS: u64 = 5000;
+
 #[tauri::command]
 pub async fn render_native(
     dsl: String,
     surface_id: String,
     state: tauri::State<'_, crate::AppState>,
 ) -> Result<serde_json::Value, String> {
+    let i18n_injected_dsl = {
+        let bridge = state.i18n_bridge.lock().map_err(|e| e.to_string())?;
+        bridge.inject_into_dsl(&dsl)
+    };
+
     let mut ctx = state.eui_neo_context.lock().map_err(|e| e.to_string())?;
 
     if !ctx.surfaces.contains_key(&surface_id) {
@@ -224,15 +231,17 @@ pub async fn render_native(
             "status": "unavailable",
             "surface_id": surface_id,
             "fallback": "webview_dom",
+            "i18n_injected": dsl != i18n_injected_dsl,
         }));
     }
 
-    match ctx.surface_manager.update_surface(&surface_id, &dsl) {
+    match ctx.surface_manager.update_surface(&surface_id, &i18n_injected_dsl) {
         Ok(surface) => Ok(serde_json::json!({
             "status": "success",
             "surface_id": surface.surface_id,
             "render_handle": surface.render_handle,
             "channel": surface.active_channel,
+            "i18n_injected": dsl != i18n_injected_dsl,
         })),
         Err(e) => Ok(serde_json::json!({
             "status": "error",
@@ -296,4 +305,23 @@ pub async fn check_eui_neo_health(
         "native_render_available": ctx.surface_manager.native_available,
         "active_surfaces": ctx.surface_manager.list_surfaces().len(),
     }))
+}
+
+#[tauri::command]
+pub async fn rebuild_surface(
+    surface_id: String,
+    state: tauri::State<'_, crate::AppState>,
+) -> Result<serde_json::Value, String> {
+    let mut ctx = state.eui_neo_context.lock().map_err(|e| e.to_string())?;
+    match ctx.surface_manager.rebuild_surface(&surface_id) {
+        Ok(surface) => Ok(serde_json::json!({
+            "status": "rebuilt",
+            "surface": surface,
+        })),
+        Err(e) => Ok(serde_json::json!({
+            "status": "rebuild_failed",
+            "error": e,
+            "fallback": "webview_dom",
+        })),
+    }
 }

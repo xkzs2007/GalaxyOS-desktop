@@ -58,6 +58,10 @@ pub async fn set_locale(locale: String, state: tauri::State<'_, AppState>, handl
         let mut l = state.locale.lock().map_err(|e| e.to_string())?;
         *l = locale.clone();
     }
+    {
+        let mut bridge = state.i18n_bridge.lock().map_err(|e| e.to_string())?;
+        bridge.set_locale(&locale);
+    }
     if let Err(e) = handle.emit("galaxyos://locale-changed", &locale) {
         log::warn!("Failed to emit locale_changed: {}", e);
     }

@@ -12,13 +12,13 @@ from setuptools import setup, find_packages
 
 setup(
     name="galaxyos",
-    version="8.6.0",
+    version="0.2.0",
 
-    description="GalaxyOS — 小艺 Claw 核心认知增强引擎 (unified package)",
+    description="GalaxyOS — 认知增强型 AI Agent 引擎",
     long_description=open("README.md", encoding="utf-8").read(),
     long_description_content_type="text/markdown",
-    author="xiaoyi-claw",
-    author_email="dev@xiaoyi-claw.ai",
+    author="GalaxyOS",
+    author_email="dev@galaxyos.ai",
     url="https://cnb.cool/llm-memory-integrat/GalaxyOS",
     packages=find_packages(include=["galaxyos", "galaxyos.*"]),
     include_package_data=True,

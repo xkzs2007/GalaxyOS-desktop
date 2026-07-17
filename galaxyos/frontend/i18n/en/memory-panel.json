@@ -8,5 +8,7 @@
   "search_button": "Search",
   "memory_count": "{{count}} memories",
   "pinned": "Pinned",
-  "no_memories": "No memories"
+  "no_memories": "No memories",
+  "memory_search": "Memory Search",
+  "no_results": "No matching memories found"
 }

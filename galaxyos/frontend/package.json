@@ -1,6 +1,6 @@
 {
   "name": "@galaxyos/tokui-components",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -10,8 +10,10 @@
   "dependencies": {
     "@jboltai/tokui": "^0.1.4",
     "@jboltai/tokui-react": "^0.1.4",
+    "i18next": "^23.11.0",
     "react": "^18.2.0",
-    "react-dom": "^18.2.0"
+    "react-dom": "^18.2.0",
+    "react-i18next": "^14.1.0"
   },
   "devDependencies": {
     "@types/react": "^18.2.0",

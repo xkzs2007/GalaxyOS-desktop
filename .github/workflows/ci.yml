@@ -52,6 +52,12 @@ jobs:
           python -c "from galaxyos.kernel.mcp_server_entry import create_kernel, check_dependencies; print('mcp_server_entry OK')"
           python -c "from galaxyos.kernel.agent_core_bridge import AgentCoreBridge; print('agent_core_bridge OK')"
           python -c "from galaxyos.kernel.memory_sync_bridge import MemorySyncBridge; print('memory_sync_bridge OK')"
+          python -c "from galaxyos.kernel.i18n_manager import I18nManager; print('i18n_manager OK')"
+          python -c "from galaxyos.kernel.dsl_bridge import DSLBridge; print('dsl_bridge OK')"
+          python -c "from galaxyos.kernel.render_channel_router import RenderChannelRouter; print('render_channel_router OK')"
+          python -c "from galaxyos.kernel.tokui_chat_adapter import TokuiChatAdapter; print('tokui_chat_adapter OK')"
+          python -c "from galaxyos.kernel.tokui_degradation import TokUIDegradationManager; print('tokui_degradation OK')"
+          python -c "from galaxyos.kernel.integration_config_manager import IntegrationConfigManager; print('integration_config_manager OK')"
 
       - name: Check no xiaoyi references in functional code
         run: |
@@ -86,6 +92,12 @@ jobs:
         shell: bash
         run: |
           pyinstaller galaxyos-mcp.spec --noconfirm
+
+      - name: Verify native_translations packaged
+        shell: bash
+        run: |
+          test -f dist/galaxyos-mcp/native_translations/zh.json || echo "WARNING: native_translations/zh.json not found in dist"
+          test -f dist/galaxyos-mcp/native_translations/en.json || echo "WARNING: native_translations/en.json not found in dist"
 
       - name: Verify build output
         shell: bash
@@ -244,11 +256,36 @@ jobs:
           mkdir -p swarm-dist
           cp -r jiuwenswarm/jiuwenswarm/channels/web/frontend/dist/* swarm-dist/
 
+      - name: Check GalaxyOS frontend i18n
+        working-directory: galaxyos/frontend
+        shell: bash
+        run: |
+          npm install
+          npx tsc --noEmit
+
       - name: Download galaxyos-mcp-dist
         uses: actions/download-artifact@v4
         with:
           name: galaxyos-mcp-dist
           path: galaxyos-mcp-dist
+
+      - name: Download EUI-NEO SDK v0.5.2
+        shell: bash
+        run: |
+          curl -sL "https://github.com/sudoevolve/EUI-NEO/releases/download/v0.5.2/EUI-NEO-v0.5.2-windows-x64-sdk.zip" -o eui-neo-sdk.zip
+          mkdir -p vendor/eui-neo/sdk
+          cd vendor/eui-neo/sdk && unzip -q ../../../eui-neo-sdk.zip
+          echo "EUI-NEO SDK extracted to vendor/eui-neo/sdk/"
+          ls vendor/eui-neo/sdk/lib/
+
+      - name: Download EUI-NEO Runtime v0.5.2
+        shell: bash
+        run: |
+          curl -sL "https://github.com/sudoevolve/EUI-NEO/releases/download/v0.5.2/EUI-NEO-v0.5.2-windows-x64-runtime.zip" -o eui-neo-runtime.zip
+          mkdir -p vendor/eui-neo/runtime
+          cd vendor/eui-neo/runtime && unzip -q ../../../eui-neo-runtime.zip
+          echo "EUI-NEO Runtime extracted to vendor/eui-neo/runtime/"
+          ls vendor/eui-neo/runtime/
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
@@ -269,6 +306,7 @@ jobs:
         run: cargo tauri build
         env:
           TAURI_SIGNING_PRIVATE_KEY: ""
+          EUI_NEO_ROOT: "${{ github.workspace }}/vendor/eui-neo"
 
       - name: Upload Tauri artifact
         uses: actions/upload-artifact@v4

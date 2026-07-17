@@ -1,4 +1,5 @@
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 
 const RCCAM_STAGES = ['Retrieval', 'Cognition', 'Control', 'Action', 'Memory'] as const;
 type RCCAMStage = typeof RCCAM_STAGES[number];
@@ -35,21 +36,22 @@ const RCCAMProgress: React.FC<RCCAMProgressProps> = ({
   onDepthChange,
   onStrategyChange,
 }) => {
+  const { t } = useTranslation('cognitive-panel');
   const currentIndex = stageIndex[currentStage.toLowerCase()] ?? -1;
   const isRunning = currentIndex >= 0;
 
   return (
     <div className="tokui-rccam-progress" style={{ padding: '12px', background: '#fafafa', borderRadius: '8px', border: '1px solid #e0e0e0' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-        <span style={{ fontWeight: 600, fontSize: '14px' }}>R-CCAM 认知循环</span>
+        <span style={{ fontWeight: 600, fontSize: '14px' }}>{t('rccam_progress')}</span>
         <div style={{ display: 'flex', gap: '4px' }}>
           {isRunning ? (
             <button onClick={onPause} style={{ padding: '2px 8px', fontSize: '11px', background: '#fff3e0', border: '1px solid #f57c00', borderRadius: '4px', cursor: 'pointer', color: '#f57c00' }}>
-              暂停
+              {t('pause', { defaultValue: '暂停' })}
             </button>
           ) : (
             <button onClick={onResume} style={{ padding: '2px 8px', fontSize: '11px', background: '#e8f5e9', border: '1px solid #388e3c', borderRadius: '4px', cursor: 'pointer', color: '#388e3c' }}>
-              继续
+              {t('resume', { defaultValue: '继续' })}
             </button>
           )}
         </div>
@@ -80,7 +82,7 @@ const RCCAMProgress: React.FC<RCCAMProgressProps> = ({
 
       <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
         <div style={{ flex: 1 }}>
-          <div style={{ fontSize: '11px', color: '#888', marginBottom: '2px' }}>检索深度</div>
+          <div style={{ fontSize: '11px', color: '#888', marginBottom: '2px' }}>{t('retrieval_depth', { defaultValue: '检索深度' })}</div>
           <input
             type="range"
             min={1}
@@ -91,14 +93,14 @@ const RCCAMProgress: React.FC<RCCAMProgressProps> = ({
           />
         </div>
         <div>
-          <div style={{ fontSize: '11px', color: '#888', marginBottom: '2px' }}>策略</div>
+          <div style={{ fontSize: '11px', color: '#888', marginBottom: '2px' }}>{t('strategy', { defaultValue: '策略' })}</div>
           <select
             onChange={(e) => onStrategyChange?.(e.target.value)}
             style={{ fontSize: '11px', padding: '2px 4px', border: '1px solid #ccc', borderRadius: '4px' }}
           >
-            <option value="direct_reply">直接回复</option>
-            <option value="deep_analysis">深度分析</option>
-            <option value="creative">创意模式</option>
+            <option value="direct_reply">{t('strategy_direct', { defaultValue: '直接回复' })}</option>
+            <option value="deep_analysis">{t('strategy_deep', { defaultValue: '深度分析' })}</option>
+            <option value="creative">{t('strategy_creative', { defaultValue: '创意模式' })}</option>
           </select>
         </div>
       </div>
@@ -110,7 +112,7 @@ const RCCAMProgress: React.FC<RCCAMProgressProps> = ({
       )}
 
       <div style={{ fontSize: '11px', color: '#888', marginTop: '4px' }}>
-        进度: {stagesCompleted}/{totalStages} 阶段
+        {t('progress', { defaultValue: '进度' })}: {stagesCompleted}/{totalStages}
       </div>
     </div>
   );

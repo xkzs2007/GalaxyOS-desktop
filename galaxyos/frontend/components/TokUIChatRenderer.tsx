@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { TokUIView } from '@jboltai/tokui-react';
 
 function isTokUIDSL(content: string): boolean {

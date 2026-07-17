@@ -39,12 +39,14 @@ class RenderChannelRouter:
         self._active_channel: RenderChannel = RenderChannel.WEBVIEW_DOM
         self._native_available = False
         self._dsl_bridge = None
+        self._degradation_manager = None
         self._stats = {
             "total_renders": 0,
             "native_renders": 0,
             "webview_renders": 0,
             "plain_text_renders": 0,
             "fallbacks": 0,
+            "i18n_injections": 0,
         }
 
     def set_native_available(self, available: bool) -> None:
@@ -57,9 +59,15 @@ class RenderChannelRouter:
     def set_dsl_bridge(self, bridge: Any) -> None:
         self._dsl_bridge = bridge
 
-    def route(self, dsl: str, surface_id: str = "", preferred_channel: str = "") -> RenderRouteResult:
+    def set_degradation_manager(self, manager: Any) -> None:
+        self._degradation_manager = manager
+
+    def route(self, dsl: str, surface_id: str = "", preferred_channel: str = "", i18n_injected: bool = False) -> RenderRouteResult:
         start = time.time()
         self._stats["total_renders"] += 1
+
+        if i18n_injected:
+            self._stats["i18n_injections"] += 1
 
         channel = self._resolve_channel(preferred_channel)
         dsl_used = dsl
@@ -79,6 +87,8 @@ class RenderChannelRouter:
             channel = RenderChannel.WEBVIEW_DOM
             fallback_reason = "native_unavailable"
             self._stats["fallbacks"] += 1
+            if self._degradation_manager:
+                self._degradation_manager.handle_eui_init_failure("Native render unavailable or FFI timeout")
 
         if channel == RenderChannel.WEBVIEW_DOM:
             elapsed = (time.time() - start) * 1000
@@ -140,9 +150,21 @@ class RenderChannelRouter:
                 result = self._dsl_bridge.tokui_to_eui(dsl)
                 if result.unsupported_components and result.mapping_confidence < 0.3:
                     logger.warning(f"DSL bridge confidence too low ({result.mapping_confidence}), falling back")
+                    if self._degradation_manager:
+                        self._degradation_manager.handle_dsl_bridge_failure(
+                            result.unsupported_components, f"confidence={result.mapping_confidence}"
+                        )
                     return None
             except Exception as e:
                 logger.warning(f"DSL bridge conversion failed: {e}")
+                if self._degradation_manager:
+                    self._degradation_manager.handle_dsl_bridge_failure([], str(e))
                 return None
 
         return f"native-handle-{surface_id or 'default'}-{int(time.time() * 1000)}"
+
+    def rebuild_surface(self, surface_id: str) -> Dict[str, Any]:
+        if self._degradation_manager:
+            self._degradation_manager.handle_surface_crash(surface_id)
+        self._stats["fallbacks"] += 1
+        return {"status": "surface_rebuilt", "surface_id": surface_id, "channel": self._active_channel.value}

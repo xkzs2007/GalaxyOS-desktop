@@ -248,6 +248,34 @@ jobs:
           pyinstaller galaxyos-mcp.spec --noconfirm
           cp -r dist/galaxyos-mcp galaxyos-mcp-dist
 
+      - name: Download EUI-NEO SDK v0.5.2
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          curl -sL "https://github.com/sudoevolve/EUI-NEO/releases/download/v0.5.2/EUI-NEO-v0.5.2-windows-x64-sdk.zip" -o eui-neo-sdk.zip
+          mkdir -p vendor/eui-neo/sdk
+          cd vendor/eui-neo/sdk && unzip -q ../../../eui-neo-sdk.zip
+          echo "EUI-NEO SDK extracted"
+          ls vendor/eui-neo/sdk/lib/
+
+      - name: Download EUI-NEO Runtime v0.5.2
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          curl -sL "https://github.com/sudoevolve/EUI-NEO/releases/download/v0.5.2/EUI-NEO-v0.5.2-windows-x64-runtime.zip" -o eui-neo-runtime.zip
+          mkdir -p vendor/eui-neo/runtime
+          cd vendor/eui-neo/runtime && unzip -q ../../../eui-neo-runtime.zip
+          echo "EUI-NEO Runtime extracted"
+
+      - name: Download EUI-NEO SDK v0.5.2 (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          curl -sL "https://github.com/sudoevolve/EUI-NEO/releases/download/v0.5.2/EUI-NEO-v0.5.2-linux-x64-sdk.tar.gz" -o eui-neo-sdk.tar.gz
+          mkdir -p vendor/eui-neo/sdk
+          tar xzf eui-neo-sdk.tar.gz -C vendor/eui-neo/sdk
+          echo "EUI-NEO SDK extracted (Linux)"
+
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
 
@@ -272,6 +300,7 @@ jobs:
         run: cargo tauri build ${{ matrix.args }}
         env:
           TAURI_SIGNING_PRIVATE_KEY: ""
+          EUI_NEO_ROOT: "${{ github.workspace }}/vendor/eui-neo"
 
       - name: Upload Tauri artifacts (Windows)
         if: runner.os == 'Windows'

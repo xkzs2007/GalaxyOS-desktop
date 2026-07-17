@@ -189,6 +189,19 @@ class AgentCoreBridge:
 
             self._deep_agent = agent
             logger.info("DeepAgent created successfully")
+
+            if self._tools and hasattr(agent, 'ability_manager'):
+                for card, tool_instance in self._tools:
+                    try:
+                        agent.ability_manager.add_ability(card, tool_instance)
+                        logger.debug(f"Injected tool {card.name} into new DeepAgent via add_ability")
+                    except Exception as e:
+                        logger.warning(f"add_ability failed for {card.name} on new agent: {e}")
+                        try:
+                            agent.ability_manager.add(card)
+                        except Exception as e2:
+                            logger.warning(f"add() also failed for {card.name}: {e2}")
+
             return agent
         except Exception as e:
             logger.error(f"Failed to create DeepAgent: {e}")
@@ -203,29 +216,41 @@ class AgentCoreBridge:
 
         if self._openjiuwen_available:
             try:
-                from openjiuwen.core.foundation.tool import ToolCard
+                from openjiuwen.core.foundation.tool.base import ToolCard
+                from openjiuwen.core.foundation.tool.function.function import LocalFunction
 
                 for tool_name in COGNITIVE_TOOL_NAMES:
                     try:
                         card = ToolCard(
                             name=tool_name,
                             description=f"GalaxyOS cognitive tool: {tool_name}",
+                            input_params=self._build_tool_schema(tool_name),
+                            stateless=True,
                         )
-                        self._tools.append(card)
+                        tool_instance = LocalFunction(
+                            card=card,
+                            func=self._make_cognitive_handler(tool_name, mcp_server),
+                        )
+                        self._tools.append((card, tool_instance))
                         injected.append(tool_name)
                     except Exception as e:
                         logger.warning(f"Failed to inject cognitive tool {tool_name}: {e}")
                         failed.append(tool_name)
 
-                if self._deep_agent and hasattr(self._deep_agent, 'ability_manager'):
-                    for tool in self._tools:
+                agent = self._deep_agent
+                if agent and hasattr(agent, 'ability_manager'):
+                    for card, tool_instance in self._tools:
                         try:
-                            if isinstance(tool, ToolCard):
-                                self._deep_agent.ability_manager.add(tool)
+                            agent.ability_manager.add_ability(card, tool_instance)
+                            logger.debug(f"Registered cognitive tool {card.name} via add_ability")
                         except Exception as e:
-                            logger.warning(f"Failed to register tool {tool.name} on DeepAgent: {e}")
-            except ImportError:
-                logger.warning("openjiuwen ToolCard not available, skipping tool registration")
+                            logger.warning(f"add_ability failed for {card.name}: {e}, falling back to add()")
+                            try:
+                                agent.ability_manager.add(card)
+                            except Exception as e2:
+                                logger.warning(f"add() also failed for {card.name}: {e2}")
+            except ImportError as e:
+                logger.warning(f"openjiuwen tool classes not available ({e}), skipping tool registration")
                 for tool_name in COGNITIVE_TOOL_NAMES:
                     injected.append(tool_name)
         else:
@@ -240,6 +265,42 @@ class AgentCoreBridge:
             "failed": failed,
             "total": len(COGNITIVE_TOOL_NAMES),
         }
+
+    @staticmethod
+    def _build_tool_schema(tool_name: str) -> Dict[str, Any]:
+        schemas = {
+            "galaxy_pool": {"type": "object", "properties": {"query": {"type": "string", "description": "Search query for knowledge pool"}}, "required": ["query"]},
+            "claw_rccam_progress": {"type": "object", "properties": {"session_id": {"type": "string"}}, "required": ["session_id"]},
+            "claw_recall": {"type": "object", "properties": {"query": {"type": "string"}, "top_k": {"type": "integer", "default": 5}}, "required": ["query"]},
+            "claw_lobster": {"type": "object", "properties": {"content": {"type": "string"}}, "required": ["content"]},
+            "claw_health": {"type": "object", "properties": {}},
+            "claw_vector_info": {"type": "object", "properties": {"collection": {"type": "string"}}, "required": ["collection"]},
+            "claw_events": {"type": "object", "properties": {"filter": {"type": "string"}}, "required": []},
+            "claw_store": {"type": "object", "properties": {"key": {"type": "string"}, "value": {"type": "string"}}, "required": ["key", "value"]},
+            "claw_verify": {"type": "object", "properties": {"claim": {"type": "string"}}, "required": ["claim"]},
+            "claw_rccam": {"type": "object", "properties": {"task": {"type": "string"}}, "required": ["task"]},
+            "claw_save_memory": {"type": "object", "properties": {"content": {"type": "string"}, "tags": {"type": "array", "items": {"type": "string"}}}, "required": ["content"]},
+            "claw_compile_skill": {"type": "object", "properties": {"skill_name": {"type": "string"}, "skill_data": {"type": "object"}}, "required": ["skill_name"]},
+            "claw_asset_search": {"type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"]},
+            "claw_asset_register": {"type": "object", "properties": {"asset_type": {"type": "string"}, "metadata": {"type": "object"}}, "required": ["asset_type"]},
+            "claw_node_invoke": {"type": "object", "properties": {"node_id": {"type": "string"}, "inputs": {"type": "object"}}, "required": ["node_id"]},
+            "tokui_render": {"type": "object", "properties": {"dsl": {"type": "string"}, "target": {"type": "string", "default": "webview"}}, "required": ["dsl"]},
+        }
+        return schemas.get(tool_name, {"type": "object", "properties": {}})
+
+    @staticmethod
+    def _make_cognitive_handler(tool_name: str, mcp_server=None):
+        async def _handler(**kwargs):
+            if mcp_server and hasattr(mcp_server, 'call_tool'):
+                try:
+                    result = await mcp_server.call_tool(tool_name, kwargs)
+                    return result
+                except Exception as e:
+                    return f"Error calling {tool_name} via MCP: {e}"
+            return f"GalaxyOS cognitive tool {tool_name} executed with args: {kwargs}"
+
+        _handler.__name__ = f"_cognitive_{tool_name}"
+        return _handler
 
     async def _check_rails(self, skill_name: str, parameters: Dict[str, Any]) -> Dict[str, Any]:
         if not self._openjiuwen_available or not self._rails:
@@ -346,16 +407,45 @@ class AgentCoreBridge:
 
     def register_skill_as_tool(self, skill_name: str, skill_description: str, step_handler=None) -> Any:
         try:
-            from openjiuwen.core.foundation.tool.tool import tool as oj_tool
+            from openjiuwen.core.foundation.tool.base import ToolCard
+            from openjiuwen.core.foundation.tool.function.function import LocalFunction
 
-            @oj_tool(name=f"skill_{skill_name}", description=skill_description)
-            async def skill_tool(query: str) -> str:
+            card = ToolCard(
+                name=f"skill_{skill_name}",
+                description=skill_description,
+                input_params={
+                    "type": "object",
+                    "properties": {
+                        "query": {"type": "string", "description": f"Input for skill {skill_name}"},
+                    },
+                    "required": ["query"],
+                },
+                stateless=True,
+            )
+
+            async def _skill_handler(query: str, **kwargs):
                 if step_handler:
-                    return await step_handler(query)
+                    return await step_handler(query, **kwargs)
                 return f"Skill {skill_name} executed"
 
-            self._tools.append(skill_tool)
-            return skill_tool
+            _skill_handler.__name__ = f"_skill_{skill_name}"
+            tool_instance = LocalFunction(card=card, func=_skill_handler)
+
+            self._tools.append((card, tool_instance))
+
+            agent = self._deep_agent
+            if agent and hasattr(agent, 'ability_manager'):
+                try:
+                    agent.ability_manager.add_ability(card, tool_instance)
+                    logger.info(f"Registered skill tool skill_{skill_name} via add_ability")
+                except Exception as e:
+                    logger.warning(f"add_ability failed for skill_{skill_name}: {e}, falling back to add()")
+                    try:
+                        agent.ability_manager.add(card)
+                    except Exception as e2:
+                        logger.warning(f"add() also failed for skill_{skill_name}: {e2}")
+
+            return tool_instance
         except ImportError:
             logger.warning("openjiuwen not available, skill tool registration skipped")
             return None

@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 
 interface DAGNodeExpandProps {
   nodeId: string;
@@ -19,6 +20,7 @@ const DAGNodeExpand: React.FC<DAGNodeExpandProps> = ({
   onCollapse,
   onSummary,
 }) => {
+  const { t } = useTranslation('cognitive-panel');
   const [expanded, setExpanded] = useState(false);
 
   const toggle = () => {
@@ -33,20 +35,20 @@ const DAGNodeExpand: React.FC<DAGNodeExpandProps> = ({
   return (
     <div className="tokui-dag-node-expand" style={{ padding: '10px', background: '#fafafa', borderRadius: '6px', border: '1px solid #e0e0e0' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-        <span style={{ fontSize: '12px', color: '#888' }}>节点: {nodeId}</span>
+        <span style={{ fontSize: '12px', color: '#888' }}>{t('node', { defaultValue: '节点' })}: {nodeId}</span>
         <div style={{ display: 'flex', gap: '4px' }}>
           <button
             onClick={toggle}
             style={{ fontSize: '11px', padding: '2px 6px', background: '#e3f2fd', border: '1px solid #1976d2', borderRadius: '3px', cursor: 'pointer', color: '#1976d2' }}
           >
-            {expanded ? '折叠' : '展开'}
+            {expanded ? t('collapse', { defaultValue: '折叠' }) : t('expand', { defaultValue: '展开' })}
           </button>
           {summary && (
             <button
               onClick={() => onSummary?.(nodeId)}
               style={{ fontSize: '11px', padding: '2px 6px', background: '#f3e5f5', border: '1px solid #7b1fa2', borderRadius: '3px', cursor: 'pointer', color: '#7b1fa2' }}
             >
-              摘要
+              {t('summary', { defaultValue: '摘要' })}
             </button>
           )}
         </div>
@@ -69,7 +71,7 @@ const DAGNodeExpand: React.FC<DAGNodeExpandProps> = ({
 
       {expanded && summary && (
         <div style={{ marginTop: '6px', padding: '6px 8px', background: '#f3e5f5', borderRadius: '4px', fontSize: '12px', color: '#555' }}>
-          <strong>摘要:</strong> {summary}
+          <strong>{t('summary', { defaultValue: '摘要' })}:</strong> {summary}
         </div>
       )}
     </div>

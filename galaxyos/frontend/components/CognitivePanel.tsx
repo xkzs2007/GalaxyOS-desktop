@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import MemoryPanel from './MemoryPanel';
-import RCCAMProgress from './RCCAMProgress';
-import DAGTree from './DAGTree';
-import { TokUIThemeBridge } from './TokUIThemeBridge';
+import { useTranslation } from 'react-i18next';
+import MemoryPanel from './tokui/MemoryPanel';
+import RCCAMProgress from './tokui/RCCAMProgress';
+import DAGTree from './tokui/DAGTree';
+import { TokUIThemeBridge } from './tokui/TokUIThemeBridge';
 
 interface CognitivePanelState {
   rccam: {
@@ -69,6 +70,7 @@ const CognitivePanel: React.FC<CognitivePanelProps> = ({
   onDAGCollapse,
   onDAGSummary,
 }) => {
+  const { t } = useTranslation('cognitive-panel');
   const savedState = loadPanelState();
   const [isOpen, setIsOpen] = useState(defaultOpen || savedState.isOpen);
   const [panelPosition, setPanelPosition] = useState(position || savedState.position);
@@ -142,13 +144,13 @@ const CognitivePanel: React.FC<CognitivePanelProps> = ({
           zIndex: 1001,
         }}
       >
-        {isOpen ? '关闭认知面板' : '认知面板'}
+        {isOpen ? t('close_panel') : t('title')}
       </button>
 
       {isOpen && (
         <div style={positionStyles[panelPosition] || positionStyles.sidebar}>
           <div style={{ padding: '12px', borderBottom: '1px solid #eee', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontWeight: 600, fontSize: '15px' }}>GalaxyOS 认知面板</span>
+            <span style={{ fontWeight: 600, fontSize: '15px' }}>{t('title')}</span>
             <div style={{ display: 'flex', gap: '4px' }}>
               {(['sidebar', 'inline', 'floating'] as const).map((pos) => (
                 <button
@@ -163,7 +165,7 @@ const CognitivePanel: React.FC<CognitivePanelProps> = ({
                     cursor: 'pointer',
                   }}
                 >
-                  {pos === 'sidebar' ? '侧栏' : pos === 'inline' ? '内嵌' : '浮动'}
+                  {pos === 'sidebar' ? t('layout_sidebar') : pos === 'inline' ? t('layout_embedded') : t('layout_floating')}
                 </button>
               ))}
             </div>

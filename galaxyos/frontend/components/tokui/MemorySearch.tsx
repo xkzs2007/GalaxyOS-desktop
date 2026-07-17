@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 
 interface MemorySearchResult {
   id: string;
@@ -21,6 +22,7 @@ const MemorySearch: React.FC<MemorySearchProps> = ({
   onSearch,
   onFilter,
 }) => {
+  const { t } = useTranslation('memory-panel');
   const [searchQuery, setSearchQuery] = useState(query);
   const [activeFilter, setActiveFilter] = useState('all');
 
@@ -37,7 +39,7 @@ const MemorySearch: React.FC<MemorySearchProps> = ({
 
   return (
     <div className="tokui-memory-search" style={{ padding: '12px', background: '#fafafa', borderRadius: '8px', border: '1px solid #e0e0e0' }}>
-      <div style={{ fontWeight: 600, fontSize: '14px', marginBottom: '8px' }}>记忆检索</div>
+      <div style={{ fontWeight: 600, fontSize: '14px', marginBottom: '8px' }}>{t('memory_search', { defaultValue: '记忆检索' })}</div>
 
       <div style={{ display: 'flex', gap: '4px', marginBottom: '8px' }}>
         <input
@@ -45,7 +47,7 @@ const MemorySearch: React.FC<MemorySearchProps> = ({
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-          placeholder="输入搜索关键词..."
+          placeholder={t('search_placeholder')}
           style={{
             flex: 1,
             padding: '6px 10px',
@@ -67,7 +69,7 @@ const MemorySearch: React.FC<MemorySearchProps> = ({
             cursor: 'pointer',
           }}
         >
-          搜索
+          {t('search_button')}
         </button>
       </div>
 
@@ -86,7 +88,7 @@ const MemorySearch: React.FC<MemorySearchProps> = ({
               cursor: 'pointer',
             }}
           >
-            {type === 'all' ? '全部' : type.charAt(0).toUpperCase() + type.slice(1)}
+            {type === 'all' ? t('all') : type.charAt(0).toUpperCase() + type.slice(1)}
           </button>
         ))}
       </div>
@@ -122,7 +124,7 @@ const MemorySearch: React.FC<MemorySearchProps> = ({
 
       {results.length === 0 && searchQuery && (
         <div style={{ fontSize: '12px', color: '#999', textAlign: 'center', padding: '12px' }}>
-          未找到匹配的记忆
+          {t('no_results', { defaultValue: '未找到匹配的记忆' })}
         </div>
       )}
     </div>

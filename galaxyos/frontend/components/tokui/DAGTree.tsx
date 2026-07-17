@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 
 interface DAGNodeData {
   id: string;
@@ -32,6 +33,7 @@ const DAGNodeItem: React.FC<{
   onCollapse?: (nodeId: string) => void;
   onSummary?: (nodeId: string) => void;
 }> = ({ node, depth, activeNodeId, onExpand, onCollapse, onSummary }) => {
+  const { t } = useTranslation('cognitive-panel');
   const [expanded, setExpanded] = useState(depth < 1);
   const hasChildren = node.children && node.children.length > 0;
   const isActive = node.id === activeNodeId;
@@ -85,7 +87,7 @@ const DAGNodeItem: React.FC<{
             onClick={(e) => { e.stopPropagation(); onSummary?.(node.id); }}
             style={{ fontSize: '10px', padding: '1px 4px', background: '#f5f5f5', border: '1px solid #ddd', borderRadius: '3px', cursor: 'pointer' }}
           >
-            摘要
+            {t('summary', { defaultValue: '摘要' })}
           </button>
         )}
       </div>
@@ -105,11 +107,12 @@ const DAGNodeItem: React.FC<{
 };
 
 const DAGTree: React.FC<DAGTreeProps> = ({ nodes = [], activeNodeId, onExpand, onCollapse, onSummary }) => {
+  const { t } = useTranslation('cognitive-panel');
   return (
     <div className="tokui-dag-tree" style={{ padding: '12px', background: '#fafafa', borderRadius: '8px', border: '1px solid #e0e0e0' }}>
-      <div style={{ fontWeight: 600, fontSize: '14px', marginBottom: '8px' }}>DAG 上下文树</div>
+      <div style={{ fontWeight: 600, fontSize: '14px', marginBottom: '8px' }}>{t('dag_tree')}</div>
       {nodes.length === 0 ? (
-        <div style={{ fontSize: '12px', color: '#999', textAlign: 'center', padding: '12px' }}>暂无上下文节点</div>
+        <div style={{ fontSize: '12px', color: '#999', textAlign: 'center', padding: '12px' }}>{t('no_data')}</div>
       ) : (
         nodes.map((node) => (
           <DAGNodeItem
