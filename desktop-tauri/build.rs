@@ -30,7 +30,11 @@ fn main() {
         println!("cargo:rustc-link-lib=static=glfw3");
         println!("cargo:rustc-link-lib=static=harfbuzz");
         println!("cargo:rustc-link-lib=static=glad");
-        println!("cargo:rustc-link-lib=static=libpng16_static");
+        if cfg!(target_os = "windows") {
+            println!("cargo:rustc-link-lib=static=libpng16_static");
+        } else {
+            println!("cargo:rustc-link-lib=static=png16_static");
+        }
         println!("cargo:rustc-link-lib=static=eui_zlib");
         println!("cargo:rustc-link-lib=static=eui_md4c");
         println!("cargo:rerun-if-env-changed=EUI_NEO_ROOT");

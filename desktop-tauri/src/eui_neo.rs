@@ -3,6 +3,7 @@ use std::collections::HashMap;
 
 use tauri::Emitter;
 
+#[allow(dead_code)]
 pub struct EuiNeoContext {
     pub native_available: bool,
     pub surfaces: HashMap<String, RenderSurface>,
@@ -23,6 +24,7 @@ pub struct RenderSurface {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[allow(dead_code)]
 pub struct NativeRenderResult {
     pub status: String,
     pub surface_id: String,
@@ -40,6 +42,7 @@ pub struct SurfaceConfig {
     pub height: u32,
 }
 
+#[allow(dead_code)]
 pub struct NativeRenderSurfaceManager {
     surfaces: HashMap<String, RenderSurface>,
     native_available: bool,
@@ -153,6 +156,7 @@ impl NativeRenderSurfaceManager {
     }
 }
 
+#[allow(dead_code)]
 pub struct NativeEventBridge {
     surface_event_log: Vec<serde_json::Value>,
 }
@@ -200,6 +204,7 @@ impl NativeEventBridge {
     }
 }
 
+#[allow(dead_code)]
 const FFI_TIMEOUT_MS: u64 = 5000;
 
 #[tauri::command]
@@ -332,7 +337,7 @@ pub async fn open_cognitive_overlay(
     width: f64,
     height: f64,
     state: tauri::State<'_, crate::AppState>,
-    handle: tauri::AppHandle,
+    _handle: tauri::AppHandle,
 ) -> Result<serde_json::Value, String> {
     let label = format!("cognitive-overlay-{}", chrono_like_timestamp());
 
@@ -356,7 +361,7 @@ pub async fn open_cognitive_overlay(
     };
 
     match ctx.surface_manager.create_surface(&config) {
-        Ok(surface) => {
+        Ok(_surface) => {
             let locale = state.locale.lock().map_err(|e| e.to_string())?.clone();
             let dsl = build_cognitive_panel_dsl(&locale);
             match ctx.surface_manager.update_surface(&surface_id, &dsl) {
