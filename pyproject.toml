@@ -74,10 +74,10 @@ async-accel = [
      "openjiuwen>=0.1.13",
  ]
  openjiuwen-vendor = [
-     "openjiuwen@file:///${PROJECT_ROOT}/vendor/agent-core",
+     "openjiuwen>=0.1.13",
  ]
  jiuwenswarm-vendor = [
-     "jiuwenswarm@file:///${PROJECT_ROOT}/vendor/jiuwenswarm-develop",
+     "jiuwenswarm>=0.2.3",
  ]
  all = [
      "galaxyos[ml,neural,nlp,async-accel,mcp,tokui,openjiuwen]",
