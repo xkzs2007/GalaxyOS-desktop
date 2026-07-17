@@ -1,21 +1,23 @@
 fn main() {
-    let eui_neo_root = std::env::var("EUI_NEO_ROOT").unwrap_or_else(|_| {
-        let exe_dir = std::env::current_exe()
-            .ok()
-            .and_then(|p| p.parent().map(|p| p.to_path_buf()))
-            .unwrap_or_else(|| std::path::PathBuf::from("."));
+    let eui_neo_root = std::env::var("EUI_NEO_ROOT")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|_| {
+            let exe_dir = std::env::current_exe()
+                .ok()
+                .and_then(|p| p.parent().map(|p| p.to_path_buf()))
+                .unwrap_or_else(|| std::path::PathBuf::from("."));
 
-        let candidates = vec![
-            exe_dir.join("vendor").join("eui-neo"),
-            std::path::PathBuf::from("vendor/eui-neo"),
-            std::path::PathBuf::from("../vendor/eui-neo"),
-        ];
+            let candidates = vec![
+                exe_dir.join("vendor").join("eui-neo"),
+                std::path::PathBuf::from("vendor/eui-neo"),
+                std::path::PathBuf::from("../vendor/eui-neo"),
+            ];
 
-        candidates
-            .into_iter()
-            .find(|p| p.join("sdk").exists())
-            .unwrap_or_else(|| std::path::PathBuf::from("vendor/eui-neo"))
-    });
+            candidates
+                .into_iter()
+                .find(|p| p.join("sdk").exists())
+                .unwrap_or_else(|| std::path::PathBuf::from("vendor/eui-neo"))
+        });
 
     let sdk_dir = eui_neo_root.join("sdk");
     let include_dir = sdk_dir.join("include");
