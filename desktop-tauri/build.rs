@@ -23,21 +23,37 @@ fn main() {
     let include_dir = sdk_dir.join("include");
     let lib_dir = sdk_dir.join("lib");
 
-    if include_dir.exists() {
+    let core_lib = if cfg!(target_os = "windows") {
+        lib_dir.join("eui_neo.lib")
+    } else {
+        lib_dir.join("libeui_neo.a")
+    };
+
+    if include_dir.exists() && core_lib.exists() {
         println!("cargo:rustc-link-search=native={}", lib_dir.display());
         println!("cargo:rustc-link-lib=static=eui_neo");
         println!("cargo:rustc-link-lib=static=freetype");
         println!("cargo:rustc-link-lib=static=glfw3");
         println!("cargo:rustc-link-lib=static=harfbuzz");
         println!("cargo:rustc-link-lib=static=glad");
-        if cfg!(target_os = "windows") {
-            println!("cargo:rustc-link-lib=static=libpng16_static");
+
+        let png_lib = if cfg!(target_os = "windows") {
+            "libpng16_static"
         } else {
-            println!("cargo:rustc-link-lib=static=png16_static");
-        }
+            let png_a = lib_dir.join("libpng16_static.a");
+            if png_a.exists() {
+                "png16_static"
+            } else {
+                "png16"
+            }
+        };
+        println!("cargo:rustc-link-lib=static={}", png_lib);
+
         println!("cargo:rustc-link-lib=static=eui_zlib");
         println!("cargo:rustc-link-lib=static=eui_md4c");
         println!("cargo:rerun-if-env-changed=EUI_NEO_ROOT");
+    } else {
+        println!("cargo:warning=EUI-NEO SDK not found or incomplete, skipping native linking");
     }
 
     tauri_build::build()

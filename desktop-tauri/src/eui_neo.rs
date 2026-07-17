@@ -48,6 +48,7 @@ pub struct NativeRenderSurfaceManager {
     native_available: bool,
 }
 
+#[allow(dead_code)]
 impl NativeRenderSurfaceManager {
     pub fn new() -> Self {
         Self {
@@ -161,6 +162,7 @@ pub struct NativeEventBridge {
     surface_event_log: Vec<serde_json::Value>,
 }
 
+#[allow(dead_code)]
 impl NativeEventBridge {
     pub fn new() -> Self {
         Self {
