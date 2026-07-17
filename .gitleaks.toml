@@ -1,10 +1,8 @@
 # .gitleaks.toml — 防密钥泄露扫描配置
 # 用法: gitleaks detect --config=.gitleaks.toml
 
-[title]
-description = "GalaxyOS GitLeaks 规则"
+title = "GalaxyOS GitLeaks 规则"
 
-# 允许的假密钥（示例/测试用）
 [allowlist]
 regexes = [
     "sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",

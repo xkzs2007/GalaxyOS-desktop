@@ -20,10 +20,14 @@ repos:
       - id: ruff
         args: [--fix, --select=E,F,W, --ignore=E501,E402]
 
-  - repo: https://github.com/gitleaks/gitleaks
-    rev: v8.24.0
+  - repo: local
     hooks:
       - id: gitleaks
+        name: gitleaks (detect secrets)
+        entry: gitleaks detect --no-git --verbose --source
+        language: system
+        types: [text]
+        pass_filenames: true
 
   - repo: local
     hooks:
