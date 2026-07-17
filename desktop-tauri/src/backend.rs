@@ -351,22 +351,25 @@ fn find_galaxyos_binary() -> Result<BinaryResult, String> {
     Ok(BinaryResult { path: python, is_python_fallback: true })
 }
 
+fn venv_python_path(base: &std::path::Path) -> std::path::PathBuf {
+    #[cfg(windows)]
+    { base.join(".venv313").join("Scripts").join("python.exe") }
+    #[cfg(not(windows))]
+    { base.join(".venv313").join("bin").join("python") }
+}
+
 fn find_python() -> Result<String, String> {
     if let Ok(exe_dir) = std::env::current_exe() {
         if let Some(dir) = exe_dir.parent() {
-            let venv_python = dir.join(".venv313").join("Scripts").join("python.exe");
+            let venv_python = venv_python_path(dir);
             if venv_python.exists() {
                 return Ok(venv_python.to_string_lossy().to_string());
             }
-            let project_root = dir.join("..").join(".venv313").join("Scripts").join("python.exe");
+            let project_root = venv_python_path(&dir.join(".."));
             if project_root.exists() {
                 return Ok(project_root.to_string_lossy().to_string());
             }
         }
-    }
-    let venv_path = std::path::Path::new("../.venv313/Scripts/python.exe");
-    if venv_path.exists() {
-        return Ok(venv_path.to_string_lossy().to_string());
     }
     for name in &["python3", "python"] {
         if Command::new(name)
