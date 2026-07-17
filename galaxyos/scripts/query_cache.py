@@ -16,7 +16,7 @@ class QueryCache:
     def __init__(self, max_size: int = 1000, ttl: int = 300):
         """
         初始化缓存
-        
+
         Args:
             max_size: 最大缓存条目数
             ttl: 缓存有效期（秒）

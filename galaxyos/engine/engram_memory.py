@@ -42,7 +42,7 @@ import numpy as np
 
 def _stable_hash(text: str, mod: int) -> int:
     """确定性哈希：用于 N-gram 的槽位寻址
-    
+
     O(1) 查找的核心：不需要 softmax 查找，直接哈希定位。
     """
     return int(hashlib.sha256(text.encode('utf-8')).hexdigest(), 16) % mod
@@ -86,12 +86,12 @@ def _tokenize(text: str) -> List[str]:
 class NgramHashTable:
     """
     N-gram 嵌入哈希表 — Engram 的核心
-    
+
     把经典 N-gram 嵌入改造成 O(1) 有条件查找：
     - 每个 N-gram 哈希到一个槽位
     - 槽位存储嵌入向量 + 元数据
     - 查找 = 哈希 → 返回嵌入（常数时间）
-    
+
     论文公式：
     lookup(ngram) = E[hash(ngram) % N]
     其中 E ∈ R^{N×d} 是可学习的嵌入表
@@ -117,7 +117,7 @@ class NgramHashTable:
 
     def lookup(self, ngram: str) -> Tuple[Optional[np.ndarray], bool]:
         """O(1) 查找 N-gram 嵌入
-        
+
         Returns:
             (embedding_or_None, 是否命中)
         """
@@ -139,7 +139,7 @@ class NgramHashTable:
 
     def get_or_create(self, ngram: str, default_fn=None) -> np.ndarray:
         """查找或创建嵌入
-        
+
         支持"有条件记忆"：如果 N-gram 没见过，用 default_fn 生成嵌入
         """
         emb, hit = self.lookup(ngram)
@@ -158,7 +158,7 @@ class NgramHashTable:
 
     def batch_lookup(self, ngrams: List[str]) -> Tuple[np.ndarray, np.ndarray]:
         """批量 O(1) 查找
-        
+
         Returns:
             (embeddings: [B, d], hit_mask: [B] 布尔)
         """
@@ -259,13 +259,13 @@ class EngramConfig:
 class EngramMemory:
     """
     Engram 条件记忆系统
-    
+
     论文核心思想实现：
     1. 条件记忆 = 替代 MoE 的一部分计算
     2. O(1) 确定性查找 = 不需要 softmax 路由
     3. N-gram 嵌入 = 查到的模式直接作为门控输入
     4. 运行时预取 = 确定性寻址支持 host memory 预取
-    
+
     在 GalaxyOS 中的角色：
     - 为记忆系统提供"静态知识查找"通道
     - 与 LTC/CfC 的"动态时序建模"互补
@@ -297,15 +297,15 @@ class EngramMemory:
 
     def lookup(self, text: str) -> Tuple[Optional[np.ndarray], dict]:
         """条件记忆查找
-        
+
         三步走：
         1. 分词 → N-gram
         2. 批量哈希查找 → O(1) 命中/未命中
         3. 未命中的 N-gram 用 MLP 或默认值生成
-        
+
         Args:
             text: 输入文本
-            
+
         Returns:
             (aggregated_embedding_or_None, info_dict)
             info_dict = {
@@ -367,7 +367,7 @@ class EngramMemory:
 
     def remember(self, text: str, embedding: Optional[np.ndarray] = None):
         """将文本存入条件记忆
-        
+
         把文本的关键 N-gram 与嵌入关联起来。
         下次遇到相似文本时，O(1) 命中。
         """
@@ -406,7 +406,7 @@ class EngramMemory:
 
     def forget(self, text: str):
         """遗忘特定文本的条件记忆
-        
+
         删除所有相关 N-gram 的映射（通过重新初始化嵌入实现遗忘）
         """
         tokens = _tokenize(text)
@@ -423,7 +423,7 @@ class EngramMemory:
 
     def _prefetch(self, ngrams: List[str]):
         """运行时预取（论文特色）
-        
+
         Engram 的确定性寻址允许：
         - 在计算当前批次的同时，预取下一个批次的嵌入
         - 从 host memory 异步加载到 fast memory
@@ -475,15 +475,15 @@ class EngramMemory:
 class EngramEnhancedHeatTracker:
     """
     Engram 增强的热度跟踪器
-    
+
     将 Engram 的 O(1) 条件记忆查找与 MemoryOS 的 HeatTracker 融合：
-    
+
     原始 HeatTracker:
         heat = decay(heat) + boost_on_access
-    
+
     Engram 增强:
         heat = decay(heat) + boost_on_access + engram_boost * hit_rate
-    
+
     当 Engram 命中率高时，说明该内容是"常见模式"，
     作为静态知识应该获得更高保留优先级。
     """

@@ -31,7 +31,7 @@ class MeanAggregator(nn.Module):
             features: 节点特征 (num_nodes, input_dim)
             neighbors: 邻居索引 (num_nodes, max_neighbors)
             num_neighbors: 每个节点的邻居数量 (num_nodes,)
-            
+
         Returns:
             聚合后的特征 (num_nodes, output_dim)
         """
@@ -80,7 +80,7 @@ class LSTMAggregator(nn.Module):
             features: 节点特征 (num_nodes, input_dim)
             neighbors: 邻居索引 (num_nodes, max_neighbors)
             num_neighbors: 每个节点的邻居数量 (num_nodes,)
-            
+
         Returns:
             聚合后的特征 (num_nodes, output_dim)
         """
@@ -132,7 +132,7 @@ class PoolingAggregator(nn.Module):
             features: 节点特征 (num_nodes, input_dim)
             neighbors: 邻居索引 (num_nodes, max_neighbors)
             num_neighbors: 每个节点的邻居数量 (num_nodes,)
-            
+
         Returns:
             聚合后的特征 (num_nodes, output_dim)
         """
@@ -165,7 +165,7 @@ class PoolingAggregator(nn.Module):
 class GraphSAGELayer(nn.Module):
     """
     GraphSAGE 单层
-    
+
     实现:
     h_v^k = σ(W^k · CONCAT(h_v^{k-1}, AGGREGATE({h_u^{k-1}, ∀u ∈ N(v)})))
     """
@@ -218,12 +218,12 @@ class GraphSAGELayer(nn.Module):
     ) -> torch.Tensor:
         """
         前向传播
-        
+
         Args:
             features: 节点特征 (num_nodes, input_dim)
             adj_list: 邻接表，adj_list[i] 是节点 i 的邻居列表
             num_samples: 采样的邻居数量
-            
+
         Returns:
             更新后的节点特征 (num_nodes, output_dim)
         """
@@ -299,7 +299,7 @@ class GraphSAGELayer(nn.Module):
 class GraphSAGE(nn.Module):
     """
     完整的 GraphSAGE 模型
-    
+
     多层堆叠的 GraphSAGE
     """
 
@@ -351,11 +351,11 @@ class GraphSAGE(nn.Module):
     ) -> torch.Tensor:
         """
         前向传播
-        
+
         Args:
             features: 节点特征 (num_nodes, input_dim)
             adj_list: 邻接表
-            
+
         Returns:
             节点嵌入 (num_nodes, output_dim)
         """

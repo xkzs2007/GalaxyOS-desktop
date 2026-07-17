@@ -11,7 +11,7 @@ LFM 自适应算子 — Liquid Foundation Model Adaptive Linear Operator
 核心洞察：
   Transformer 的 self-attention 计算 O(n²) 的注意力矩阵，
   LFM 用 O(n·d²) 的动态线性映射替代，在长序列下显著降低计算量。
-  
+
   权重生成过程:
     W(x) = Gating(x) · W_base · Activation(x)
   其中 W_base 是可学习的基矩阵，Gating(x) 是输入依赖的门控。
@@ -53,16 +53,16 @@ except ImportError:
 class AdaptiveLinearOperator:
     """
     自适应线性算子 — LFM 的核心构建块
-    
+
     替代 Transformer 的 self-attention:
     - 输入: x ∈ R^{B×L×d} (B=batch, L=seq_len, d=hidden_dim)
     - 输出: y = W(x) @ x，其中 W(x) = Gating(x) · W_base · Activation(x)
-    
+
     关键设计:
     1. 权重生成器: 从输入 x 通过轻量网络生成权重矩阵
     2. 门控机制: 输入依赖的门控，控制权重活跃度
     3. 多头分解: 将大权重矩阵拆解为多头子空间，减少参数量
-    
+
     Args:
         hidden_dim: 隐藏层维度 d
         num_heads: 注意力头数 (多头分解)
@@ -134,10 +134,10 @@ class AdaptiveLinearOperator:
 
     def _layer_norm(self, x: np.ndarray, eps: float = 1e-6) -> np.ndarray:
         """Per-head 层归一化
-        
+
         Args:
             x: [B, L, num_heads, head_dim]
-        
+
         Returns:
             normalized: [B, L, num_heads, head_dim]
         """
@@ -149,7 +149,7 @@ class AdaptiveLinearOperator:
                 causal_mask: bool = False,
                 return_weights: bool = False) -> Any:
         """自适应线性算子的前向传播
-        
+
         LFM 核心计算:
         1. x → head 分解: [B, L, d] → [B, L, H, d_h]
         2. 权重生成: ΔW = Φ(x)  (输入依赖的权重增量)
@@ -157,12 +157,12 @@ class AdaptiveLinearOperator:
         4. 自适应权重: W_adaptive = G ⊙ (W_base + ΔW)
         5. 线性变换: y_h = W_adaptive @ x_h
         6. 多头合并: [B, L, H, d_h] → [B, L, d]
-        
+
         Args:
             x: 输入 [B, L, hidden_dim]
             causal_mask: 是否使用因果掩码（仅在推理时支持）
             return_weights: 是否返回生成的权重（分析用）
-        
+
         Returns:
             y: 输出 [B, L, hidden_dim]
         """
@@ -316,13 +316,13 @@ class LFMConfig:
 class LFMNetwork:
     """
     LFM 多层网络 — 堆叠自适应线性算子 + FFN
-    
+
     整体结构（替代 Transformer Decoder）:
         x → [LFM Layer × N] → output
-    
+
     每层:
         x → AdaptiveLinearOperator → LayerNorm → FFN → LayerNorm → x'
-    
+
     与 Transformer 的关键区别:
     - 无 self-attention，用 AdaptiveLinearOperator 替代
     - 推理时无 KV Cache (节省显存)
@@ -381,12 +381,12 @@ class LFMNetwork:
                 causal_mask: bool = False,
                 return_hidden: bool = False) -> Any:
         """LFM 网络前向传播
-        
+
         Args:
             x: 输入 [B, L, hidden_dim]
             causal_mask: 是否因果（训练/推理）
             return_hidden: 是否返回隐藏状态序列
-        
+
         Returns:
             y: 输出 [B, L, hidden_dim]
         """
@@ -435,12 +435,12 @@ class LFMNetwork:
 class VisualPatchEmbedding:
     """
     视觉 Patch Embedding — 原生分辨率输入处理 (P18 轻量多模态)
-    
+
     将图像转换为 LFM 可处理的 token 序列:
     1. 像素解混 (Pixel Unshuffle): 将图像分成 patch
     2. 线性投影到隐藏维度
     3. 位置编码 (可选)
-    
+
     支持:
     - 原生分辨率 (任意大小)
     - 混合精度 (fp16/fp32)
@@ -476,13 +476,13 @@ class VisualPatchEmbedding:
 
     def patch_unshuffle(self, image: np.ndarray) -> np.ndarray:
         """像素解混: 将图像分成 patch
-        
+
         将 H×W×C 的图像转换为 (H/p)×(W/p) 个 patch，每个 patch 为 p²·C 维向量。
         支持原生分辨率（自动 pad 到 patch 对齐）。
-        
+
         Args:
             image: [H, W, C] 或 [C, H, W] 的 numpy 数组, 值域 [0, 1] 或 [0, 255]
-        
+
         Returns:
             patches: [num_patches, patch_dim]
         """
@@ -522,12 +522,12 @@ class VisualPatchEmbedding:
                 add_cls: bool = True,
                 return_pos: bool = False) -> np.ndarray:
         """前向: 图像 → patch tokens
-        
+
         Args:
             image: [H, W, C] 输入图像
             add_cls: 是否添加 CLS token
             return_pos: 是否返回位置信息
-        
+
         Returns:
             tokens: [1 + num_patches, hidden_dim] 或 [num_patches, hidden_dim]
         """
@@ -555,14 +555,14 @@ class VisualPatchEmbedding:
                             tokens: np.ndarray,
                             image_position: int = 0) -> np.ndarray:
         """将视觉 token 注入 LFM 算子
-        
+
         将图像 token 拼接或插入到序列中，让 LFM 处理视觉信息。
-        
+
         Args:
             lfm: 目标 LFM 自适应算子
             tokens: 图像 token [N_v, d]
             image_position: 插入位置 (默认 0 = 序列开头)
-        
+
         Returns:
             output: 处理后的输出
         """
@@ -586,7 +586,7 @@ class VisualPatchEmbedding:
 class LFMWithVision(AdaptiveLinearOperator):
     """
     支持视觉输入的 LFM 自适应算子 (P18 集成)
-    
+
     在 AdaptiveLinearOperator 基础上添加:
     - VisualPatchEmbedding 作为视觉编码器
     - 视觉 token 自动插入序列
@@ -613,12 +613,12 @@ class LFMWithVision(AdaptiveLinearOperator):
                            image: np.ndarray,
                            causal_mask: bool = False) -> np.ndarray:
         """视觉+文本联合推理
-        
+
         Args:
             text_tokens: 文本 token [B, L_text, d]
             image: 图像 [H, W, C]
             causal_mask: 因果掩码
-        
+
         Returns:
             output: [B, L_text, d] 仅在文本位置的输出
         """
@@ -644,7 +644,7 @@ class LFMWithVision(AdaptiveLinearOperator):
 class RealLFMNetwork:
     """
     LFM2.5-1.2B-Thinking 真实权重包装器 — 替代随机权重的 LFMNetwork
-    
+
     加载 HuggingFace 上的 LiquidAI/LFM2.5-1.2B-Thinking，
     提供兼容 LFMNetwork 的接口（forward + get_info），
     但实际使用 bf16 Transformer 推理而非 NumPy 算子。
@@ -682,7 +682,7 @@ class RealLFMNetwork:
 
     def forward(self, x, causal_mask=False, return_hidden=False):
         """兼容 LFMNetwork 的 forward 接口
-        
+
         如果 x 是 numpy array → 走兼容路径（返回零张量）
         如果 x 是字符串 → 走真实推理（返回隐状态 norm）
         """
@@ -725,7 +725,7 @@ class RealLFMNetwork:
 
     def embed_text(self, text: str) -> Optional[np.ndarray]:
         """返回文本的 LFM 隐状态向量（mean pooling，float32）
-        
+
         输出: (2048,) numpy 向量（bf16→float32 转换）
         """
         if not self._ensure():

@@ -39,11 +39,11 @@ class HeartbeatResult:
 class HeartbeatTaskExecutor:
     """
     心跳任务执行器
-    
+
     基于 Autonomous Agents 论文:
     - 自主智能体应该能够自主规划和执行任务
     - 后台任务是主动性的关键体现
-    
+
     功能:
     1. 检查并执行主动任务
     2. 记忆维护
@@ -55,7 +55,7 @@ class HeartbeatTaskExecutor:
     def __init__(self, workspace_dir: str = None):
         """
         初始化心跳执行器
-        
+
         Args:
             workspace_dir: 工作空间目录
         """
@@ -67,10 +67,10 @@ class HeartbeatTaskExecutor:
     def execute_heartbeat(self, duration_minutes: int = 15) -> HeartbeatResult:
         """
         执行心跳任务
-        
+
         Args:
             duration_minutes: 最大执行时间（分钟）
-        
+
         Returns:
             心跳执行结果
         """

@@ -79,7 +79,7 @@ def _is_local_file(value):
         return Path(value).is_file()
     except (OSError, TypeError):
         return False
-    
+
 
 def validate_image_input(value):
     """Validate that the image parameter is a remote URL or local file path."""
@@ -96,7 +96,7 @@ def _image_to_base64(image_path):
         with open(image_path, "rb") as f:
             image_data = f.read()
             b64_string = base64.b64encode(image_data).decode('utf-8')
-            
+
             # 根据文件扩展名确定MIME类型
             ext = Path(image_path).suffix.lower()
             mime_type = _MIME_TYPE_MAP.get(ext, 'image/png')
@@ -282,13 +282,13 @@ def _process_image_input(image):
 
 
 def generate_image(
-    prompt, 
+    prompt,
     input_image=None,
     size="2K",
     watermark=True,
     max_images=None):
     """Call the Xiaoyi image generation API."""
-    
+
     # Check environment variables
     required_env = ['PERSONAL-API-KEY', 'PERSONAL-UID', 'SERVICE_URL']
 
@@ -301,11 +301,11 @@ def generate_image(
     if missing:
         print(f"❌ Missing environment variables: {', '.join(missing)}")
         sys.exit(1)
-    
+
     # Configuration
     trace_id = str(uuid.uuid4())
     api_url = f'{SERVICE_URL}/celia-claw/v1/sse-api/skill/execute'
-    
+
     # Build request
     headers = {
         'Content-Type': 'application/json',
@@ -315,7 +315,7 @@ def generate_image(
         'x-api-key': API_KEY,
         'x-request-from': 'openclaw',
     }
-    
+
     # 定义 content 字段，便于后续扩展
     content = {
         "prompt": prompt,
@@ -323,7 +323,7 @@ def generate_image(
         "watermark": watermark,
         "response_format": "url"
     }
-    
+
     # 处理图片输入并添加到 content 中
     if input_image is not None:
         input_image = _process_image_input(input_image)
@@ -331,7 +331,7 @@ def generate_image(
 
     if max_images is not None:
         content["max_images"] = max_images
-    
+
     payload = {
         "actions": [
             {
@@ -363,21 +363,21 @@ def generate_image(
         },
         "version": "1.0"
     }
-    
+
     # Call API
     print(f"📡 Generating image...")
     print(f"   Prompt: {prompt[:80]}{'...' if len(prompt) > 80 else ''}")
-    
+
     try:
         # Use stream to handle multiple responses (heartbeat packets)
         response = requests.post(api_url, headers=headers, json=payload, timeout=120, verify=False, stream=True)
         response.raise_for_status()
-        
+
         # Read streaming responses until we get the final result
         image_urls = None
-        
+
         print(f"⏳ Waiting for image generation to complete...")
-        
+
         for line in response.iter_lines():
             if line:
                 line_str = line.decode('utf-8')
@@ -394,22 +394,22 @@ def generate_image(
                     else:
                         # Skip empty or other non-data lines
                         continue
-                    
+
                     # Extract image URL from new JSON structure
                     ability_infos = result.get('abilityInfos', [])
                     if not ability_infos:
                         continue
-                    
+
                     action_executor_result = ability_infos[0].get('actionExecutorResult', {})
                     if action_executor_result.get('code') != '0':
                         error_msg = action_executor_result.get('desc', 'Unknown error')
                         print(f"❌ API Error: {error_msg}")
                         continue
-                    
+
                     reply = action_executor_result.get('reply', {})
                     stream_info = reply.get('streamInfo', {})
                     stream_type = stream_info.get('streamType', '')
-                    
+
                     # Check if this is a heartbeat packet or final response
                     if stream_type == 'final':
                         # This is the final response with image URLs
@@ -418,14 +418,14 @@ def generate_image(
                             image_urls = items
                             print(f"✅ Final response received, {len(image_urls)} image(s) generated")
                             break
-                
+
                 except json.JSONDecodeError:
                     # Skip lines that are not valid JSON
                     continue
-        
+
         # Return the image URLs or None if not found
         return image_urls
-        
+
     except requests.exceptions.Timeout:
         print("❌ Error: Request timed out (120s)")
         return None
@@ -439,13 +439,13 @@ def generate_image(
 
 def download_image(url, output_dir):
     """Download image and save to file."""
-    
+
     print(f"⬇️  Downloading...")
-    
+
     try:
         response = requests.get(url, timeout=60, verify=False)
         response.raise_for_status()
-        
+
         # Determine extension
         path_lower = url.lower().split('?')[0]
         if path_lower.endswith('.jpg') or path_lower.endswith('.jpeg'):
@@ -456,7 +456,7 @@ def download_image(url, output_dir):
             ext = '.gif'
         else:
             ext = '.png'
-        
+
         # Generate filename
         now_time = datetime.now()
         ms = now_time.strftime('%f')[:3]
@@ -468,14 +468,14 @@ def download_image(url, output_dir):
         timestamp = f"{base_time}_{ms}_{random_chars}"
         filename = f"{timestamp}_generated{ext}"
         output_path = Path(output_dir) / filename
-        
+
         # Save
         with open(output_path, 'wb') as f:
             f.write(response.content)
-        
+
         print(f"💾 Saved to: {output_path}")
         return output_path
-        
+
     except Exception as e:
         print(f"❌ Download failed: {e}")
         return None
@@ -495,9 +495,9 @@ def main():
     parser.add_argument("--watermark", action=argparse.BooleanOptionalAction, default=True,
                     help="Add watermark to generated image")
     parser.add_argument("--max-images", type=int, help="Maximum number of images to generate")
-    
+
     args = parser.parse_args()
-    
+
     # Generate images
     image_urls = generate_image(
         prompt=args.prompt,
@@ -506,14 +506,14 @@ def main():
         watermark=args.watermark,
         max_images=args.max_images
     )
-    
+
     if not image_urls:
         sys.exit(1)
-    
+
     # Determine output directory
     output_dir = Path(args.output).expanduser()
     output_dir.mkdir(parents=True, exist_ok=True)
-    
+
     # Download all images
     saved_paths = []
     for i, url in enumerate(image_urls, 1):
@@ -521,12 +521,12 @@ def main():
         saved_path = download_image(url, output_dir)
         if saved_path:
             saved_paths.append(saved_path)
-    
+
     # Check if all downloads succeeded
     if len(saved_paths) < len(image_urls):
         print(f"\n⚠️  Warning: Only {len(saved_paths)} out of {len(image_urls)} images were successfully downloaded")
         sys.exit(1)
-    
+
     # Print summary
     print(f"\n📊 Summary:")
     print(f"   Prompt: {args.prompt}")

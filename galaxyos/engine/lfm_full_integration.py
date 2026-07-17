@@ -27,10 +27,10 @@ logger = logging.getLogger("lfm_full_integration")
 
 def ode_rnn_predict(embedding: np.ndarray, recent_embs: List[np.ndarray] = None) -> Dict:
     """ODE-RNN 持续学习: 接收 LFM 2048-dim 序列, 预测下一状态
-    
+
     ODERNNContinual.forward(x_seq) 接收 (seq_len, input_dim) 的序列，
     返回 (seq_len, hidden_dim) 的隐状态 + (seq_len, output_dim) 预测。
-    
+
     Args:
         embedding: 当前文本的 LFM embedding (2048,)
         recent_embs: 最近的 N 个 embedding 列表
@@ -62,7 +62,7 @@ def ode_rnn_predict(embedding: np.ndarray, recent_embs: List[np.ndarray] = None)
 
 def neural_ode_trajectory(embedding: np.ndarray, steps: int = 16) -> Dict:
     """Neural ODE: 以 LFM embedding 为初值 ODE 演化
-    
+
     Args:
         embedding: (2048,) LFM embedding
         steps: 时间步
@@ -104,7 +104,7 @@ def neural_ode_trajectory(embedding: np.ndarray, steps: int = 16) -> Dict:
 
 def kan_transform(embedding: np.ndarray) -> Dict:
     """KAN 网络: LFM embedding → KAN 激活函数变换
-    
+
     Args:
         embedding: (2048,) LFM embedding
 
@@ -129,7 +129,7 @@ def kan_transform(embedding: np.ndarray) -> Dict:
 
 def ltc_dynamics(embedding: np.ndarray, dt: float = 0.1) -> Dict:
     """LTC 液体时间常数: embedding 过 LTC/CfC 单元
-    
+
     Returns:
         {"ltc_evolved": LTC 演化的 embedding, "tau": 时间常数,
          "energy": 液态能量}
@@ -163,7 +163,7 @@ def ltc_dynamics(embedding: np.ndarray, dt: float = 0.1) -> Dict:
 
 def moe_route(embedding: np.ndarray, engram_hit_rate: float = 0.0) -> Dict:
     """MoE+Engram: LFM embedding 路由决策
-    
+
     Returns:
         {"route_decision": routing, "route_alpha": 融合系数}
     """
@@ -188,7 +188,7 @@ def moe_route(embedding: np.ndarray, engram_hit_rate: float = 0.0) -> Dict:
 def ssm_filter_embedding(embedding: np.ndarray,
                          recent_embs: List[np.ndarray] = None) -> Dict:
     """三路 SSM 滤波/预测
-    
+
     Returns:
         {"mamba3": Mamba3 滤波结果,
          "ssm_kan": SSM+KAN 变换,
@@ -238,7 +238,7 @@ def ssm_filter_embedding(embedding: np.ndarray,
 
 def lipschitz_analyze(embedding: np.ndarray) -> Dict:
     """Lipschitz 液体约束: 对 embedding 做利普希茨稳定性分析
-    
+
     Returns:
         {"lipschitz_constant": L, "stability_score": 稳定性,
          "w_norm": 权重 norm}
@@ -264,7 +264,7 @@ def lipschitz_analyze(embedding: np.ndarray) -> Dict:
 
 def sparsity_analyze(embedding: np.ndarray) -> Dict:
     """UnifiedSparsityView: LFM embedding 稀疏性度量
-    
+
     Returns:
         {"sparsity": 稀疏度, "active_dims": 活跃维度,
          "efficiency": 效率分}
@@ -311,7 +311,7 @@ def sparsity_analyze(embedding: np.ndarray) -> Dict:
 
 def lfm_edge_quantize(embedding: np.ndarray) -> Dict:
     """LFM Edge: 对 embedding 做 INT8 量化+压缩
-    
+
     Returns:
         {"qtype": 量化类型, "compression_ratio": 压缩比,
          "original_bytes": 原始大小, "quantized_bytes": 量化后}
@@ -335,7 +335,7 @@ def lfm_edge_quantize(embedding: np.ndarray) -> Dict:
 
 def kan_ltc_fuse(embedding: np.ndarray) -> Dict:
     """KanLtcMerger: KAN 函数逼近 + LTC 时间常数联合
-    
+
     Returns:
         {"output_norm": 融合后 norm, "dt_adapted": 动态时间步}
     """
@@ -360,7 +360,7 @@ def kan_ltc_fuse(embedding: np.ndarray) -> Dict:
 
 def dag_liquid_score(embedding: np.ndarray) -> Dict:
     """DAGLiquidFusion: embedding 的 DAG 就绪度评分
-    
+
     Returns:
         {"compact_readiness": 压缩就绪度 [0,1],
          "node_score": 节点分数}
@@ -393,7 +393,7 @@ def dag_liquid_score(embedding: np.ndarray) -> Dict:
 
 def ncd_predict(embedding: np.ndarray) -> Dict:
     """NCD 闭式微分: 对 embedding 做闭式 ODE 一步预测
-    
+
     Returns:
         {"predicted_norm": 预测状态 norm,
          "cfc_comparison": 与 CfC 对比}
@@ -419,7 +419,7 @@ def run_full_integration(embedding: np.ndarray,
                           recent_embs: List[np.ndarray] = None,
                           engram_hit_rate: float = 0.0) -> Dict:
     """运行全链路 14 模块集成，返回完整结果
-    
+
     Args:
         embedding: LFM real (2048,) embedding
         recent_embs: 最近 N 个 embedding

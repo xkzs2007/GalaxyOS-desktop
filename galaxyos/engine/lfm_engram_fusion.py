@@ -48,7 +48,7 @@ from engram_memory import EngramMemory, EngramConfig
 class EngramLFMGate:
     """
     Engram → LFM 门控融合器
-    
+
     UDS 可用时，用 lfm_server 的真实 embedding 替代随机门控。
     """
 
@@ -150,7 +150,7 @@ class EngramLFMGate:
     def compute_alpha(self, engram_emb: np.ndarray = None,
                       per_head: bool = True) -> np.ndarray:
         """计算门控系数 α
-        
+
         UDS 可用时优先使用 LFM 真实 embedding。
         """
         if engram_emb is None or (isinstance(engram_emb, np.ndarray) and engram_emb.size <= 1):
@@ -184,13 +184,13 @@ class EngramLFMGate:
     def modulate_left_factor(self, left_factor: np.ndarray,
                              engram_emb: np.ndarray) -> np.ndarray:
         """用 Engram 嵌入调制 LFM 的左因子
-        
+
         left_factor' = left_factor + β ⊙ (W_emb_to_left @ engram_emb)
-        
+
         Args:
             left_factor: [B, H, dim] LFM 生成的左因子
             engram_emb: [engram_dim] 或 [B, engram_dim]
-        
+
         Returns:
             modulated: [B, H, dim] 调制后的左因子
         """
@@ -231,12 +231,12 @@ class EngramLFMGate:
 class EngramAugmentedLFMLayer(AdaptiveLinearOperator):
     """
     Engram 增强的 LFM 自适应算子层
-    
+
     在 AdaptiveLinearOperator 基础上增加:
     - 每步前向时自动查询 Engram
     - Engram 检索结果调制权重生成
     - 门控融合: 动态/静态权重平衡
-    
+
     前向流程:
         1. 输入 x → LFM 生成 W(x) (动态部分)
         2. 输入 x → Engram 检索 e (静态知识)
@@ -279,13 +279,13 @@ class EngramAugmentedLFMLayer(AdaptiveLinearOperator):
                             store_to_engram: bool = True,
                             return_debug: bool = False) -> np.ndarray:
         """带 Engram 增强的前向传播
-        
+
         Args:
             x: [B, L, hidden_dim]
             causal_mask: 因果掩码
             store_to_engram: 是否将前向结果存储到 Engram
             return_debug: 是否返回调试信息
-        
+
         Returns:
             y: [B, L, hidden_dim]
         """
@@ -440,17 +440,17 @@ class EngramLFMConfig:
 class EngramLFMNetwork:
     """
     Engram + LFM 融合网络
-    
+
     多层堆叠，每层包含:
     - Engram 增强的 LFM 自适应算子
     - FFN
     - 层归一化
-    
+
     融合方式:
     - 前向: 输入 → Engram 检索 → LFM 动态权重 → 门控融合 → FFN
     - 反向: 前向结果写回 Engram (双工)
     - 整个网络共享同一个 Engram 记忆
-    
+
     相比纯 LFM 的优势:
     1. 历史模式影响当前推理（记忆增强）
     2. 少样本适应（通过 Engram 快速记忆新模式）
@@ -520,10 +520,10 @@ class EngramLFMNetwork:
 
     def forward(self, x: np.ndarray) -> np.ndarray:
         """融合网络前向
-        
+
         Args:
             x: [B, L, hidden_dim]
-        
+
         Returns:
             y: [B, L, hidden_dim]
         """
@@ -550,7 +550,7 @@ class EngramLFMNetwork:
 
     def feed_memory(self, texts: List[str], embeddings: Optional[List[np.ndarray]] = None):
         """向共享 Engram 喂入知识
-        
+
         训练/预热阶段: 将已知模式存入 Engram。
         """
         self.engram.batch_remember(texts, embeddings)
@@ -665,7 +665,7 @@ def test_engram_lfm_network():
 
 def test_fusion_vs_pure_lfm():
     """对比 Engram 融合 LFM vs 纯 LFM
-    
+
     验证: 有 Engram 时，已知模式的推理更稳定（知识锚定）
     """
     print("\n=== 融合 vs 纯 LFM 对比 ===")
@@ -747,11 +747,11 @@ if __name__ == "__main__":
     def gate_from_lfm(self, lfm_embedding: np.ndarray,
                        engram_hit_rate: float = 0.0) -> float:
         """接收 LFM 2048-dim embedding，输出门控 alpha
-        
+
         Args:
             lfm_embedding: (2048,) LFM embedding
             engram_hit_rate: Engram 命中率 [0,1]
-            
+
         Returns:
             alpha: [0,1] 门控系数
         """

@@ -16,7 +16,7 @@ from knowledge_graph_gnn import KnowledgeGraphGNN, KnowledgeGraphEncoder
 class RelationPredictor(nn.Module):
     """
     关系预测器
-    
+
     功能：
     - 预测实体间的潜在关系
     - 关系分类
@@ -93,11 +93,11 @@ class RelationPredictor(nn.Module):
     ) -> torch.Tensor:
         """
         预测关系
-        
+
         Args:
             head_emb: 头实体嵌入 (batch_size, embedding_dim)
             tail_emb: 尾实体嵌入 (batch_size, embedding_dim)
-            
+
         Returns:
             关系概率分布 (batch_size, num_relations)
         """
@@ -142,11 +142,11 @@ class RelationPredictor(nn.Module):
     ) -> List[Tuple[int, float]]:
         """
         预测最可能的关系
-        
+
         Args:
             head_emb: 头实体嵌入
             tail_emb: 尾实体嵌入
-            
+
         Returns:
             (关系ID, 概率) 列表
         """
@@ -167,13 +167,13 @@ class RelationPredictor(nn.Module):
     ) -> List[Tuple[int, float]]:
         """
         给定头实体和关系，预测尾实体
-        
+
         Args:
             head_emb: 头实体嵌入
             relation_id: 关系ID
             candidate_embs: 候选实体嵌入 (num_candidates, embedding_dim)
             top_k: 返回数量
-            
+
         Returns:
             (候选索引, 得分) 列表
         """
@@ -208,12 +208,12 @@ class RelationPredictor(nn.Module):
     ) -> torch.Tensor:
         """
         计算损失
-        
+
         Args:
             head_emb: 头实体嵌入
             tail_emb: 尾实体嵌入
             relation_labels: 关系标签
-            
+
         Returns:
             损失值
         """
@@ -225,7 +225,7 @@ class RelationPredictor(nn.Module):
 class KnowledgeGraphCompletion:
     """
     知识图谱补全
-    
+
     整合 GNN 和关系预测器进行知识图谱补全
     """
 
@@ -281,12 +281,12 @@ class KnowledgeGraphCompletion:
     ) -> List[Tuple[str, str, str, float]]:
         """
         预测缺失的关系
-        
+
         Args:
             entity_pairs: 待预测的实体对列表，如果为 None 则自动生成
             threshold: 概率阈值
             top_k: 每对实体返回的 top-k 关系
-            
+
         Returns:
             (头实体, 关系, 尾实体, 概率) 列表
         """
@@ -356,15 +356,15 @@ class KnowledgeGraphCompletion:
     ) -> List[Tuple[str, float]]:
         """
         链接预测
-        
+
         给定 (h, r, ?)、(?, r, t) 或 (h, ?, t)，预测缺失的部分
-        
+
         Args:
             head: 头实体（可选）
             relation: 关系（可选）
             tail: 尾实体（可选）
             top_k: 返回数量
-            
+
         Returns:
             (预测结果, 得分) 列表
         """
@@ -455,11 +455,11 @@ class KnowledgeGraphCompletion:
     ) -> float:
         """
         训练步骤
-        
+
         Args:
             triples: 三元组列表 (head, relation, tail)
             optimizer: 优化器
-            
+
         Returns:
             损失值
         """
@@ -518,11 +518,11 @@ class KnowledgeGraphCompletion:
     ) -> Dict[str, float]:
         """
         评估模型
-        
+
         Args:
             test_triples: 测试三元组
             k_values: Hit@k 的 k 值列表
-            
+
         Returns:
             评估指标字典
         """
@@ -572,7 +572,7 @@ class KnowledgeGraphCompletion:
 class RelationExtractor:
     """
     关系抽取器
-    
+
     从文本中抽取实体关系
     """
 
@@ -606,11 +606,11 @@ class RelationExtractor:
     ) -> List[Tuple[str, str, str, float]]:
         """
         从文本中抽取关系
-        
+
         Args:
             text: 输入文本
             entities: 已识别的实体列表
-            
+
         Returns:
             (头实体, 关系, 尾实体, 置信度) 列表
         """

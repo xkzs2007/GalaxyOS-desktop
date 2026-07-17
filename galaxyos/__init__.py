@@ -1,5 +1,5 @@
 """
-GalaxyOS — OpenClaw 核心认知增强引擎
+GalaxyOS — 认知增强型 AI Agent 引擎
 
 统一的 Python 包，整合：
   - engine/       核心引擎 (Worker, 检索, 记忆, DAG, R-CCAM)
@@ -13,5 +13,11 @@ Usage:
     from galaxyos.orchestration import WorkflowEngine
 """
 
-__version__ = "0.1.4"
-__author__ = "xiaoyi-claw"
+__version__ = "0.2.0"
+__author__ = "GalaxyOS"
+
+try:
+    from importlib.metadata import version as _md_ver
+    __version__ = _md_ver("galaxyos")
+except Exception:
+    pass

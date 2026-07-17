@@ -63,7 +63,7 @@ def load_config() -> Dict:
 def get_embedding_config() -> tuple:
     """
     获取 Embedding 配置
-    
+
     返回: (api_url, api_key, model, dimensions)
     """
     config = load_config()
@@ -141,9 +141,9 @@ def get_missing_l0_records(batch_size: int = 50) -> List[Dict]:
 
     try:
         cursor.execute("""
-            SELECT r.record_id, r.message_text, r.recorded_at 
-            FROM l0_conversations r 
-            WHERE NOT EXISTS (SELECT 1 FROM l0_vec v WHERE v.record_id = r.record_id) 
+            SELECT r.record_id, r.message_text, r.recorded_at
+            FROM l0_conversations r
+            WHERE NOT EXISTS (SELECT 1 FROM l0_vec v WHERE v.record_id = r.record_id)
             LIMIT ?
         """, (batch_size,))
 

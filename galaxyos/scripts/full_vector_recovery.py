@@ -135,8 +135,8 @@ class VectorRecovery:
 
         # 获取未向量化的 L0 对话
         cursor.execute("""
-            SELECT record_id, message_text 
-            FROM l0_conversations 
+            SELECT record_id, message_text
+            FROM l0_conversations
             WHERE record_id NOT IN (SELECT rowid FROM l0_vec_rowids)
             ORDER BY timestamp DESC
         """)
@@ -286,11 +286,11 @@ def load_config():
 def sync_vectors():
     config = load_config()
     cloud = config.get("cloud_sync", {{}})
-    
+
     if not cloud.get("enabled"):
         print("云端同步未启用")
         return
-    
+
     print(f"同步到: {{cloud.get('provider')}}")
     print(f"模型: {{cloud.get('model')}}")
     # 实际同步逻辑...

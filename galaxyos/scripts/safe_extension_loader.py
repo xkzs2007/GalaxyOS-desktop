@@ -65,7 +65,7 @@ def verify_file_signature(file_path: Path, expected_hash: str) -> bool:
 def check_extension_integrity(ext_path: Path) -> Tuple[bool, str, dict]:
     """
     全面检查扩展完整性
-    
+
     返回: (是否安全, 原因, 元数据)
     """
     metadata = {
@@ -140,7 +140,7 @@ def check_extension_integrity(ext_path: Path) -> Tuple[bool, str, dict]:
 def prompt_user_confirmation(ext_path: Path, metadata: dict) -> bool:
     """
     提示用户确认扩展来源
-    
+
     注意：此函数在实际运行时需要用户交互
     """
     print("\n" + "=" * 60)
@@ -189,17 +189,17 @@ def get_vec_extension_path() -> Path:
 def safe_load_extension(conn, ext_path: Optional[Path] = None, auto_confirm: bool = False) -> Tuple[bool, str]:
     """
     安全加载 SQLite 扩展（增强版）
-    
+
     ⚠️ 安全警告：
     - 加载原生扩展存在远程代码执行风险
     - 必须用户明确确认才能加载
     - auto_confirm 仅用于测试环境
-    
+
     参数:
         conn: SQLite 连接
         ext_path: 扩展路径（可选）
         auto_confirm: 是否自动确认（仅用于测试，生产环境必须为 False）
-    
+
     返回: (是否成功, 消息)
     """
     if ext_path is None:

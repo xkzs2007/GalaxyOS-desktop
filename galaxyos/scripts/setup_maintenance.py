@@ -82,7 +82,7 @@ def check_coverage():
         f\'SELECT COUNT(*) FROM l0_conversations; SELECT COUNT(*) FROM l0_vec;"\',
         shell=False, capture_output=True, text=True
     )
-    
+
     if result.returncode == 0:
         lines = result.stdout.strip().split(\'\\n\')
         if len(lines) >= 4:
@@ -90,10 +90,10 @@ def check_coverage():
             l1_vec = int(lines[1])
             l0_conversations = int(lines[2])
             l0_vec = int(lines[3])
-            
+
             l1_coverage = 100.0 * l1_vec / max(l1_records, 1)
             l0_coverage = 100.0 * l0_vec / max(l0_conversations, 1)
-            
+
             return {
                 "l1_records": l1_records,
                 "l1_vec": l1_vec,
@@ -102,7 +102,7 @@ def check_coverage():
                 "l0_vec": l0_vec,
                 "l0_coverage": round(l0_coverage, 1)
             }
-    
+
     return None
 
 if __name__ == "__main__":
@@ -133,7 +133,7 @@ def rebuild_fts():
         f\'sqlite3 "{VECTORS_DB}" "DROP TABLE IF EXISTS l1_fts;"\',
         shell=False, capture_output=True
     )
-    
+
     # 创建新索引
     subprocess.run(
         f\'sqlite3 "{VECTORS_DB}" "\'
@@ -143,7 +143,7 @@ def rebuild_fts():
         f\'content=\\'\\', tokenize=\\'unicode61\\');"\',
         shell=False, capture_output=True
     )
-    
+
     # 重新填充数据
     subprocess.run(
         f\'sqlite3 "{VECTORS_DB}" "\'
@@ -151,7 +151,7 @@ def rebuild_fts():
         f\'SELECT rowid, record_id, content, type, scene_name, priority FROM l1_records;"\',
         shell=False, capture_output=True
     )
-    
+
     print("FTS 索引重建完成")
 
 if __name__ == "__main__":
@@ -180,7 +180,7 @@ def log(message):
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     log_entry = f"[{timestamp}] {message}"
     print(log_entry)
-    
+
     LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
     with open(LOG_FILE, "a") as f:
         f.write(log_entry + "\\n")
@@ -222,7 +222,7 @@ def check_coverage():
         f\'SELECT COUNT(*) FROM l0_conversations; SELECT COUNT(*) FROM l0_vec;"\',
         shell=False, capture_output=True, text=True
     )
-    
+
     if result.returncode == 0:
         lines = result.stdout.strip().split(\'\\n\')
         if len(lines) >= 4:
@@ -230,18 +230,18 @@ def check_coverage():
             l1_vec = int(lines[1])
             l0_conversations = int(lines[2])
             l0_vec = int(lines[3])
-            
+
             l1_coverage = 100.0 * l1_vec / max(l1_records, 1)
             l0_coverage = 100.0 * l0_vec / max(l0_conversations, 1)
-            
+
             log(f"L1 覆盖率: {l1_coverage:.1f}% ({l1_vec}/{l1_records})")
             log(f"L0 覆盖率: {l0_coverage:.1f}% ({l0_vec}/{l0_conversations})")
-            
+
             return {
                 "l1_coverage": l1_coverage,
                 "l0_coverage": l0_coverage
             }
-    
+
     log("覆盖率检查失败")
     return None
 
@@ -256,23 +256,23 @@ def main():
     log("=" * 50)
     log("开始维护任务")
     log("=" * 50)
-    
+
     # 1. VACUUM
     run_vacuum()
-    
+
     # 2. ANALYZE
     run_analyze()
-    
+
     # 3. 覆盖率检查
     coverage = check_coverage()
-    
+
     # 4. 数据库大小
     size = check_db_size()
-    
+
     # 5. 总结
     log("=" * 50)
     log("维护任务完成")
-    
+
     if coverage:
         status = "✅ 正常"
         if coverage["l1_coverage"] < 95:
@@ -280,7 +280,7 @@ def main():
         elif coverage["l0_coverage"] < 60:
             status = "⚠️ L0 覆盖率偏低"
         log(f"状态: {status}")
-    
+
     log("=" * 50)
 
 if __name__ == "__main__":

@@ -57,10 +57,10 @@ class EvaluationResult:
 class RetrievalEvaluator:
     """
     检索评估器
-    
+
     基于 CRAG 论文的检索评估模块，对检索结果进行细粒度评估，
     决定如何处理检索到的内容。
-    
+
     评估维度：
     1. 相关性：内容与查询的相关程度
     2. 覆盖度：内容覆盖查询各方面的程度
@@ -88,7 +88,7 @@ class RetrievalEvaluator:
     def __init__(self, config: Optional[Dict] = None):
         """
         初始化检索评估器
-        
+
         Args:
             config: 配置字典
         """
@@ -113,12 +113,12 @@ class RetrievalEvaluator:
     ) -> EvaluationResult:
         """
         评估检索结果
-        
+
         Args:
             query: 用户查询
             retrieved_docs: 检索到的文档列表
             metadata: 文档元数据列表
-            
+
         Returns:
             EvaluationResult: 评估结果
         """
@@ -509,12 +509,12 @@ def evaluate_retrieval(
 ) -> EvaluationResult:
     """
     便捷函数：评估检索结果
-    
+
     Args:
         query: 用户查询
         docs: 检索到的文档
         metadata: 文档元数据
-        
+
     Returns:
         EvaluationResult: 评估结果
     """

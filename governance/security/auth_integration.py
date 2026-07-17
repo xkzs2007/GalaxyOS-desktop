@@ -50,21 +50,21 @@ class AuditLevel(Enum):
 class GovernanceLayer:
     """
     L5 - 治理审计层
-    
+
     职责：
     - 安全验证
     - 权限管理
     - 审计日志
     - 合规检查
     """
-    
+
     def __init__(self, config: Dict[str, Any]):
         self.config = config
         self.permissions: Dict[str, List[Permission]] = {}
         self.audit_logs: List[Dict[str, Any]] = []
         self.security_policies: Dict[str, Any] = {}
         self._initialized = False
-        
+
     def start(self):
         """启动治理层"""
         logger.info("L5 Governance: 启动治理审计层")
@@ -72,12 +72,12 @@ class GovernanceLayer:
         self._init_default_permissions()
         self._initialized = True
         logger.info("L5 Governance: 治理审计层启动完成")
-    
+
     def stop(self):
         """停止治理层"""
         self._save_audit_logs()
         logger.info("L5 Governance: 治理审计层已停止")
-    
+
     def _init_security_policies(self):
         """初始化安全策略"""
         self.security_policies = {
@@ -88,7 +88,7 @@ class GovernanceLayer:
             "require_confirmation": ["delete", "system_modify"]
         }
         logger.info("  ✅ 安全策略加载完成")
-    
+
     def _init_default_permissions(self):
         """初始化默认权限"""
         self.permissions = {
@@ -97,23 +97,23 @@ class GovernanceLayer:
             "readonly": [Permission.READ]
         }
         logger.info("  ✅ 默认权限加载完成")
-    
+
     def _save_audit_logs(self):
         """保存审计日志"""
         if not self.audit_logs:
             return
-        
+
         log_dir = path_resolver.OPENCLAW_HOME / "logs" / "audit"
         log_dir.mkdir(parents=True, exist_ok=True)
-        
+
         log_file = log_dir / f"audit_{datetime.now().strftime('%Y%m%d')}.json"
         with open(log_file, 'w', encoding='utf-8') as f:
             json.dump(self.audit_logs, f, indent=2, ensure_ascii=False)
-    
+
     def check_permission(self, user: str, operation: str, resource: str) -> bool:
         """检查权限"""
         user_perms = self.permissions.get(user, self.permissions.get("default", []))
-        
+
         # 简单权限检查
         if operation == "read" and Permission.READ in user_perms:
             return True
@@ -123,7 +123,7 @@ class GovernanceLayer:
             return True
         if operation == "admin" and Permission.ADMIN in user_perms:
             return True
-        
+
         self.audit(
             action="permission_denied",
             user=user,
@@ -132,7 +132,7 @@ class GovernanceLayer:
             details={"operation": operation}
         )
         return False
-    
+
     def audit(self, action: str, user: str = "system", resource: str = "",
               level: AuditLevel = AuditLevel.INFO, details: Optional[Dict] = None):
         """记录审计日志"""
@@ -144,10 +144,10 @@ class GovernanceLayer:
             "level": level.value,
             "details": details or {}
         }
-        
+
         self.audit_logs.append(log_entry)
         logger.info(f"L5 Governance: 审计 [{level.value}] {action} - {resource}")
-    
+
     def validate_operation(self, operation: str, params: Dict[str, Any]) -> bool:
         """验证操作"""
         # 检查是否在允许的操作列表中
@@ -158,7 +158,7 @@ class GovernanceLayer:
                 details={"operation": operation, "reason": "not_allowed"}
             )
             return False
-        
+
         # 检查是否需要确认
         if operation in self.security_policies.get("require_confirmation", []):
             self.audit(
@@ -167,20 +167,20 @@ class GovernanceLayer:
                 details={"operation": operation}
             )
             # 实际实现中需要用户确认
-        
+
         return True
-    
+
     def get_audit_logs(self, limit: int = 100) -> List[Dict[str, Any]]:
         """获取审计日志"""
         return self.audit_logs[-limit:]
-    
+
     def get_stats(self) -> Dict[str, Any]:
         """获取统计信息"""
         level_counts = {}
         for log in self.audit_logs:
             level = log.get("level", "unknown")
             level_counts[level] = level_counts.get(level, 0) + 1
-        
+
         return {
             "total_logs": len(self.audit_logs),
             "level_counts": level_counts,

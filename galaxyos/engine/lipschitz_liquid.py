@@ -44,18 +44,18 @@ import numpy as np
 class LipschitzConstraint:
     """
     Lipschitz 约束 — 保证 f 的 Lipschitz 常数 ≤ 1
-    
+
     方法：
     1. 权重归一化: w = g * v / ||v||_2
        - 可训练参数: g (标量缩放), v (方向)
        - 保证 ||w||_2 = g
        - Lipschitz 常数 ≤ g
-    
+
     2. 谱范数约束: 限制最大奇异值
        - 对矩阵 W 做 SVD: W = U Σ V^T
        - 约束 σ_max(W) ≤ γ
        - 投影: W = U * diag(min(σ_i, γ)) * V^T
-    
+
     3. 组合使用: 先归一化再约束谱范数
     """
 
@@ -84,7 +84,7 @@ class LipschitzConstraint:
 
     def apply_weight_norm(self, w: np.ndarray) -> np.ndarray:
         """权重归一化: w = g * v / ||v||
-        
+
         梯度可反向传播到 g 和 v。
         """
         # ||v||_2, shape 保持可广播
@@ -98,12 +98,12 @@ class LipschitzConstraint:
 
     def apply_spectral_norm(self, w: np.ndarray) -> np.ndarray:
         """谱范数约束: σ_max(W) ≤ gamma
-        
+
         用幂迭代法近似最大奇异值。
-        
+
         Args:
             w: 输入矩阵 [out_dim, in_dim]
-        
+
         Returns:
             约束后的矩阵
         """
@@ -159,16 +159,16 @@ class LipschitzConstraint:
 class LipschitzLTCUnit:
     """
     LipschitzLTCUnit — 受 Lipschitz 约束的 LTC 单元
-    
+
     微分方程与 LTCUnit 相同：
         dh/dt = σ(W_h h + W_x x + b) * (E - h) / τ
-    
+
     但 W_h, W_x 受 Lipschitz 约束：
         ||W_h||_2 ≤ γ_h
         ||W_x||_2 ≤ γ_x
-    
+
     保证复合 Lipschitz 常数有理论上界。
-    
+
     对比普通 LTC（无约束）：
     - 普通 LTC: ||W_h|| 可能很大 → dh/dt 震荡 → 求解器需要小步长
     - Lipschitz LTC: ||W_h|| ≤ γ → dh/dt 平滑 → 稳定训练
@@ -245,7 +245,7 @@ class LipschitzLTCUnit:
 
     def forward(self, h: np.ndarray, x: np.ndarray, t: float) -> np.ndarray:
         """一步 ODE 右端函数
-        
+
         dh/dt = σ(W_h h + W_x x + b) * (E - h) / τ
         """
         drive = self.w_h @ h + self.w_x @ x + self.b
@@ -280,7 +280,7 @@ class LipschitzLTCUnit:
 
     def estimate_lipschitz(self, n_samples: int = 50) -> float:
         """估计 Lipschitz 常数
-        
+
         随机采样状态对，计算 ODE 函数的最大梯度。
         """
         max_L = 0.0
@@ -307,7 +307,7 @@ class LipschitzLTCUnit:
 
 def compare_ltc_stability():
     """对比普通 LTC vs Lipschitz LTC 的稳定性
-    
+
     测试方法：
     1. 初始化两个单元（普通 + Lipschitz）
     2. 对大权重初始化做长程模拟

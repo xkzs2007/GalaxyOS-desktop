@@ -322,11 +322,11 @@ if __name__ == "__main__":
     def text_to_embedding_with_engram(self, text: str,
                                        engram_memory=None) -> np.ndarray:
         """文本→embedding，优先用 Engram 命中
-        
+
         Args:
             text: 输入文本
             engram_memory: EngramMemory 实例
-            
+
         Returns:
             (2048,) 向量
         """
@@ -348,12 +348,12 @@ if __name__ == "__main__":
                           engram_emb: np.ndarray,
                           alpha: float = 0.5) -> np.ndarray:
         """加权融合 LFM + Engram 的 embedding
-        
+
         Args:
             lfm_emb: (2048,) LFM embedding
             engram_emb: (2048,) Engram embedding
             alpha: LFM 权重 [0,1]
-            
+
         Returns:
             (2048,) 融合向量
         """

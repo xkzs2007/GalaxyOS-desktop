@@ -1,18 +1,18 @@
 ---
 type: person
-name: 
+name:
 aliases: []
-age: 
-occupation: 
-company: 
-email: 
-phone: 
+age:
+occupation:
+company:
+email:
+phone:
 social: []
-met_at: 
-met_on: 
-introduced_by: 
+met_at:
+met_on:
+introduced_by:
 tags: []
-last_updated: 
+last_updated:
 ---
 
 ## Profile
@@ -21,8 +21,8 @@ last_updated:
 
 ## Notes
 
-- 
+-
 
 ## Interactions
 
-- **YYYY-MM**: 
+- **YYYY-MM**:

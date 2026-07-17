@@ -42,7 +42,7 @@ class MemoryType(Enum):
 class Memory:
     """
     记忆单元
-    
+
     核心属性：
     - content: 记忆内容
     - importance: 重要性评分 (1-10)
@@ -108,7 +108,7 @@ class Memory:
 class MemoryStream:
     """
     记忆流
-    
+
     核心功能：
     - 存储带重要性评分的记忆
     - 支持时间衰减
@@ -119,7 +119,7 @@ class MemoryStream:
     def __init__(self, storage_path: Optional[str] = None):
         """
         初始化记忆流
-        
+
         Args:
             storage_path: 存储路径，None 则使用内存模式
         """
@@ -145,14 +145,14 @@ class MemoryStream:
     ) -> Memory:
         """
         添加新记忆
-        
+
         Args:
             content: 记忆内容
             memory_type: 记忆类型
             importance: 重要性评分 (1-10)，None 则自动计算
             keywords: 关键词列表
             metadata: 额外元数据
-            
+
         Returns:
             创建的记忆对象
         """
@@ -288,7 +288,7 @@ class MemoryStream:
     def _calculate_importance(self, content: str, memory_type: MemoryType) -> float:
         """
         自动计算重要性评分
-        
+
         规则：
         - 反思类记忆默认高分 (8.0)
         - 计划类记忆中等分数 (6.0)

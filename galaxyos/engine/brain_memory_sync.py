@@ -157,7 +157,7 @@ class BrainReader:
 class BrainMemorySync:
     """
     知识库与记忆系统同步器
-    
+
     实现:
     1. 知识库条目同步到记忆系统
     2. 记忆提取结果同步到知识库
@@ -227,11 +227,11 @@ class BrainMemorySync:
                               memory_add_func) -> Optional[str]:
         """
         同步知识库条目到记忆系统
-        
+
         Args:
             entry_id: 知识库条目 ID
             memory_add_func: 记忆添加函数 (content, metadata) -> memory_id
-        
+
         Returns:
             记忆 ID 或 None
         """
@@ -284,12 +284,12 @@ class BrainMemorySync:
                               memory_metadata: Dict[str, Any]) -> Optional[str]:
         """
         同步记忆到知识库
-        
+
         Args:
             memory_id: 记忆 ID
             memory_content: 记忆内容
             memory_metadata: 记忆元数据
-        
+
         Returns:
             知识库条目 ID 或 None
         """
@@ -464,7 +464,7 @@ class BrainMemorySync:
     def sync_all_brain_to_memory(self, memory_add_func) -> Dict[str, str]:
         """
         同步所有知识库条目到记忆系统
-        
+
         Returns:
             Dict[entry_id, memory_id]
         """

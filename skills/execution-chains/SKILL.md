@@ -146,5 +146,5 @@ python3 ~/.openclaw/workspace/skills/xiaoyi-claw-omega-final/scripts/unified_ent
 
 ---
 
-**版本**：1.0.0  
+**版本**：1.0.0
 **创建时间**：2026-04-23

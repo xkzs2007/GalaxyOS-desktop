@@ -399,7 +399,7 @@ COMPONENT_REGISTRY: Dict[str, ComponentInfo] = {
 class ResilienceSystem:
     """
     弹性系统
-    
+
     功能：
     1. 组件健康监控
     2. 依赖关系管理
@@ -677,7 +677,7 @@ class ResilienceSystem:
     def get_degradation_level(self) -> Tuple[int, str]:
         """
         获取系统降级级别
-        
+
         Returns:
             Tuple[int, str]: (级别, 描述)
             0 = 完全健康

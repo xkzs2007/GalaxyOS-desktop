@@ -102,7 +102,7 @@ class SparsityPoint3D:
 class SparsityAnalyzer:
     """
     稀疏分析器 — 分析系统在三维稀疏空间中的位置
-    
+
     分析方法：
     1. 组件扫描：遍历所有 GalaxyOS 组件，识别使用的稀疏技术
     2. 量化评估：对每个维度给出 [0, 1] 的稀疏度评分
@@ -119,7 +119,7 @@ class SparsityAnalyzer:
 
     def analyze(self) -> SparsityPoint3D:
         """分析当前系统在稀疏空间中的位置
-        
+
         聚合所有已注册组件的稀疏度。
         """
         compute_scores = []
@@ -153,7 +153,7 @@ class SparsityAnalyzer:
 
     def suggest_optimization(self) -> Dict[str, Any]:
         """建议优化方向
-        
+
         基于当前稀疏空间的薄弱维度推荐。
         """
         point = self.analyze()
@@ -223,10 +223,10 @@ class SparsityAnalyzer:
 
     def compare_configs(self, configs: List[Dict[str, float]]) -> List[Dict]:
         """对比多种稀疏配置
-        
+
         Args:
             configs: 配置列表，每个配置是 {compute, memory, time} [0,1]
-        
+
         Returns:
             排序后的配置评估
         """
@@ -252,7 +252,7 @@ class SparsityAnalyzer:
 class UnifiedSparsityView:
     """
     统一稀疏视图 — 稀疏设计空间枚举和可视化
-    
+
     覆盖 GalaxyOS 中的全部稀疏策略。
     """
 
@@ -408,10 +408,10 @@ class UnifiedSparsityView:
 
     def enumerate_design_space(self, resolution: int = 3) -> List[SparsityPoint3D]:
         """枚举稀疏设计空间
-        
+
         Args:
             resolution: 每个维度的采样点数
-        
+
         Returns:
             所有空间点
         """
@@ -427,7 +427,7 @@ class UnifiedSparsityView:
 
     def find_best_configs(self, top_k: int = 3) -> List[Dict]:
         """搜索最优配置
-        
+
         遍历设计空间，找帕累托前沿最优的配置。
         """
         space = self.enumerate_design_space(4)  # 分辨率 4

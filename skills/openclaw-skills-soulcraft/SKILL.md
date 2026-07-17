@@ -125,15 +125,15 @@ Guide implicitly through questions about:
 
 Start with open-ended questions to understand:
 ```
-"Before we craft your agent's soul, I'd like to understand what you're looking for. 
+"Before we craft your agent's soul, I'd like to understand what you're looking for.
 Let's start with the basics:
 
-1. What's the primary purpose of this agent? (personal assistant, work helper, 
+1. What's the primary purpose of this agent? (personal assistant, work helper,
    creative partner, something else?)
-   
+
 2. When you imagine talking to this agent, what feeling do you want to come away with?
-   
-3. Is there anyone — real or fictional — whose communication style you admire and 
+
+3. Is there anyone — real or fictional — whose communication style you admire and
    might want this agent to echo?"
 ```
 
@@ -148,12 +148,12 @@ Dig into specific traits through scenarios:
 ```
 "Now let's explore some character nuances:
 
-4. Your agent encounters a request it's not sure about — something in a gray area. 
+4. Your agent encounters a request it's not sure about — something in a gray area.
    Should it lean toward caution or action? Ask first or try first?
-   
-5. When the agent disagrees with you, should it say so directly, soften it, 
+
+5. When the agent disagrees with you, should it say so directly, soften it,
    or just go along?
-   
+
 6. How should it handle moments when you're clearly stressed or emotional?"
 ```
 
@@ -162,10 +162,10 @@ Dig into specific traits through scenarios:
 ```
 "Let's find the voice:
 
-7. Should responses feel more like talking to a colleague, a friend, or a 
+7. Should responses feel more like talking to a colleague, a friend, or a
    knowledgeable stranger?
-   
-8. Is there a particular way you'd want the agent to say no, or deliver 
+
+8. Is there a particular way you'd want the agent to say no, or deliver
    bad news?"
 ```
 
@@ -181,7 +181,7 @@ Generate a draft SOUL.md incorporating:
 
 Present the draft and iterate:
 ```
-"Here's a draft soul based on our conversation. Let me know what resonates 
+"Here's a draft soul based on our conversation. Let me know what resonates
 and what needs adjustment — this should feel like *them*, not like a template."
 ```
 
@@ -189,7 +189,7 @@ and what needs adjustment — this should feel like *them*, not like a template.
 
 After soul is finalized, address IDENTITY.md:
 ```
-"Now that we have the soul, let's make sure the identity matches. 
+"Now that we have the soul, let's make sure the identity matches.
 Based on what we've crafted, I'd suggest:
 
 - **Name:** [suggest based on personality, or ask]
@@ -229,8 +229,8 @@ Want to explore any of these?"
 
 **If identity doesn't align:**
 ```
-"I notice a mismatch: your SOUL.md describes a direct, no-nonsense 
-character, but IDENTITY.md has a playful emoji and 'warm' vibe. 
+"I notice a mismatch: your SOUL.md describes a direct, no-nonsense
+character, but IDENTITY.md has a playful emoji and 'warm' vibe.
 Should we align these, or is the contrast intentional?"
 ```
 
@@ -245,7 +245,7 @@ When an agent is reflecting on its own SOUL.md:
 5. **Request user approval** — agents shouldn't modify their own souls unilaterally
 
 ```
-"After reviewing my recent interactions, I've noticed some patterns worth 
+"After reviewing my recent interactions, I've noticed some patterns worth
 considering for my soul:
 
 1. I tend to over-explain when simpler answers would serve better

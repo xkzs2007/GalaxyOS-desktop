@@ -41,7 +41,7 @@ class ValueGate:
             response: LLM 的实际回复文本
 
         Returns:
-            {module_key: usage_rate} 
+            {module_key: usage_rate}
             module_key 形如 "ssm:记忆预测", "memoryos:长期画像"
         """
         if not injection or not response:
@@ -91,7 +91,7 @@ class ValueGate:
         从 injection 文本中解析出各 section。
 
         输入示例:
-          [检索增强] ... 
+          [检索增强] ...
           [分层记忆] ...
           [记忆预测] 下一步可能需要: foo(0.8), bar(0.6)
 

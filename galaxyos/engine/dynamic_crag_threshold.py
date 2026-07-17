@@ -38,13 +38,13 @@ class CRAGThresholds:
 class DynamicCRAGThreshold:
     """
     CRAG 动态阈值策略
-    
+
     基于 CRAG 论文核心思想:
     1. 根据检索结果的置信度分布选择策略
     2. 高置信度 → 直接使用
     3. 中置信度 → 分解-重组精筛
     4. 低置信度 → Web 搜索补充
-    
+
     创新点:
     - 不是单一阈值，而是分析整体分布
     - 考虑 Top-K 分数的方差
@@ -66,7 +66,7 @@ class DynamicCRAGThreshold:
     def __init__(self, thresholds: Optional[CRAGThresholds] = None):
         """
         初始化动态阈值
-        
+
         Args:
             thresholds: 自定义阈值配置
         """
@@ -80,11 +80,11 @@ class DynamicCRAGThreshold:
     ) -> Dict[str, Any]:
         """
         分析检索分数分布
-        
+
         Args:
             scores: 检索分数列表
             query_type: 查询类型
-        
+
         Returns:
             分析结果
         """
@@ -125,10 +125,10 @@ class DynamicCRAGThreshold:
     def get_adjusted_thresholds(self, query_type: str) -> CRAGThresholds:
         """
         根据查询类型调整阈值
-        
+
         Args:
             query_type: 查询类型
-        
+
         Returns:
             调整后的阈值
         """
@@ -152,12 +152,12 @@ class DynamicCRAGThreshold:
     ) -> Tuple[RetrievalStrategy, Dict[str, Any]]:
         """
         选择检索策略
-        
+
         Args:
             scores: 检索分数列表
             query_type: 查询类型
             context: 额外上下文
-        
+
         Returns:
             (策略, 分析结果)
         """
@@ -239,11 +239,11 @@ class DynamicCRAGThreshold:
 def select_crag_strategy(scores: List[float], query_type: str = "general") -> Tuple[RetrievalStrategy, Dict]:
     """
     选择 CRAG 策略（便捷函数）
-    
+
     Args:
         scores: 检索分数列表
         query_type: 查询类型
-    
+
     Returns:
         (策略, 分析结果)
     """

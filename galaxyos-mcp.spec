@@ -67,7 +67,7 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=['torch', 'transformers', 'faiss', 'hnswlib', 'onnxruntime', 'pandas', 'tkinter', 'matplotlib', 'openjiuwen_studio'],
+    excludes=['torch', 'transformers', 'faiss', 'hnswlib', 'onnxruntime', 'pandas', 'tkinter', 'matplotlib', 'openjiuwen_studio', 'pythoncom', 'pywintypes', 'win32com', 'win32api', 'win32con', 'win32event', 'win32file', 'win32pipe', 'win32process', 'win32security', 'winerror'],
     noarchive=False,
 )
 pyz = PYZ(a.pure)

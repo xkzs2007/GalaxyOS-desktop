@@ -51,7 +51,7 @@ class AdaptiveThresholds:
 class AdaptiveHallucinationParams:
     """
     防幻觉系统参数自适应调整器
-    
+
     基于 Self-RAG 和 CRAG 论文的核心思想:
     1. 不同任务需要不同的检索和验证策略
     2. 根据置信度动态选择纠正策略
@@ -82,7 +82,7 @@ class AdaptiveHallucinationParams:
     def __init__(self, user_history: Optional[Dict] = None):
         """
         初始化自适应参数调整器
-        
+
         Args:
             user_history: 用户历史数据，包含纠正率等
         """
@@ -92,10 +92,10 @@ class AdaptiveHallucinationParams:
     def classify_query(self, query: str) -> QueryType:
         """
         分类查询类型
-        
+
         Args:
             query: 用户查询
-        
+
         Returns:
             查询类型
         """
@@ -130,11 +130,11 @@ class AdaptiveHallucinationParams:
     def detect_domain(self, query: str, context: Optional[str] = None) -> DomainType:
         """
         检测查询领域
-        
+
         Args:
             query: 用户查询
             context: 上下文
-        
+
         Returns:
             领域类型
         """
@@ -175,13 +175,13 @@ class AdaptiveHallucinationParams:
     ) -> AdaptiveThresholds:
         """
         自适应调整阈值
-        
+
         Args:
             query: 用户查询
             context: 上下文
             query_type: 查询类型（可选，自动检测）
             domain: 领域类型（可选，自动检测）
-        
+
         Returns:
             调整后的阈值配置
         """
@@ -235,11 +235,11 @@ class AdaptiveHallucinationParams:
     def get_verification_level(self, confidence: float, thresholds: AdaptiveThresholds) -> str:
         """
         根据置信度和阈值确定验证级别
-        
+
         Args:
             confidence: 初始置信度
             thresholds: 阈值配置
-        
+
         Returns:
             验证级别: NONE, LIGHT, MODERATE, DEEP, EXHAUSTIVE
         """
@@ -286,12 +286,12 @@ class AdaptiveHallucinationParams:
 def get_adaptive_thresholds(query: str, context: str = None, user_history: dict = None) -> AdaptiveThresholds:
     """
     获取自适应阈值（便捷函数）
-    
+
     Args:
         query: 用户查询
         context: 上下文
         user_history: 用户历史
-    
+
     Returns:
         调整后的阈值配置
     """

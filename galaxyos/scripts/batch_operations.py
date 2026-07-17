@@ -20,7 +20,7 @@ class BatchOperations:
     def __init__(self, db_path: str, batch_size: int = 100):
         """
         初始化
-        
+
         Args:
             db_path: 数据库路径
             batch_size: 批量大小
@@ -37,12 +37,12 @@ class BatchOperations:
     def batch_insert(self, table: str, records: List[Dict], batch_size: int = None) -> int:
         """
         批量插入
-        
+
         Args:
             table: 表名
             records: 记录列表
             batch_size: 批量大小（可选）
-        
+
         Returns:
             插入的记录数
         """
@@ -78,13 +78,13 @@ class BatchOperations:
                      key_column: str = "id", batch_size: int = None) -> int:
         """
         批量更新
-        
+
         Args:
             table: 表名
             updates: 更新列表 [(id, {column: value}), ...]
             key_column: 键列名
             batch_size: 批量大小
-        
+
         Returns:
             更新的记录数
         """
@@ -118,13 +118,13 @@ class BatchOperations:
                      key_column: str = "id", batch_size: int = None) -> int:
         """
         批量删除
-        
+
         Args:
             table: 表名
             ids: ID 列表
             key_column: 键列名
             batch_size: 批量大小
-        
+
         Returns:
             删除的记录数
         """
@@ -155,13 +155,13 @@ class BatchOperations:
                      key_columns: List[str], batch_size: int = None) -> int:
         """
         批量插入或更新（UPSERT）
-        
+
         Args:
             table: 表名
             records: 记录列表
             key_columns: 键列名列表
             batch_size: 批量大小
-        
+
         Returns:
             处理的记录数
         """
@@ -182,9 +182,9 @@ class BatchOperations:
             update_clause = ', '.join([f"{c} = excluded.{c}" for c in update_columns])
 
             sql = f"""
-                INSERT INTO {table} ({', '.join(columns)}) 
+                INSERT INTO {table} ({', '.join(columns)})
                 VALUES ({placeholders})
-                ON CONFLICT ({', '.join(key_columns)}) 
+                ON CONFLICT ({', '.join(key_columns)})
                 DO UPDATE SET {update_clause}
             """
 

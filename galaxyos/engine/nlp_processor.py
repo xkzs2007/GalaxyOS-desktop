@@ -144,7 +144,7 @@ class ChineseTokenizer:
     def __init__(self, user_dict: Optional[str] = None):
         """
         初始化分词器
-        
+
         Args:
             user_dict: 用户自定义词典路径
         """
@@ -162,11 +162,11 @@ class ChineseTokenizer:
     def tokenize(self, text: str, with_pos: bool = True) -> List[Token]:
         """
         分词
-        
+
         Args:
             text: 输入文本
             with_pos: 是否包含词性标注
-            
+
         Returns:
             分词结果列表
         """
@@ -278,11 +278,11 @@ class NamedEntityRecognizer:
     def recognize(self, text: str, tokens: List[Token]) -> List[Entity]:
         """
         识别命名实体
-        
+
         Args:
             text: 输入文本
             tokens: 分词结果
-            
+
         Returns:
             实体列表
         """
@@ -380,7 +380,7 @@ class KeywordExtractor:
     def __init__(self, stopwords: Optional[Set[str]] = None):
         """
         初始化关键词提取器
-        
+
         Args:
             stopwords: 自定义停用词集合
         """
@@ -389,11 +389,11 @@ class KeywordExtractor:
     def extract(self, tokens: List[Token], top_k: int = 10) -> List[Tuple[str, float]]:
         """
         提取关键词
-        
+
         Args:
             tokens: 分词结果
             top_k: 返回前 K 个关键词
-            
+
         Returns:
             [(keyword, weight), ...]
         """
@@ -450,14 +450,14 @@ class KeywordExtractor:
     ) -> List[Tuple[str, float]]:
         """
         TF-IDF 关键词提取
-        
+
         Args:
             text: 输入文本
             tokens: 分词结果
             doc_freq: 文档频率字典
             total_docs: 总文档数
             top_k: 返回前 K 个
-            
+
         Returns:
             [(keyword, tfidf_score), ...]
         """
@@ -532,11 +532,11 @@ class SentimentAnalyzer:
     def analyze(self, text: str, tokens: Optional[List[Token]] = None) -> SentimentResult:
         """
         情感分析
-        
+
         Args:
             text: 输入文本
             tokens: 分词结果（可选）
-            
+
         Returns:
             情感分析结果
         """
@@ -646,7 +646,7 @@ class TextSummarizer:
     def __init__(self, min_sentences: int = 2, max_sentences: int = 5):
         """
         初始化摘要器
-        
+
         Args:
             min_sentences: 最少句子数
             max_sentences: 最多句子数
@@ -657,11 +657,11 @@ class TextSummarizer:
     def summarize(self, text: str, ratio: float = 0.3) -> SummaryResult:
         """
         生成摘要
-        
+
         Args:
             text: 输入文本
             ratio: 压缩比例
-            
+
         Returns:
             摘要结果
         """
@@ -743,7 +743,7 @@ class SemanticSimilarity:
     def __init__(self, embedding_func=None):
         """
         初始化
-        
+
         Args:
             embedding_func: 向量化函数 (text -> vector)
         """
@@ -754,11 +754,11 @@ class SemanticSimilarity:
     def similarity(self, text1: str, text2: str) -> float:
         """
         计算两段文本的相似度
-        
+
         Args:
             text1: 文本1
             text2: 文本2
-            
+
         Returns:
             相似度分数 (0-1)
         """
@@ -817,11 +817,11 @@ class SemanticSimilarity:
     ) -> List[Tuple[str, float]]:
         """
         批量计算相似度
-        
+
         Args:
             query: 查询文本
             candidates: 候选文本列表
-            
+
         Returns:
             [(candidate, score), ...]
         """
@@ -837,7 +837,7 @@ class SemanticSimilarity:
 class NLPProcessor:
     """
     NLP 处理器主类
-    
+
     整合所有 NLP 能力，提供统一的处理接口。
     """
 
@@ -849,7 +849,7 @@ class NLPProcessor:
     ):
         """
         初始化 NLP 处理器
-        
+
         Args:
             user_dict: 用户自定义词典
             stopwords: 自定义停用词
@@ -875,7 +875,7 @@ class NLPProcessor:
     ) -> NLPResult:
         """
         处理文本
-        
+
         Args:
             text: 输入文本
             tasks: 要执行的任务列表
@@ -885,7 +885,7 @@ class NLPProcessor:
                 - 'sentiment': 情感分析
                 - 'summary': 摘要
                 默认执行所有任务
-        
+
         Returns:
             NLP 处理结果
         """
@@ -976,7 +976,7 @@ class NLPProcessor:
     def update_doc_freq(self, text: str):
         """
         更新文档频率（用于 TF-IDF）
-        
+
         Args:
             text: 文档文本
         """
@@ -1004,11 +1004,11 @@ class NLPProcessor:
 def process_text(text: str, tasks: Optional[List[str]] = None) -> NLPResult:
     """
     便捷函数：处理文本
-    
+
     Args:
         text: 输入文本
         tasks: 要执行的任务列表
-        
+
     Returns:
         NLP 处理结果
     """

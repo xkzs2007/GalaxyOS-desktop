@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 class AutonomousTasksIntegrator:
     """
     自主任务集成器
-    
+
     整合多个自主任务相关技能。
     """
 

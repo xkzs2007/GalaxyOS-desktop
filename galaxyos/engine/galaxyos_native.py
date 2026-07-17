@@ -75,11 +75,11 @@ def _lfm_binary_path() -> Optional[str]:
 
 def lfm_start(model_dir: Optional[str] = None, uds_path: Optional[str] = None) -> str:
     """Start the LFM server as a subprocess (跨平台).
-    
+
     Args:
         model_dir: Path to LFM2.5-1.2B-ONNX directory
         uds_path: IPC path (Unix: UDS socket; Windows: 未使用, TCP 自动分配)
-    
+
     Returns:
         Unix: UDS socket path; Windows: "tcp://127.0.0.1:{port}"
     """
@@ -291,7 +291,7 @@ def lfm_get_state() -> dict:
 
 def lfm_get_hidden(input_ids: List[int], layers: Optional[List[int]] = None) -> dict:
     """Feed tokens and return hidden states for specified layers.
-    
+
     Returns dict like:
         {"present_conv.0": [f32; 2048*3], "present_conv.15": [f32; 2048*3], "embedding": [f32; 2048]}
     """

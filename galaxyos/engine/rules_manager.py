@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 class RulesManager:
     """
     规则整合管理器
-    
+
     统一管理所有规则配置和行为约束。
     """
 

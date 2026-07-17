@@ -53,12 +53,12 @@ def rerank_results(query: str, candidates: List[Dict], top_k: int = 10) -> List[
     用 bge-reranker-v2-m3 对候选结果重排序（公开接口）
 
     query + documents 一起传，reranker 做 cross-encoder 重新打分。
-    
+
     Args:
         query: 原始查询
         candidates: 候选结果列表（通常传 top_k * 2）
         top_k: 返回结果数
-    
+
     Returns:
         重排序后的结果列表
     """

@@ -64,7 +64,7 @@ class ActionStatus(Enum):
 class Action:
     """
     行动项
-    
+
     代表一个具体的可执行任务
     """
     id: str
@@ -130,7 +130,7 @@ class Action:
 class Plan:
     """
     计划
-    
+
     包含一组相关的行动项
     """
     id: str
@@ -162,7 +162,7 @@ class Plan:
 class PlanningEngine:
     """
     规划引擎
-    
+
     核心功能：
     1. 基于记忆和洞察生成行动计划
     2. 管理计划的执行状态
@@ -178,7 +178,7 @@ class PlanningEngine:
     ):
         """
         初始化规划引擎
-        
+
         Args:
             memory_stream: 记忆流实例
             reflection_engine: 反思引擎实例（可选）
@@ -202,13 +202,13 @@ class PlanningEngine:
     ) -> Plan:
         """
         生成行动计划
-        
+
         Args:
             context: 规划上下文/目标
             horizon: 规划时间范围
             use_reflections: 是否使用反思结果
             max_actions: 最大行动数
-            
+
         Returns:
             生成的计划
         """
@@ -255,7 +255,7 @@ class PlanningEngine:
     def get_next_actions(self, limit: int = 5) -> List[Action]:
         """
         获取下一步要执行的行动
-        
+
         按优先级和截止时间排序
         """
         pending_actions = [
@@ -306,7 +306,7 @@ class PlanningEngine:
     ) -> Optional[Plan]:
         """
         重新规划
-        
+
         当情况变化时调整计划
         """
         if plan_id not in self.plans:
@@ -618,12 +618,12 @@ def plan(
 ) -> List[Action]:
     """
     规划接口（符合任务要求的接口约定）
-    
+
     Args:
         context: 规划上下文
         memory_stream: 记忆流实例
         llm_client: LLM 客户端
-        
+
     Returns:
         行动列表
     """

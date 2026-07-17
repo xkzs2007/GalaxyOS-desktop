@@ -83,7 +83,7 @@ class LiquidCellConfig:
 
 class LTCUnit:
     """LTC 单元 — 经典液体时间常数
-    
+
     dh/dt = σ(W_h h + W_x x + b) * (E - h) / τ
     τ = σ(W_τ h + W_τx x + b_τ) * (τ_max - τ_min) + τ_min
     """
@@ -108,12 +108,12 @@ class LTCUnit:
 
     def forward(self, h: np.ndarray, x: np.ndarray, t: float) -> np.ndarray:
         """LTC 一步 ODE 右端函数
-        
+
         Args:
             h: 当前状态 [state_dim]
             x: 当前输入 [input_dim]
             t: 当前时间
-        
+
         Returns:
             dh/dt [state_dim]
         """
@@ -155,7 +155,7 @@ class LTCUnit:
 
 class CfCUnit:
     """CfC 单元 — Closed-form Continuous-time
-    
+
     论文：CfC 是 LTC 的闭式解，无需 ODE 求解：
     h(t+1) = σ(gate) * h(t) + (1 - σ(gate)) * f(x)
     """
@@ -179,7 +179,7 @@ class CfCUnit:
 
     def forward(self, h: np.ndarray, x: np.ndarray, t: float) -> np.ndarray:
         """CfC 一步更新
-        
+
         CfC 是 LTC 的闭式解，直接给出 h(t+1)：
         h_new = σ(gate) * h + (1 - σ(gate)) * tanh(W_x x + b)
         """
@@ -213,7 +213,7 @@ class CfCUnit:
 
 class LIFUnit:
     """LIF 单元 — Leaky Integrate-and-Fire
-    
+
     类脑脉冲神经元：
     τ * dh/dt = -h + Wx + b
     当 h > threshold 时发射脉冲，然后重置
@@ -236,7 +236,7 @@ class LIFUnit:
 
     def forward(self, h: np.ndarray, x: np.ndarray, t: float) -> np.ndarray:
         """LIF 一步更新
-        
+
         在不应期内的神经元不积分。
         """
         d = len(h)
@@ -255,7 +255,7 @@ class LIFUnit:
 
     def fire_and_reset(self, h: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         """检测脉冲并重置
-        
+
         Returns:
             (reset_h, spikes): 重置后的状态 + 脉冲向量
         """
@@ -281,7 +281,7 @@ class LIFUnit:
 
 class CTRNNUnit:
     """CTRNN 单元 — Continuous-Time RNN
-    
+
     τ * dh/dt = -h + tanh(W_h h + W_x x + b)
     """
 
@@ -311,7 +311,7 @@ class CTRNNUnit:
 class LTCSEManager:
     """
     LTC-SE 统一管理器
-    
+
     统一所有液体单元的入口，支持：
     - 切换不同单元类型
     - 混合单元（不同维度的不同单元）
@@ -346,7 +346,7 @@ class LTCSEManager:
 
     def step(self, h: np.ndarray, x: np.ndarray, t: float, dt: float = 0.1) -> np.ndarray:
         """一步欧拉积分
-        
+
         h_{t+1} = h_t + dt * f(h_t, x_t, t)
         """
         dh = self.forward(h, x, t)
@@ -355,13 +355,13 @@ class LTCSEManager:
     def simulate(self, h0: np.ndarray, x_seq: np.ndarray,
                  dt: float = 0.1, fire_lif: bool = False) -> np.ndarray:
         """完整序列模拟
-        
+
         Args:
             h0: 初始状态 [state_dim]
             x_seq: 输入序列 [T, input_dim]
             dt: 步长
             fire_lif: LIF 单元是否触发脉冲
-        
+
         Returns:
             h_seq: [T+1, state_dim]
         """
@@ -411,7 +411,7 @@ class LTCSEManager:
 
 class GRUODEUnit:
     """GRU-ODE 单元 — GRU 的连续时间变体
-    
+
     将 GRU 的门控机制连续化：
     dh/dt = (1 - z) * (r * h_hat - h)
     其中 z, r 是门控，h_hat 是候选状态

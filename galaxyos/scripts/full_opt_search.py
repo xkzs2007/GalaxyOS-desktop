@@ -47,10 +47,10 @@ def search_vector(embedding: List[float]) -> List[Dict]:
 
         # 执行向量搜索
         cursor.execute(f"""
-            SELECT v.record_id, r.content, r.type, r.scene_name, v.distance 
-            FROM l1_vec v 
-            JOIN l1_records r ON v.record_id = r.record_id 
-            WHERE v.embedding MATCH X'{vec_hex}' AND k = 10 
+            SELECT v.record_id, r.content, r.type, r.scene_name, v.distance
+            FROM l1_vec v
+            JOIN l1_records r ON v.record_id = r.record_id
+            WHERE v.embedding MATCH X'{vec_hex}' AND k = 10
             ORDER BY v.distance ASC
         """)
 
@@ -93,10 +93,10 @@ def search_fts(queries: List[str]) -> List[Dict]:
 
         # 执行 FTS 搜索
         cursor.execute(f"""
-            SELECT record_id, content, type, scene_name 
-            FROM l1_fts 
-            WHERE l1_fts MATCH '{fts_query}' 
-            ORDER BY rank 
+            SELECT record_id, content, type, scene_name
+            FROM l1_fts
+            WHERE l1_fts MATCH '{fts_query}'
+            ORDER BY rank
             LIMIT 10
         """)
 

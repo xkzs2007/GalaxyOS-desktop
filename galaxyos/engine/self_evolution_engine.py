@@ -28,10 +28,10 @@ from galaxyos.shared.paths import workspace
 class SelfEvolutionEngine:
     """
     自我进化引擎
-    
+
     三阶段自进化循环：
     1. 质量自评（Quality Self-Evaluation）
-    2. 模式发现（Pattern Discovery）  
+    2. 模式发现（Pattern Discovery）
     3. 改进执行（Improvement Execution）
     """
 
@@ -100,13 +100,13 @@ class SelfEvolutionEngine:
                                    model_used: str = "deepseek-v4-flash") -> Dict:
         """
         对 smart_process 的结果做质量自评
-        
+
         评分维度：
         - completeness: 检索结果是否覆盖了查询的多个方面 (0-1)
         - relevance: 结果相关性评分 (0-1)
         - conciseness: 摘要是否精炼 (0-1)
         - factuality: 结果来源可靠性 (0-1)
-        
+
         Returns: 质量评分字典
         """
         score = {}
@@ -178,7 +178,7 @@ class SelfEvolutionEngine:
         检测错误模式，双数据源：
         1. .learnings/ERRORS.md（显式错误记录）
         2. .learnings/reflexions.jsonl（失败反思记录，主要来源）
-        
+
         判断：同类错误 ≥3 次自动生成改进建议
         """
         patterns: Dict[str, List[str]] = {}
@@ -317,7 +317,7 @@ class SelfEvolutionEngine:
     def get_evolution_trend(self) -> Dict:
         """
         获取进化趋势
-        
+
         Returns: 最近 N 次自评的平均分趋势
         """
         evals = [s for s in self._scores if s.get("event_type") == "self_evaluation"]
@@ -369,7 +369,7 @@ class SelfEvolutionEngine:
         2. 模式发现
         3. 进化追踪
         4. 返回改进建议
-        
+
         这个方法是整个引擎的入口，每次 smart_process 完成后自动调用
         """
         # 1. 质量自评
@@ -477,7 +477,7 @@ class SelfEvolutionEngine:
     def get_evolution_context(self, max_recent: int = 10) -> Dict:
         """
         生成进化上下文摘要，用于会话启动时注入
-        
+
         读取 evolution_tracker.jsonl 最近 N 条改进建议 + .learnings/ERRORS.md 高频错误
         返回结构化的上下文数据，可转换为系统提示
         """
@@ -534,7 +534,7 @@ class SelfEvolutionEngine:
     def format_evolution_context(self, max_recent: int = 10) -> str:
         """
         将进化上下文格式化为可注入的系统提示文本
-        
+
         返回的字符串可以直接添加到 session 上下文中
         """
         ctx = self.get_evolution_context(max_recent)
@@ -570,12 +570,12 @@ class SelfEvolutionEngine:
     def start_active_scheduler(self, interval_minutes: int = 10) -> Dict:
         """
         启动主动自进化调度器（daemon 后台线程）
-        
+
         主动检查三件事：
         1. 趋势分析 — 进化趋势是改善了还是劣化了
         2. 自动改进 — 高频错误模式自动生成改进建议文件
         3. 效果验证 — 历史改进是否有效
-        
+
         interval_minutes: 检查间隔（默认 10 分钟）
         """
         if hasattr(self, '_scheduler_active') and self._scheduler_active:
@@ -661,7 +661,7 @@ class SelfEvolutionEngine:
     def _active_check_trend(self) -> Dict:
         """
         主动趋势分析
-        
+
         读取最近 50 次自评，对比前半段和后半段均分。
         如果劣化维度超过 2 个，标记为需要改进。
         """
@@ -706,7 +706,7 @@ class SelfEvolutionEngine:
     def _active_auto_improve(self) -> Dict:
         """
         自动生成改进建议文件
-        
+
         读取错误模式和高频低分维度，写入改进建议文件
         """
         patterns = self.detect_error_patterns()
@@ -770,7 +770,7 @@ class SelfEvolutionEngine:
     def _active_verify_improvements(self) -> Dict:
         """
         验证历史改进效果
-        
+
         读取改进建议文件，对比改进前后的评分趋势。
         如果某个维度的评分在改进记录后有改善，标记为有效。
         """
@@ -851,14 +851,14 @@ class SelfEvolutionEngine:
     def active_decision_and_execute(self) -> Dict:
         """
         决策执行主入口——在调度器循环中调用
-        
+
         流程：
         1. 读改进建议文件（IMPROVEMENT_SUGGESTIONS.jsonl）
         2. 对每条新建议做风险评估
         3. 低风险 → 自动执行 + 快照备份 + 验证 + 回滚/保留
         4. 中风险 → 写入可执行脚本文件，等人审批
         5. 高风险 → 跳过，仅记录
-        
+
         Returns: 执行摘要
         """
         suggestions_path = self.workspace / '.learnings' / 'IMPROVEMENT_SUGGESTIONS.jsonl'
@@ -947,11 +947,11 @@ class SelfEvolutionEngine:
     def _evaluate_risk(self, suggestion: Dict) -> str:
         """
         评估改进建议的风险等级
-        
+
         - 低风险: 涉及阈值/参数调整（如 recall_threshold、ltp_strength）
         - 中风险: 涉及模块启用/关闭、配置变更
         - 高风险: 涉及代码修改、架构变更
-        
+
         Returns: "low" | "medium" | "high"
         """
         sug_text = suggestion.get("suggestion", "").lower()
@@ -991,13 +991,13 @@ class SelfEvolutionEngine:
     def _execute_low_risk(self, suggestion: Dict) -> Dict:
         """
         执行低风险改进建议
-        
+
         当前可调参数（memory_params.json）：
         - recall_threshold: 检索阈值（默认0.25）
         - ltp_strength: 突触增强强度（默认0.1）
         - decay_rate: 衰减率（默认0.001）
         - max_recall_results: 最大检索结果数（默认10）
-        
+
         执行策略：先备份 → 执行 → 验证 → 回滚/保留
         """
         param_path = self.workspace / '.learnings' / 'memory_params.json'
@@ -1093,7 +1093,7 @@ class SelfEvolutionEngine:
     def _write_suggestion_script(self, suggestion: Dict) -> str:
         """
         将中风险改进建议写入可执行脚本文件
-        
+
         脚本以 .sh 格式生成，等人审批后执行
         文件位置: .learnings/pending_executions/
         """

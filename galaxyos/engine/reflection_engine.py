@@ -84,7 +84,7 @@ class Insight:
 class ReflectionEngine:
     """
     反思引擎
-    
+
     核心功能：
     1. 检测反思触发条件
     2. 从记忆流中检索相关记忆
@@ -100,7 +100,7 @@ class ReflectionEngine:
     ):
         """
         初始化反思引擎
-        
+
         Args:
             memory_stream: 记忆流实例
             config: 反思配置
@@ -119,7 +119,7 @@ class ReflectionEngine:
     def should_reflect(self) -> Tuple[bool, ReflectionTrigger]:
         """
         检查是否应该触发反思
-        
+
         Returns:
             (should_reflect, trigger_type)
         """
@@ -161,11 +161,11 @@ class ReflectionEngine:
     ) -> List[Insight]:
         """
         执行反思
-        
+
         Args:
             trigger: 触发类型
             focus_query: 聚焦查询（可选）
-            
+
         Returns:
             生成的洞察列表
         """
@@ -202,7 +202,7 @@ class ReflectionEngine:
     def get_reflection_questions(self, memories: List[Memory]) -> List[str]:
         """
         生成反思问题
-        
+
         这些问题用于引导 LLM 生成洞察
         """
         # 提取记忆主题
@@ -448,11 +448,11 @@ def reflect(
 ) -> List[str]:
     """
     反思接口（符合任务要求的接口约定）
-    
+
     Args:
         recent_memories: 近期记忆列表
         llm_client: LLM 客户端
-        
+
     Returns:
         洞察内容列表
     """

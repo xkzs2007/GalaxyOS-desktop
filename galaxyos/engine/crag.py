@@ -74,13 +74,13 @@ class CRAGResult:
 class CRAG:
     """
     CRAG 主控制器
-    
+
     实现完整的 CRAG 流程，包括：
     - 检索评估
     - 知识精炼
     - 知识补充
     - 自适应决策
-    
+
     特点：
     1. 质量感知：评估检索结果质量
     2. 纠错机制：低质量结果触发补充
@@ -97,7 +97,7 @@ class CRAG:
     ):
         """
         初始化 CRAG
-        
+
         Args:
             retriever: 检索函数，签名: (query: str) -> List[str]
             generator: 生成函数，签名: (query: str, context: str) -> str
@@ -131,10 +131,10 @@ class CRAG:
     def process(self, query: str) -> CRAGResult:
         """
         处理查询的主入口
-        
+
         Args:
             query: 用户查询
-            
+
         Returns:
             CRAGResult: 处理结果
         """
@@ -466,13 +466,13 @@ def create_crag(
 ) -> CRAG:
     """
     创建 CRAG 实例的工厂函数
-    
+
     Args:
         retriever: 检索函数
         generator: 生成函数
         web_searcher: Web 搜索函数
         config: 配置字典
-        
+
     Returns:
         CRAG: CRAG 实例
     """

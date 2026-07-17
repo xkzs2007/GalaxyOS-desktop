@@ -76,7 +76,7 @@ class AssociationEdge:
 class KnowledgeAsset:
     """
     统一知识资产模型——统一 Skill 和 Memory
-    
+
     关键设计：
     - raw_content: 保留原始内容，不做截断
     - multi_granularity: 缓存多粒度表示，避免重复计算
@@ -256,11 +256,11 @@ class AssetRegistry:
     def query_by_capability(self, capability_key: str, min_score: float = 0.0) -> List[KnowledgeAsset]:
         """
         按能力维度查询
-        
+
         Args:
             capability_key: 如 "web_access", "reasoning", "tool_exec"
             min_score: 最低分数
-            
+
         Returns:
             匹配的资产列表（按重要性降序）
         """
@@ -301,7 +301,7 @@ class AssetRegistry:
     ) -> List[KnowledgeAsset]:
         """
         简单文本搜索（jieba 召回 + 关键词重叠排序）
-        
+
         未来可升级为 embedding 语义检索。
         """
         try:
@@ -341,7 +341,7 @@ class AssetRegistry:
     def flush(self) -> int:
         """
         将 dirty 资产 flush 到 BlobArena
-        
+
         Returns:
             实际写入的资产数
         """
@@ -371,7 +371,7 @@ class AssetRegistry:
     def load_all(self) -> int:
         """
         从 BlobArena 加载所有已持久化的资产
-        
+
         Returns:
             加载的资产数
         """
@@ -461,7 +461,7 @@ class AssetRegistry:
     def get_neighbors(self, asset_id: str, max_depth: int = 1) -> List[Tuple[KnowledgeAsset, str, float]]:
         """
         获取关联邻居（广度优先）
-        
+
         Returns:
             [(asset, relation, weight), ...]
         """

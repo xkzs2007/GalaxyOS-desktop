@@ -41,14 +41,14 @@ import numpy as np
 
 def _bspline_basis(x: float, knots: np.ndarray, degree: int = 3) -> np.ndarray:
     """计算 B-spline 基函数值
-    
+
     使用 de Boor 算法递归计算。
-    
+
     Args:
         x: 输入标量
         knots: 节点向量 [n_knots]
         degree: 样条次数 (默认 cubic)
-    
+
     Returns:
         basis: [n_basis] 个基函数值
     """
@@ -90,7 +90,7 @@ def _bspline_basis(x: float, knots: np.ndarray, degree: int = 3) -> np.ndarray:
 def _create_uniform_knots(n_basis: int, degree: int = 3,
                           x_min: float = -1.0, x_max: float = 1.0) -> np.ndarray:
     """创建均匀节点向量
-    
+
     n_basis 个基函数需要 n_knots = n_basis + degree + 1 个节点
     """
     n_knots = n_basis + degree + 1
@@ -109,11 +109,11 @@ def _create_uniform_knots(n_basis: int, degree: int = 3,
 class KANLinear:
     """
     KAN 线性层 — 可学习样条函数
-    
+
     替代 nn.Linear: 每对 (in, out) 之间不是固定的权重 w，
     而是 B-spline 基函数 + 可学习系数的组合。
-    
-    公式: 
+
+    公式:
         y_j = sum_i spline_i(x_i)
     其中 spline_i(x) = sum_k c_k * B_k(x)
     """
@@ -152,10 +152,10 @@ class KANLinear:
 
     def forward_np(self, x: np.ndarray) -> np.ndarray:
         """纯 NumPy 前向传播
-        
+
         Args:
             x: [batch, in_features]
-        
+
         Returns:
             y: [batch, out_features]
         """
@@ -210,13 +210,13 @@ class KANLinear:
 class KANNetwork:
     """
     KAN 多层网络
-    
+
     堆叠 KANLinear 层，构成完整的 KAN 网络。
-    
+
     与 MLP 的区别：
     - MLP: 线性层 + 固定激活 (ReLU/GELU/SiLU)
     - KAN: 样条参数化的"边"，每层 = 一组 B-spline 基函数
-    
+
     在 GalaxyOS 中：
     - 替代 `adaptive_classifier.py` 中的 MLP 分类器
     - 嵌入 LTC/CfC 的突触权重网络 → 提供更丰富的动态映射
@@ -279,13 +279,13 @@ class KANNetwork:
 class KanLtcMerger:
     """
     KAN + LTC 融合层
-    
+
     LTC 的微分方程:
         dh/dt = f(h, x, t, θ)
-    
+
     传统实现中 f 是 MLP。这里用 KAN 替代：
         dh/dt = KAN(h, x, t)
-    
+
     优势：
     - KAN 的可学习样条更能捕捉复杂动态
     - 更少的参数：KAN 在小数据下泛化更好
@@ -307,7 +307,7 @@ class KanLtcMerger:
 
     def ode_func(self, h: np.ndarray, x: np.ndarray, t: float) -> np.ndarray:
         """ODE 右端函数
-        
+
         dh/dt = KAN(concat(h, x))
         """
         inp = np.concatenate([h, x])
@@ -316,12 +316,12 @@ class KanLtcMerger:
     def forward_euler(self, h0: np.ndarray, x_seq: np.ndarray,
                       dt: float = 0.1) -> np.ndarray:
         """前向欧拉求解（简单测试用）
-        
+
         Args:
             h0: 初始状态 [state_dim]
             x_seq: 输入序列 [T, input_dim]
             dt: 时间步长
-        
+
         Returns:
             h_seq: 状态序列 [T+1, state_dim]
         """

@@ -56,7 +56,7 @@ class EmotionScore:
 class EmotionDetector:
     """
     情绪检测器
-    
+
     基于关键词和模式检测用户情绪
     """
 
@@ -109,10 +109,10 @@ class EmotionDetector:
     def detect(self, text: str) -> EmotionScore:
         """
         检测情绪
-        
+
         Args:
             text: 用户消息
-        
+
         Returns:
             EmotionScore
         """
@@ -176,10 +176,10 @@ class EmotionWeightCalculator:
     def calculate(self, emotion: EmotionScore) -> float:
         """
         计算情感权重
-        
+
         Args:
             emotion: 情绪评分
-        
+
         Returns:
             权重值 (0.0 - 1.0)
         """
@@ -195,10 +195,10 @@ class EmotionWeightCalculator:
     def get_memory_priority(self, emotion: EmotionScore) -> str:
         """
         获取记忆优先级
-        
+
         Args:
             emotion: 情绪评分
-        
+
         Returns:
             "high" | "medium" | "low"
         """
@@ -217,7 +217,7 @@ class EmotionWeightCalculator:
 class EmotionMemoryManager:
     """
     情感记忆管理器
-    
+
     集成情绪检测和权重计算
     """
 
@@ -244,11 +244,11 @@ class EmotionMemoryManager:
     ) -> Dict:
         """
         处理用户消息
-        
+
         Args:
             user_message: 用户消息
             memory_content: 要存储的记忆内容（可选，默认使用用户消息）
-        
+
         Returns:
             {
                 "emotion": EmotionScore,

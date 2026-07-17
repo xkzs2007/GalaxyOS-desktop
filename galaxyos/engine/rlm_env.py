@@ -68,7 +68,7 @@ def _safe_import(name: str):
 class RLMEnvironment:
     """
     RLM REPL 环境
-    
+
     prompt 作为外部变量存储，模型通过 REPL 写代码切片/递归处理。
     """
 
@@ -102,7 +102,7 @@ class RLMEnvironment:
     def exec_repl(self, code: str) -> str:
         """
         执行一段 Python 代码，返回 stdout 和新增变量。
-        
+
         关键限制:
         - 每段代码的 stdout 只保留 prefix + 长度（不是全文）
         - 变量存储在 _variables 中
@@ -198,7 +198,7 @@ class RLMEnvironment:
 class RLMProcessor:
     """
     RLM 处理器 — 集成到 GalaxyOS pipeline
-    
+
     作为 Worker 的一个 UDS 端点暴露。
     """
 
@@ -212,7 +212,7 @@ class RLMProcessor:
     def process(self, prompt: str, depth: int = 0) -> str:
         """
         主入口: 递归处理超长 prompt
-        
+
         流程:
         1. 初始化 REPL 环境
         2. 给 LLM 发 meta 信息（只有长度+前缀）
@@ -336,7 +336,7 @@ class RLMProcessor:
 class FastRLMProcessor:
     """
     快速 RLM 处理器 - 不需要 LLM 调用
-    
+
     使用滑动窗口 + 自动分段策略:
     1. 按段落/句子边界分段
     2. 每段独立处理/摘要
@@ -350,11 +350,11 @@ class FastRLMProcessor:
     def process(self, text: str, processor: Callable = None) -> List[str]:
         """
         分割长文本并处理每段
-        
+
         Args:
             text: 输入文本
             processor: 每段的处理函数，None 则直接返回片段
-        
+
         Returns:
             处理后的片段列表
         """

@@ -467,7 +467,7 @@ class SkillScorer:
 
     def compute_semantic_score(self, query: str, desc: SkillDescriptor) -> float:
         """语义匹配分（关键词+描述命中）
-        
+
         简化版：用 tag 命中和描述命中来估算语义相似度。
         未来可升级为 embedding 匹配。
         """
@@ -489,9 +489,9 @@ class SkillScorer:
     @staticmethod
     def compute_role_score(question_type: str, desc: SkillDescriptor) -> float:
         """角色适配分
-        
+
         RCR-Router: 评估 skill 与 query 类型的适配程度。
-        
+
         扩展类型映射，覆盖更多 question_type。
         """
         # role_category 匹配（扩展映射表）
@@ -540,10 +540,10 @@ class SkillScorer:
     @staticmethod
     def compute_stage_score(cognitive_stage: str, desc: SkillDescriptor) -> float:
         """阶段适配分（v2 抑制版）
-        
+
         A-ToM 启发：技能推荐应与用户当前认知阶段对齐。
         认知阶段: explore / analyze / verify / stuck / any
-        
+
         抑制逻辑：当语义匹配分低时（无关键词匹配），阶段分的权重也降低。
         避免"全上下文都不匹配但阶段对就赢了"的情况。
         """
@@ -567,7 +567,7 @@ class SkillScorer:
     def compute_history_score(history_weights: Dict[str, float],
                               desc: SkillDescriptor) -> float:
         """历史反馈分
-        
+
         Springdrift CBR 层：用历史推荐 + 用户反馈修正评分。
         正反馈加分，负反馈减分，无历史 = 中性。
         """
@@ -590,7 +590,7 @@ class SkillScorer:
                   history_weight: float = 0.10,
                   freshness_weight: float = 0.05) -> List[ScoredSkill]:
         """对所有技能评分（RCR-Router 路由策略）
-        
+
         Args:
             query: 用户查询文本
             question_type: 识别出的问题类型

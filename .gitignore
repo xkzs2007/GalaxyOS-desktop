@@ -69,12 +69,14 @@ extensions/galaxyos/native/prebuilt/
 models/embeddings/*.onnx
 models/embeddings/*.bin
 models/**/model_q4.onnx
+models/**/*.pt
+models/**/*.pth
+models/**/*.pkl
 
-# 排除运行时模型目录（非 git 大文件默认排除，force-add 需要的）
-# *.pth 放开给 synapse_pretrain.pth
-# *.onnx 已在 models/embeddings/ 中
-# *.bin 不入（382MB RCCAM 权重）
-# *.pkl 入（127KB 分类器模型）
+# ── 运行时产物（不入库）──
+backups/
+galaxyos/frontend/dist/
+*.egg-info/
 
 # Rust/Cargo build cache
 extensions/galaxyos/native/target/
@@ -82,6 +84,11 @@ desktop-tauri/target/
 desktop-tauri/Cargo.lock
 extensions/galaxyos/var/
 workspace/
+
+# ── Skill 管理器自动生成 ──
+.agents/
+.claude/
+skills-lock.json
 
 # ── 临时/开发 ──
 _eval/

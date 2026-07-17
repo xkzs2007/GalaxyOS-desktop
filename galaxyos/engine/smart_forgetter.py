@@ -31,7 +31,7 @@ class ForgetAction:
 class SmartForgetter:
     """
     智能遗忘管理器
-    
+
     功能:
     1. 基于重要性评分决定遗忘策略
     2. 归档低价值记忆
@@ -114,10 +114,10 @@ class SmartForgetter:
     def analyze(self, memories: List[Dict]) -> Dict[str, List[ForgetAction]]:
         """
         分析记忆，生成遗忘建议
-        
+
         Args:
             memories: 记忆列表
-        
+
         Returns:
             分类后的遗忘动作
         """
@@ -180,12 +180,12 @@ class SmartForgetter:
                 archive_func: Optional[Callable] = None) -> Dict[str, int]:
         """
         执行遗忘动作
-        
+
         Args:
             actions: 遗忘动作列表
             delete_func: 删除函数
             archive_func: 归档函数
-        
+
         Returns:
             执行结果统计
         """
@@ -228,13 +228,13 @@ class SmartForgetter:
                     dry_run: bool = False) -> Dict[str, Any]:
         """
         运行清理
-        
+
         Args:
             memories: 记忆列表
             delete_func: 删除函数
             archive_func: 归档函数
             dry_run: 试运行模式
-        
+
         Returns:
             清理结果
         """
@@ -261,10 +261,10 @@ class SmartForgetter:
     def archive_memory(self, memory_data: Dict) -> str:
         """
         归档记忆
-        
+
         Args:
             memory_data: 记忆数据
-        
+
         Returns:
             归档文件路径
         """
@@ -283,10 +283,10 @@ class SmartForgetter:
     def restore_memory(self, memory_id: str) -> Optional[Dict]:
         """
         恢复归档记忆
-        
+
         Args:
             memory_id: 记忆 ID
-        
+
         Returns:
             记忆数据
         """

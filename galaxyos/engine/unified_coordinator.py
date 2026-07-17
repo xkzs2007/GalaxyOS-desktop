@@ -1222,7 +1222,7 @@ MODULE_REGISTRY: Dict[str, ModuleInfo] = {
 class UnifiedCoordinator:
     """
     统一协调器 V2
-    
+
     整合所有 78 个模块，提供统一的调用接口。
     """
 
@@ -1876,11 +1876,11 @@ class UnifiedCoordinator:
     ) -> Dict[str, Any]:
         """
         执行工作流
-        
+
         Args:
             scenario: 场景名称
             initial_input: 初始输入
-        
+
         Returns:
             执行结果
         """
@@ -1970,13 +1970,13 @@ class UnifiedCoordinator:
     def cognitive_recall(self, query: str, context: str = None) -> Dict[str, Any]:
         """
         认知检索 - 跨模块协同的高级检索
-        
+
         整合 Self-RAG + MemGPT + Knowledge Graph GNN
-        
+
         Args:
             query: 用户查询
             context: 可选上下文
-            
+
         Returns:
             检索结果
         """
@@ -2046,12 +2046,12 @@ class UnifiedCoordinator:
     def deep_reflect(self, recent_hours: int = 24) -> Dict[str, Any]:
         """
         深度反思 - 跨模块协同的反思流程
-        
+
         整合 Generative Agents + Knowledge Graph GNN + MemGPT
-        
+
         Args:
             recent_hours: 分析最近多少小时的记忆
-            
+
         Returns:
             反思结果
         """
@@ -2252,7 +2252,7 @@ if __name__ == "__main__":
 def get_resilience_status() -> Dict:
     """
     获取弹性系统状态
-    
+
     Returns:
         Dict: 弹性系统健康报告
     """
@@ -2270,7 +2270,7 @@ def get_resilience_status() -> Dict:
 def get_available_components() -> List[str]:
     """
     获取当前可用的组件列表
-    
+
     Returns:
         List[str]: 可用组件ID列表
     """
@@ -2288,12 +2288,12 @@ def get_available_components() -> List[str]:
 def safe_call(component_id: str, method: str, *args, **kwargs) -> Any:
     """
     安全调用组件方法（带故障转移）
-    
+
     Args:
         component_id: 组件ID
         method: 方法名
         *args, **kwargs: 方法参数
-        
+
     Returns:
         Any: 调用结果，失败返回None
     """
@@ -2318,7 +2318,7 @@ def safe_call(component_id: str, method: str, *args, **kwargs) -> Any:
 def get_coordinator_status() -> Dict:
     """
     获取协调器完整状态
-    
+
     Returns:
         Dict: 协调器状态报告
     """

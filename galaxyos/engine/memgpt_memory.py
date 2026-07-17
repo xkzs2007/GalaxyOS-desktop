@@ -105,7 +105,7 @@ class Memory:
 class CoreMemory:
     """
     核心记忆 - 始终在上下文中的关键信息
-    
+
     特点：
     - 容量有限（默认 2000 tokens）
     - 存储用户偏好、身份信息、关键决策
@@ -242,7 +242,7 @@ class CoreMemory:
 class WorkingMemory:
     """
     工作记忆 - 当前对话上下文
-    
+
     特点：
     - 存储当前对话的消息
     - 自动压缩超出容量的内容
@@ -361,7 +361,7 @@ class WorkingMemory:
 class ArchivalMemory:
     """
     归档记忆 - 无限容量的历史存储
-    
+
     特点：
     - 使用向量数据库进行语义检索
     - 支持无限容量
@@ -472,7 +472,7 @@ class ArchivalMemory:
             with sqlite3.connect(self.db_path) as conn:
                 conn.row_factory = sqlite3.Row
                 cursor = conn.execute("""
-                    SELECT * FROM memories 
+                    SELECT * FROM memories
                     WHERE importance >= ?
                     ORDER BY importance DESC
                 """, (min_importance,))
@@ -522,7 +522,7 @@ class ArchivalMemory:
         now = datetime.now(timezone.utc).isoformat()
         with sqlite3.connect(self.db_path) as conn:
             conn.execute("""
-                UPDATE memories 
+                UPDATE memories
                 SET last_accessed = ?, access_count = access_count + 1
                 WHERE id = ?
             """, (now, memory_id))
@@ -573,8 +573,8 @@ class ArchivalMemory:
             with sqlite3.connect(self.db_path) as conn:
                 conn.row_factory = sqlite3.Row
                 cursor = conn.execute("""
-                    SELECT * FROM memories 
-                    ORDER BY created_at DESC 
+                    SELECT * FROM memories
+                    ORDER BY created_at DESC
                     LIMIT ?
                 """, (limit,))
 
@@ -613,7 +613,7 @@ class ArchivalMemory:
 class MemGPTMemory:
     """
     MemGPT 风格记忆管理器
-    
+
     整合三级内存架构：
     - Core Memory: 关键信息
     - Working Memory: 对话上下文
@@ -640,7 +640,7 @@ class MemGPTMemory:
                  metadata: Dict = None, tags: List[str] = None) -> str:
         """
         存储记忆，返回记忆 ID
-        
+
         自动决定存储位置：
         - importance >= 0.8 → Core Memory
         - importance >= 0.5 → Archival Memory (高优先级)
@@ -678,7 +678,7 @@ class MemGPTMemory:
     def recall(self, query: str, top_k: int = 10) -> List[Memory]:
         """
         检索记忆
-        
+
         检索顺序：
         1. Core Memory（精确匹配）
         2. Archival Memory（语义搜索）
@@ -736,7 +736,7 @@ class MemGPTMemory:
     def auto_manage(self):
         """
         自主内存管理
-        
+
         - 检查核心记忆容量
         - 压缩工作记忆
         - 归档低重要性记忆

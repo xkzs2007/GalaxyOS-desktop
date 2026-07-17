@@ -50,7 +50,7 @@ class RailDecision(str, Enum):
 class PermissionContext:
     """
     权限上下文 — 类似 JiuwenClaw 的 PermissionContext + owner_scopes
-    
+
     每个维度的默认值都是"放行"（宽松模式），
     只有在显式设置约束时才变为"受限"模式。
     """
@@ -104,11 +104,11 @@ def get_current_context() -> Optional[PermissionContext]:
 def check_permission(scope: RailScope, feature: str = "") -> RailDecision:
     """
     检查当前上下文是否允许某操作
-    
+
     Args:
         scope: 护栏作用域
         feature: 功能名（如 "memory_write", "export_file"）
-        
+
     Returns:
         RailDecision.ALLOW / DENY / ASK_USER
     """
@@ -166,17 +166,17 @@ def get_rails_config() -> Dict:
 class rail:
     """
     Rail 装饰器 — 类似 JiuwenClaw 的 AskUserRail
-    
+
     用法：
         @rail(scope=RailScope.FEATURE, feature="memory_write", on_deny="skip")
         def write_memory(...):
             ...
-    
+
     Args:
         scope: 护栏作用域
         feature: 功能名
         on_deny: "skip"（跳过）| "raise"（抛异常）| "ask"（询问用户）
-    
+
     优先级: 代码装饰器 > 配置白名单 > 默认放行
     """
 

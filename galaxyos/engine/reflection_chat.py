@@ -25,11 +25,11 @@ from reflection_nl import process_user_message
 def check_and_reflect(user_message: str, ai_response: str = None) -> dict:
     """
     检查用户消息并执行反思（如果需要）
-    
+
     Args:
         user_message: 用户消息
         ai_response: AI 的上一条回复（作为上下文）
-    
+
     Returns:
         {
             "should_inform": bool,  # 是否需要通知用户

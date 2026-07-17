@@ -67,11 +67,11 @@ class QueryAnalysis:
 class IntelligentThinkingTrigger:
     """
     智能思考技能触发器
-    
+
     基于 Intent Detection 论文:
     - 通过语义理解识别用户意图
     - 不依赖关键词，而是理解用户真正需要什么
-    
+
     创新点:
     - 分析查询复杂度
     - 识别问题类型
@@ -267,7 +267,7 @@ class IntelligentThinkingTrigger:
     def __init__(self, user_context: Optional[Dict] = None):
         """
         初始化智能触发器
-        
+
         Args:
             user_context: 用户上下文（历史纠正率等）
         """
@@ -277,14 +277,14 @@ class IntelligentThinkingTrigger:
     def analyze_complexity(self, query: str) -> float:
         """
         分析查询复杂度（增强版 v2）
-        
+
         - 原关键词指标不变
         - 新增问题类型复杂度加成
         - 新增复合/比较问题检测
-        
+
         Args:
             query: 用户查询
-        
+
         Returns:
             复杂度 0-1
         """
@@ -343,10 +343,10 @@ class IntelligentThinkingTrigger:
     def identify_question_type(self, query: str) -> str:
         """
         识别问题类型
-        
+
         Args:
             query: 用户查询
-        
+
         Returns:
             问题类型
         """
@@ -362,16 +362,16 @@ class IntelligentThinkingTrigger:
     def estimate_confusion(self, query: str, context: Optional[Dict] = None) -> float:
         """
         估计用户困惑程度（增强版 v2）
-        
+
         - 原指标不变
         - 新增：问题类型困惑基线（分析/决策类天然困惑度更高）
         - 新增：长度困惑基线（长 query 天然困惑度更高）
         - 权重重新分配，防止复杂问题 confusion=0
-        
+
         Args:
             query: 用户查询
             context: 对话上下文
-        
+
         Returns:
             困惑程度 0-1
         """
@@ -428,11 +428,11 @@ class IntelligentThinkingTrigger:
     ) -> QueryAnalysis:
         """
         检测是否需要思考技能
-        
+
         Args:
             query: 用户查询
             context: 对话上下文
-        
+
         Returns:
             查询分析结果
         """
@@ -528,11 +528,11 @@ class IntelligentThinkingTrigger:
 def detect_thinking_skill(query: str, context: Dict = None) -> ThinkingSkill:
     """
     检测需要的思考技能（便捷函数）
-    
+
     Args:
         query: 用户查询
         context: 对话上下文
-    
+
     Returns:
         建议的思考技能
     """

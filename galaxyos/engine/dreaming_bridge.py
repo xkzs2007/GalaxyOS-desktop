@@ -106,7 +106,7 @@ class DreamingPaths:
 class ShortTermImporter:
     """
     从 OpenClaw short-term-recall.json 导入候选记忆到 BioRhythm
-    
+
     策略:
     - 取 totalScore > 0.5 的条目 = "Light phase 消化过的候选"
     - 导入到 memory_consolidation 的突触网络
@@ -216,7 +216,7 @@ class ShortTermImporter:
 class DreamDiaryWriter:
     """
     将 BioRhythm 的梦境产物写回 OpenClaw 生态
-    
+
     写回点:
     1. events.jsonl — 追加梦境事件
     2. phase-signals.json — 注入 REM 阶段信号
@@ -438,7 +438,7 @@ class DreamDiaryWriter:
 class DreamingBridge:
     """
     Dreaming ↔ BioRhythm 双向桥
-    
+
     执行顺序:
     ① 导入 OpenClaw short-term → 突触网络
     ② 触发 BioRhythm 睡眠周期

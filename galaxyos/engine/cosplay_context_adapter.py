@@ -159,12 +159,12 @@ class CosplayContextAdapter:
     def segment_nodes_by_boundary(self, nodes: List[Any]) -> List[Dict]:
         """
         用 Boundary Detection 把 DAG nodes 按意图边界分组。
-        
+
         Args:
             nodes: DAGNode 列表（必须含 content, timestamp, node_id）
-        
+
         Returns:
-            [{ "segment_id": int, "intent": str, "nodes": [DAGNode], 
+            [{ "segment_id": int, "intent": str, "nodes": [DAGNode],
                "combined_text": str, "keywords": [str] }]
         """
         if not self.config.boundary_enabled or len(nodes) < 2:
@@ -297,7 +297,7 @@ class CosplayContextAdapter:
     def get_contract_instructions(self, keywords: List[str]) -> Optional[Dict]:
         """
         查 Skill Bank 获取匹配技能的 contract 说明。
-        
+
         Returns:
             { "skill_name": str, "predicates_keep": [str], "confidence": float }
             或 None（无匹配）
@@ -354,7 +354,7 @@ class CosplayContextAdapter:
                                        contract_info: Optional[Dict]) -> str:
         """
         把 contract 信息注入到摘要文本中。
-        
+
         如果匹配到技能的 contract 且该技能有重要 predicates，
         在摘要末尾追加 "【关键上下文：...】"。
         """
@@ -378,7 +378,7 @@ class CosplayContextAdapter:
     def try_skill_replace(self, segment: Dict) -> Optional[str]:
         """
         尝试用技能 token 替换整段对话。
-        
+
         如果 segment 匹配了一个已确认的 ProtoSkill（支持度+一致率+通过率都达标），
         返回替换文本如 `[Skill: web_search] (查询 "xxx" → 5 条结果)`。
         不匹配则返回 None。
@@ -441,9 +441,9 @@ class CosplayContextAdapter:
     def record_compact_result(self, compact_info: Dict):
         """
         记录一次压缩的结果，供反馈分析。
-        
+
         compact_info:
-          { "segment_id": ..., "n_nodes": ..., "summary_token": ..., 
+          { "segment_id": ..., "n_nodes": ..., "summary_token": ...,
             "original_token": ..., "contract_guided": bool,
             "skill_replaced": bool }
         """
@@ -479,7 +479,7 @@ class CosplayContextAdapter:
     def get_feedback_stats(self) -> Dict:
         """
         分析反馈缓冲区，计算压缩质量指标。
-        
+
         Returns:
           { "total_segments": int, "expanded_rate": float,
             "avg_saving_token": float, "contract_rate": float,
@@ -529,7 +529,7 @@ class CosplayContextAdapter:
     def apply_feedback_to_skill_bank(self) -> int:
         """
         将反馈信号写入 Skill Bank 的 refine_effects_contract()。
-        
+
         Returns:
             refined 的 contract 数量
         """

@@ -242,7 +242,7 @@ class VectorOps:
 
 class AnchorHashMap:
     """锚点哈希表 — LASAR codebook 的轻量化替代
-    
+
     LASAR 用可训练的 codebook（向量量化 + cross-attention）。
     我们轻量化: 用确定性哈希 + 语义聚类做锚点查找。
     """
@@ -403,7 +403,7 @@ class AnchorHashMap:
 
 class CognitiveMap:
     """LASAR 轻量认知地图
-    
+
     模拟 LASAR 论文的 Latent Cognitive Map 能力：
     1. 空间锚点管理（记忆在认知空间中的位置）
     2. 三类认知 query（回顾/内省/预测）

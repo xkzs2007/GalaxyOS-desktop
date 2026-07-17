@@ -51,12 +51,12 @@ class RouterDecision(Enum):
 class MoeEngramRouter:
     """
     MoE-Engram 路由器 — 根据输入特征决定用 MoE 还是 Engram
-    
+
     路由规则：
     1. 如果输入有明确的结构化检索需求 → Engram
     2. 如果输入需要复杂推理/组合 → MoE
     3. 如果两者都需要 → Hybrid
-    
+
     具体的路由特征：
     - query_entropy: 输入的信息熵（高熵 = 不明确 → MoE）
     - memory_similarity: 与记忆的相似度（高相似 → Engram）
@@ -88,7 +88,7 @@ class MoeEngramRouter:
     def compute_features(self, query: np.ndarray,
                           memory_context: Optional[np.ndarray] = None) -> np.ndarray:
         """计算路由特征
-        
+
         Returns:
             特征向量 [input_dim]
         """
@@ -117,11 +117,11 @@ class MoeEngramRouter:
     def route(self, query: np.ndarray,
               memory_context: Optional[np.ndarray] = None) -> RouterDecision:
         """路由决策
-        
+
         Args:
             query: 查询向量 [input_dim]
             memory_context: 记忆上下文向量 [input_dim]（可选）
-        
+
         Returns:
             RouterDecision: MoE / Engram / Hybrid
         """
@@ -161,16 +161,16 @@ class MoeEngramRouter:
 class U_ShapeScalingLaw:
     """
     U 型缩放律 — Engram 论文发现的非单调缩放
-    
+
     核心公式：
     Performance(α) = P_moe * β + P_eng * (1 - β) + U_penalty(β)
-    
+
     其中：
     - α = MoE/Engram 混合比例 (0 = 纯 Engram, 1 = 纯 MoE)
     - P_moe: 纯 MoE 的性能
     - P_eng: 纯 Engram 的性能
     - U_penalty(α) = -c * α * (1 - α)  —  凹函数惩罚中间值
-    
+
     U 型的两端（α→0 或 α→1）惩罚小，中间惩罚大。
     这个反直觉的现象来自 Engram 论文的实证发现。
     """
@@ -189,10 +189,10 @@ class U_ShapeScalingLaw:
 
     def performance(self, alpha: float) -> float:
         """计算给定混合比例的性能
-        
+
         Args:
             alpha: MoE 比例 [0, 1]（0=纯Engram, 1=纯MoE）
-        
+
         Returns:
             performance: 预期性能（越高越好）
         """
@@ -206,18 +206,18 @@ class U_ShapeScalingLaw:
 
     def optimal_alpha(self) -> List[float]:
         """U 型缩放律的最优 α
-        
+
         分析：
         P(α) = P_moe * α + P_eng * (1-α) - c * α * (1-α)
              = P_eng + (P_moe - P_eng) * α - c * (α - α²)
              = P_eng + (P_moe - P_eng + c) * α - c * α²
-        
+
         导数为 0：dP/dα = (P_moe - P_eng + c) - 2c * α = 0
         α = (P_moe - P_eng + c) / (2c)
-        
+
         如果 α ∈ (0, 1)，说明中间有谷底 → U 型
         如果 α ∉ (0, 1)，说明单调 → 不是严格 U 型
-        
+
         U 型两端（α=0 或 α=1）可能优于中间。
         """
         alpha_candidate = (self.P_moe - self.P_eng + self.c_penalty) / (2 * self.c_penalty)
@@ -230,7 +230,7 @@ class U_ShapeScalingLaw:
 
     def u_shape_score(self, alpha: float) -> float:
         """U 型量化指标
-        
+
         返回负数，绝对值越大 U 型越明显。
         0 = 无 U 型（线性）。
         """
@@ -253,12 +253,12 @@ class U_ShapeScalingLaw:
 class MoeEngramBlock:
     """
     MoE-Engram 融合块
-    
+
     结构：
     - MoE 分支：多个 Expert，门控网络选择
     - Engram 分支：记忆检索，注意力读取
     - 融合层：加权融合两个分支的输出
-    
+
     并行架构：
     ```
          输入
@@ -270,7 +270,7 @@ class MoeEngramBlock:
           |
          输出
     ```
-    
+
     路由逻辑（依据 U 型缩放律）：
     - 如果 α ≈ 0：只用 Engram（精确记忆）
     - 如果 α ≈ 1：只用 MoE（复杂推理）
@@ -331,10 +331,10 @@ class MoeEngramBlock:
 
     def moe_forward(self, x: np.ndarray) -> np.ndarray:
         """MoE 分支前向
-        
+
         Args:
             x: 输入 [input_dim]
-        
+
         Returns:
             moe_output: [output_dim]
         """
@@ -364,10 +364,10 @@ class MoeEngramBlock:
 
     def engram_forward(self, x: np.ndarray) -> np.ndarray:
         """Engram 分支前向（记忆检索）
-        
+
         Args:
             x: 输入 [input_dim]
-        
+
         Returns:
             engram_output: [output_dim]
         """
@@ -398,7 +398,7 @@ class MoeEngramBlock:
 
     def engram_write(self, x: np.ndarray, output: np.ndarray):
         """写入 Engram 记忆
-        
+
         将输入-输出关联写入记忆槽。
         """
         write_content = (x[:self.memory_dim] if len(x) >= self.memory_dim
@@ -412,13 +412,13 @@ class MoeEngramBlock:
 
     def forward(self, x: np.ndarray, alpha: float = None) -> np.ndarray:
         """融合前向
-        
+
         根据 U 型缩放律，动态决定 MoE/Engram 权重。
-        
+
         Args:
             x: 输入 [input_dim]
             alpha: MoE 比例（如果为 None，使用默认值）
-        
+
         Returns:
             output: [output_dim]
         """

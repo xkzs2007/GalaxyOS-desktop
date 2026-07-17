@@ -1,0 +1,68 @@
+[migration] Both .jiuwenclaw and .jiuwenswarm exist, skipping migration
+2026-07-17 21:35:37.240 INFO jiuwenswarm.gateway: [App] Gateway starting, connecting AgentServer: ws://127.0.0.1:18092
+2026-07-17 21:35:37.665 INFO jiuwenswarm.common.utils: [ExtensionLoader] 开始搜索扩展路径: [WindowsPath('D:/galaxyos/vendor/jiuwenswarm-develop/jiuwenswarm/extensions')]
+2026-07-17 21:35:37.670 INFO jiuwenswarm.common.utils: [ExtensionManager] 发现扩展路径: [WindowsPath('D:/galaxyos/vendor/jiuwenswarm-develop/jiuwenswarm/extensions/agent_client'), WindowsPath('D:/galaxyos/vendor/jiuwenswarm-develop/jiuwenswarm/extensions/symphony')]
+2026-07-17 21:35:37.969 INFO jiuwenswarm.common.utils: [ExtensionLoader] 扩展 symphony 依赖 json-repair 已安装
+2026-07-17 21:35:37.974 INFO jiuwenswarm.common.utils: [ExtensionLoader] 扩展 symphony 依赖 rich 已安装
+2026-07-17 21:35:38.369 INFO jiuwenswarm.common.utils: [ExtensionManager] 加载 [<jiuwenswarm.loaded_extension.symphony.SymphonyExtension object at 0x00000218137E92B0>]
+2026-07-17 21:35:38.380 INFO jiuwenswarm.gateway: [App] extensions loaded: 1
+2026-07-17 21:35:38.382 INFO jiuwenswarm.gateway.routing.agent_client: [WebSocketAgentServerClient] 正在连接: ws://127.0.0.1:18092
+2026-07-17 21:35:38.485 INFO jiuwenswarm.gateway.routing.agent_client: [WebSocketAgentServerClient] 已连接: ws://127.0.0.1:18092
+2026-07-17 21:35:38.488 INFO jiuwenswarm.gateway.routing.agent_client: [WebSocketAgentServerClient] connect 首帧(raw): {"type": "event", "event": "connection.ack", "payload": {"status": "ready"}}
+2026-07-17 21:35:38.491 INFO jiuwenswarm.gateway.routing.agent_client: [WebSocketAgentServerClient] connect 首帧(parsed): {"event": "connection.ack", "payload": {"status": "ready"}, "type": "event"}
+2026-07-17 21:35:38.494 INFO jiuwenswarm.gateway.routing.agent_client: [WebSocketAgentServerClient] 收到 connection.ack，AgentServer 已就绪
+2026-07-17 21:35:38.496 INFO jiuwenswarm.gateway.routing.agent_client: [WebSocketAgentServerClient] 消息接收任务已启动
+2026-07-17 21:35:38.497 INFO jiuwenswarm.gateway: [App] connected to AgentServer: ws://127.0.0.1:18092
+2026-07-17 21:35:39.037 INFO jiuwenswarm.gateway.message_handler.message_handler: [MessageHandler] 转发循环已启动 (_user_messages -> AgentServer -> _robot_messages)
+2026-07-17 21:35:39.695 INFO jiuwenswarm.gateway.heartbeat.heartbeat: Gateway heartbeat started (every 3600.0s)
+2026-07-17 21:35:39.697 INFO jiuwenswarm.common.cleanup: background_cleanup: started (first_delay=600s, interval=86400s, retention=30d)
+2026-07-17 21:35:39.731 INFO jiuwenswarm.gateway.channel_manager.channel_manager: [ChannelManager] 已注册 Channel: channel_id=a2a, 当前共 4 个
+2026-07-17 21:35:39.732 INFO jiuwenswarm.gateway: [App] channels.dingtalk.enabled = false, DingTalkChannel disabled
+2026-07-17 21:35:39.734 INFO jiuwenswarm.gateway: [App] channels.telegram.enabled = false, TelegramChannel disabled
+2026-07-17 21:35:39.736 INFO jiuwenswarm.gateway: [App] channels.discord.enabled = false, DiscordChannel disabled
+2026-07-17 21:35:39.738 INFO jiuwenswarm.gateway: [App] channels.whatsapp.enabled = false, WhatsAppChannel disabled
+2026-07-17 21:35:39.741 INFO jiuwenswarm.gateway: [App] channels.wecom.enabled = false, WecomChannel disabled
+2026-07-17 21:35:39.744 INFO jiuwenswarm.gateway: [App] channels.wechat.enabled = false, WechatChannel disabled
+2026-07-17 21:35:39.746 INFO jiuwenswarm.gateway.channel_manager.channel_manager: [ChannelManager] 出队派发循环已启动 (robot_messages -> Channel.send)
+2026-07-17 21:35:39.748 INFO jiuwenswarm.gateway.cron.scheduler: [Cron] scheduler started
+2026-07-17 21:35:40.036 INFO jiuwenswarm.gateway.channel_manager.protocol.a2a.a2a_connect: [A2AChannel] disabled by config
+2026-07-17 21:35:40.051 INFO jiuwenswarm.gateway.routing.agent_client: [WebSocketAgentServerClient] 消息接收任务已停止
+Traceback (most recent call last):
+  File "<frozen runpy>", line 203, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "D:\galaxyos\vendor\jiuwenswarm-develop\jiuwenswarm\gateway\app_gateway.py", line 2449, in <module>
+    main()
+    ~~~~^^
+  File "D:\galaxyos\vendor\jiuwenswarm-develop\jiuwenswarm\gateway\app_gateway.py", line 2438, in main
+    asyncio.run(
+    ~~~~~~~~~~~^
+        _run(
+        ^^^^^
+    ...<4 lines>...
+        )
+        ^
+    )
+    ^
+  File "C:\Users\xkzs\AppData\Roaming\uv\python\cpython-3.13-windows-x86_64-none\Lib\asyncio\runners.py", line 196, in run
+    return runner.run(main)
+           ~~~~~~~~~~^^^^^^
+  File "C:\Users\xkzs\AppData\Roaming\uv\python\cpython-3.13-windows-x86_64-none\Lib\asyncio\runners.py", line 119, in run
+    return self._loop.run_until_complete(task)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "C:\Users\xkzs\AppData\Roaming\uv\python\cpython-3.13-windows-x86_64-none\Lib\asyncio\base_events.py", line 725, in run_until_complete
+    return future.result()
+           ~~~~~~~~~~~~~^^
+  File "D:\galaxyos\vendor\jiuwenswarm-develop\jiuwenswarm\gateway\app_gateway.py", line 2217, in _run
+    await gateway_server.start()
+  File "D:\galaxyos\vendor\jiuwenswarm-develop\jiuwenswarm\gateway\app_gateway.py", line 684, in start
+    self._server = await ws_serve(
+                   ^^^^^^^^^^^^^^^
+    ...<6 lines>...
+    )
+    ^
+  File "D:\galaxyos\.venv313\Lib\site-packages\websockets\legacy\server.py", line 1123, in __await_impl__
+    server = await self._create_server()
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\xkzs\AppData\Roaming\uv\python\cpython-3.13-windows-x86_64-none\Lib\asyncio\base_events.py", line 1640, in create_server
+    raise OSError(err.errno, msg) from None
+OSError: [Errno 10048] error while attempting to bind on address ('127.0.0.1', 19001): [winerror 10048] 通常每个套接字地址(协议/网络地址/端口)只允许使用一次。

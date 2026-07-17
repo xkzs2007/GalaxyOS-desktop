@@ -167,7 +167,7 @@ class HarnessProfile:
     def detect_profile(self) -> CapabilityProfile:
         """
         自动检测宿主环境的能力画像
-        
+
         基于当前模型、可用工具、系统环境推断。
         """
         profile = CapabilityProfile()
@@ -253,7 +253,7 @@ class HarnessProfile:
     def auto_detect(cls) -> "HarnessProfile":
         """
         自动检测当前环境
-        
+
         扫描 sys.path、已安装包、可用工具。
         """
         hp = cls()
@@ -540,7 +540,7 @@ class ProfileMatcher:
 class SkillClassifier:
     """
     从 SKILL.md 内容自动检测技能的能力画像
-    
+
     使用关键词匹配 + 简单规则推断各个原语能力。
     """
 
@@ -808,7 +808,7 @@ class SkillClassifier:
 class RegistryManager:
     """
     能力画像注册表管理器
-    
+
     维护能力画像的存储（JSON 文件）、查询、更新。
     """
 

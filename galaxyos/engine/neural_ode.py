@@ -38,12 +38,12 @@ import numpy as np
 class ODESolver:
     """
     ODE 求解器 — 用数值方法求解 dh/dt = f(h, t, θ)
-    
+
     支持多种求解器：
     - Euler: 一阶，快但不精确
     - RK4 (Runge-Kutta 4): 四阶，精度/速度平衡
     - DOPRI5 (Dormand-Prince 5): 自适应步长
-    
+
     论文核心：
     - 前向传播 = 求解 ODE 初值问题
     - 反向传播 = 伴随法（无需存储中间状态）
@@ -53,7 +53,7 @@ class ODESolver:
     def euler(f: Callable, y0: np.ndarray, t_span: Tuple[float, float],
               dt: float = 0.1) -> Tuple[np.ndarray, np.ndarray]:
         """前向欧拉法
-        
+
         y_{n+1} = y_n + dt * f(y_n, t_n)
         """
         t0, t1 = t_span
@@ -73,7 +73,7 @@ class ODESolver:
     def rk4(f: Callable, y0: np.ndarray, t_span: Tuple[float, float],
             dt: float = 0.1) -> Tuple[np.ndarray, np.ndarray]:
         """经典 Runge-Kutta 4 阶
-        
+
         k1 = f(y_n, t_n)
         k2 = f(y_n + dt/2 * k1, t_n + dt/2)
         k3 = f(y_n + dt/2 * k2, t_n + dt/2)
@@ -107,7 +107,7 @@ class ODESolver:
                rtol: float = 1e-6, atol: float = 1e-8,
                max_steps: int = 1000) -> Tuple[np.ndarray, np.ndarray]:
         """Dormand-Prince 5(4) — 自适应步长
-        
+
         用 5 阶公式推进，4 阶公式估计误差，动态调整步长。
         论文中使用的求解器类型。
         """
@@ -207,10 +207,10 @@ class ODESolver:
 class NeuralODE:
     """
     Neural ODE — 连续深度模型
-    
+
     用神经网络参数化隐藏状态的导数：
         dh/dt = NN(h(t), t, θ)
-    
+
     关键特性（论文）：
     1. 常量内存成本：前向用 ODE 求解，反向用伴随法
     2. 自适应计算：求解器根据输入复杂度自调步长
@@ -255,11 +255,11 @@ class NeuralODE:
 
     def ode_func(self, h: np.ndarray, t: float) -> np.ndarray:
         """ODE 右端函数 dh/dt = NN(h, t)
-        
+
         Args:
             h: 隐藏状态 [state_dim]
             t: 当前时间
-        
+
         Returns:
             dh/dt [state_dim]
         """
@@ -278,15 +278,15 @@ class NeuralODE:
     def forward(self, y0: np.ndarray, t_span: Tuple[float, float],
                 **solver_kwargs) -> Tuple[np.ndarray, np.ndarray]:
         """前向传播 = ODE 求解
-        
+
         论文核心：
         前向传播 = 求解初值问题，而非逐层计算
-        
+
         Args:
             y0: 初始状态 [state_dim]
             t_span: (t_start, t_end)
             **solver_kwargs: 传递给求解器的参数
-        
+
         Returns:
             ts: 时间点序列
             ys: 状态序列
@@ -318,13 +318,13 @@ class NeuralODE:
     def adjoint_gradient(self, dL_dyT: np.ndarray,
                          t_span: Tuple[float, float]) -> List[np.ndarray]:
         """伴随法计算梯度（简化版）
-        
+
         论文公式（伴随敏感性）：
         dL/dθ = ∫_{t1}^{t0} a(t)^T * ∂f/∂θ dt
-        
+
         其中 a(t) 是伴随状态，满足：
         da/dt = -a(t)^T * ∂f/∂h
-        
+
         这里做简化近似：用前向迹直接估计
         """
         # 真正的实现需要逆时求解伴随 ODE
@@ -346,16 +346,16 @@ class NeuralODE:
 class LTCNeuralODEWrapper:
     """
     LTC 的 Neural ODE 包装器
-    
+
     原 LTC 微分方程：
         dh/dt = f(h, x, t, W) = σ(W_h h + W_x x + b) * (E - h)
-    
+
     这里用 Neural ODE 替代固定的 σ 形式，允许更复杂的动态。
-    
+
     论文连接：
     - LTC (Hasani, AAAI 2021): dh/dt = [f(h, x, t) + forget] * time_constant
     - Neural ODE (Chen, NeurIPS 2018): 任何可微的 dh/dt = NN(h, t)
-    
+
     融合：dh/dt = NeuralODE(h, x, t, time_constant)
     """
 
@@ -381,9 +381,9 @@ class LTCNeuralODEWrapper:
 
     def ode_func(self, hx: np.ndarray, t: float) -> np.ndarray:
         """LTC-NeuralODE 融合的右端函数
-        
+
         hx = [h (state_dim), x (input_dim), tau (1)] — 共 state_dim + input_dim + 1 维
-        
+
         Neural ODE 对完整 hx 做微分，然后除以 LTC 时间常数限制速度。
         """
         # 分离
@@ -419,13 +419,13 @@ class LTCNeuralODEWrapper:
                 t_span: Tuple[float, float] = (0.0, 1.0),
                 solver: str = None) -> Tuple[np.ndarray, np.ndarray]:
         """LTC 时间驱动的前向传播
-        
+
         Args:
             h0: 初始状态 [state_dim]
             x_seq: 输入序列 [T, input_dim]
             t_span: 时间范围
             solver: 求解器
-        
+
         Returns:
             ts, ys (包含 h, x, tau 的完整状态)
         """

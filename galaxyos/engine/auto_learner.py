@@ -32,7 +32,7 @@ class LearningEvent:
 class AutoLearner:
     """
     自主学习器
-    
+
     功能:
     1. 从用户反馈中学习偏好
     2. 从纠正中学习正确行为
@@ -120,7 +120,7 @@ class AutoLearner:
     def learn_preference(self, key: str, value: Any, context: Optional[Dict] = None):
         """
         学习偏好
-        
+
         Args:
             key: 偏好键
             value: 偏好值
@@ -147,7 +147,7 @@ class AutoLearner:
                           context: Optional[Dict] = None):
         """
         学习纠正
-        
+
         Args:
             original: 原始内容
             corrected: 纠正内容
@@ -173,7 +173,7 @@ class AutoLearner:
                         context: Optional[Dict] = None):
         """
         学习反馈
-        
+
         Args:
             feedback_type: 反馈类型 ('positive', 'negative', 'neutral')
             content: 反馈内容
@@ -196,7 +196,7 @@ class AutoLearner:
     def learn_pattern(self, pattern: str, context: Optional[Dict] = None):
         """
         学习模式
-        
+
         Args:
             pattern: 模式描述
             context: 上下文
@@ -219,10 +219,10 @@ class AutoLearner:
     def extract_preferences_from_text(self, text: str) -> List[Dict]:
         """
         从文本中提取偏好
-        
+
         Args:
             text: 输入文本
-        
+
         Returns:
             提取的偏好列表
         """
@@ -256,7 +256,7 @@ class AutoLearner:
                                      user_feedback: Optional[str] = None):
         """
         从交互中自动学习
-        
+
         Args:
             user_input: 用户输入
             assistant_response: 助手回复

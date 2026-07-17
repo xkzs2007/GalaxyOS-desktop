@@ -188,7 +188,7 @@ class EntityExtractor:
     def extract(self, text: str) -> List[Tuple[str, str, float]]:
         """
         从文本中提取实体
-        
+
         Returns:
             List of (entity_name, entity_type, confidence)
         """
@@ -219,7 +219,7 @@ class EntityExtractor:
 class MemoryOntologyBridge:
     """
     记忆与知识图谱桥接器
-    
+
     实现:
     1. 从记忆中提取实体并关联到知识图谱
     2. 检索记忆时注入相关知识图谱信息
@@ -286,12 +286,12 @@ class MemoryOntologyBridge:
                                  auto_create: bool = True) -> List[MemoryEntityLink]:
         """
         将记忆关联到实体
-        
+
         Args:
             memory_id: 记忆 ID
             memory_content: 记忆内容
             auto_create: 是否自动创建新实体
-        
+
         Returns:
             创建的关联列表
         """
@@ -336,7 +336,7 @@ class MemoryOntologyBridge:
     def get_entities_for_memory(self, memory_id: str) -> List[Tuple[Entity, str, float]]:
         """
         获取记忆关联的实体
-        
+
         Returns:
             List of (entity, relation, confidence)
         """
@@ -353,7 +353,7 @@ class MemoryOntologyBridge:
     def get_memories_for_entity(self, entity_id: str) -> List[Tuple[str, str, float]]:
         """
         获取实体关联的记忆
-        
+
         Returns:
             List of (memory_id, relation, confidence)
         """
@@ -370,11 +370,11 @@ class MemoryOntologyBridge:
                                 query: str) -> List[Dict]:
         """
         增强搜索结果，注入知识图谱信息
-        
+
         Args:
             results: 原始搜索结果
             query: 查询文本
-        
+
         Returns:
             增强后的搜索结果
         """
@@ -418,10 +418,10 @@ class MemoryOntologyBridge:
     def get_entity_context(self, entity_name: str) -> Dict[str, Any]:
         """
         获取实体的上下文信息
-        
+
         Args:
             entity_name: 实体名称
-        
+
         Returns:
             实体上下文信息
         """

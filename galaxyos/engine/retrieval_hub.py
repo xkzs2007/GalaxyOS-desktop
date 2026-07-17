@@ -116,7 +116,7 @@ if _SCRIPTS_CORE_DIR not in sys.path:
 class HNSW_MN_Index:
     """
     MN-RU 双索引结构：主索引（静态）+ 小索引（增量）
-    
+
     主索引：定期全量重建，质量稳定的静态索引
     小索引：DAG ingest 时实时追加，超过阈值或超时后合并到主索引
     搜索：双索引并行查，结果去重合并
@@ -364,7 +364,7 @@ class HNSW_MN_Index:
     def search(self, query_vec: list, top_k: int = 10) -> list:
         """
         三通道搜索：主索引 + 小索引 + session 索引，结果去重合并
-        
+
         Returns:
             list[dict]: 合并后的结果列表
         """
@@ -472,7 +472,7 @@ def _update_session_history(session_id: str, user_input: str, answer: str = ""):
 def _get_denoised_context(query: str, session_id: str = "") -> str:
     """
     Context-Denoised 上下文提取（HAConvDR 简化版）
-    
+
     从 session history 中找出与当前 query 语义相关的轮次，
     而非把所有历史都塞进去。
     """
@@ -976,7 +976,7 @@ def _build_all_indexes():
 def _do_dag(query: str, top_k: int, session_id: str = "") -> list:
     """
     2. DAG 三通道检索（2407.07871 MN-RU + ChatRetriever session 级）
-    
+
     三通道：
       A. 主索引（全量静态）
       B. 小索引（增量实时）
@@ -1638,7 +1638,7 @@ def _verify_local_with_web(
 ) -> Dict[str, Any]:
     """
     用 web 搜索结果交叉验证本地检索的准确性。
-    
+
     web 结果不参与 RRF 排名，仅验证本地 top 结果是否跟外部信息一致。
     返回验证分数和置信度修正量。
     """

@@ -74,10 +74,10 @@ def _fp32_to_fp16(arr: np.ndarray) -> np.ndarray:
 
 def _quant_int8(arr: np.ndarray) -> Tuple[np.ndarray, float]:
     """INT8 对称量化
-    
+
     x_q = round(clip(x / scale, -128, 127))
     scale = max(|x|) / 127
-    
+
     Returns:
         (q_arr: int8 numpy, scale: float)
     """
@@ -97,7 +97,7 @@ def _dequant_int8(q_arr: np.ndarray, scale: float) -> np.ndarray:
 
 def _packed_nf4_values() -> List[np.float16]:
     """生成 NF4 量化级别（归一化浮点 4-bit: 4 指数位 0 尾数位）
-    
+
     NF4 值: ±0.0, ±2^(-1), ±2^(-2), ±2^(-3), ±2^(-4), ±2^(-5), ±2^(-6), ±2^(-7)
     共 16 个可表示值。
     """
@@ -117,7 +117,7 @@ def _packed_nf4_values() -> List[np.float16]:
 class QuantizedParams:
     """
     量化参数打包器
-    
+
     将 LFM 的权重参数打包为低精度格式：
     - W_base, W_gate, W_o : 可选 fp16/int8
     - 偏置: fp32 (偏置不敏感)
@@ -185,17 +185,17 @@ class QuantizedParams:
 class FusedAdaptiveLinear:
     """
     融合自适应线性算子 — 端侧推理专用
-    
+
     将 AdaptiveLinearOperator 的多个步骤融合:
     1. Head 分解 + W_base @ x (已融合在 einsum)
     2. 低秩增量计算 + W_base 结果合并
     3. 门控与输出投影融合
-    
+
     缓存策略（关键优化）:
     - W_base 是静态的 → 可预计算所有输入上的作用结果
     - 门控网络预计算基向量
     - 流式推理时只更新低秩增量部分
-    
+
     Args:
         hidden_dim: 隐藏维度
         num_heads: 头数
@@ -265,15 +265,15 @@ class FusedAdaptiveLinear:
     def forward_fused(self, x: np.ndarray,
                       use_cache: bool = True) -> np.ndarray:
         """融合前向传播（单步推理和批推理共用）
-        
+
         针对端侧推理优化:
         - 支持 [B, hidden_dim] 单步和 [B, L, hidden_dim] 批输入
         - 算子融合减少中间张量
-        
+
         Args:
             x: [B, hidden_dim] 或 [B, L, hidden_dim] 输入
             use_cache: 是否使用缓存
-        
+
         Returns:
             y: 与输入形状相同的输出
         """
@@ -401,14 +401,14 @@ class EdgeInferenceConfig:
 class LFMEdgeEngine:
     """
     LFM 端侧推理引擎
-    
+
     专为 <1GB 内存环境设计，提供:
     - 量化推理 (fp16/int8)
     - 算子融合 (融合自适应算子 + LN)
     - 推理缓存 (预计算静态部分)
     - 流式推理 (逐 token 生成)
     - 内存预算控制
-    
+
     推理模式:
     1. 批推理: 一次性处理整个序列
     2. 流式推理: 逐 token 生成，支持 KV 缓存类比
@@ -538,10 +538,10 @@ class LFMEdgeEngine:
 
     def forward(self, x: np.ndarray) -> np.ndarray:
         """批推理前向
-        
+
         Args:
             x: [B, L, hidden_dim]
-        
+
         Returns:
             y: [B, L, hidden_dim]
         """
@@ -574,12 +574,12 @@ class LFMEdgeEngine:
                         generate_fn: Callable[[np.ndarray], np.ndarray],
                         max_tokens: int = 10) -> Iterator[np.ndarray]:
         """流式生成
-        
+
         Args:
             prefix: 前缀 token [1, L, d]
             generate_fn: 从 output 生成下一个 token 的函数
             max_tokens: 最大生成数
-        
+
         Yields:
             token: 每步生成的输出 [1, 1, d]
         """
@@ -643,7 +643,7 @@ class LFMEdgeEngine:
 class FusedFFN:
     """
     融合 FFN 层 — 端侧推理专用
-    
+
     将两个线性层 + 激活融合为单次前向。
     支持 fp16/int8 量化。
     """

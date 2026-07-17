@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 class VisualGenerator:
     """
     视觉生成器
-    
+
     核心能力：
     1. 记忆可视化 - 将抽象记忆转为图像
     2. 知识图谱可视化 - 实体关系的图形化展示
@@ -40,7 +40,7 @@ class VisualGenerator:
     def __init__(self, skill_path: str = None):
         """
         初始化视觉生成器
-        
+
         Args:
             skill_path: seedream-image-gen 技能路径
         """
@@ -70,13 +70,13 @@ class VisualGenerator:
     ) -> Dict[str, Any]:
         """
         生成图像的基础方法
-        
+
         Args:
             prompt: 图像描述
             style: 风格 (anime, realistic, oil_painting, watercolor, etc.)
             size: 尺寸 (1K, 2K, 4K)
             max_images: 最大生成数量
-        
+
         Returns:
             生成结果，包含图片路径和元数据
         """
@@ -143,13 +143,13 @@ class VisualGenerator:
     ) -> Dict[str, Any]:
         """
         记忆可视化
-        
+
         将抽象的记忆内容转换为视觉图像
-        
+
         Args:
             memory_content: 记忆内容
             memory_type: 记忆类型 (episodic, semantic, procedural)
-        
+
         Returns:
             可视化结果
         """
@@ -176,13 +176,13 @@ class VisualGenerator:
     ) -> Dict[str, Any]:
         """
         知识图谱可视化
-        
+
         将实体和关系转换为图形化展示
-        
+
         Args:
             entities: 实体列表 [{"name": "xxx", "type": "person"}, ...]
             relations: 关系列表 [{"from": "A", "to": "B", "type": "knows"}, ...]
-        
+
         Returns:
             可视化结果
         """
@@ -204,14 +204,14 @@ class VisualGenerator:
     ) -> Dict[str, Any]:
         """
         报告增强
-        
+
         为报告自动生成配图
-        
+
         Args:
             report_title: 报告标题
             report_summary: 报告摘要
             style: 风格 (professional, creative, minimal)
-        
+
         Returns:
             配图结果
         """
@@ -229,13 +229,13 @@ class VisualGenerator:
     ) -> Dict[str, Any]:
         """
         概念可视化（防幻觉辅助）
-        
+
         将抽象概念转为图像，用于多源验证
-        
+
         Args:
             concept: 概念名称
             context: 上下文信息
-        
+
         Returns:
             可视化结果
         """
@@ -255,11 +255,11 @@ class VisualGenerator:
     ) -> Dict[str, Any]:
         """
         生成个性化头像
-        
+
         Args:
             description: 头像描述
             style: 风格
-        
+
         Returns:
             头像生成结果
         """
@@ -272,11 +272,11 @@ class VisualGenerator:
     def _enhance_prompt(self, prompt: str, style: str) -> str:
         """
         增强 prompt，添加风格和质量描述
-        
+
         Args:
             prompt: 原始 prompt
             style: 风格
-        
+
         Returns:
             增强后的 prompt
         """
@@ -300,10 +300,10 @@ class VisualGenerator:
     def _parse_output(self, output: str) -> List[str]:
         """
         解析生成输出，提取图片路径
-        
+
         Args:
             output: 命令输出
-        
+
         Returns:
             图片路径列表
         """
@@ -337,7 +337,7 @@ class VisualGenerator:
 class VisualGenerationWorkflow:
     """
     视觉生成工作流
-    
+
     集成到统一协调器中，与其他模块协同工作
     """
 
@@ -347,12 +347,12 @@ class VisualGenerationWorkflow:
     def execute(self, task: Dict[str, Any]) -> Dict[str, Any]:
         """
         执行视觉生成任务
-        
+
         Args:
             task: 任务描述
                 - type: 任务类型 (memory_viz, kg_viz, report_enhance, concept_viz, avatar)
                 - data: 任务数据
-        
+
         Returns:
             执行结果
         """

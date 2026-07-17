@@ -216,13 +216,13 @@ class LiquidSSM:
 
     def _compute_tau(self, h: np.ndarray, u: np.ndarray) -> np.ndarray:
         """计算 LTC 时间常数
-        
+
         τ_c = sigmoid(W_τh @ h_c + W_τx @ u + b_τ) * (τ_max - τ_min) + τ_min
-        
+
         Args:
             h: [n_channels, state_dim]
             u: [input_dim]
-        
+
         Returns:
             tau: [n_channels, 1]
         """
@@ -235,14 +235,14 @@ class LiquidSSM:
     def _ssm_dynamics(self, h: np.ndarray, u: np.ndarray,
                       B_mat: np.ndarray) -> np.ndarray:
         """SSM 线性动力学
-        
+
         dh_ssm/dt = A * h + B * u
-        
+
         Args:
             h: [n_channels, state_dim]
             u: [input_dim]
             B_mat: [n_channels, state_dim, input_dim]
-        
+
         Returns:
             dh_ssm: [n_channels, state_dim]
         """
@@ -253,13 +253,13 @@ class LiquidSSM:
 
     def _ltc_dynamics(self, h: np.ndarray, u: np.ndarray) -> np.ndarray:
         """LTC 液体动力学
-        
+
         dh_ltc/dt = sigmoid(W_lh @ h + W_lx @ u + b_l) * (E - h)
-        
+
         Args:
             h: [n_channels, state_dim]
             u: [input_dim]
-        
+
         Returns:
             dh_ltc: [n_channels, state_dim]
         """
@@ -274,12 +274,12 @@ class LiquidSSM:
                      B_mat: Optional[np.ndarray] = None,
                      C_mat: Optional[np.ndarray] = None) -> Tuple[np.ndarray, np.ndarray]:
         """单步前向
-        
+
         Args:
             h: [n_channels, state_dim]
             u: [input_dim]
             B_mat, C_mat: 选择机制矩阵（可选）
-        
+
         Returns:
             (h_next, y)
         """
@@ -309,7 +309,7 @@ class LiquidSSM:
 
     def forward(self, u_seq: np.ndarray) -> np.ndarray:
         """序列前向
-        
+
         UDS 可用时委托 lfm_server update_state 演进真实状态。
         """
         if self._uds_ok:
@@ -602,11 +602,11 @@ if __name__ == "__main__":
     def predict_embedding(self, recent_embeddings: list,
                           steps: int = 1) -> np.ndarray:
         """对 LFM embedding 序列做时序预测
-        
+
         Args:
             recent_embeddings: [(2048,) ...] 最近 N 个 embedding
             steps: 预测步数
-            
+
         Returns:
             (2048,) 预测的 embedding
         """

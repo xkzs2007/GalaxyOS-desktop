@@ -452,7 +452,7 @@ def compile_skill(
 ) -> CompiledArtifact:
     """
     便捷的 skill 编译入口
-    
+
     Args:
         skill_text: SKILL.md 全量内容
         skill_name: 技能名称

@@ -50,7 +50,7 @@ class RailDecision(str, Enum):
 class PermissionContext:
     """
     权限上下文 — 类似 JiuwenClaw 的 PermissionContext + owner_scopes
-    
+
     每个维度的默认值都是"放行"（宽松模式），
     只有在显式设置约束时才变为"受限"模式。
     """
@@ -63,20 +63,20 @@ class PermissionContext:
     enable_external: bool = True       # 是否允许外部调用
     enable_export: bool = True         # 是否允许导出
     restricted_features: set = None    # 限制的功能集合
-    
+
     def __post_init__(self):
         if self.restricted_features is None:
             self.restricted_features = set()
-    
+
     @property
     def scope_key(self) -> tuple:
         """唯一标识 (channel_id, session_key, principal_user_id)"""
         return (self.channel_id or "", self.session_key or "", self.principal_user_id or "")
-    
+
     def can_access(self, feature: str) -> bool:
         """检查是否允许访问某功能"""
         return feature not in self.restricted_features
-    
+
 
 # 全局 ContextVar（线程/协程安全）
 TOOL_PERMISSION_CONTEXT: contextvars.ContextVar[Optional[PermissionContext]] = contextvars.ContextVar(
@@ -104,11 +104,11 @@ def get_current_context() -> Optional[PermissionContext]:
 def check_permission(scope: RailScope, feature: str = "") -> RailDecision:
     """
     检查当前上下文是否允许某操作
-    
+
     Args:
         scope: 护栏作用域
         feature: 功能名（如 "memory_write", "export_file"）
-        
+
     Returns:
         RailDecision.ALLOW / DENY / ASK_USER
     """
@@ -116,28 +116,28 @@ def check_permission(scope: RailScope, feature: str = "") -> RailDecision:
     if ctx is None:
         # 没有显式上下文 = 放行（宽松默认）
         return RailDecision.ALLOW
-    
+
     # 分作用域检查
     if scope == RailScope.USER:
         if not ctx.enable_memory:
             return RailDecision.DENY
-    
+
     elif scope == RailScope.SESSION:
         # 会话级限制
         pass
-    
+
     elif scope == RailScope.FEATURE:
         if feature and not ctx.can_access(feature):
             return RailDecision.DENY
-    
+
     elif scope == RailScope.EXPORT:
         if not ctx.enable_export:
             return RailDecision.ASK_USER
-    
+
     elif scope == RailScope.EXTERNAL:
         if not ctx.enable_external:
             return RailDecision.ASK_USER
-    
+
     return RailDecision.ALLOW
 
 
@@ -166,30 +166,30 @@ def get_rails_config() -> Dict:
 class rail:
     """
     Rail 装饰器 — 类似 JiuwenClaw 的 AskUserRail
-    
+
     用法：
         @rail(scope=RailScope.FEATURE, feature="memory_write", on_deny="skip")
         def write_memory(...):
             ...
-    
+
     Args:
         scope: 护栏作用域
         feature: 功能名
         on_deny: "skip"（跳过）| "raise"（抛异常）| "ask"（询问用户）
-    
+
     优先级: 代码装饰器 > 配置白名单 > 默认放行
     """
-    
+
     def __init__(self, scope: RailScope, feature: str = "", on_deny: str = "skip"):
         self.scope = scope
         self.feature = feature
         self.on_deny = on_deny
-    
+
     def __call__(self, func):
         scope = self.scope
         feature = self.feature
         on_deny = self.on_deny
-        
+
         def wrapper(*args, **kwargs):
             decision = check_permission(scope, feature)
             if decision == RailDecision.DENY:
@@ -204,5 +204,5 @@ class rail:
                     logger.info(f"Rail ask_user: scope={scope}, feature={feature}")
                     return None
             return func(*args, **kwargs)
-        
+
         return wrapper

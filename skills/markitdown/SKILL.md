@@ -355,7 +355,7 @@ md = MarkItDown()
 # For large files, use streaming
 with open("large_file.pdf", "rb") as f:
     result = md.convert_stream(f, file_extension=".pdf")
-    
+
     # Process in chunks or save directly
     with open("output.md", "w") as out:
         out.write(result.text_content)
@@ -399,14 +399,14 @@ output_dir.mkdir(exist_ok=True)
 
 for paper in papers_dir.glob("*.pdf"):
     result = md.convert(str(paper))
-    
+
     # Save with metadata
     output_file = output_dir / f"{paper.stem}.md"
     content = f"# {paper.stem}\n\n"
     content += f"**Source**: {paper.name}\n\n"
     content += "---\n\n"
     content += result.text_content
-    
+
     output_file.write_text(content)
 
 # For AI-enhanced conversion with figures
@@ -456,7 +456,7 @@ print(result.text_content)
    ```bash
    # macOS
    brew install tesseract
-   
+
    # Ubuntu
    sudo apt-get install tesseract-ocr
    ```

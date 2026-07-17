@@ -37,7 +37,7 @@ class LLMClient:
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         """
         初始化 LLM 客户端
-        
+
         Args:
             config: 配置字典，如果为 None 则从配置文件加载
         """
@@ -60,12 +60,12 @@ class LLMClient:
     def chat(self, messages: List[Dict[str, str]], max_tokens: Optional[int] = None, temperature: Optional[float] = None) -> Optional[str]:
         """
         调用 LLM 进行对话
-        
+
         Args:
             messages: 对话消息列表 [{"role": "user", "content": "..."}]
             max_tokens: 最大输出 token 数
             temperature: 温度参数
-        
+
         Returns:
             模型回复文本，失败返回 None
         """
@@ -116,11 +116,11 @@ class LLMClient:
     def analyze_conversation(self, conversation: str, task: str = "extract_preferences") -> Dict[str, Any]:
         """
         分析对话内容
-        
+
         Args:
             conversation: 对话文本
             task: 分析任务类型
-        
+
         Returns:
             分析结果字典
         """

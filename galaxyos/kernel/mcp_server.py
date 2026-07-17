@@ -76,13 +76,7 @@ class GalaxyOSMCPServer:
             return json.dumps({"pipeline": pipeline_name, "status": "completed"}, ensure_ascii=False)
 
         @self._mcp.tool()
-        async def claw_health() -> str:
-            self._record_call("claw_health")
-            uptime = time.time() - self._start_time if self._start_time else 0
-            layers = {f"L{i}": "healthy" for i in range(1, 18)}
-            return json.dumps({"status": "healthy", "uptime_s": round(uptime), "layers": layers, "worker_tier": {"hot": 2, "warm": 2, "cold": 1}}, ensure_ascii=False)
 
-        @self._mcp.tool()
         async def claw_vector_info() -> str:
             self._record_call("claw_vector_info")
             return json.dumps({"backend": "hnswlib", "dim": 1024, "count": 0}, ensure_ascii=False)

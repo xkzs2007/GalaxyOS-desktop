@@ -527,7 +527,7 @@ class FAISSBackend(VectorStoreBackend):
 class UnifiedVectorStore:
     """
     统一向量存储接口
-    
+
     整合多个后端，提供统一的向量存储和检索能力。
     """
 
@@ -538,7 +538,7 @@ class UnifiedVectorStore:
                  dim: int = 1024):
         """
         初始化统一向量存储
-        
+
         Args:
             backend: 后端类型 ('sqlite' 或 'faiss')
             db_path: SQLite 数据库路径
@@ -582,14 +582,14 @@ class UnifiedVectorStore:
                     source: str = 'unknown') -> int:
         """
         添加向量
-        
+
         Args:
             vectors: 向量列表
             contents: 内容列表
             metadatas: 元数据列表
             ids: ID 列表
             source: 数据来源
-        
+
         Returns:
             添加的记录数
         """
@@ -618,12 +618,12 @@ class UnifiedVectorStore:
                source_filter: Optional[str] = None) -> List[Dict]:
         """
         搜索相似向量
-        
+
         Args:
             query_vector: 查询向量
             top_k: 返回数量
             source_filter: 来源过滤
-        
+
         Returns:
             搜索结果列表
         """

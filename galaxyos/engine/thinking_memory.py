@@ -124,12 +124,12 @@ class Sensorium:
 
     def infer_cognitive_stage(self) -> str:
         """从 sensorium 推断用户认知阶段（A-ToM 启发）
-        
+
         explore  - 初期探索/了解
         analyze  - 深入分析/设计
         verify   - 验证/调试/改进
         stuck    - 卡住/困惑
-        
+
         返回: explore | analyze | verify | stuck
         """
         # 高困惑度 + 短时间重复查询 → stuck
@@ -207,7 +207,7 @@ class ThinkingMemory:
 
     def find_similar_cases(self, query: str, max_cases: int = 5) -> List[ThinkingCase]:
         """Hybrid 检索相似案例（关键词 + tag 相似度）
-        
+
         Springdrift 的 hybrid 检索：
         先用 query hash 精确匹配，再用关键词 + tag 模糊匹配。
         """
@@ -241,7 +241,7 @@ class ThinkingMemory:
 
     def get_history_weights(self) -> Dict[str, float]:
         """计算历史反馈权重字典 {skill_key: weight}
-        
+
         正反馈 > 0.5，负反馈 < 0.5，无历史 = 中性
         用于 skill_scorer 的 history_score。
         """

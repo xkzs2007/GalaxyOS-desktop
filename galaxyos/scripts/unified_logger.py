@@ -30,11 +30,11 @@ DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 def setup_logger(name: str, level: int = logging.INFO) -> logging.Logger:
     """
     设置日志器
-    
+
     Args:
         name: 日志器名称
         level: 日志级别
-    
+
     Returns:
         配置好的日志器
     """

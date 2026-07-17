@@ -1,6 +1,6 @@
 {
   "name": "galaxyos",
-  "version": "8.6.0",
+  "version": "0.2.0",
   "description": "GalaxyOS 认知增强引擎 — JiuwenSwarm 认知增强 Extension + 液态神经记忆 + R-CCAM 认知循环 + 技能自演化 + 17 层认知架构",
   "hooks": {
     "on_workflow_start": "galaxyos.kernel.workflow_hook_dispatcher:WorkflowHookDispatcher.on_workflow_start",

@@ -168,10 +168,10 @@ class CodeSolidifier:
     def detect_templates(self, skill_text: str) -> List[Dict[str, Any]]:
         """
         detect_templates 接口（与 skill_compiler 的调用一致）
-        
+
         Args:
             skill_text: 技能文本
-            
+
         Returns:
             template dict 列表
         """

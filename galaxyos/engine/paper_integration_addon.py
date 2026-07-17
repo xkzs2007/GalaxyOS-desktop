@@ -32,7 +32,7 @@ logger = logging.getLogger("paper_integration_addon")
 class PaperIntegrationAddon:
     """
     三论文集成插件
-    
+
     提供：
     - RLM: rlm_process / rlm_fast_process UDS 方法
     - SKILL0: skill_curriculum_step / skill_curriculum_status UDS 方法
@@ -213,7 +213,7 @@ class PaperIntegrationAddon:
 def integrate_into_worker(worker, methods_map: dict = None) -> PaperIntegrationAddon:
     """
     便捷函数: 将三论文集成注入 Worker
-    
+
     用法:
       from paper_integration_addon import integrate_into_worker
       integrate_into_worker(self, _METHODS)
@@ -226,7 +226,7 @@ def integrate_into_worker(worker, methods_map: dict = None) -> PaperIntegrationA
 def patch_worker_init(worker_cls):
     """
     Monkey-patch Worker 的 __init__ 以自动注入三论文集成
-    
+
     用于 _init_methods 之前自动注册。
     """
     orig_init = worker_cls.__init__

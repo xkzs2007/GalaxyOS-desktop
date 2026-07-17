@@ -85,7 +85,7 @@ project_tasks = get_related("proj_001", "has_task", "memory/ontology/graph.jsonl
 def find_blocked_tasks(graph_path):
     entities, relations = load_graph(graph_path)
     blocked = []
-    
+
     for entity in entities.values():
         if entity["type"] != "Task":
             continue
@@ -93,7 +93,7 @@ def find_blocked_tasks(graph_path):
             # Find what's blocking it
             blockers = get_related(entity["id"], "blocked_by", graph_path, "incoming")
             incomplete_blockers = [
-                b for b in blockers 
+                b for b in blockers
                 if b["entity"]["properties"].get("status") != "done"
             ]
             if incomplete_blockers:
@@ -101,7 +101,7 @@ def find_blocked_tasks(graph_path):
                     "task": entity,
                     "blockers": incomplete_blockers
                 })
-    
+
     return blocked
 ```
 
@@ -111,27 +111,27 @@ def find_blocked_tasks(graph_path):
 # Find path between two entities
 def find_path(from_id, to_id, graph_path, max_depth=5):
     entities, relations = load_graph(graph_path)
-    
+
     visited = set()
     queue = [(from_id, [])]
-    
+
     while queue:
         current, path = queue.pop(0)
-        
+
         if current == to_id:
             return path
-        
+
         if current in visited or len(path) >= max_depth:
             continue
-        
+
         visited.add(current)
-        
+
         for rel in relations:
             if rel["from"] == current and rel["to"] not in visited:
                 queue.append((rel["to"], path + [rel]))
             if rel["to"] == current and rel["from"] not in visited:
                 queue.append((rel["from"], path + [{**rel, "direction": "incoming"}]))
-    
+
     return None  # No path found
 ```
 

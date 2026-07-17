@@ -71,43 +71,23 @@ def create_kernel():
 
 def mount_health_endpoint(server, port: int):
     try:
-        import uvicorn
-        from starlette.applications import Starlette
-        from starlette.responses import JSONResponse
-        from starlette.routing import Route
+        import time as _time
+        _start_time = _time.time()
 
-        start_time = time.time()
-
-        async def health_handler(request):
-            return JSONResponse({
-                "status": "healthy",
-                "uptime_s": round(time.time() - start_time, 1),
-                "kernel": "running",
-            })
-
-        mcp_app = server.get_asgi_app() if hasattr(server, 'get_asgi_app') else None
-
-        if mcp_app is not None:
-            try:
-                mcp_app.routes.insert(0, Route("/health", health_handler))
-                logger.info("/health endpoint mounted on MCP ASGI app")
-                return
-            except Exception:
-                pass
-
-        health_app = Starlette(routes=[Route("/health", health_handler)])
-
-        async def run_health():
-            config = uvicorn.Config(health_app, host="127.0.0.1", port=port, log_level="warning")
-            srv = uvicorn.Server(config)
-            await srv.serve()
-
-        import threading
-        t = threading.Thread(target=lambda: asyncio.run(run_health()), daemon=True)
-        t.start()
-        logger.info(f"/health endpoint started on http://127.0.0.1:{port}/health")
-    except ImportError:
-        logger.warning("starlette/uvicorn not available, /health endpoint not mounted")
+        if server._mcp is not None:
+            @server._mcp.custom_route("/health", methods=["GET"])
+            async def health_handler(request):
+                from starlette.responses import JSONResponse
+                return JSONResponse({
+                    "status": "healthy",
+                    "uptime_s": round(_time.time() - _start_time, 1),
+                    "kernel": "running",
+                })
+            logger.info("/health endpoint mounted on MCP server via custom_route")
+        else:
+            logger.warning("MCP server not created, /health endpoint not mounted")
+    except Exception as e:
+        logger.warning(f"/health endpoint mount failed: {e}")
 
 
 def main():
@@ -128,17 +108,32 @@ def main():
     server, bridge, memory_bridge, rccam = create_kernel()
     server.create()
 
-    logger.info(f"GalaxyOS MCP Server created: {server.get_tool_count()} tools registered")
+    tool_count = len(server._mcp._tool_manager._tools) if server._mcp else 0
+    logger.info(f"GalaxyOS MCP Server created: {tool_count} tools registered")
 
-    if args.transport in ("sse", "streamable_http"):
-        mount_health_endpoint(server, args.port)
 
     if args.transport == "stdio":
         server.run_stdio()
-    elif args.transport == "sse":
-        server.run_sse(host=args.host, port=args.port)
-    elif args.transport == "streamable_http":
-        server.run_streamable_http(host=args.host, port=args.port)
+    elif args.transport in ("sse", "streamable_http"):
+        import uvicorn
+        path_prefix = "/sse" if args.transport == "sse" else "/mcp"
+        app = server._mcp.http_app(path=path_prefix)
+        
+        from starlette.responses import JSONResponse
+        from starlette.routing import Route
+
+        _start_time = time.time()
+
+        async def health_handler(request):
+            return JSONResponse({
+                "status": "healthy",
+                "uptime_s": round(time.time() - _start_time, 1),
+                "kernel": "running",
+            })
+
+        app.routes.insert(0, Route("/health", health_handler))
+        logger.info(f"/health endpoint mounted, {args.transport} on http://{args.host}:{args.port}{path_prefix}")
+        uvicorn.run(app, host=args.host, port=args.port)
 
 
 if __name__ == "__main__":

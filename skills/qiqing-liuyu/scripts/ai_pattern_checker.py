@@ -145,7 +145,7 @@ def check_text(text: str) -> dict:
 def print_report(text: str):
     """打印人类可读的报告。"""
     result = check_text(text)
-    
+
     print(f"\n{'='*50}")
     print(f"AI 味检测报告")
     print(f"{'='*50}")
@@ -153,18 +153,18 @@ def print_report(text: str):
     print(f"人味评分: {result['score']}/100")
     print(f"问题总数: {result['total_issues']} (🔴{result['high']} 🟡{result['medium']} 🟢{result['info']})")
     print(f"{'='*50}")
-    
+
     if not result["issues"]:
         print("✅ 没有检测到明显的 AI 味")
         return
-    
+
     for issue in result["issues"]:
         severity_icon = {"high": "🔴", "medium": "🟡", "info": "🟢"}.get(issue["severity"], "⚪")
         detail = ""
         if "count" in issue:
             detail = f" (出现 {issue['count']} 次，限制 {issue.get('limit', '?')} 次)"
         print(f"  {severity_icon} {issue['type']}{detail}")
-    
+
     print(f"\n{'='*50}")
     if result["score"] >= 80:
         print("整体不错，小修即可")

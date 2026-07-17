@@ -72,7 +72,7 @@ class SmartMemoryUpgrade:
     def get_l0_candidates(self) -> List[Dict]:
         """获取 L0 → L1 升级候选"""
         sql = """
-        SELECT 
+        SELECT
             conversation_id,
             content,
             timestamp,
@@ -150,7 +150,7 @@ class SmartMemoryUpgrade:
         sql = f"""
         INSERT INTO l1_records (content, type, scene_name, source_id, created_at)
         VALUES ('{candidate["content"][:500]}', '{memory_type}', '{scene}', '{candidate["id"]}', datetime('now'));
-        
+
         UPDATE l0_conversations SET upgraded = 1 WHERE conversation_id = '{candidate["id"]}';
         """
 

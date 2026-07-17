@@ -32,20 +32,20 @@ from galaxyos.engine.hallucination_guard import (
 class HallucinationIntegratedMemory:
     """
     集成防幻觉的记忆管理器
-    
+
     使用示例:
         memory_manager = HallucinationIntegratedMemory()
-        
+
         # 存储记忆（自动验证）
         memory_id = memory_manager.store(
             content="数据仓库地址是 gitee.com/xkzs2007/xkzs",
             source="user",
             context={"is_user_statement": True}
         )
-        
+
         # 召回记忆（自动过滤）
         memories = memory_manager.recall("数据仓库")
-        
+
         # 生成回答（自动验证和不确定性表达）
         answer = memory_manager.generate_answer(query, memories)
     """
@@ -73,7 +73,7 @@ class HallucinationIntegratedMemory:
     ) -> str:
         """
         存储记忆（带验证）
-        
+
         Args:
             content: 记忆内容
             source: 来源类型
@@ -81,7 +81,7 @@ class HallucinationIntegratedMemory:
             entities: 相关实体
             tags: 标签
             validity_days: 有效期（天）
-        
+
         Returns:
             记忆 ID
         """
@@ -138,14 +138,14 @@ class HallucinationIntegratedMemory:
     ) -> List[Dict]:
         """
         召回记忆（带过滤）
-        
+
         Args:
             query: 查询
             top_k: 返回数量
             min_confidence: 最小置信度
             exclude_expired: 排除过期
             exclude_false: 排除验证为假
-        
+
         Returns:
             记忆列表
         """
@@ -196,10 +196,10 @@ class HallucinationIntegratedMemory:
     def pre_check(self, query: str) -> Dict:
         """
         生成前检查
-        
+
         Args:
             query: 用户查询
-        
+
         Returns:
             {
                 "can_answer": bool,
@@ -238,12 +238,12 @@ class HallucinationIntegratedMemory:
     ) -> Dict:
         """
         生成带验证的回答
-        
+
         Args:
             query: 用户查询
             recalled_memories: 召回的记忆
             raw_answer: 原始回答（可选）
-        
+
         Returns:
             {
                 "answer": str,
@@ -326,12 +326,12 @@ class HallucinationIntegratedMemory:
     ) -> Dict:
         """
         处理用户纠正
-        
+
         Args:
             original_content: 原始内容
             corrected_content: 纠正后的内容
             context: 上下文
-        
+
         Returns:
             处理结果
         """
@@ -368,10 +368,10 @@ class HallucinationIntegratedMemory:
     def batch_verify(self, method: str = "multi_agent") -> Dict:
         """
         批量验证记忆
-        
+
         Args:
             method: 验证方法 ("multi_agent" | "kg" | "temporal")
-        
+
         Returns:
             验证结果统计
         """

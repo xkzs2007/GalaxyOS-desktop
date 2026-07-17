@@ -24,9 +24,9 @@ def hybrid_score(text_a: str, text_b: str, emb_a: List[float] = None,
                  emb_b: List[float] = None) -> float:
     """
     MemoryOS 混合评分公式
-    
+
     score = cos(emb_a, emb_b) + Jaccard(keywords_a, keywords_b)
-    
+
     比纯向量相似度多一个关键词维度，更准确。
     """
     sim = 0.0
@@ -157,7 +157,7 @@ class HeatTracker:
 class SegmentedPageOrganizer:
     """
     分段页式组织器 — 参考 MemoryOS 的 STM→MTM→LPM 升级
-    
+
     将短期对话按主题分段，合并到中期存储，再提炼长期人格记忆。
     """
 

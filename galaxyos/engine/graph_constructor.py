@@ -60,7 +60,7 @@ class Relation:
 class GraphConstructor:
     """
     知识图谱构建器
-    
+
     功能：
     - 从记忆数据自动构建图谱
     - 实体抽取与合并
@@ -96,13 +96,13 @@ class GraphConstructor:
     ) -> str:
         """
         添加实体
-        
+
         Args:
             name: 实体名称
             entity_type: 实体类型
             properties: 实体属性
             embedding: 实体嵌入向量
-            
+
         Returns:
             实体ID
         """
@@ -142,7 +142,7 @@ class GraphConstructor:
     ) -> None:
         """
         添加关系
-        
+
         Args:
             source: 源实体名称或ID
             target: 目标实体名称或ID
@@ -192,11 +192,11 @@ class GraphConstructor:
     def get_neighbors(self, entity_id: str, hop: int = 1) -> Set[str]:
         """
         获取邻居节点
-        
+
         Args:
             entity_id: 实体ID
             hop: 跳数
-            
+
         Returns:
             邻居实体ID集合
         """
@@ -243,7 +243,7 @@ class GraphConstructor:
     ) -> None:
         """
         从记忆数据构建图谱
-        
+
         Args:
             memories: 记忆数据列表
             entity_extractor: 可选的实体提取函数
@@ -420,7 +420,7 @@ class GraphConstructor:
     def get_feature_matrix(self) -> Tuple[np.ndarray, Dict[str, int]]:
         """
         获取特征矩阵
-        
+
         Returns:
             feature_matrix: 特征矩阵 (n_entities x embedding_dim)
             id_to_idx: 实体ID到索引的映射
@@ -498,12 +498,12 @@ class GraphConstructor:
     ) -> List[Entity]:
         """
         查询知识图谱
-        
+
         Args:
             query: 查询文本
             top_k: 返回数量
             query_embedding: 查询向量
-            
+
         Returns:
             匹配的实体列表
         """

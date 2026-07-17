@@ -58,7 +58,7 @@ class ConsolidationConfig:
 class ConsolidationEngine:
     """
     记忆巩固引擎
-    
+
     核心能力：
     - CLS: DAG 节点 → 突触网络的固化
     - 离线重放: 空闲时强化高频路径
@@ -126,10 +126,10 @@ class ConsolidationEngine:
     def consolidate_from_dag(self) -> Dict[str, Any]:
         """
         CLS 固化：DAG 高重要性节点 → 突触网络
-        
+
         模拟海马体→新皮层的记忆固化机制。
         短期会话中的高重要性信息被写入突触网络作为长期记忆。
-        
+
         Returns:
             统计信息
         """
@@ -246,12 +246,12 @@ class ConsolidationEngine:
     def replay_and_consolidate(self) -> Dict[str, Any]:
         """
         离线重放巩固
-        
+
         模拟睡眠期的记忆重放：
         1. 选择高频激活的突触路径
         2. 对路径上的突触做 LTP 强化
         3. 对长期无引用的弱突触做 LTD 修剪
-        
+
         Returns:
             统计信息
         """
@@ -322,14 +322,14 @@ class ConsolidationEngine:
     def detect_and_manage_interference(self, content: str, embedding: List[float] = None) -> Dict[str, Any]:
         """
         检测并管理记忆干扰
-        
+
         新记忆与已有记忆高度相似时，做合并或替换，
         避免冗余和相互干扰。
-        
+
         Args:
             content: 新记忆内容
             embedding: 新记忆的 embedding 向量
-        
+
         Returns:
             处理结果
         """
@@ -415,13 +415,13 @@ class ConsolidationEngine:
     ) -> List[Dict]:
         """
         检测预测错误（记忆冲突）
-        
+
         当检索到的记忆与当前上下文矛盾时，标记"需验证"。
-        
+
         Args:
             query: 当前查询
             retrieved_memories: 检索到的记忆列表
-        
+
         Returns:
             标记冲突后的记忆列表
         """

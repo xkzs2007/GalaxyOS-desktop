@@ -104,12 +104,12 @@ if not _HAVE_NEURAL_ODE:
 class MemoryAugmentedBlock:
     """
     记忆增强块 — 可读写的外部记忆槽
-    
+
     核心机制：
     - 记忆读取：基于注意力从记忆槽中检索最相关的记忆
     - 记忆写入：将新信息通过注意力分配到记忆槽
     - 门控融合：将检索到的记忆与当前状态非线性融合
-    
+
     作用：防止灾难遗忘的关键组件，新旧知识共存于记忆槽
     """
 
@@ -155,11 +155,11 @@ class MemoryAugmentedBlock:
 
     def read(self, query: np.ndarray, step: int = 0) -> Tuple[np.ndarray, np.ndarray]:
         """从记忆槽读取
-        
+
         Args:
             query: 查询向量 [state_dim]
             step: 当前时间步（用于年龄衰减）
-        
+
         Returns:
             (readout, attention_weights)
             readout: [memory_dim] 加权读取
@@ -195,10 +195,10 @@ class MemoryAugmentedBlock:
 
     def write(self, state: np.ndarray, attention: np.ndarray = None):
         """写入到记忆槽
-        
+
         如果提供了注意力权重，按注意力分布更新；
         否则写入到最旧的记忆槽（LRU 替换）
-        
+
         Args:
             state: [state_dim] 要写入的状态
             attention: [memory_size] 注意力权重（可选）
@@ -219,13 +219,13 @@ class MemoryAugmentedBlock:
 
     def fuse(self, state: np.ndarray, readout: np.ndarray) -> np.ndarray:
         """门控融合：当前状态 × 记忆读取
-        
+
         fused = σ(gate) * state + (1 - σ(gate)) * readout_proj
-        
+
         Args:
             state: [state_dim] 当前状态
             readout: [memory_dim] 记忆读取
-        
+
         Returns:
             fused: [state_dim] 融合后的状态
         """
@@ -254,15 +254,15 @@ class MemoryAugmentedBlock:
 class EWC:
     """
     Elastic Weight Consolidation
-    
+
     论文: Kirkpatrick et al., PNAS 2017
-    
+
     核心公式：
     L_total = L_new + λ/2 * Σ_i F_i (θ_i - θ_old_i)^2
-    
+
     其中 F_i 是 Fisher 信息矩阵对角线
     F_i = E[(∂L/∂θ_i)^2]
-    
+
     关键：
     - 旧任务参数被"弹性"约束在新参数附近
     - Fisher 信息高的参数（对旧任务重要的）被更强约束
@@ -291,11 +291,11 @@ class EWC:
                         loss_fn: Callable,
                         n_samples: int = 100):
         """估计 Fisher 信息矩阵对角线
-        
+
         F_i = (1/N) * Σ_n (∂L_n/∂θ_i)^2
-        
+
         用 model 在旧任务数据上计算平方梯度。
-        
+
         Args:
             params: 模型参数字典 {name: array}
             data_loader: 返回 (input, target) 的可迭代对象
@@ -342,7 +342,7 @@ class EWC:
 
     def regularization_loss(self, current_params: Dict[str, np.ndarray]) -> float:
         """计算 EWC 正则损失
-        
+
         L_ewc = λ/2 * Σ_{task} Σ_i F_i (θ_i - θ_old_i)^2
         """
         total = 0.0
@@ -370,7 +370,7 @@ class EWC:
 class ODERNNContinual:
     """
     ODE-RNN 持续学习引擎
-    
+
     论文结合 (s41598-025-31685-9):
     1. ODE-RNN: Neural ODE 替代 RNN 的离散循环
        - 连续时间建模，自然支持不规则采样
@@ -381,7 +381,7 @@ class ODERNNContinual:
     3. EWC 正则: 弹性权重约束，保护旧任务
        - 每完成一个任务拍参数快照
        - 新任务训练时受到 Fisher 信息约束
-    
+
     训练流程：
     Task 1: 正常训练 → EWC 拍快照
     Task 2: L = L_new + L_ewc → 训练 → EWC 拍快照
@@ -480,10 +480,10 @@ class ODERNNContinual:
 
     def forward(self, x_seq: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         """ODE-RNN 前向传播
-        
+
         Args:
             x_seq: 输入序列 [T, input_dim]
-        
+
         Returns:
             (h_id: [T+1, hidden_dim], y: [T, output_dim])
             h_id 包含初始状态（时间索引）
@@ -544,7 +544,7 @@ class ODERNNContinual:
 
     def compute_gradient(self, x_seq: np.ndarray, y_true: np.ndarray) -> Dict[str, np.ndarray]:
         """计算梯度（有限差分近似）
-        
+
         Neural ODE 的伴随法反向传播在纯 numpy 中实现复杂，
         这里用中心差分近似。
         """
@@ -602,11 +602,11 @@ class ODERNNContinual:
 
     def train_step(self, x_seq: np.ndarray, y_true: np.ndarray) -> float:
         """单步训练
-        
+
         Args:
             x_seq: 输入 [T, input_dim]
             y_true: 目标 [T, output_dim]
-        
+
         Returns:
             loss: 当前损失值
         """
@@ -631,15 +631,15 @@ class ODERNNContinual:
     def continual_learning_step(self, x_seq: np.ndarray, y_true: np.ndarray,
                                 task_id: int = 0) -> float:
         """持续学习步进
-        
+
         带 EWC 正则的训练步骤：
         L = L_new + λ/2 * Σ_i F_i (θ_i - θ_old_i)^2
-        
+
         Args:
             x_seq: 输入序列
             y_true: 目标输出
             task_id: 当前任务 ID
-        
+
         Returns:
             loss: 训练损失
         """
@@ -656,7 +656,7 @@ class ODERNNContinual:
 
     def finish_task(self, task_id: int):
         """完成一个任务：拍 EWC 快照
-        
+
         必须在每个任务训练结束后调用。
         """
         self.ewc.snapshot_params(self.get_params())

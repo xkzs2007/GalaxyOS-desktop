@@ -63,15 +63,15 @@ def calculate_recency(
 ) -> float:
     """
     计算时效性得分
-    
+
     使用指数衰减函数：
     recency = exp(-hours_since_creation / decay_hours)
-    
+
     Args:
         memory: 记忆对象
         reference_time: 参考时间（默认当前时间）
         decay_hours: 衰减半衰期（小时）
-        
+
     Returns:
         时效性得分 (0-1)
     """
@@ -94,16 +94,16 @@ def calculate_relevance(
 ) -> float:
     """
     计算相关性得分
-    
+
     方法：
     1. 如果有 embedding_func，使用向量相似度
     2. 否则使用关键词匹配
-    
+
     Args:
         memory: 记忆对象
         query: 查询文本
         embedding_func: 向量嵌入函数 (可选)
-        
+
     Returns:
         相关性得分 (0-1)
     """
@@ -120,12 +120,12 @@ def calculate_relevance(
 def calculate_importance(memory: Memory) -> float:
     """
     计算重要性得分
-    
+
     归一化到 0-1 范围
-    
+
     Args:
         memory: 记忆对象
-        
+
     Returns:
         重要性得分 (0-1)
     """
@@ -151,11 +151,11 @@ def cosine_similarity(vec1: List[float], vec2: List[float]) -> float:
 def keyword_relevance(content: str, query: str) -> float:
     """
     基于关键词的相关性计算
-    
+
     Args:
         content: 记忆内容
         query: 查询文本
-        
+
     Returns:
         相关性得分 (0-1)
     """
@@ -195,7 +195,7 @@ def keyword_relevance(content: str, query: str) -> float:
 class MemoryRetriever:
     """
     记忆检索器
-    
+
     实现论文中的检索公式：
     score = w_r * recency + w_e * relevance + w_i * importance
     """
@@ -203,7 +203,7 @@ class MemoryRetriever:
     def __init__(self, config: Optional[RetrievalConfig] = None):
         """
         初始化检索器
-        
+
         Args:
             config: 检索配置
         """
@@ -224,14 +224,14 @@ class MemoryRetriever:
     ) -> List[Tuple[Memory, float, Dict[str, float]]]:
         """
         检索相关记忆
-        
+
         Args:
             memories: 候选记忆列表
             query: 查询文本
             top_k: 返回数量
             memory_types: 限定记忆类型
             min_score: 最低得分阈值
-            
+
         Returns:
             List of (memory, total_score, score_breakdown)
         """
@@ -264,9 +264,9 @@ class MemoryRetriever:
     ) -> List[Memory]:
         """
         为反思检索记忆
-        
+
         反思需要较长时间窗口的记忆，侧重重要性
-        
+
         Returns:
             用于反思的记忆列表
         """
@@ -300,9 +300,9 @@ class MemoryRetriever:
     ) -> List[Memory]:
         """
         为规划检索记忆
-        
+
         规划需要近期相关记忆，侧重时效性和相关性
-        
+
         Returns:
             用于规划的记忆列表
         """

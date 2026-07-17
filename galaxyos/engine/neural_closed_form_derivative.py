@@ -21,10 +21,10 @@ NCD — Neural Closed-Form Derivative
 数学基础：
   LTC 方程的一般形式：
     dh/dt = σ(at + b) * (E - h) / τ
-    
+
   严格闭式解（用积分因子法）：
     h(t) = E + (h(0) - E) * exp(-∫ σ(as + b)/τ ds)
-    
+
   NCD 用高斯误差函数 erf() 精确计算该积分。
 
 Author: 小艺 Claw
@@ -59,7 +59,7 @@ def sigmoid(x):
 
 def sigmoid_integral(x: np.ndarray) -> np.ndarray:
     """∫ σ(t) dt = ln(1 + e^x)（softplus）
-    
+
     ∫_0^x σ(t) dt = ln(1 + e^x) - ln(2)
     """
     return np.log1p(np.exp(-np.abs(x))) + np.maximum(x, 0)  # 数值稳定的 softplus
@@ -67,7 +67,7 @@ def sigmoid_integral(x: np.ndarray) -> np.ndarray:
 
 def erf_approx(x: float) -> float:
     """erf(x) 近似（Abramowitz and Stegun）
-    
+
     NCD 用 erf 计算 sigmoid 的积分闭式解。
     """
     sign = 1 if x >= 0 else -1
@@ -85,15 +85,15 @@ def erf_approx(x: float) -> float:
 
 def sigmoid_exact_integral(a: float, b: float, t0: float, t1: float) -> float:
     """∫_{t0}^{t1} σ(a * s + b) ds 的严格解析解
-    
+
     利用 ∫ σ(ax + b) dx = (1/a) * [ln(1+e^{ax+b}) - (ax+b)*σ(ax+b)]
-    
+
     或者更简单：
     σ(x) ≈ (1 + erf(x/√2)) / 2? 不，σ(x) = 1/(1+e^{-x})
-    
+
     实际公式：
     ∫ σ(ax + b) dx = (1/a) * [ln(1+e^{ax+b}) - ax*σ(ax+b)] + C
-    
+
     但数值不稳定的部分用 softplus 处理。
     """
     if abs(a) < 1e-10:
@@ -122,15 +122,15 @@ def sigmoid_exact_integral(a: float, b: float, t0: float, t1: float) -> float:
 class ClosedFormODESolver:
     """
     严格闭式 ODE 求解器
-    
+
     对 LTC 类型的微分方程：
         dh/dt = σ(at + b) * (E - h) / τ
-    
+
     解析解：
         h(t) = E + (h(0) - E) * exp(-∫ σ(as + b) / τ ds)
-    
+
     其中 ∫ σ(as + b) ds 有解析表达式。
-    
+
     对比数值解（RK4/Euler）：O(1) vs O(N)，且无累积误差。
     """
 
@@ -139,17 +139,17 @@ class ClosedFormODESolver:
                                a: float, b: float,
                                t_span: Tuple[float, float]) -> Tuple[np.ndarray, np.ndarray]:
         """LTC 方程的严格闭式解
-        
+
         dh/dt = σ(a*t + b) * (E - h) / tau
-        
+
         解析解推导：
         令 g(t) = σ(a*t + b)
         dh/dt + g(t)/tau * h = g(t) * E / tau
-        
+
         积分因子：μ(t) = exp(∫ g(s)/tau ds)
-        
+
         h(t) = E - (E - h0) * exp(-∫ g(s)/tau ds)
-        
+
         Args:
             h0: 初始值
             E: 饱和电位（平衡值）
@@ -157,7 +157,7 @@ class ClosedFormODESolver:
             a: 输入的线性系数
             b: 输入的偏置
             t_span: (t_start, t_end)
-        
+
         Returns:
             (ts, hs): 时间点和对应的精确解
         """
@@ -187,16 +187,16 @@ class ClosedFormODESolver:
                        y0: float, t_span: Tuple[float, float],
                        params: Dict = None) -> Tuple[np.ndarray, np.ndarray]:
         """通用闭式求解器
-        
+
         对于具有解析形式的右端函数，直接计算。
         f_closed(t, y, params) 返回解析解在 t 处的值。
-        
+
         Args:
             f_closed: 闭式解函数 f(t, y0, params) → y(t)
             y0: 初始值
             t_span: (t0, t1)
             params: 额外参数
-        
+
         Returns:
             (ts, ys)
         """
@@ -212,12 +212,12 @@ class ClosedFormODESolver:
 class NCDLayer:
     """
     NCD Layer — Neural Closed-Form Derivative 层
-    
+
     用级数展开精确计算微分方程：
     - 一阶项（CfC 近似）：σ(gate) * h + (1-σ(gate)) * f(x)
     - 二阶项修正：加入曲率补偿
     - 三阶项修正：加入急跳补偿
-    
+
     实际计算用泰勒级数展开 ODE 解到指定阶数。
     """
 
@@ -257,18 +257,18 @@ class NCDLayer:
 
     def forward(self, h: np.ndarray, x: np.ndarray) -> np.ndarray:
         """NCD 一步更新
-        
+
         h_new = h + Δh_1 + Δh_2 + Δh_3
-        
+
         其中：
         Δh_1 = σ(gate) * h + (1 - σ(gate)) * tanh(W_x x + b) - h  [CfC]
         Δh_2 = 曲率项 = W_curv * h * (1 - h) * Δh_1  [二阶修正]
         Δh_3 = 急跳项 = W_jerk * h * (1 - h) * (1 - 2h) * Δh_1^2  [三阶修正]
-        
+
         Args:
             h: 当前状态 [state_dim]
             x: 当前输入 [input_dim]
-        
+
         Returns:
             Δh: [state_dim] 状态变化量
         """
@@ -317,11 +317,11 @@ class NCDLayer:
 
     def simulate(self, h0: np.ndarray, x_seq: np.ndarray) -> np.ndarray:
         """完整序列模拟
-        
+
         Args:
             h0: 初始状态 [state_dim]
             x_seq: 输入序列 [T, input_dim]
-        
+
         Returns:
             h_seq: [T+1, state_dim]
         """
@@ -340,7 +340,7 @@ class NCDLayer:
 
     def compare_with_cfc(self) -> Dict[str, Any]:
         """对比 CfC 近似解与 NCD 精确解的差异
-        
+
         Returns:
             dict: 包含误差统计
         """
@@ -366,10 +366,10 @@ class NCDLayer:
 
 def compare_ltc_solutions():
     """对比 LTC 的各种解法
-    
+
     统一微分方程：
         dh/dt = σ(a*t + b) * (E - h) / τ
-    
+
     比较：
     1. 数值解（RK4） — 黄金标准
     2. CfC 近似 — 一阶闭式

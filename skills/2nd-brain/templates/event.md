@@ -1,13 +1,13 @@
 ---
 type: event
-name: 
+name:
 event_type:   # conference, meetup, workshop, hackathon, etc.
-location: 
-date: 
-organizer: 
+location:
+date:
+organizer:
 attended: true
 tags: []
-last_updated: 
+last_updated:
 ---
 
 ## Overview
@@ -20,8 +20,8 @@ last_updated:
 
 ## Highlights
 
-- 
+-
 
 ## Notes
 
-- 
+-

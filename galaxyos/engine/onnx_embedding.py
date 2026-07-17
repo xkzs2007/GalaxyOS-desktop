@@ -159,7 +159,7 @@ class LocalEmbeddingService:
 
     def embed(self, texts: list) -> np.ndarray:
         """批量文本 → 归一化 embedding 矩阵
-        
+
         UDS 后端：调 lfm_embed_text（LFM 2048-dim）
         降级：bge ONNX（512-dim）
         """

@@ -54,17 +54,17 @@ class AugmentResult:
 class KnowledgeAugmentor:
     """
     知识补充器
-    
+
     基于 CRAG 论文的知识补充模块，当检索结果不足时，
     通过 Web 搜索等方式补充知识。
-    
+
     触发条件：
     1. 检索结果覆盖度不足
     2. 信息过时
     3. 缺失关键实体
     4. 置信度过低
     5. 存在矛盾信息
-    
+
     处理流程：
     1. 分析补充需求
     2. 生成搜索查询
@@ -95,7 +95,7 @@ class KnowledgeAugmentor:
     ):
         """
         初始化知识补充器
-        
+
         Args:
             web_searcher: Web 搜索函数，签名: (query: str) -> List[Dict]
             config: 配置字典
@@ -120,12 +120,12 @@ class KnowledgeAugmentor:
     ) -> AugmentResult:
         """
         分析并补充知识
-        
+
         Args:
             query: 用户查询
             current_content: 当前内容
             evaluation_result: 评估结果（可选）
-            
+
         Returns:
             AugmentResult: 补充结果
         """
@@ -352,11 +352,11 @@ class KnowledgeAugmentor:
     def generate_search_queries(self, query: str, context: str) -> List[str]:
         """
         生成搜索查询
-        
+
         Args:
             query: 用户查询
             context: 当前上下文
-            
+
         Returns:
             List[str]: 搜索查询列表
         """
@@ -392,13 +392,13 @@ def augment_knowledge(
 ) -> AugmentResult:
     """
     便捷函数：补充知识
-    
+
     Args:
         query: 用户查询
         content: 当前内容
         web_searcher: Web 搜索函数
         evaluation: 评估结果
-        
+
     Returns:
         AugmentResult: 补充结果
     """

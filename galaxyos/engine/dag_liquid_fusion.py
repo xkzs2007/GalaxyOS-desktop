@@ -68,7 +68,7 @@ class DAGLiquidFusionConfig:
 class LTCConstantComputer:
     """
     LTC 时间常数计算器
-    
+
     核心：根据节点特征动态计算时间常数 τ，决定节点"记住多久"。
     τ 越大，节点越不易被压缩（"记忆持久"）。
     τ 越小，节点越容易被压缩（"记忆短暂"）。
@@ -121,7 +121,7 @@ class LTCConstantComputer:
                     depth: float = 0.0) -> float:
         """
         计算时间常数 τ
-        
+
         UDS 可用时用 LFM embedding 变化量动态算 τ：
         变化大 → τ 小（快速压缩），变化小 → τ 大（保留更久）。
         """
@@ -164,12 +164,12 @@ class LTCConstantComputer:
                                     avg_tau: float) -> float:
         """
         估计压缩就绪度（基于 LTC 时间常数）
-        
+
         公式：readiness = min(1.0, raw_tokens / max_tokens) × (1.0 + 1/tau)
-        
+
         τ 越小 → readiness 越大 → 越该压缩
         τ 越大 → readiness 越小 → 暂时不压
-        
+
         Returns:
             readiness [0, ~2.0]，>0.8 表示需要压缩
         """
@@ -197,12 +197,12 @@ class NodeScore:
 class TimeAwareNodeRanker:
     """
     时间感知节点排序器
-    
+
     综合以下维度对 DAG 节点评分：
       - 液态时间常数 τ（大 → 重要，保留）
       - 热度（高频访问 → 保留）
       - 时效性（新 → 保留）
-    
+
     排序公式：
       score = α_r × recency + α_h × heat + α_l × liquid(tau)
       其中 liquid(tau) = sigmoid_temp * (tau - tau_mid) / tau_range
@@ -221,7 +221,7 @@ class TimeAwareNodeRanker:
                            now: Optional[float] = None) -> NodeScore:
         """
         计算单节点综合评分
-        
+
         Args:
             node_id: 节点 ID
             timestamp: 节点时间戳
@@ -229,7 +229,7 @@ class TimeAwareNodeRanker:
             importance: 重要性 [0, 1]
             depth: 摘要深度
             now: 当前时间
-        
+
         Returns:
             NodeScore
         """
@@ -278,12 +278,12 @@ class TimeAwareNodeRanker:
                    top_k: Optional[int] = None) -> List[NodeScore]:
         """
         对节点列表排序（高分优先保留）
-        
+
         Args:
             nodes: [{node_id, timestamp, heat, importance, depth, ...}]
             now: 当前时间
             top_k: 仅返回前 k 个
-        
+
         Returns:
             按 score 降序排列的 NodeScore 列表
         """
@@ -312,11 +312,11 @@ class TimeAwareNodeRanker:
     def should_compact_node(self, score: NodeScore, threshold: float = 0.4) -> bool:
         """
         判断单个节点是否应被压缩（低分节点优先压缩）
-        
+
         Args:
             score: 节点评分
             threshold: 阈值，低于此值的节点可压缩
-        
+
         Returns:
             True = 可压缩
         """
@@ -329,12 +329,12 @@ class TimeAwareNodeRanker:
                                ) -> Tuple[List[NodeScore], List[NodeScore]]:
         """
         将节点分为"保留"和"可压缩"两组
-        
+
         Args:
             nodes: 节点列表
             retain_ratio: 保留比例（高分保留）[0, 1]
             now: 当前时间
-        
+
         Returns:
             (keep_nodes, compact_candidates)
         """
@@ -355,13 +355,13 @@ class TimeAwareNodeRanker:
 class LTCDAGCompactStrategy:
     """
     LTC 驱动的 DAG 压缩策略
-    
+
     核心思想：
       1. 使用 LTC 时间常数决定压缩时机（而非固定 token 阈值）
       2. 时间常数小的节点优先压缩（"液态短记忆"）
       3. 连续时间感知：压缩后 τ 自动调整
       4. 支持多级压缩（摘要节点进一步压缩时 τ 递减）
-    
+
     对比传统策略：
       - 传统：raw_tokens > threshold → 压缩
       - LTC：readiness = usage_ratio × (1 + 1/τ) > 0.8 → 压缩
@@ -383,13 +383,13 @@ class LTCDAGCompactStrategy:
                        force: bool = False) -> Tuple[bool, float, Dict]:
         """
         判断是否应触发压缩
-        
+
         Args:
             raw_tokens: 原始消息 token 数
             max_tokens: 最大上下文 token
             nodes: 当前所有 DAG 节点
             force: 强制压缩
-        
+
         Returns:
             (should_compact, readiness, stats)
         """
@@ -435,12 +435,12 @@ class LTCDAGCompactStrategy:
                                  min_to_compact: int = 2) -> List[Dict[str, Any]]:
         """
         选择要压缩的节点（低分优先）
-        
+
         Args:
             nodes: 所有节点
             compact_ratio: 压缩比例
             min_to_compact: 最少压缩数
-        
+
         Returns:
             待压缩节点列表
         """
@@ -464,13 +464,13 @@ class LTCDAGCompactStrategy:
     def compute_compact_tau(self, source_nodes: List[Dict[str, Any]]) -> float:
         """
         计算压缩后摘要节点的时间常数
-        
+
         策略：摘要节点的 τ 取源节点 τ 的中位数 × 衰减因子
         衰减因子：depth 越深，τ 越小（更易被再次压缩）
-        
+
         Args:
             source_nodes: 源节点列表
-        
+
         Returns:
             摘要节点的 τ
         """
@@ -535,25 +535,25 @@ class LTCDAGCompactStrategy:
 class DAGLiquidFusion:
     """
     DAG + Liquid 顶层融合
-    
+
     统一入口，整合：
       - LTC 时间常数计算
       - 时间感知节点排序
       - LTC 驱动压缩策略
-    
+
     使用方式（集成到 DAGContextManager）：
-      
+
       # 初始化
       dag_liquid = DAGLiquidFusion()
-      
+
       # 判断压缩
       should, readiness, stats = dag_liquid.compact_strategy.should_compact(
           raw_tokens, max_tokens, dag_nodes
       )
-      
+
       # 选择要压缩的节点
       to_compact = dag_liquid.compact_strategy.select_nodes_to_compact(dag_nodes)
-      
+
       # 计算摘要节点的时间常数
       summary_tau = dag_liquid.compact_strategy.compute_compact_tau(to_compact)
     """
@@ -576,7 +576,7 @@ class DAGLiquidFusion:
                                     nodes: List[Dict[str, Any]]) -> Dict:
         """
         获取完整的压缩建议
-        
+
         Returns:
             {
                 "should_compact": bool,

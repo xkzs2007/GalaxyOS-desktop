@@ -66,7 +66,7 @@ class BankMemory:
     def get_retention_score(self) -> float:
         """
         计算保留分数
-        
+
         综合考虑：
         - 重要性
         - 情感权重
@@ -128,7 +128,7 @@ class BankMemory:
 class MemoryBank:
     """
     记忆银行
-    
+
     无限容量的记忆存储系统，支持：
     - 向量化存储和检索
     - 记忆衰减和巩固
@@ -141,7 +141,7 @@ class MemoryBank:
     def __init__(self, db_path: str = None):
         """
         初始化记忆银行
-        
+
         Args:
             db_path: 数据库路径
         """
@@ -204,7 +204,7 @@ class MemoryBank:
     def _compute_embedding(self, text: str) -> List[float]:
         """
         计算文本嵌入
-        
+
         注意：这是简化版的嵌入函数，实际应用中应使用：
         - OpenAI embeddings
         - Sentence Transformers
@@ -266,7 +266,7 @@ class MemoryBank:
     ) -> str:
         """
         存储记忆
-        
+
         Args:
             content: 记忆内容
             importance: 重要性 (0.0-1.0)
@@ -274,7 +274,7 @@ class MemoryBank:
             source: 来源
             metadata: 元数据
             tags: 标签
-        
+
         Returns:
             memory_id: 记忆 ID
         """
@@ -323,10 +323,10 @@ class MemoryBank:
     def retrieve(self, memory_id: str) -> Optional[BankMemory]:
         """
         检索单条记忆
-        
+
         Args:
             memory_id: 记忆 ID
-        
+
         Returns:
             BankMemory 或 None
         """
@@ -373,7 +373,7 @@ class MemoryBank:
     ) -> List[Tuple[BankMemory, float]]:
         """
         语义搜索
-        
+
         Args:
             query: 查询文本
             top_k: 返回数量
@@ -381,7 +381,7 @@ class MemoryBank:
             min_retention: 最小保留分数
             tags: 标签过滤
             source: 来源过滤
-        
+
         Returns:
             [(BankMemory, similarity), ...]
         """
@@ -548,7 +548,7 @@ class MemoryBank:
         now = datetime.now(timezone.utc).isoformat()
         with sqlite3.connect(self.db_path) as conn:
             conn.execute("""
-                UPDATE memories 
+                UPDATE memories
                 SET last_accessed = ?, access_count = access_count + 1
                 WHERE id = ?
             """, (now, memory_id))
@@ -559,10 +559,10 @@ class MemoryBank:
     def batch_store(self, memories: List[Dict]) -> List[str]:
         """
         批量存储
-        
+
         Args:
             memories: [{"content": ..., "importance": ..., ...}, ...]
-        
+
         Returns:
             [memory_id, ...]
         """
@@ -592,14 +592,14 @@ class MemoryBank:
     def apply_decay(self, decay_rate: float = 0.99):
         """
         应用记忆衰减
-        
+
         Args:
             decay_rate: 衰减率 (0.99 表示每次衰减 1%)
         """
         with self.lock:
             with sqlite3.connect(self.db_path) as conn:
                 conn.execute("""
-                    UPDATE memories 
+                    UPDATE memories
                     SET decay_factor = decay_factor * ?
                     WHERE consolidated = 0
                 """, (decay_rate,))
@@ -608,9 +608,9 @@ class MemoryBank:
     def consolidate(self, threshold: float = 0.7):
         """
         记忆巩固
-        
+
         将高保留分数的记忆标记为巩固
-        
+
         Args:
             threshold: 巩固阈值
         """
@@ -649,11 +649,11 @@ class MemoryBank:
     def cleanup(self, min_retention: float = 0.1, max_age_days: int = 365):
         """
         清理低价值记忆
-        
+
         Args:
             min_retention: 最小保留分数
             max_age_days: 最大年龄（天）
-        
+
         Returns:
             删除的记忆数量
         """
@@ -718,15 +718,15 @@ class MemoryBank:
 
                 # 按来源统计
                 cursor = conn.execute("""
-                    SELECT source, COUNT(*) as cnt 
-                    FROM memories 
+                    SELECT source, COUNT(*) as cnt
+                    FROM memories
                     GROUP BY source
                 """)
                 by_source = {row[0]: row[1] for row in cursor.fetchall()}
 
                 # 最近访问
                 cursor = conn.execute("""
-                    SELECT COUNT(*) FROM memories 
+                    SELECT COUNT(*) FROM memories
                     WHERE last_accessed > datetime('now', '-7 days')
                 """)
                 recent_accessed = cursor.fetchone()[0]
@@ -746,8 +746,8 @@ class MemoryBank:
             with sqlite3.connect(self.db_path) as conn:
                 conn.row_factory = sqlite3.Row
                 cursor = conn.execute("""
-                    SELECT * FROM memories 
-                    ORDER BY importance DESC 
+                    SELECT * FROM memories
+                    ORDER BY importance DESC
                     LIMIT ?
                 """, (limit,))
 
@@ -776,7 +776,7 @@ class MemoryBank:
             with sqlite3.connect(self.db_path) as conn:
                 conn.row_factory = sqlite3.Row
                 cursor = conn.execute("""
-                    SELECT * FROM memories 
+                    SELECT * FROM memories
                     WHERE created_at > ?
                     ORDER BY created_at DESC
                 """, (cutoff,))

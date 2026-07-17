@@ -63,14 +63,14 @@ class OptimizationResult:
 class OptimizationIntegration:
     """
     优化模块集成
-    
+
     统一调用所有优化模块，提供一站式接口
     """
 
     def __init__(self, user_context: Optional[Dict] = None):
         """
         初始化优化集成
-        
+
         Args:
             user_context: 用户上下文
         """
@@ -91,13 +91,13 @@ class OptimizationIntegration:
     ) -> Dict[str, Any]:
         """
         优化查询处理
-        
+
         整合所有查询相关优化
-        
+
         Args:
             query: 用户查询
             context: 上下文
-        
+
         Returns:
             优化结果
         """
@@ -143,12 +143,12 @@ class OptimizationIntegration:
     ) -> Dict[str, Any]:
         """
         优化检索
-        
+
         Args:
             scores: 检索分数
             query: 查询
             query_type: 查询类型
-        
+
         Returns:
             优化结果
         """
@@ -168,11 +168,11 @@ class OptimizationIntegration:
     ) -> Dict[str, Any]:
         """
         优化记忆突触
-        
+
         Args:
             synapse: 突触状态
             operation: 操作类型 (ltp/ltd)
-        
+
         Returns:
             优化结果
         """
@@ -194,7 +194,7 @@ class OptimizationIntegration:
     def execute_heartbeat(self) -> HeartbeatResult:
         """
         执行心跳任务
-        
+
         Returns:
             心跳执行结果
         """

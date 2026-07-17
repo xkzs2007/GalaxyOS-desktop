@@ -31,7 +31,7 @@ class ImportanceScore:
 class ImportanceScorer:
     """
     记忆重要性评分器
-    
+
     评分维度:
     1. 访问频率 (Access Frequency)
     2. 时间衰减 (Time Decay)
@@ -106,7 +106,7 @@ class ImportanceScorer:
     def record_access(self, memory_id: str, access_type: str = 'recall'):
         """
         记录访问
-        
+
         Args:
             memory_id: 记忆 ID
             access_type: 访问类型 ('recall', 'reference', 'update')
@@ -129,7 +129,7 @@ class ImportanceScorer:
     def record_feedback(self, memory_id: str, feedback_type: str, weight: float = 1.0):
         """
         记录用户反馈
-        
+
         Args:
             memory_id: 记忆 ID
             feedback_type: 反馈类型 ('positive', 'negative', 'correct', 'important')
@@ -168,14 +168,14 @@ class ImportanceScorer:
               content_length: int = 0) -> ImportanceScore:
         """
         计算重要性分数
-        
+
         Args:
             memory_id: 记忆 ID
             memory_metadata: 记忆元数据
             created_at: 创建时间
             entity_count: 关联实体数量
             content_length: 内容长度
-        
+
         Returns:
             ImportanceScore
         """
@@ -349,11 +349,11 @@ class ImportanceScorer:
                     threshold: str = 'low') -> List[ImportanceScore]:
         """
         批量评分
-        
+
         Args:
             memories: 记忆列表
             threshold: 过滤阈值
-        
+
         Returns:
             评分列表
         """
@@ -383,11 +383,11 @@ class ImportanceScorer:
                                max_age_days: int = 90) -> List[ImportanceScore]:
         """
         获取遗忘候选
-        
+
         Args:
             memories: 记忆列表
             max_age_days: 最大年龄
-        
+
         Returns:
             遗忘候选列表
         """

@@ -41,10 +41,10 @@ class SupportDecision:
 class IsSUPPredictor:
     """
     IsSUP 预测器 - 判断检索结果是否相关
-    
+
     基于 Self-RAG 论文的检索结果评估模块，通过分析检索内容与查询的
     相关性来判断检索结果的质量。
-    
+
     核心评估维度：
     1. 语义相关性：内容是否回答了查询的核心问题
     2. 覆盖度：内容是否覆盖了查询的所有方面
@@ -64,7 +64,7 @@ class IsSUPPredictor:
     def __init__(self, config: Optional[Dict] = None):
         """
         初始化 IsSUP 预测器
-        
+
         Args:
             config: 配置字典，可包含：
                 - relevance_threshold: 相关性阈值，默认 0.6
@@ -84,12 +84,12 @@ class IsSUPPredictor:
     ) -> SupportDecision:
         """
         预测检索结果的支持度
-        
+
         Args:
             query: 用户查询
             retrieved_content: 检索到的内容
             metadata: 可选的元数据（来源、时间等）
-            
+
         Returns:
             SupportDecision: 支持度决策结果
         """
@@ -158,11 +158,11 @@ class IsSUPPredictor:
     ) -> Tuple[bool, float]:
         """
         简化接口：判断检索结果是否相关
-        
+
         Args:
             query: 用户查询
             retrieved_content: 检索到的内容
-            
+
         Returns:
             Tuple[bool, float]: (是否相关, 置信度)
         """
@@ -392,7 +392,7 @@ class IsSUPPredictor:
     ) -> List[Tuple[int, float, str]]:
         """
         按相关性排序检索结果
-        
+
         Returns:
             List[Tuple[int, float, str]]: (原始索引, 相关性得分, 内容摘要)
         """
@@ -411,12 +411,12 @@ class IsSUPPredictor:
 def is_supported(query: str, content: str, config: Optional[Dict] = None) -> Tuple[bool, float]:
     """
     便捷函数：判断检索结果是否相关
-    
+
     Args:
         query: 用户查询
         content: 检索到的内容
         config: 可选配置
-        
+
     Returns:
         Tuple[bool, float]: (是否相关, 置信度)
     """

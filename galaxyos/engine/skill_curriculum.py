@@ -27,7 +27,7 @@ logger = logging.getLogger("skill_curriculum")
 class SkillCurriculum:
     """
     SKILL0 Dynamic Curriculum
-    
+
     三阶段:
       1. 离线分组 — 按类别将 skill 分到验证子任务
       2. 在线评分 — 每 d 步验证每个 skill 的有用性 Δ
@@ -102,10 +102,10 @@ class SkillCurriculum:
     def step(self, validation_fn: Callable = None) -> Dict[str, Any]:
         """
         执行一个训练步
-        
+
         Args:
             validation_fn(skill_name) -> float: 验证函数，返回 accuracy
-        
+
         Returns:
             当前步的状态
         """
@@ -131,7 +131,7 @@ class SkillCurriculum:
     def _evaluate_helpfulness(self, validation_fn: Callable):
         """
         评估每个活跃 skill 的有用性 Δ
-        
+
         Δ = accuracy_with_skill - accuracy_without_skill
         """
         if not self.active_skills:
@@ -267,7 +267,7 @@ class SkillCurriculum:
 class SkillValidationBridge:
     """
     桥接 SKILL0 课程与 GalaxyOS 自进化引擎
-    
+
     为课程提供验证函数，并记录内化结果到自进化引擎。
     """
 
@@ -278,7 +278,7 @@ class SkillValidationBridge:
     def validate(self, skill_name: str, with_skill: bool = True) -> float:
         """
         验证一个 skill 对当前模型的有用性。
-        
+
         简单实现: 返回 skill 的历史命中率作为准确率。
         生产环境应运行完整验证 pipeline。
         """

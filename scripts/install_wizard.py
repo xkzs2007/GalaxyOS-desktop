@@ -2016,7 +2016,7 @@ def check_lfm_weights() -> Dict[str, Any]:
     """检查 LFM2.5-1.2B-Thinking 真实权重是否存在"""
     heading("🧠 模块检查：LFM2.5 真实权重")
     results = {"present": False, "size_mb": 0, "model_path": ""}
-    
+
     candidates = [
         WORKSPACE / "models" / "LFM2.5-1.2B",
         WORKSPACE / "skills" / "xiaoyi-claw-omega-final" / "models" / "LFM2.5-1.2B",
@@ -2035,7 +2035,7 @@ def check_lfm_weights() -> Dict[str, Any]:
                 if (mp / extra).exists():
                     results[f"has_{extra.replace('.', '_')}"] = True
             return results
-    
+
     warn("LFM2.5-1.2B 权重未下载（管线 2 将降级到随机 NumPy）", indent=1)
     info("使用 --download-lfm 一键下载", indent=2)
     return results
@@ -2259,23 +2259,23 @@ def _check_v82_pipelines_impl() -> Dict[str, Any]:
     """验证 v8.2 四条液态神经网络管线的模块初始化"""
     heading("🔬 v8.2 液态神经网络管线初始化")
     results = {"pipelines": {}, "total": 0, "ok": 0, "fail": 0}
-    
+
     for p in [str(galaxy_scripts), str(galaxy_engine)]:
         if os.path.isdir(p):
             sys.path.insert(0, p)
-    
+
     try:
         from paper_integration_v81 import V81IntegrationAddon
         addon = V81IntegrationAddon()
         addon._lazy_init_all()
-        
+
         pipeline_checks = {
             "p1_engram_memory": ["engram", "engram_heat", "dag_liquid_strategy", "dag_node_ranker", "kan_ltc_merger"],
             "p2_lfm_reasoning": ["lfm_network", "lfm_edge", "lfm_engram"],
             "p3_ssm_tracking": ["mamba3", "liquid_ssm", "ssm_kan", "lgct"],
             "p4_continual_learning": ["neural_ode", "ode_rnn", "moe_engram", "sparsity", "liquid_weight", "lipschitz", "ewc"],
         }
-        
+
         for pipeline, components in pipeline_checks.items():
             ok_count = sum(1 for c in components if getattr(addon, c, None) is not None)
             total = len(components)
@@ -2289,7 +2289,7 @@ def _check_v82_pipelines_impl() -> Dict[str, Any]:
                 else:
                     results["fail"] += 1
             results["total"] += total
-            
+
             pipeline_names = {
                 "p1_engram_memory": "管线1: 记忆增强（Engram/DAG/KAN/LTC）",
                 "p2_lfm_reasoning": "管线2: LFM 推理引擎",
@@ -2301,7 +2301,7 @@ def _check_v82_pipelines_impl() -> Dict[str, Any]:
             else:
                 missing = [c for c in components if getattr(addon, c, None) is None]
                 warn(f"{pipeline_names.get(pipeline, pipeline)}: {ok_count}/{total} (缺: {', '.join(missing)})")
-        
+
         # LFM 权重类型
         lfm = addon.lfm_network
         if lfm is not None and hasattr(lfm, '_forward_text'):
@@ -2313,11 +2313,11 @@ def _check_v82_pipelines_impl() -> Dict[str, Any]:
         else:
             warn("  LFM: 未加载")
             results["lfm_type"] = "none"
-        
+
     except Exception as e:
         results["error"] = str(e)[:200]
         err(f"V81IntegrationAddon 初始化失败: {e}", indent=1)
-    
+
     return results
 
 
@@ -2329,14 +2329,14 @@ def check_v82_modules() -> Dict[str, Any]:
     """验证 v8.2 新增模块的导入和加载状态"""
     heading("🧬 v8.2 神经记忆 & 梦境学习模块")
     results: Dict[str, Any] = {"modules": {}, "ok": 0, "fail": 0}
-    
+
     modules_to_check = [
         ("TitansNeuralMemory", "titans_neural_memory", "在线神经记忆(遗忘门+更新门,2048-d)"),
         ("CrossModalMemoryBinder", "cross_modal_memory", "跨模态记忆绑定(文本/图像→2048)"),
         ("DreamDrivenLearner", "dream_driven_learner", "梦境驱动学习(对比学习adapter)"),
         ("AdaptiveSynapsePruner", "memory_synapse_network", "自适应突触修剪(多因子保留分)"),
     ]
-    
+
     for cls_name, module, desc in modules_to_check:
         try:
             spec = importlib.util.spec_from_file_location(
@@ -2384,7 +2384,7 @@ def check_v82_modules() -> Dict[str, Any]:
             results["modules"][cls_name] = {"ok": False, "error": str(e)[:200]}
             results["fail"] += 1
             warn(f"{cls_name} ({desc}): {e}", indent=1)
-    
+
     # 检查持久化目录
     learnings_path = WORKSPACE / ".learnings"
     if learnings_path.exists():
@@ -2398,7 +2398,7 @@ def check_v82_modules() -> Dict[str, Any]:
                 ok(f"{label} 持久化目录: {p}")
     else:
         info(".learnings/ 目录未创建（首次运行后自动生成）")
-    
+
     # 检查自动循环集成状态
     try:
         # 验证 memory_consolidation.py 中的集成
@@ -2421,7 +2421,7 @@ def check_v82_modules() -> Dict[str, Any]:
             info("memory_consolidation.py 不在引擎目录，跳过自动循环检查")
     except Exception as e:
         info(f"自动循环检查跳过: {e}")
-    
+
     return results
 
 

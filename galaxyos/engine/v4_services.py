@@ -95,7 +95,7 @@ _mmap = TtlMmapCache()
 # ========== Phase 4.1: IPC 自动选路 ==========
 def auto_route(method: str, params: dict, payload_size: int = 0) -> str:
     """根据 payload 大小自动选择 IPC 通道
-    
+
     - < 1KB → UDS RPC（默认）
     - 1KB-100KB → mmap 共享 + ZMQ 通知
     - > 100KB → mmap 只写，Node 端轮询读

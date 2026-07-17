@@ -161,7 +161,7 @@ class VerifiedMemory:
 class SelfFamiliarityChecker:
     """
     SELF-FAMILIARITY 检测器
-    
+
     在生成前评估模型对概念的熟悉程度
     """
 
@@ -203,10 +203,10 @@ class SelfFamiliarityChecker:
     def check_familiarity(self, concept: str) -> float:
         """
         检查对概念的熟悉程度
-        
+
         Args:
             concept: 概念词
-        
+
         Returns:
             熟悉度 0.0 - 1.0
         """
@@ -230,10 +230,10 @@ class SelfFamiliarityChecker:
     def check_query_familiarity(self, query: str) -> Tuple[float, List[str]]:
         """
         检查查询的整体熟悉度
-        
+
         Args:
             query: 用户查询
-        
+
         Returns:
             (整体熟悉度, 不熟悉的概念列表)
         """
@@ -260,10 +260,10 @@ class SelfFamiliarityChecker:
     def should_refuse(self, query: str) -> Tuple[bool, str]:
         """
         判断是否应该拒绝回答
-        
+
         Args:
             query: 用户查询
-        
+
         Returns:
             (是否拒绝, 原因)
         """
@@ -288,10 +288,10 @@ class SourceTracer:
     def determine_source(context: Dict) -> SourceType:
         """
         根据上下文判断来源类型
-        
+
         Args:
             context: 包含来源信息的上下文
-        
+
         Returns:
             SourceType
         """
@@ -361,11 +361,11 @@ class ConflictDetector:
     def detect_conflicts(self, new_memory: str, existing_memories: List[VerifiedMemory]) -> List[VerifiedMemory]:
         """
         检测新记忆是否与已有记忆冲突
-        
+
         Args:
             new_memory: 新记忆内容
             existing_memories: 已有记忆列表
-        
+
         Returns:
             冲突的记忆列表
         """
@@ -392,7 +392,7 @@ class ConflictDetector:
     def resolve_conflict(self, new_memory: VerifiedMemory, conflicting: List[VerifiedMemory]) -> VerifiedMemory:
         """
         解决冲突
-        
+
         策略：高置信度优先，用户纠正最高
         """
         # 用户纠正优先级最高
@@ -525,11 +525,11 @@ class OutputValidator:
     def validate_output(self, output: str, recalled_memories: List[VerifiedMemory] = None) -> Dict:
         """
         验证输出
-        
+
         Args:
             output: AI 输出内容
             recalled_memories: 召回的记忆列表
-        
+
         Returns:
             {
                 "is_valid": bool,
@@ -587,12 +587,12 @@ class UncertaintyExpresser:
                                   unfamiliar_concepts: List[str] = None) -> str:
         """
         根据置信度添加不确定性表达
-        
+
         Args:
             content: 原始内容
             confidence: 置信度
             unfamiliar_concepts: 不熟悉的概念
-        
+
         Returns:
             带不确定性标记的内容
         """
@@ -640,7 +640,7 @@ class UncertaintyExpresser:
 class MultiAgentVerifier:
     """
     多智能体验证器（简化版）
-    
+
     通过不同视角的自我质询来验证陈述
     """
 
@@ -655,11 +655,11 @@ class MultiAgentVerifier:
     def verify_statement(statement: str, context: Dict = None) -> Dict:
         """
         验证陈述（简化实现）
-        
+
         Args:
             statement: 待验证的陈述
             context: 上下文
-        
+
         Returns:
             {
                 "is_reliable": bool,
@@ -712,7 +712,7 @@ class MultiAgentVerifier:
 class KnowledgeGraphVerifier:
     """
     知识图谱验证器
-    
+
     利用 ontology 模块验证实体和关系
     """
 
@@ -745,10 +745,10 @@ class KnowledgeGraphVerifier:
     def verify_entity(self, entity_name: str) -> Tuple[bool, Optional[Dict]]:
         """
         验证实体是否存在
-        
+
         Args:
             entity_name: 实体名称
-        
+
         Returns:
             (是否存在, 实体信息)
         """
@@ -768,12 +768,12 @@ class KnowledgeGraphVerifier:
     def verify_relation(self, subject: str, relation: str, obj: str) -> Tuple[bool, float]:
         """
         验证关系是否成立
-        
+
         Args:
             subject: 主体
             relation: 关系
             obj: 客体
-        
+
         Returns:
             (是否成立, 置信度)
         """
@@ -790,10 +790,10 @@ class KnowledgeGraphVerifier:
     def extract_and_verify(self, text: str) -> Dict:
         """
         提取文本中的实体和关系并验证
-        
+
         Args:
             text: 待验证文本
-        
+
         Returns:
             {
                 "entities_found": [...],
@@ -824,7 +824,7 @@ class KnowledgeGraphVerifier:
 class AdaptiveRetriever:
     """
     自适应检索器
-    
+
     根据置信度决定是否需要外部检索
     """
 
@@ -836,11 +836,11 @@ class AdaptiveRetriever:
     def should_retrieve(self, query: str, internal_confidence: float = None) -> Tuple[bool, str]:
         """
         判断是否需要外部检索
-        
+
         Args:
             query: 用户查询
             internal_confidence: 内部置信度（可选）
-        
+
         Returns:
             (是否需要检索, 原因)
         """
@@ -868,24 +868,24 @@ class AdaptiveRetriever:
 class HallucinationGuard:
     """
     防幻觉守护系统 - 统一接口
-    
+
     使用示例:
         guard = HallucinationGuard()
-        
+
         # 1. 生成前检查
         should_refuse, reason = guard.check_before_generation(query)
         if should_refuse:
             return reason
-        
+
         # 2. 存储记忆时验证
         memory = guard.create_verified_memory(content, source="user")
-        
+
         # 3. 召回时过滤
         valid_memories = guard.filter_valid_memories(memories)
-        
+
         # 4. 输出前验证
         validation = guard.validate_output(output, recalled_memories)
-        
+
         # 5. 添加不确定性表达
         final_output = guard.express_with_confidence(output, confidence)
     """
@@ -927,10 +927,10 @@ class HallucinationGuard:
     def check_before_generation(self, query: str) -> Tuple[bool, str]:
         """
         生成前检查
-        
+
         Args:
             query: 用户查询
-        
+
         Returns:
             (是否应该拒绝, 原因)
         """
@@ -958,13 +958,13 @@ class HallucinationGuard:
     ) -> VerifiedMemory:
         """
         创建带验证的记忆
-        
+
         Args:
             content: 记忆内容
             source: 来源类型
             context: 上下文
             custom_validity_days: 自定义有效期（天）
-        
+
         Returns:
             VerifiedMemory
         """
@@ -1030,7 +1030,7 @@ class HallucinationGuard:
     def filter_valid_memories(self, memories: List[VerifiedMemory]) -> List[VerifiedMemory]:
         """
         过滤有效记忆
-        
+
         排除：已验证为假、已过期、置信度过低
         """
         valid = []
@@ -1060,11 +1060,11 @@ class HallucinationGuard:
     def validate_output(self, output: str, recalled_memories: List[VerifiedMemory] = None) -> Dict:
         """
         验证输出
-        
+
         Args:
             output: AI 输出
             recalled_memories: 召回的记忆
-        
+
         Returns:
             验证结果
         """
@@ -1081,13 +1081,13 @@ class HallucinationGuard:
     ) -> str:
         """
         根据置信度表达内容
-        
+
         Args:
             content: 原始内容
             confidence: 置信度
             unfamiliar_concepts: 不熟悉的概念
             evidence_sources: 证据来源
-        
+
         Returns:
             带不确定性标记的内容
         """

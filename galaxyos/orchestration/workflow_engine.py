@@ -464,7 +464,7 @@ class WorkflowEngine:
     def _get_action_func(self, module: Any, action: str, module_name: str) -> Optional[Tuple[Any, bool]]:
         """
         获取动作函数，支持类和模块级函数
-        
+
         返回: (func, is_instance) 或 None
         """
         # 1. 先尝试模块级函数
@@ -511,7 +511,7 @@ class WorkflowEngine:
     ) -> Any:
         """
         智能准备调用参数
-        
+
         根据模块和动作的特性，从 current_data 或 input_data 中提取合适的参数
         支持参数签名检测，自动匹配参数名
         """

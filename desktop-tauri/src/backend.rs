@@ -1,5 +1,6 @@
 use crate::AppState;
-use std::process::{Command, Stdio};
+use std::fs::File;
+use std::process::Command;
 use std::time::Duration;
 use tauri::{AppHandle, Emitter};
 
@@ -261,9 +262,11 @@ fn start_galaxyos_mcp(port: u16) -> Result<std::process::Child, String> {
         cmd.args(["--transport", "sse", "--host", "127.0.0.1", "--port", &port.to_string()]);
     }
 
+    let log_path = log_dir().join("galaxyos-mcp.log");
+    let log_file = File::create(&log_path).map_err(|e| format!("Failed to create log file: {}", e))?;
     cmd.env("GALAXYOS_MODE", "desktop")
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
+        .stdout(log_file.try_clone().map_err(|e| e.to_string())?)
+        .stderr(log_file);
     #[cfg(windows)]
     cmd.creation_flags(CREATE_NO_WINDOW);
     cmd.spawn().map_err(|e| format!("Failed to start GalaxyOS MCP: {}", e))
@@ -275,9 +278,12 @@ fn start_swarm_agentserver(port: u16) -> Result<std::process::Child, String> {
     cmd.args(["-m", "jiuwenswarm.server.app_agentserver"])
         .env("AGENT_SERVER_HOST", "127.0.0.1")
         .env("AGENT_SERVER_PORT", &port.to_string())
-        .env("GALAXYOS_MODE", "desktop")
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
+        .env("GALAXYOS_MODE", "desktop");
+
+    let log_path = log_dir().join("agentserver.log");
+    let log_file = File::create(&log_path).map_err(|e| format!("Failed to create log file: {}", e))?;
+    cmd.stdout(log_file.try_clone().map_err(|e| e.to_string())?)
+        .stderr(log_file);
     #[cfg(windows)]
     cmd.creation_flags(CREATE_NO_WINDOW);
     cmd.spawn().map_err(|e| format!("Failed to start AgentServer: {}", e))
@@ -293,12 +299,21 @@ fn start_swarm_gateway(port: u16, agentserver_port: u16) -> Result<std::process:
         .env("AGENT_SERVER_HOST", "127.0.0.1")
         .env("AGENT_SERVER_PORT", &agentserver_port.to_string())
         .env("AGENT_SERVER_URL", &format!("ws://127.0.0.1:{}", agentserver_port))
-        .env("GALAXYOS_MODE", "desktop")
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
+        .env("GALAXYOS_MODE", "desktop");
+
+    let log_path = log_dir().join("gateway.log");
+    let log_file = File::create(&log_path).map_err(|e| format!("Failed to create log file: {}", e))?;
+    cmd.stdout(log_file.try_clone().map_err(|e| e.to_string())?)
+        .stderr(log_file);
     #[cfg(windows)]
     cmd.creation_flags(CREATE_NO_WINDOW);
     cmd.spawn().map_err(|e| format!("Failed to start Gateway: {}", e))
+}
+
+fn log_dir() -> std::path::PathBuf {
+    let dir = std::path::PathBuf::from("../logs");
+    let _ = std::fs::create_dir_all(&dir);
+    dir
 }
 
 fn find_galaxyos_binary() -> Result<BinaryResult, String> {

@@ -182,10 +182,10 @@ class SkillCoordinator:
     def detect_intent(self, user_message: str) -> List[Tuple[str, float]]:
         """
         检测用户意图，返回匹配的技能列表
-        
+
         Args:
             user_message: 用户消息
-        
+
         Returns:
             [(技能名, 匹配度), ...]
         """
@@ -216,10 +216,10 @@ class SkillCoordinator:
     def recommend_skill(self, user_message: str) -> Optional[str]:
         """
         推荐最合适的技能
-        
+
         Args:
             user_message: 用户消息
-        
+
         Returns:
             技能名或None
         """
@@ -237,10 +237,10 @@ class SkillCoordinator:
     def suggest_combination(self, user_message: str) -> List[str]:
         """
         建议技能组合
-        
+
         Args:
             user_message: 用户消息
-        
+
         Returns:
             [技能名, ...]
         """
@@ -252,10 +252,10 @@ class SkillCoordinator:
     def get_workflow(self, scenario: str) -> List[str]:
         """
         获取预定义的工作流
-        
+
         Args:
             scenario: 场景名称
-        
+
         Returns:
             [技能名, ...]
         """
@@ -291,10 +291,10 @@ class SkillCoordinator:
     def list_skills(self, category: Optional[SkillCategory] = None) -> List[SkillInfo]:
         """
         列出技能
-        
+
         Args:
             category: 可选的类别过滤
-        
+
         Returns:
             [SkillInfo, ...]
         """
@@ -308,10 +308,10 @@ class SkillCoordinator:
     def recommend_extended_skill(self, user_message: str) -> List[Dict]:
         """
         推荐扩展技能（工具类技能）
-        
+
         Args:
             user_message: 用户消息
-        
+
         Returns:
             [{"name": 技能名, "description": 描述, "confidence": 置信度}, ...]
         """
@@ -342,10 +342,10 @@ class SkillCoordinator:
     def get_smart_suggestion(self, user_message: str) -> Optional[str]:
         """
         智能推荐：当检测到用户可能需要某个技能时，返回提示
-        
+
         Args:
             user_message: 用户消息
-        
+
         Returns:
             推荐提示或None
         """
@@ -394,10 +394,10 @@ SHORTCUTS = {
 def parse_shortcut(message: str) -> Optional[str]:
     """
     解析快捷指令
-    
+
     Args:
         message: 用户消息
-    
+
     Returns:
         技能名或None
     """

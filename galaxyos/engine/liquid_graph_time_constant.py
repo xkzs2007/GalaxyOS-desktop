@@ -238,12 +238,12 @@ class LiquidGraphLayer:
                 neighbor_idx: np.ndarray,
                 neighbor_mask: np.ndarray) -> np.ndarray:
         """一步更新
-        
+
         Args:
             features: 节点特征 [num_nodes, dim_in]
             neighbor_idx: 邻居索引 [num_nodes, num_samples]
             neighbor_mask: 邻居掩码 [num_nodes, num_samples]
-        
+
         Returns:
             新特征 [num_nodes, dim_out]
         """

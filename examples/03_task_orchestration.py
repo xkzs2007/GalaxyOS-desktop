@@ -18,24 +18,24 @@ def main():
     print("示例 3: 任务编排使用")
     print("=" * 60)
     print()
-    
+
     # 1. 创建编排层
     print("1️⃣ 初始化编排层...")
     orchestration = OrchestrationLayer({})
     orchestration.start()
     print("✅ 编排层已启动")
     print()
-    
+
     # 2. 创建任务
     print("2️⃣ 创建任务...")
-    
+
     task1 = orchestration.create_task(
         name="数据收集任务",
         task_type="search",
         metadata={"priority": "high"}
     )
     print(f"   ✅ 任务1: {task1.task_id} - {task1.name}")
-    
+
     task2 = orchestration.create_task(
         name="数据处理任务",
         task_type="update",
@@ -43,7 +43,7 @@ def main():
         metadata={"priority": "medium"}
     )
     print(f"   ✅ 任务2: {task2.task_id} - {task2.name}")
-    
+
     task3 = orchestration.create_task(
         name="报告生成任务",
         task_type="create",
@@ -51,9 +51,9 @@ def main():
         metadata={"priority": "low"}
     )
     print(f"   ✅ 任务3: {task3.task_id} - {task3.name}")
-    
+
     print()
-    
+
     # 3. 创建工作流
     print("3️⃣ 创建工作流...")
     workflow_id = orchestration.create_workflow(
@@ -62,7 +62,7 @@ def main():
     )
     print(f"   ✅ 工作流: {workflow_id}")
     print()
-    
+
     # 4. 执行工作流
     print("4️⃣ 执行工作流...")
     success = orchestration.execute_workflow(workflow_id)
@@ -71,7 +71,7 @@ def main():
     else:
         print("   ❌ 工作流执行失败")
     print()
-    
+
     # 5. 查看任务状态
     print("5️⃣ 任务状态:")
     for task_id in [task1.task_id, task2.task_id, task3.task_id]:
@@ -79,7 +79,7 @@ def main():
         if status:
             print(f"   {status['name']}: {status['status']}")
     print()
-    
+
     # 6. 查看统计
     print("6️⃣ 编排统计:")
     stats = orchestration.get_stats()
@@ -87,9 +87,9 @@ def main():
     print(f"   总工作流: {stats['total_workflows']}")
     print(f"   状态分布: {stats['status_counts']}")
     print()
-    
+
     orchestration.stop()
-    
+
     print("=" * 60)
     print("✅ 示例完成")
     print("=" * 60)

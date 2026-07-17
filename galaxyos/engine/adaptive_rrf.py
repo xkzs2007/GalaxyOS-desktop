@@ -36,11 +36,11 @@ class RRFWeights:
 class AdaptiveRRF:
     """
     自适应 RRF 融合
-    
+
     基于 RRF 论文:
     - RRF 论文建议 k=60，但权重可以根据查询类型调整
     - 不同查询类型对 Dense/Sparse 的依赖不同
-    
+
     创新点:
     - 根据查询类型动态调整权重
     - 分析查询特征自动判断类型
@@ -80,7 +80,7 @@ class AdaptiveRRF:
     def __init__(self, weights: Optional[RRFWeights] = None):
         """
         初始化自适应 RRF
-        
+
         Args:
             weights: 自定义权重
         """
@@ -90,10 +90,10 @@ class AdaptiveRRF:
     def classify_query(self, query: str) -> QueryCategory:
         """
         分类查询
-        
+
         Args:
             query: 用户查询
-        
+
         Returns:
             查询类别
         """
@@ -142,10 +142,10 @@ class AdaptiveRRF:
     def has_exact_terms(self, query: str) -> bool:
         """
         检查是否有精确术语
-        
+
         Args:
             query: 用户查询
-        
+
         Returns:
             是否有精确术语
         """
@@ -166,11 +166,11 @@ class AdaptiveRRF:
     ) -> RRFWeights:
         """
         获取自适应权重
-        
+
         Args:
             query: 用户查询
             category: 查询类别（可选，自动检测）
-        
+
         Returns:
             调整后的权重
         """
@@ -210,13 +210,13 @@ class AdaptiveRRF:
     ) -> List[Tuple[str, float]]:
         """
         融合 Dense 和 Sparse 排序结果
-        
+
         Args:
             dense_results: Dense 检索结果 [(doc_id, score), ...]
             sparse_results: Sparse 检索结果 [(doc_id, score), ...]
             query: 用户查询（用于自适应权重）
             k: RRF 常数（可选）
-        
+
         Returns:
             融合后的排序结果
         """
@@ -279,12 +279,12 @@ def fuse_with_adaptive_rrf(
 ) -> List[Tuple[str, float]]:
     """
     使用自适应 RRF 融合（便捷函数）
-    
+
     Args:
         dense_results: Dense 检索结果
         sparse_results: Sparse 检索结果
         query: 用户查询
-    
+
     Returns:
         融合后的排序结果
     """

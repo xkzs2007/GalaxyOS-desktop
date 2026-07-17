@@ -181,7 +181,7 @@ class NCPTopology:
     def is_valid_connection(self, src_id: str, dst_id: str) -> bool:
         """
         检查连接是否合法
-        
+
         NCP 拓扑规则（宽松版）：
           - sensory (0) → 可以发到任何非 motor 层
           - inter   (1) → 可以发到 inter, command, motor

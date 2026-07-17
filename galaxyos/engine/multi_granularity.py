@@ -36,7 +36,7 @@ logger = logging.getLogger(__name__)
 class MultiGranularityExtractor:
     """
     多粒度表示提取器
-    
+
     从一段文本提取 4 种粒度的表示：
     - session_level: 完整文本（或前 2000 字符）
     - turn_level: 按句/段切分
@@ -54,10 +54,10 @@ class MultiGranularityExtractor:
     def extract(self, text: str) -> Dict[str, Any]:
         """
         从文本提取多粒度表示
-        
+
         Args:
             text: 原始文本（不限长度）
-            
+
         Returns:
             {
                 "session_level": str,
@@ -92,7 +92,7 @@ class MultiGranularityExtractor:
     def _extract_turns(self, text: str) -> List[str]:
         """
         turn_level: 按句号/问号/感叹号/换行分割成句块
-        
+
         每句作为一个 turn（短句合并到前一句）
         """
         # 分句
@@ -112,7 +112,7 @@ class MultiGranularityExtractor:
     def _extract_summary(self, text: str) -> Dict[str, List[str]]:
         """
         summary_level: jieba 抽取式摘要
-        
+
         策略：
         1. 分词计算 TF
         2. 对每个句子计算关键词密度评分
@@ -202,7 +202,7 @@ class MultiGranularityExtractor:
     def _extract_keywords(self, text: str) -> List[str]:
         """
         keyword_level: jieba TF-IDF 关键词
-        
+
         优先 jieba.analyse.extract_tags，降级到高频词
         """
         try:
@@ -226,10 +226,10 @@ class MultiGranularityExtractor:
 class GMMAssociator:
     """
     GMM 聚类关联器
-    
+
     基于 sklearn GaussianMixture 对记忆资产进行聚类，
     建立 accept/reject 集合，并维护关联图边。
-    
+
     核心流程：
     1. fit(memory_texts): 聚类得到 accept_set / reject_set
     2. associate(new_text): 预测新文本的簇，与 accept_set 中记忆建立关联
@@ -355,7 +355,7 @@ class GMMAssociator:
 
     def _fallback_fit(self, texts: List[str], text_ids: Optional[List[str]] = None) -> bool:
         """
-        降级：无 sklearn 时使用 KMeans (sklearn.cluster) 
+        降级：无 sklearn 时使用 KMeans (sklearn.cluster)
         或简单相似度聚类
         """
         try:
@@ -414,7 +414,7 @@ class GMMAssociator:
                               text_ids: Optional[List[str]] = None) -> bool:
         """
         终极降级：jieba 关键词重叠相似度聚类
-        
+
         对文本两两计算 Jaccard 相似度，用阈值聚类
         """
         try:
@@ -447,7 +447,7 @@ class GMMAssociator:
     def associate(self, new_text: str, new_text_id: str = "") -> List[Tuple[str, str, float]]:
         """
         关联新文本到已训练的 accept_set 记忆
-        
+
         Args:
             new_text: 新文本
             new_text_id: 新文本 ID（可选）
@@ -617,7 +617,7 @@ class GMMAssociator:
     def update(self, new_texts: List[str], new_ids: Optional[List[str]] = None) -> bool:
         """
         增量更新：追加新数据并重新 fit
-        
+
         Args:
             new_texts: 新记忆文本
             new_ids: 新 ID 列表
@@ -664,7 +664,7 @@ class GranularityPipeline:
     def process(self, texts: List[str], text_ids: Optional[List[str]] = None) -> Dict[str, Any]:
         """
         完整处理管道
-        
+
         Returns:
             {
                 "granularities": {text_id: multi_granularity_dict},

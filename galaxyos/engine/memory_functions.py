@@ -34,7 +34,7 @@ from memgpt_memory import (
 class MemoryFunctions:
     """
     内存管理函数集合
-    
+
     这些函数设计为可被 LLM 直接调用，
     实现 MemGPT 论文中的自主内存管理能力。
     """
@@ -52,19 +52,19 @@ class MemoryFunctions:
     ) -> Dict:
         """
         追加内容到核心记忆
-        
+
         Args:
             content: 要追加的内容
             section: 可选的分区名称（如 "用户偏好"、"项目信息"）
             priority: 优先级 (CRITICAL/HIGH/MEDIUM/LOW)
-        
+
         Returns:
             {
                 "success": bool,
                 "memory_id": str,
                 "message": str
             }
-        
+
         示例:
             core_memory_append("用户喜欢使用 Python 进行数据分析", section="用户偏好")
         """
@@ -111,19 +111,19 @@ class MemoryFunctions:
     ) -> Dict:
         """
         替换核心记忆中的内容
-        
+
         Args:
             old_content: 要替换的旧内容（支持部分匹配）
             new_content: 新内容
             section: 可选的分区限制
-        
+
         Returns:
             {
                 "success": bool,
                 "memory_id": str,
                 "message": str
             }
-        
+
         示例:
             core_memory_replace(
                 old_content="用户使用 Python 3.8",
@@ -172,12 +172,12 @@ class MemoryFunctions:
     ) -> Dict:
         """
         删除核心记忆
-        
+
         Args:
             content_pattern: 内容匹配模式（删除匹配的第一条）
             memory_id: 直接指定记忆 ID
             section: 分区名称（删除整个分区）
-        
+
         Returns:
             {
                 "success": bool,
@@ -234,20 +234,20 @@ class MemoryFunctions:
     ) -> Dict:
         """
         插入记忆到归档存储
-        
+
         Args:
             content: 记忆内容
             importance: 重要性 (0.0-1.0)
             tags: 标签列表
             metadata: 元数据
-        
+
         Returns:
             {
                 "success": bool,
                 "memory_id": str,
                 "message": str
             }
-        
+
         示例:
             archival_memory_insert(
                 content="讨论了微服务架构设计方案",
@@ -285,13 +285,13 @@ class MemoryFunctions:
     ) -> Dict:
         """
         搜索归档记忆
-        
+
         Args:
             query: 搜索查询
             top_k: 返回数量
             min_importance: 最小重要性过滤
             tags: 标签过滤
-        
+
         Returns:
             {
                 "success": bool,
@@ -299,7 +299,7 @@ class MemoryFunctions:
                 "count": int,
                 "message": str
             }
-        
+
         示例:
             archival_memory_search(
                 query="微服务架构",
@@ -356,12 +356,12 @@ class MemoryFunctions:
     ) -> Dict:
         """
         删除归档记忆
-        
+
         Args:
             memory_id: 直接指定记忆 ID
             older_than_days: 删除 N 天前的记忆
             max_importance: 删除重要性低于此值的记忆
-        
+
         Returns:
             {
                 "success": bool,
@@ -425,11 +425,11 @@ class MemoryFunctions:
     ) -> Dict:
         """
         搜索对话历史
-        
+
         Args:
             query: 搜索查询
             search_archival: 是否同时搜索归档记忆
-        
+
         Returns:
             {
                 "success": bool,
@@ -479,10 +479,10 @@ class MemoryFunctions:
     def memory_promote(self, memory_id: str) -> Dict:
         """
         将归档记忆提升到核心记忆
-        
+
         Args:
             memory_id: 归档记忆 ID
-        
+
         Returns:
             {
                 "success": bool,
@@ -506,10 +506,10 @@ class MemoryFunctions:
     def memory_demote(self, memory_id: str) -> Dict:
         """
         将核心记忆降级到归档记忆
-        
+
         Args:
             memory_id: 核心记忆 ID
-        
+
         Returns:
             {
                 "success": bool,
@@ -559,7 +559,7 @@ class MemoryFunctions:
     def memory_stats(self) -> Dict:
         """
         获取记忆系统统计
-        
+
         Returns:
             {
                 "core_memory": {...},
@@ -602,19 +602,19 @@ def _get_memory() -> MemGPTMemory:
 def remember(content: str, importance: float = None) -> str:
     """
     存储记忆，返回记忆 ID
-    
+
     这是主要的记忆存储接口。
-    
+
     Args:
         content: 记忆内容
         importance: 重要性 (0.0-1.0)，默认 0.5
                    >= 0.8 会存入核心记忆
                    >= 0.5 存入高优先级归档
                    < 0.5 存入普通归档
-    
+
     Returns:
         memory_id: 记忆唯一标识
-    
+
     示例:
         >>> remember("用户喜欢使用 VS Code", importance=0.8)
         'core_20260421150000_a1b2c3d4'
@@ -626,14 +626,14 @@ def remember(content: str, importance: float = None) -> str:
 def recall(query: str, top_k: int = 10) -> List[Memory]:
     """
     检索记忆
-    
+
     Args:
         query: 查询字符串
         top_k: 返回数量，默认 10
-    
+
     Returns:
         记忆列表
-    
+
     示例:
         >>> memories = recall("VS Code")
         >>> for m in memories:
@@ -646,13 +646,13 @@ def recall(query: str, top_k: int = 10) -> List[Memory]:
 def forget(memory_id: str) -> bool:
     """
     遗忘记忆
-    
+
     Args:
         memory_id: 记忆 ID
-    
+
     Returns:
         是否成功删除
-    
+
     示例:
         >>> forget("core_20260421150000_a1b2c3d4")
         True

@@ -74,7 +74,7 @@ class MemoryConfig:
 def validate_config(config_path: Path) -> dict:
     """
     验证配置文件
-    
+
     Returns:
         验证结果
     """

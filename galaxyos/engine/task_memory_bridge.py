@@ -29,7 +29,7 @@ class TaskMemoryLink:
 class TaskMemoryBridge:
     """
     任务-记忆桥接器
-    
+
     功能:
     1. 任务创建时关联相关记忆
     2. 任务完成时记录到记忆
@@ -90,7 +90,7 @@ class TaskMemoryBridge:
                             link_type: str = 'related_to'):
         """
         关联任务到记忆
-        
+
         Args:
             task_id: 任务 ID
             memory_id: 记忆 ID
@@ -122,13 +122,13 @@ class TaskMemoryBridge:
                                 memory_add_func) -> str:
         """
         记录任务完成到记忆
-        
+
         Args:
             task_id: 任务 ID
             task_title: 任务标题
             task_notes: 任务备注
             memory_add_func: 记忆添加函数
-        
+
         Returns:
             记忆 ID
         """
@@ -151,11 +151,11 @@ class TaskMemoryBridge:
                           memory_search_func) -> List[Dict]:
         """
         获取任务相关的记忆上下文
-        
+
         Args:
             task_title: 任务标题
             memory_search_func: 记忆搜索函数
-        
+
         Returns:
             相关记忆列表
         """

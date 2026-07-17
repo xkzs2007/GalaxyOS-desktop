@@ -316,7 +316,7 @@ def _merge_and_window(
 
 class NLPPredicateExtractor:
     """使用 nlp_processor 提取结构化 predicates
-    
+
     为每条 DAG 节点内容提取：
       - 关键词 → state.{keyword}  predicate
       - 实体   → entity.{type}.{name} predicate
@@ -454,7 +454,7 @@ class NLPPredicateExtractor:
 
 class DAGIntentClassifier:
     """DAG 节点意图分类器
-    
+
     为每条节点内容推断意图标签（如 search / analyze / code / memory / chat）
     基于关键词 + 来源 + 简单的模式匹配
     """
@@ -501,10 +501,10 @@ class DAGIntentClassifier:
 
 class LfmBoundaryDetector:
     """LFM 边界检测器
-    
+
     从 DAG 节点序列检测自然边界 → 标记 SegmentBoundary
     供 ConsolidationEngine 在 CLS 之前使用
-    
+
     工作流：
       1. detect() — 接收 DAG 节点列表
       2. 提取 embedding / NLP features / 意图标签
@@ -524,7 +524,7 @@ class LfmBoundaryDetector:
         hard_event_indices: Optional[List[int]] = None,
     ) -> List[SegmentBoundary]:
         """从 DAG 节点列表检测自然边界
-        
+
         Parameters
         ----------
         nodes : List[Dict]
@@ -533,7 +533,7 @@ class LfmBoundaryDetector:
             节点 embedding 序列，shape (N, dim)
         hard_event_indices : List[int], optional
             硬事件节点索引（R-CCAM cycle 边界等）
-        
+
         Returns
         -------
         List[SegmentBoundary]
@@ -655,7 +655,7 @@ class LfmBoundaryDetector:
 
     def detect_from_dag(self, dag, session_key: str) -> List[SegmentBoundary]:
         """从 DAG 实例检测边界
-        
+
         便利接口：传 DAGContextManager 实例 + session_key
         """
         try:
@@ -679,12 +679,12 @@ class LfmBoundaryDetector:
 
 class RCCAMFeedbackBridge:
     """R-CCAM → Skill Bank 反馈桥
-    
+
     在 R-CCAM Action 阶段完成后，将执行结果反馈给 Skill Bank：
       1. Action 的调用链 → 新的 segment 记录
       2. Action 的成功/失败 → contract 验证信号
       3. Action 的输出 → ProtoSkill 发现
-    
+
     集成入口：
       XiaoYiClawLLM.process() 的 Action 阶段末尾
     """
@@ -699,7 +699,7 @@ class RCCAMFeedbackBridge:
         success: bool = True,
     ) -> Dict:
         """将一次 Action 的执行结果反馈给 Skill Bank
-        
+
         Parameters
         ----------
         action_info : dict
@@ -708,7 +708,7 @@ class RCCAMFeedbackBridge:
             Action 的执行结果文本
         success : bool
             Action 是否成功
-        
+
         Returns
         -------
         dict
@@ -762,7 +762,7 @@ class RCCAMFeedbackBridge:
         cycle_info: Dict[str, Any],
     ) -> Dict:
         """将整个 R-CCAM cycle 结果反馈给 Skill Bank
-        
+
         Parameters
         ----------
         cycle_info : dict
@@ -822,7 +822,7 @@ def run_boundary_detection_cycle(
     config: Optional[BoundaryDetectorConfig] = None,
 ) -> Dict:
     """执行一轮边界检测（供 ConsolidationEngine 调用）
-    
+
     Returns
     -------
     dict
@@ -858,7 +858,7 @@ def run_full_cosplay_cycle(
     rccam_cycle_info: Optional[Dict] = None,
 ) -> Dict:
     """执行一轮完整的 COSPLAY 剩余模块：
-    
+
     1. Boundary Detection → segments
     2. NLP Predicate Extraction → predicates
     3. R-CCAM 反馈 → Skill Bank

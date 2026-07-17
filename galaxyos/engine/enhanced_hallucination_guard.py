@@ -79,7 +79,7 @@ class CrossValidationResult:
 class MultiSourceCrossValidator:
     """
     多源交叉验证器
-    
+
     从多个来源验证信息的一致性。
     """
 
@@ -149,11 +149,11 @@ class MultiSourceCrossValidator:
     def search_web(self, query: str) -> List[VerificationSource]:
         """
         多搜索引擎聚合搜索（通过代理跨墙）
-        
+
         按优先级依次尝试多个搜索引擎，谁先返回干净结果用谁。
         国内引擎直连，国际引擎走代理（mihomo mihomo:7890）。
-        
-        引擎（16个）: DuckDuckGo / Google / Google HK / Bing CN+INT / 
+
+        引擎（16个）: DuckDuckGo / Google / Google HK / Bing CN+INT /
                       Baidu / 360 / Sogou / Brave / Ecosia / Qwant /
                       Startpage / Yahoo / WolframAlpha
         """
@@ -441,12 +441,12 @@ class MultiSourceCrossValidator:
     ) -> CrossValidationResult:
         """
         交叉验证
-        
+
         Args:
             statement: 待验证的陈述
             sources: 验证来源列表
             agreement_threshold: 一致性阈值
-        
+
         Returns:
             CrossValidationResult
         """
@@ -592,7 +592,7 @@ class MultiSourceCrossValidator:
 class ThinkingSkillVerifier:
     """
     思考技能验证器
-    
+
     使用思考技能分析不确定性。
     """
 
@@ -651,11 +651,11 @@ class ThinkingSkillVerifier:
     ) -> List[str]:
         """
         生成验证问题
-        
+
         Args:
             statement: 待验证陈述
             skill: 指定的思考技能（可选）
-        
+
         Returns:
             验证问题列表
         """
@@ -681,12 +681,12 @@ class ThinkingSkillVerifier:
     ) -> Dict:
         """
         使用思考技能分析
-        
+
         Args:
             statement: 待分析陈述
             context: 上下文
             skill: 指定的思考技能
-        
+
         Returns:
             {
                 "skill_used": str,
@@ -775,7 +775,7 @@ class ThinkingSkillVerifier:
 class EnhancedHallucinationGuard:
     """
     增强版防幻觉守护系统
-    
+
     整合多源交叉验证和思考能力。
     """
 
@@ -818,13 +818,13 @@ class EnhancedHallucinationGuard:
     ) -> Dict:
         """
         使用交叉验证和思考能力验证陈述
-        
+
         Args:
             statement: 待验证陈述
             initial_confidence: 初始置信度
             use_web_search: 是否使用网络搜索
             use_thinking: 是否使用思考技能
-        
+
         Returns:
             {
                 "statement": str,
@@ -1011,11 +1011,11 @@ class EnhancedHallucinationGuard:
     ) -> str:
         """
         根据验证结果表达不确定性
-        
+
         Args:
             content: 原始内容
             verification_result: 验证结果
-        
+
         Returns:
             带不确定性表达的内容
         """

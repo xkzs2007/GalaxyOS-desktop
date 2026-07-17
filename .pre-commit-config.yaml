@@ -24,3 +24,20 @@ repos:
     rev: v8.24.0
     hooks:
       - id: gitleaks
+
+  - repo: local
+    hooks:
+      - id: mypy
+        name: mypy type check
+        entry: python -m mypy galaxyos/ --config-file mypy.ini
+        language: system
+        types: [python]
+        pass_filenames: false
+
+      - id: pytest
+        name: pytest
+        entry: python -m pytest tests/ -x -q --tb=short
+        language: system
+        types: [python]
+        pass_filenames: false
+        stages: [pre-push]

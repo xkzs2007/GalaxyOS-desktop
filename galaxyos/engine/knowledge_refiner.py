@@ -49,10 +49,10 @@ class RefinedKnowledge:
 class KnowledgeRefiner:
     """
     知识精炼器
-    
+
     基于 CRAG 论文的知识精炼模块，从检索到的文档中提取
     关键信息，去除冗余，生成精炼的知识摘要。
-    
+
     处理流程：
     1. 文档分割：将长文档分割为语义片段
     2. 片段分类：识别片段类型（定义、事实、步骤等）
@@ -99,7 +99,7 @@ class KnowledgeRefiner:
     def __init__(self, config: Optional[Dict] = None):
         """
         初始化知识精炼器
-        
+
         Args:
             config: 配置字典
         """
@@ -130,12 +130,12 @@ class KnowledgeRefiner:
     ) -> RefinedKnowledge:
         """
         精炼知识
-        
+
         Args:
             query: 用户查询
             documents: 检索到的文档列表
             max_length: 最大输出长度（可选）
-            
+
         Returns:
             RefinedKnowledge: 精炼后的知识
         """
@@ -457,12 +457,12 @@ def refine_knowledge(
 ) -> RefinedKnowledge:
     """
     便捷函数：精炼知识
-    
+
     Args:
         query: 用户查询
         documents: 检索到的文档
         config: 可选配置
-        
+
     Returns:
         RefinedKnowledge: 精炼后的知识
     """

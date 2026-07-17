@@ -106,7 +106,7 @@ class PerformanceAnalyzer:
     def measure_recall_performance(self) -> tuple:
         """
         测量召回性能
-        
+
         Returns:
             (precision, recall, f1)
         """
@@ -148,7 +148,7 @@ class PerformanceAnalyzer:
     def measure_forget_performance(self) -> tuple:
         """
         测量遗忘性能
-        
+
         Returns:
             (accuracy, false_forget_rate)
         """
@@ -185,7 +185,7 @@ class PerformanceAnalyzer:
     def measure_system_efficiency(self) -> tuple:
         """
         测量系统效率
-        
+
         Returns:
             (avg_recall_time_ms, memory_usage_mb)
         """
@@ -203,7 +203,7 @@ class PerformanceAnalyzer:
     def analyze(self) -> PerformanceMetrics:
         """
         全面分析性能
-        
+
         Returns:
             PerformanceMetrics
         """
@@ -300,10 +300,10 @@ class ParameterOptimizer:
     def optimize(self, metrics: PerformanceMetrics) -> Dict:
         """
         根据性能指标优化参数
-        
+
         Args:
             metrics: 性能指标
-        
+
         Returns:
             {
                 "adjustments": [...],
@@ -346,7 +346,7 @@ class ParameterOptimizer:
 class AdaptiveMemoryManager:
     """
     自适应记忆管理器
-    
+
     集成性能分析和参数优化
     """
 
@@ -375,7 +375,7 @@ class AdaptiveMemoryManager:
     def run_optimization_cycle(self) -> Dict:
         """
         运行优化周期
-        
+
         Returns:
             {
                 "metrics": PerformanceMetrics,

@@ -68,19 +68,19 @@ class WorkflowResult:
 
 class WorkflowEngine:
     """工作流引擎"""
-    
+
     def __init__(self, coordinator=None):
         self.coordinator = coordinator
         self.workflows: Dict[str, List[WorkflowStep]] = {}
         self.module_cache: Dict[str, Any] = {}
         self._load_workflows()
         self._load_module_dependencies()
-    
+
     def _load_workflows(self):
         """加载工作流定义"""
         # 内置工作流
         self.workflows = self._build_builtin_workflows()
-        
+
         # 尝试从配置文件加载
         workflow_config = CONFIG_DIR / "workflows.json"
         if workflow_config.exists():
@@ -94,7 +94,7 @@ class WorkflowEngine:
                 logger.info(f"从配置文件加载了 {len(data.get('workflows', {}))} 个工作流")
             except Exception as e:
                 logger.warning(f"加载工作流配置失败: {e}")
-    
+
     def _load_module_dependencies(self):
         """加载模块依赖配置"""
         dep_config = CONFIG_DIR / "module_dependencies.json"
@@ -107,7 +107,7 @@ class WorkflowEngine:
                 self.dependencies = {}
         else:
             self.dependencies = {}
-    
+
     def _build_builtin_workflows(self) -> Dict[str, List[WorkflowStep]]:
         """构建内置工作流"""
         return {
@@ -121,7 +121,7 @@ class WorkflowEngine:
                 WorkflowStep("adaptive_ltp_ltd", "get_adjustment_stats", "LTP/LTD统计"),
                 WorkflowStep("adaptive_memory", "run_optimization_cycle", "参数自适应"),
             ],
-            
+
             # ==================== MemGPT 风格工作流 ====================
             "memgpt_recall": [
                 WorkflowStep("memgpt_memory", "search", "核心记忆检索"),
@@ -130,17 +130,17 @@ class WorkflowEngine:
                 WorkflowStep("context_compressor", "compress", "上下文压缩"),
             ],
 
-            
+
             # ==================== Generative Agents 工作流 ====================
 
-            
+
             # ==================== Self-RAG 工作流 ====================
             "self_rag_query": [
                 WorkflowStep("isrel_predictor", "should_retrieve", "预测检索必要性"),
                 WorkflowStep("knowledge_refiner", "refine", "精炼知识"),
             ],
 
-            
+
             # ==================== 知识图谱工作流 ====================
             "kg_build": [
                 WorkflowStep("graph_constructor", "get_adjacency_matrix", "获取图谱邻接矩阵"),
@@ -150,7 +150,7 @@ class WorkflowEngine:
                 WorkflowStep("memory_ontology_bridge", "get_entity", "查询实体"),
                 WorkflowStep("graph_constructor", "get_statistics", "获取图谱统计"),
             ],
-            
+
             # ==================== 检索增强工作流 ====================
             "recall": [
                 WorkflowStep("emotion_memory", "get_high_priority_memories", "情感权重排序"),
@@ -187,7 +187,7 @@ class WorkflowEngine:
                 WorkflowStep("hybrid_search", "search", "混合检索"),
                 WorkflowStep("adaptive_rrf", "get_adjustment_stats", "结果融合"),
             ],
-            
+
             # ==================== 向量优化工作流 ====================
             "vector_index": [
                 WorkflowStep("vector_api", "get_capabilities", "向量能力检测"),
@@ -197,20 +197,20 @@ class WorkflowEngine:
                 WorkflowStep("vector_api", "get_capabilities", "向量能力检测"),
                 WorkflowStep("approximate_cache", "get_stats", "近似缓存统计"),
             ],
-            
+
             # ==================== LLM 优化工作流 ====================
 
             "speculative_generate": [
                 WorkflowStep("speculative_hybrid", "generate", "投机解码"),
             ],
-            
+
             # ==================== 缓存工作流 ====================
             "cache_warmup": [
                 WorkflowStep("rag_cache", "search", "预热RAG缓存"),
                 WorkflowStep("semantic_cache", "get_stats", "语义缓存统计"),
             ],
 
-            
+
             # ==================== 硬件优化工作流 ====================
             "hardware_detect": [
                 WorkflowStep("hardware_optimize", "get_info", "硬件检测"),
@@ -225,7 +225,7 @@ class WorkflowEngine:
                 WorkflowStep("cache_allocator", "get_info", "缓存分配"),
                 WorkflowStep("hardware_optimize", "get_info", "硬件检测"),
             ],
-            
+
             # ==================== 系统可靠性工作流 ====================
             "health_check": [
                 WorkflowStep("failover", "check_all_health", "故障检测"),
@@ -237,7 +237,7 @@ class WorkflowEngine:
                 WorkflowStep("failover", "failover", "故障转移"),
                 WorkflowStep("resilience_system", "check_all", "完整恢复"),
             ],
-            
+
             # ==================== 会话管理工作流 ====================
             "long_conversation": [
                 WorkflowStep("conversation", "get_conversation", "加载对话历史"),
@@ -249,7 +249,7 @@ class WorkflowEngine:
                 WorkflowStep("conversation", "get_conversation", "会话管理"),
                 WorkflowStep("context_compressor", "compress", "上下文压缩"),
             ],
-            
+
             # ==================== Persona 工作流 ====================
             "persona_update": [
                 WorkflowStep("auto_update_persona", "get_stats", "获取统计"),
@@ -259,7 +259,7 @@ class WorkflowEngine:
                 WorkflowStep("auto_learner", "get_recent_learnings", "获取最近学习"),
                 WorkflowStep("importance_scorer", "score", "重要性评分"),
             ],
-            
+
             # ==================== NLP 工作流 ====================
             "nlp_process": [
                 WorkflowStep("nlp_processor", "process_text", "NLP处理"),
@@ -271,7 +271,7 @@ class WorkflowEngine:
                 WorkflowStep("emotion_memory", "get_high_priority_memories", "情感分析"),
                 WorkflowStep("importance_scorer", "score", "重要性评分"),
             ],
-            
+
             # ==================== 集成工作流 ====================
             "knowledge_sync": [
                 WorkflowStep("brain_memory_sync", "search_entries", "同步知识库"),
@@ -282,7 +282,7 @@ class WorkflowEngine:
                 WorkflowStep("crag_pipeline", "run", "CRAG纠错"),
                 WorkflowStep("adaptive_rrf", "get_adjustment_stats", "结果融合"),
             ],
-            
+
             # ==================== 优化工作流 ====================
             "optimization_run": [
                 WorkflowStep("adaptive_hallucination_params", "get_adjustment_stats", "防幻觉参数"),
@@ -294,7 +294,7 @@ class WorkflowEngine:
                 WorkflowStep("rules_manager", "get_rule_summary", "规则管理"),
                 WorkflowStep("enhanced_hallucination_guard", "verify_with_cross_validation", "增强防幻觉"),
             ],
-            
+
             # ==================== 多模态工作流 ====================
             "multi_modal_recall": [
                 WorkflowStep("multimodal_memory", "get", "多模态记忆"),
@@ -302,13 +302,13 @@ class WorkflowEngine:
                 WorkflowStep("emotion_memory", "get_high_priority_memories", "情感排序"),
             ],
 
-            
+
             # ==================== 分布式工作流 ====================
             "distributed_recall": [
                 WorkflowStep("distributed_search", "search", "分布式检索"),
                 WorkflowStep("adaptive_rrf", "get_adjustment_stats", "结果融合"),
             ],
-            
+
             # ==================== 工具注册工作流 ====================
             "tool_register": [
                 WorkflowStep("auto_tuner", "get_results", "自动调优"),
@@ -318,7 +318,7 @@ class WorkflowEngine:
                 WorkflowStep("cache_allocator", "get_status", "缓存分配"),
             ],
         }
-    
+
     def _get_default_input(self, workflow_name: str) -> Dict[str, Any]:
         """为每个工作流提供合适的默认参数"""
         defaults = {
@@ -328,38 +328,38 @@ class WorkflowEngine:
             'content': '测试内容',
             'document': '这是一篇测试文档，包含多个段落和重要信息。',
             'doc_id': 'test_doc_001',
-            
+
             # 向量相关
             'memory_id': 'test_memory_001',
             'memory_metadata': {'type': 'episodic', 'importance': 0.8},
             'created_at': '2026-04-24',
             'entity_count': 5,
             'content_length': 100,
-            
+
             # 检索相关
             'dense_results': [{'id': '1', 'score': 0.9, 'text': '结果1'}],
             'sparse_results': [{'id': '2', 'score': 0.8, 'text': '结果2'}],
             'k': 10,
-            
+
             # 缓存相关
             'query_embedding': [0.1] * 4096,  # 4096维向量
             'response': '这是缓存的响应内容',
             'metadata': {'source': 'test'},
-            
+
             # 知识图谱相关
             'head_entity': '测试实体A',
             'relation': '相关',
             'tail_entity': '测试实体B',
-            
+
             # NLP相关
             'statement': '这是一个需要验证的陈述',
             'claim': '这是一个需要验证的声明',
-            
+
             # 多模态相关
             'image_path': '/tmp/test_image.jpg',
             'image_data': b'fake_image_data',
         }
-        
+
         # 工作流特定的默认值
         workflow_defaults = {
             'adaptive_retrieval': {
@@ -416,28 +416,28 @@ class WorkflowEngine:
                 'k': 5,
             },
         }
-        
+
         # 合并默认值
         result = defaults.copy()
         if workflow_name in workflow_defaults:
             result.update(workflow_defaults[workflow_name])
-        
+
         return result
-    
+
     def get_workflow(self, name: str) -> Optional[List[WorkflowStep]]:
         """获取工作流"""
         return self.workflows.get(name)
-    
+
     def list_workflows(self) -> List[str]:
         """列出所有工作流"""
         return list(self.workflows.keys())
-    
+
     def get_workflow_info(self, name: str) -> Dict[str, Any]:
         """获取工作流信息"""
         workflow = self.workflows.get(name)
         if not workflow:
             return {"error": f"工作流 '{name}' 不存在"}
-        
+
         return {
             "name": name,
             "steps": len(workflow),
@@ -445,18 +445,18 @@ class WorkflowEngine:
             "actions": [step.action for step in workflow],
             "descriptions": [step.description for step in workflow],
         }
-    
+
     def _load_module(self, module_name: str) -> Optional[Any]:
         """加载模块"""
         if module_name in self.module_cache:
             return self.module_cache[module_name]
-        
+
         # 尝试从核心目录加载
         module_path = CORE_DIR / f"{module_name}.py"
         if not module_path.exists():
             logger.warning(f"模块文件不存在: {module_path}")
             return None
-        
+
         try:
             spec = importlib.util.spec_from_file_location(module_name, module_path)
             if spec and spec.loader:
@@ -466,20 +466,20 @@ class WorkflowEngine:
                 return module
         except Exception as e:
             logger.error(f"加载模块 {module_name} 失败: {e}")
-        
+
         return None
-    
+
     def _get_action_func(self, module: Any, action: str, module_name: str) -> Optional[Tuple[Any, bool]]:
         """
         获取动作函数，支持类和模块级函数
-        
+
         返回: (func, is_instance) 或 None
         """
         # 1. 先尝试模块级函数
         action_func = getattr(module, action, None)
         if callable(action_func) and not isinstance(action_func, type):
             return (action_func, False)
-        
+
         # 2. 尝试查找主类并实例化
         # 常见的类名模式: ModuleName, ModuleNameSearcher, ModuleNameManager 等
         potential_class_names = [
@@ -487,7 +487,7 @@ class WorkflowEngine:
             ''.join([w.title() for w in module_name.split('_')]),  # CamelCase
             module_name.title().replace('_', ''),  # PascalCase
         ]
-        
+
         # 也尝试从模块中找第一个类
         for attr_name in dir(module):
             attr = getattr(module, attr_name)
@@ -500,15 +500,15 @@ class WorkflowEngine:
                 except TypeError:
                     # 类需要参数，跳过
                     continue
-        
+
         # 3. 尝试模块的主函数
         for fallback in ['process', 'run', 'execute', 'main']:
             fallback_func = getattr(module, fallback, None)
             if callable(fallback_func) and not isinstance(fallback_func, type):
                 return (fallback_func, False)
-        
+
         return None
-    
+
     def _prepare_call_arg(
         self,
         current_data: Any,
@@ -519,12 +519,12 @@ class WorkflowEngine:
     ) -> Any:
         """
         智能准备调用参数
-        
+
         根据模块和动作的特性，从 current_data 或 input_data 中提取合适的参数
         支持参数签名检测，自动匹配参数名
         """
         import inspect
-        
+
         # 获取方法的参数签名
         param_names = []
         param_defaults = {}
@@ -539,16 +539,16 @@ class WorkflowEngine:
                         param_defaults[pname] = pparam.default
             except Exception:
                 pass
-        
+
         # 收集可用的数据源
         available_data = {}
-        
+
         # 从 input_data 收集
         if isinstance(input_data, dict):
             available_data.update(input_data)
         elif input_data is not None:
             available_data['_input'] = input_data
-            
+
         # 从 current_data 收集
         if isinstance(current_data, dict):
             available_data.update(current_data)
@@ -564,7 +564,7 @@ class WorkflowEngine:
                     available_data.update(first)
                 if first is None and len(current_data) > 1:
                     available_data['_current'] = current_data[1]
-        
+
         # 如果方法需要特定参数名，尝试匹配
         if param_names:
             kwargs = {}
@@ -586,11 +586,11 @@ class WorkflowEngine:
                 # 使用默认值
                 elif pname in param_defaults:
                     kwargs[pname] = param_defaults[pname]
-            
+
             # 如果收集到了参数，返回 kwargs
             if kwargs:
                 return kwargs
-        
+
         # 回退逻辑：返回单个值
         # 如果是第一步，直接用 input_data
         if current_data is None:
@@ -599,7 +599,7 @@ class WorkflowEngine:
                     if key in input_data:
                         return input_data[key]
             return input_data
-        
+
         # 如果 current_data 是元组，提取第一个元素
         if isinstance(current_data, tuple) and len(current_data) > 0:
             first = current_data[0]
@@ -607,7 +607,7 @@ class WorkflowEngine:
                 return first
             if first is None and len(current_data) > 1:
                 return current_data[1]
-        
+
         # 如果 current_data 是字典，尝试提取关键字段
         if isinstance(current_data, dict):
             for key in ['query', 'text', 'content', 'result', 'documents', 'data', 'output', 'generated_text']:
@@ -615,14 +615,14 @@ class WorkflowEngine:
                     return current_data[key]
             if len(current_data) == 1:
                 return list(current_data.values())[0]
-        
+
         # 如果 current_data 是列表
         if isinstance(current_data, list):
             if isinstance(input_data, dict) and 'query' in input_data:
                 return input_data['query']
-        
+
         return current_data
-    
+
     def _execute_step(self, i: int, step: WorkflowStep, input_data: Any, context_results: Dict[int, Any]) -> Tuple[bool, Dict]:
         """执行单步工作流（可被并行调度）"""
         try:
@@ -813,21 +813,21 @@ class WorkflowEngine:
             errors=errors[:10],
             duration_ms=duration_ms
         )
-    
+
     def add_workflow(self, name: str, steps: List[WorkflowStep]) -> bool:
         """添加工作流"""
         if name in self.workflows:
             logger.warning(f"工作流 '{name}' 已存在，将被覆盖")
         self.workflows[name] = steps
         return True
-    
+
     def remove_workflow(self, name: str) -> bool:
         """移除工作流"""
         if name in self.workflows:
             del self.workflows[name]
             return True
         return False
-    
+
     def save_workflows(self) -> bool:
         """保存工作流到配置文件"""
         workflow_config = CONFIG_DIR / "workflows.json"
@@ -860,29 +860,29 @@ class WorkflowEngine:
 # CLI 接口
 if __name__ == "__main__":
     import argparse
-    
+
     parser = argparse.ArgumentParser(description="工作流引擎")
     parser.add_argument("command", choices=["list", "info", "execute", "save"])
     parser.add_argument("--name", help="工作流名称")
     parser.add_argument("--input", help="输入数据")
-    
+
     args = parser.parse_args()
-    
+
     engine = WorkflowEngine()
-    
+
     if args.command == "list":
         print(f"可用工作流 ({len(engine.list_workflows())} 个):")
         for name in sorted(engine.list_workflows()):
             info = engine.get_workflow_info(name)
             print(f"  {name}: {info['steps']} 步")
-    
+
     elif args.command == "info":
         if not args.name:
             print("请指定 --name")
             sys.exit(1)
         info = engine.get_workflow_info(args.name)
         print(json.dumps(info, indent=2, ensure_ascii=False))
-    
+
     elif args.command == "execute":
         if not args.name:
             print("请指定 --name")
@@ -896,7 +896,7 @@ if __name__ == "__main__":
             print("错误:")
             for err in result.errors:
                 print(f"  - {err}")
-    
+
     elif args.command == "save":
         if engine.save_workflows():
             print("工作流已保存")

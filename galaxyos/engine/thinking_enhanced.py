@@ -53,9 +53,9 @@ class ReflexionEntry:
 class ReflexionEngine:
     """
     Reflexion 反思引擎
-    
+
     Shinn et al. (2023)
-    
+
     核心机制：
     - 当 R-CCAM Judge 低分时，分析失败原因，存储反思三元组
     - 下次遇到相似问题，注入反思经验，避免重复犯错
@@ -96,7 +96,7 @@ class ReflexionEngine:
     ):
         """
         记录一次反思（当 Judge 评分低时自动调用）
-        
+
         Args:
             question: 用户问题
             answer: AI回答原文
@@ -161,11 +161,11 @@ class ReflexionEngine:
     def retrieve(self, query: str, top_k: int = 3) -> List[ReflexionEntry]:
         """
         检索相关反思经验（关键词匹配）
-        
+
         Args:
             query: 当前问题
             top_k: 返回条数
-        
+
         Returns:
             相关的反思记录列表
         """
@@ -205,9 +205,9 @@ class ReflexionEngine:
 class SelfRefineLoop:
     """
     Self-Refine 迭代精炼循环
-    
+
     Madaan et al. (2023)
-    
+
     核心机制：
     1. 生成回答
     2. Judge 评分
@@ -239,12 +239,12 @@ class SelfRefineLoop:
     ) -> Tuple[str, List[Dict]]:
         """
         迭代精炼回答
-        
+
         Args:
             question: 用户问题
             initial_answer: 初始回答
             judge_func: 评分函数，返回 (scores_dict, feedback_text)
-        
+
         Returns:
             (最终回答, 各轮评分历史)
         """
@@ -291,7 +291,7 @@ class SelfRefineLoop:
 class MultiPathExplorer:
     """
     多路径并行探索（Tree-of-Thought 风格）
-    
+
     核心机制：
     1. 将问题拆为 3 个不同视角
     2. Flash 并行探索各视角
@@ -311,10 +311,10 @@ class MultiPathExplorer:
     def explore(self, question: str) -> Dict[str, Any]:
         """
         多路径探索
-        
+
         Args:
             question: 用户问题
-        
+
         Returns:
             {
                 "best_answer": 最优路径的回答,
@@ -383,7 +383,7 @@ class MultiPathExplorer:
 class FlashNLP:
     """
     通过 Flash API 完成复杂 NLP 任务
-    
+
     手搓规则只做 0ms 层（分词、关键词抽取），
     语义理解全部交给 Flash。
     """
@@ -394,7 +394,7 @@ class FlashNLP:
     def resolve_coref(self, text: str, context: str = "") -> Dict[str, str]:
         """
         指代消解（Flash 版）
-        
+
         比就近原则规则准确得多，能理解语义上下文。
         """
         if not self.llm_flash:
@@ -429,7 +429,7 @@ class FlashNLP:
     def detect_comparison(self, text: str) -> Optional[Dict]:
         """
         对比检测（Flash 版）
-        
+
         比模板匹配全面得多，覆盖各种中文比较表达。
         """
         if not self.llm_flash:
@@ -468,7 +468,7 @@ class FlashNLP:
     def analyze_intent(self, text: str) -> Dict:
         """
         意图分析（Flash 版）
-        
+
         替代 IntelligentThinkingTrigger 的关键词分类，
         用 Flash 理解真实意图。
         """
@@ -713,7 +713,7 @@ class ThinkingEnhanced:
     def evolve(self) -> Dict[str, Any]:
         """
         内在元认知进化：运行 introspect 后将结果写入 .learnings/
-        
+
         写出的数据不修改 DAG/人格文件，仅作为进化建议供外在元认知层消费。
         """
         result = self.introspect()

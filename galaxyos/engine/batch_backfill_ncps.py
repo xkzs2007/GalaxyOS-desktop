@@ -202,7 +202,7 @@ def create_neurons_from_nodes(nodes: List[Dict], mn) -> Dict[str, str]:
 def create_synapses_from_proximity(nodes: List[Dict], node_to_neuron: Dict[str, str], mn):
     """
     基于会话内的时序邻近创建突触
-    
+
     规则:
     - 同会话内相邻节点（时间排序）→ 权重 0.5
     - 同会话内间隔 1 个节点 → 权重 0.3

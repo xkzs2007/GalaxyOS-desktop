@@ -43,10 +43,10 @@ class ReliabilityDecision:
 class IsUSEPredictor:
     """
     IsUSE 预测器 - 判断生成内容是否可靠
-    
+
     基于 Self-RAG 论文的生成评估模块，通过多维度分析判断
     生成内容的可靠性，检测潜在的幻觉和不一致性。
-    
+
     核心评估维度：
     1. 事实性：内容是否符合已知事实
     2. 一致性：内容是否自洽
@@ -82,7 +82,7 @@ class IsUSEPredictor:
     def __init__(self, config: Optional[Dict] = None):
         """
         初始化 IsUSE 预测器
-        
+
         Args:
             config: 配置字典，可包含：
                 - reliability_threshold: 可靠性阈值，默认 0.65
@@ -113,13 +113,13 @@ class IsUSEPredictor:
     ) -> ReliabilityDecision:
         """
         预测生成内容的可靠性
-        
+
         Args:
             generated_content: 生成的内容
             query: 原始查询
             retrieved_context: 检索到的上下文（可选）
             known_facts: 已知事实列表（可选）
-            
+
         Returns:
             ReliabilityDecision: 可靠性决策结果
         """
@@ -205,12 +205,12 @@ class IsUSEPredictor:
     ) -> Tuple[bool, float]:
         """
         简化接口：判断生成内容是否可靠
-        
+
         Args:
             generated_content: 生成的内容
             query: 原始查询
             retrieved_context: 检索到的上下文
-            
+
         Returns:
             Tuple[bool, float]: (是否可靠, 置信度)
         """
@@ -549,13 +549,13 @@ def is_reliable(
 ) -> Tuple[bool, float]:
     """
     便捷函数：判断生成内容是否可靠
-    
+
     Args:
         content: 生成的内容
         query: 原始查询
         context: 检索到的上下文
         config: 可选配置
-        
+
     Returns:
         Tuple[bool, float]: (是否可靠, 置信度)
     """

@@ -2466,7 +2466,7 @@ class DAGContextManager:
     def get_assets_for_session(self, session_key: str, limit: int = 20) -> List[Dict]:
         """
         获取指定 session 在 AssetRegistry 中对应的知识资产。
-        
+
         从 DAG 库读取该 session 的长内容节点（>200 字符），
         在 AssetRegistry 中搜索对应资产并返回。
         如果资产不存在，即时创建。

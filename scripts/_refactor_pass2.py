@@ -104,7 +104,7 @@ SINGLE_LINE_REPLACE = [
         "path_resolver.XIAOYI_OMEGA_LLM_CONFIG",
         "path_resolver.XIAOYI_OMEGA_LLM_CONFIG"
     ),
-    # XIAOYI_OMEGA_SCRIPTS (single quote)  
+    # XIAOYI_OMEGA_SCRIPTS (single quote)
     (
         "path_resolver.XIAOYI_OMEGA_SCRIPTS",
         "path_resolver.XIAOYI_OMEGA_SCRIPTS"
@@ -193,43 +193,43 @@ def process_file(filepath):
     """Process one file with all replacement rules."""
     with open(filepath, 'r') as f:
         content = f.read()
-    
+
     original = content
     changes = 0
-    
+
     # Multi-line regex replacements
     for pattern, replacement in MULTILINE_REPLACE:
         new_content, n = re.subn(pattern, replacement, content)
         if n > 0:
             content = new_content
             changes += n
-    
+
     # Single-line string replacements
     for old, new in SINGLE_LINE_REPLACE:
         n = content.count(old)
         if n > 0:
             content = content.replace(old, new)
             changes += n
-    
-    # Path.home() regex replacements  
+
+    # Path.home() regex replacements
     for pattern, replacement in PATHHOME_REPLACE:
         new_content, n = re.subn(pattern, replacement, content)
         if n > 0:
             content = new_content
             changes += n
-    
+
     if content != original:
         with open(filepath, 'w') as f:
             f.write(content)
         print(f"  ✓ {os.path.relpath(filepath, WORKSPACE)} ({changes} changes)")
-    
+
     return changes
 
 
 def main():
     total = 0
     files = 0
-    
+
     for root, dirs, fnames in os.walk(WORKSPACE):
         dirs[:] = [d for d in dirs if d not in SKIP]
         for fname in fnames:
@@ -242,7 +242,7 @@ def main():
             if c > 0:
                 total += c
                 files += 1
-    
+
     print(f"\nPass 2 done: {files} more files updated, {total} additional replacements")
 
 

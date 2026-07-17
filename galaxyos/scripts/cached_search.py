@@ -55,10 +55,10 @@ def search_direct(query):
 
         # FTS 搜索
         cursor.execute("""
-            SELECT record_id, content, type, scene_name 
-            FROM l1_fts 
-            WHERE l1_fts MATCH ? 
-            ORDER BY rank 
+            SELECT record_id, content, type, scene_name
+            FROM l1_fts
+            WHERE l1_fts MATCH ?
+            ORDER BY rank
             LIMIT 10
         """, (query,))
 

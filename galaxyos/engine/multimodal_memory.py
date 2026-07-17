@@ -35,7 +35,7 @@ class ImageMemory:
 class MultimodalMemoryStore:
     """
     多模态记忆存储
-    
+
     功能:
     1. 图像理解结果存储
     2. 图像嵌入存储
@@ -119,7 +119,7 @@ class MultimodalMemoryStore:
                     metadata: Optional[Dict] = None) -> str:
         """
         存储图像记忆
-        
+
         Args:
             image_data: 图像二进制数据
             description: 图像描述
@@ -127,7 +127,7 @@ class MultimodalMemoryStore:
             entities: 关联实体列表
             embedding: 图像嵌入向量
             metadata: 元数据
-        
+
         Returns:
             图像记忆 ID
         """
@@ -168,7 +168,7 @@ class MultimodalMemoryStore:
                        metadata: Optional[Dict] = None) -> str:
         """
         从 URL 存储图像记忆
-        
+
         Args:
             image_url: 图像 URL
             description: 图像描述
@@ -176,7 +176,7 @@ class MultimodalMemoryStore:
             entities: 关联实体列表
             embedding: 图像嵌入向量
             metadata: 元数据
-        
+
         Returns:
             图像记忆 ID
         """
@@ -210,11 +210,11 @@ class MultimodalMemoryStore:
                                  source_path: Optional[str] = None) -> str:
         """
         从图像理解结果存储记忆
-        
+
         Args:
             understanding_result: xiaoyi-image-understanding 返回结果
             source_path: 原始图像路径
-        
+
         Returns:
             图像记忆 ID
         """
@@ -256,12 +256,12 @@ class MultimodalMemoryStore:
                tag_filter: Optional[str] = None) -> List[Dict]:
         """
         搜索图像记忆
-        
+
         Args:
             query: 查询文本
             top_k: 返回数量
             tag_filter: 标签过滤
-        
+
         Returns:
             搜索结果列表
         """
@@ -310,11 +310,11 @@ class MultimodalMemoryStore:
                             top_k: int = 10) -> List[Dict]:
         """
         通过嵌入向量搜索
-        
+
         Args:
             query_embedding: 查询嵌入
             top_k: 返回数量
-        
+
         Returns:
             搜索结果列表
         """

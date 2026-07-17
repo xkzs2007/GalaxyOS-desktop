@@ -489,16 +489,16 @@ class ClawWorker:
     def verify_reply_style(self, p: dict) -> dict:
         """
         L2: 回复风格一致性校验（运行时检测）
-        
+
         基于 SOUL.md 中定义的表达规则检查回复是否跑偏。
         轻量级规则检测，不做 LLM 调用。
         """
         reply = p.get("reply", "")
         if not reply:
             return {"ok": False, "issue": "no reply provided", "violations": []}
-        
+
         violations = []
-        
+
         # 1. 破折号检查
         dash_count = reply.count("——")
         if dash_count > 2:
@@ -508,7 +508,7 @@ class ClawWorker:
                 "detail": f"破折号 {dash_count} 处，限制 ≤ 2 处",
                 "count": dash_count,
             })
-        
+
         # 2. AI 连接词检查
         ai_connectors = {"此外": 0, "然而": 0, "值得注意的是": 0, "更重要的是": 0, "总而言之": 0}
         for word in ai_connectors:
@@ -521,7 +521,7 @@ class ClawWorker:
                     "detail": f"'{word}' 出现 {c} 次，限制 ≤ 1 次",
                     "count": c,
                 })
-        
+
         # 3. 否定式排比
         import re
         neg_patterns = [
@@ -538,7 +538,7 @@ class ClawWorker:
                 "detail": f"否定式排比 {neg_count} 次，限制 ≤ 1 次",
                 "count": neg_count,
             })
-        
+
         # 4. 翻译腔检查
         translation_cliches = [
             "这是一个很好的问题", "感谢你的反馈", "从我的角度来看",
@@ -552,7 +552,7 @@ class ClawWorker:
                     "detail": f"发现翻译腔：'{cliche}'",
                     "text": cliche,
                 })
-        
+
         # 5. 宣传性语言
         propaganda_words = ["深刻地", "意义深远", "不可或缺", "历史性的", "里程碑式的"]
         for pw in propaganda_words:
@@ -563,7 +563,7 @@ class ClawWorker:
                     "detail": f"宣传性语言：'{pw}'，建议替换为具体描述",
                     "text": pw,
                 })
-        
+
         # 6. 表格过度（超过3个表格可能太工整）
         table_count = reply.count("|---") + reply.count("| ---")
         if table_count > 3:
@@ -573,10 +573,10 @@ class ClawWorker:
                 "detail": f"发现 {table_count} 个表格，建议精简",
                 "count": table_count // 3,
             })
-        
+
         severity_map = {"error": 3, "warning": 2, "info": 1}
         max_severity = max((severity_map.get(v["severity"], 0) for v in violations), default=0)
-        
+
         return {
             "ok": len(violations) == 0,
             "violations": violations,
@@ -646,7 +646,7 @@ class ClawWorker:
                     open(_RCI_MARKER, "a").write(_tb.format_exc() + "\n")
                 # 触发一次健康检查，让模块懒加载
                 self._entry.health_check()
-                
+
                 # 预加载 LFM2.5-1.2B 模型到内存（神经网络常驻）
                 try:
                     sys.stderr.write("[claw-worker] 预加载 LFM2.5-1.2B-Thinking...\n")
@@ -663,7 +663,7 @@ class ClawWorker:
                 except Exception as _e:
                     sys.stderr.write(f"[claw-worker] LFM 预加载跳过: {_e}\n")
                     self._lfm_preloaded = None
-                
+
                 self._load_hardware()
                 self._load_time_ms = round((time.time() - t0) * 1000, 1)
             except Exception as e:
@@ -1082,7 +1082,7 @@ class ClawWorker:
                 if not VLM_API_KEY:
                     raise RuntimeError("VLM_API_KEY not configured. Set the VLM_API_KEY environment variable.")
                 self._vlm = OpenAI(api_key=VLM_API_KEY, base_url=VLM_BASE_URL)
-            
+
             resp = self._vlm.chat.completions.create(
                 model="glm-4v-plus",
                 messages=[{
@@ -1265,7 +1265,7 @@ class ClawWorker:
         self._ensure()
         session_key = p.get("sessionKey", "") or getattr(self, '_last_session_key', '')
         user_input = p.get("user_input", "")
-        
+
         # 没 session_key 时扫 DAG 找最新活跃 session
         if not session_key:
             try:
@@ -1290,14 +1290,14 @@ class ClawWorker:
                         session_key = _candidates[0][1]
             except Exception:
                 pass
-        
+
         if session_key and user_input:
             try:
                 dag = self._get_dag()
                 dag.add_message_with_scene(session_key, "user", user_input)
             except Exception:
                 pass
-        
+
         if hasattr(self._entry, 'xiaoyi_claw') and self._entry.xiaoyi_claw and hasattr(self._entry.xiaoyi_claw, 'process'):
             _result = self._entry.xiaoyi_claw.process(
                 user_input=user_input,
@@ -1354,7 +1354,7 @@ class ClawWorker:
 
     def vector_info(self, _p: dict) -> dict:
         """跨平台 SIMD 向量计算能力报告
-        
+
         返回当前平台的向量计算后端信息：
         - 架构 (AVX-512/AVX2/AVX/SSE/NEON/SVE/Scalar)
         - SIMD lane 数 (每寄存器并行 float32 数)
@@ -1378,7 +1378,7 @@ class ClawWorker:
 
     def implicit_feedback(self, p: dict) -> dict:
         """隐式偏好学习 — 记录用户纠错/校正信号
-        
+
         当 XiaoYiClawLLM 的 process() 检测到用户不满或纠正时，
         将信号持久化到 .learnings/implicit_preferences.jsonl，
         长期积累可提升重放缓冲区质量。
@@ -1408,7 +1408,7 @@ class ClawWorker:
     def restore_context(self, p: dict) -> dict:
         """
         L3: 跨会话记忆恢复 + 人格恢复联动
-        
+
         从 DAG 检索最近记忆摘要 + 最新人格快照。
         """
         session_key = p.get("sessionKey", "default")
@@ -1425,7 +1425,7 @@ class ClawWorker:
             memory = XiaoyiMemoryV2()
             integration = DAGIntegration(dag, memory=memory)
             summary = integration.cross_session_memory_restore(session_key, recent_days)
-            
+
             # L3: 同时拉最新人格快照
             persona_text = ""
             try:
@@ -1438,14 +1438,14 @@ class ClawWorker:
                     persona_text = persona_nodes[0].content[:2000]
             except Exception:
                 pass
-            
+
             # 如果 DAG 无人格快照，读文件
             if not persona_text:
                 persona_path = os.path.join(WORKSPACE, "persona.md")
                 if os.path.exists(persona_path):
                     with open(persona_path, "r", encoding="utf-8") as f:
                         persona_text = f.read(2000)
-            
+
             return {
                 "restored_text": summary or "",
                 "persona_text": persona_text,
@@ -1457,7 +1457,7 @@ class ClawWorker:
 
     def _get_dag(self):
         """获取 DAGIntegration 实例（懒加载）
-        
+
         DAGIntegration 包裹 DAGContextManager，提供 auto_summarize、
         add_message_with_scene 等完整方法集。
         统一 DB: 优先 workspace，再 fallback HOME。
@@ -1915,7 +1915,7 @@ class ClawWorker:
 
 def _handle_batch(p: dict) -> dict:
     """批量 RPC：一次请求执行多个方法，返回结果数组
-    
+
     params: { calls: [{method, params}, ...] }
     返回: { results: [{result}, ...], count: N }
     """
@@ -2275,7 +2275,7 @@ _REST_ROUTES = {
     "/call_module":            ("call_module",      ["POST"]),
     "/rccam_compact_cycle":    ("rccam_compact_cycle",["POST"]),
     "/expand_rccam_cycle":     ("expand_rccam_cycle",["POST"]),
-    "/cognitive_compress_dag": ("cognitive_compress_dag",["POST"]), 
+    "/cognitive_compress_dag": ("cognitive_compress_dag",["POST"]),
     "/verify_reply_style":     ("verify_reply_style",["POST"]),
 }
 
@@ -2400,7 +2400,7 @@ def _zmq_pub_event(event_type, data):
 
 def _heartbeat_writer_thread():
     """心跳 mmap 线程：每秒刷 8 字节 float64 时间戳到独立文件
-    
+
     插件端只读此文件判断存活，不走 UDS，不抢 GIL。
     结构极简：8 字节 little-endian double，无锁、无序列化、无锁竞争。
     """
@@ -2421,7 +2421,7 @@ def _heartbeat_writer_thread():
 
 def _preload_rccam_deps():
     """Worker 启动时预加载 R-CCAM 核心依赖
-    
+
     避免第一次 rccam() 调用时 import + lazy init 卡死 GIL。
     静默失败，不影响启动。
     """
@@ -2626,7 +2626,7 @@ def main():
             sys.stderr.write(f"[claw-worker] 三论文集成注册: RLM + SKILL0 + MemoryOS\n")
         except Exception as e:
             sys.stderr.write(f"[claw-worker] 三论文集成跳过: {e}\n")
-    
+
     if _WORKER_TIER not in ('hot', ''):  # Cold & Warm 加载重型模块；Hot 跳过
         # v8.1 论文全量集成: 18新模块 × 4管线
         try:
@@ -2635,7 +2635,7 @@ def main():
             sys.stderr.write(f"[claw-worker] v8.1 论文全量集成注册: 22 UDS 方法\n")
         except Exception as e:
             sys.stderr.write(f"[claw-worker] v8.1 论文全量集成跳过: {e}\n")
-    
+
     # 启动记忆巩固后台
     try:
         from memory_consolidation import ConsolidationEngine

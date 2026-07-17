@@ -30,7 +30,7 @@ def softmax(x: List[float], temperature: float = 1.0) -> List[float]:
 def entropy(probs: List[float]) -> float:
     """
     计算归一化香农熵。
-    
+
     H = -sum(p_i * log(p_i + epsilon)) / log(N)
     范围 [0, 1]：
       0 = 完全确定（一个概率接近 1，其余接近 0）

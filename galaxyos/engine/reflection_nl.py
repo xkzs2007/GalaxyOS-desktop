@@ -50,11 +50,11 @@ class NaturalLanguageReflector:
     def process_message(self, message: str, context: str = None) -> dict:
         """
         处理自然语言消息
-        
+
         Args:
             message: 用户消息
             context: 上下文（可选，如之前的 AI 回复）
-        
+
         Returns:
             {
                 "type": "correction" | "query" | "apply" | "none",
@@ -225,12 +225,12 @@ class NaturalLanguageReflector:
 def process_user_message(message: str, context: str = None) -> dict:
     """
     处理用户消息的便捷函数
-    
+
     可在对话中直接调用：
-    
+
     ```python
     from reflection_nl import process_user_message
-    
+
     result = process_user_message("不对，数据仓库应该是 gitee.com/xkzs2007/xkzs")
     if result["action_taken"]:
         print(result["response"])

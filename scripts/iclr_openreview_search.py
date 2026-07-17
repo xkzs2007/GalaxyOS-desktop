@@ -61,7 +61,7 @@ def parse_v2_note(note):
 
 def fetch_submission_note(forum_id):
     """按 forum ID 获取论文原文（submission note）
-    
+
     v2 search 可能返回 review/rebuttal note，它们缺少完整元数据。
     需要通过 forum ID 拿到 submission note 才能获取标题/作者等信息。
     返回完整的 note dict（content 已展平）。
@@ -90,7 +90,7 @@ def fetch_submission_note(forum_id):
 
 def search_openreview(term, venue_values, limit=10, retries=3):
     """通过 OpenReview v2 API 搜索论文（两阶段：搜→查）
-    
+
     阶段1：通过 /notes/search 找到匹配的 forums（可能匹配到 review/rebuttal）
     阶段2：通过按 forum ID 查 /notes 获取 submission note（原文信息）
     """

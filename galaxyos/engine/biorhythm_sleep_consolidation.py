@@ -136,7 +136,7 @@ class DreamFragment:
 class BioRhythmSleepConsolidator:
     """
     仿生睡眠巩固引擎
-    
+
     模拟人类 90 分钟睡眠周期，分为四个阶段：
     1. NREM-SWR — 尖波涟漪: 高频压缩重放高频路径
     2. NREM-CASCADE — 三级同步: 慢波→纺锤波→涟漪级联
@@ -212,16 +212,16 @@ class BioRhythmSleepConsolidator:
     def _nrem_swr_replay(self) -> Dict[str, Any]:
         """
         NREM 尖波涟漪压缩重放
-        
+
         模拟海马体 Sharp-Wave Ripple (200Hz):
         - 从最近高频激活的记忆中选取 batch
         - 按时间顺序"压缩回放"（不是逐条强化，而是
           批量序列式重放，模拟50-100ms回放完整事件序列）
         - 每重放一次，权重呈超线性增长（因为 SWR 是
           高频爆发，不是低频重放）
-        
+
         Reference: Buzsáki 2015, Wilson & McNaughton 1994
-        
+
         Returns:
             统计字典
         """
@@ -286,16 +286,16 @@ class BioRhythmSleepConsolidator:
     def _nrem_cascade_consolidate(self) -> Dict[str, Any]:
         """
         NREM 三级同步巩固
-        
+
         模拟皮层慢波(SO, ~0.8Hz) → 丘脑纺锤波(Spindle, ~14Hz) →
         海马体涟漪(Ripple, ~200Hz) 三级级联:
-        
+
         1. 慢波阶段: 识别低引用但内容重要的长尾记忆
         2. 纺锤波阶段: 突触修剪——清除最弱的连接
         3. 涟漪阶段: 将保留下来的记忆进行跨神经元链接
-        
+
         Reference: Rasch & Born 2013, Diekelmann & Born 2010
-        
+
         Returns:
             统计字典
         """
@@ -400,20 +400,20 @@ class BioRhythmSleepConsolidator:
     def _rem_generative_dream(self) -> Dict[str, Any]:
         """
         REM 生成式梦境
-        
+
         模拟人类 REM 睡眠的"合成式梦境"机制:
         - 不是忠实回放白天经历
         - 而是从多条记忆中提取碎片，随机组合
         - 发现片段之间的隐藏关联
         - 产出"梦境片段"记录
-        
+
         核心: 记忆碎片 → 随机组合 → 语义关联度评估 →
         高关联的碎片形成梦境
-            
-        Reference: 
+
+        Reference:
         - Shin et al. 2017 DeepMind (Generative Replay)
         - Wagner et al. 2004 (Dreaming & consolidation)
-        
+
         Returns:
             统计字典
         """
@@ -557,17 +557,17 @@ class BioRhythmSleepConsolidator:
     def _rem_emotion_integration(self) -> Dict[str, Any]:
         """
         REM 情感整合
-        
+
         模拟 REM 睡眠中的情感记忆再处理和强度衰减:
         1. 扫描所有带情感标签的记忆
         2. 情感强度衰减（睡一觉没那么难受了）
         3. 情感-记忆链接增强（记住"发生了什么"而
             不是"当时多难受"）
-        
-        Reference: 
+
+        Reference:
         - Wamsley 2014, Dreaming and offline consolidation
         - Walker & Stickgold 2013, Sleep, memory, and emotion
-        
+
         Returns:
             统计字典
         """
@@ -628,12 +628,12 @@ class BioRhythmSleepConsolidator:
     def _deep_sleep_migration(self) -> Dict[str, Any]:
         """
         深度睡眠记忆迁移
-        
+
         将短期记忆（已验证 JSONL）中高置信度、过 1 天的
         记忆"迁移"到长期存储（MEMORY.md 或突触网络强化）
-        
+
         Reference: Rasch & Born 2013 (系统巩固)
-        
+
         Returns:
             统计字典
         """
@@ -711,12 +711,12 @@ class BioRhythmSleepConsolidator:
     def _deep_sleep_kg_reasoning(self) -> Dict[str, Any]:
         """
         深度睡眠 KG 图推理
-        
+
         在 DEEP-SLEEP 阶段执行:
         1. 实体消歧: 合并相似实体别名
         2. 社区发现: 检测实体簇,生成社区摘要
         3. 过期边清理: 低置信度 + 超过 30 天的边标记失效
-        
+
         Returns:
             统计字典
         """
@@ -826,12 +826,12 @@ class BioRhythmSleepConsolidator:
     def run_full_sleep_cycle(self) -> Dict[str, Any]:
         """
         执行完整仿生睡眠周期
-        
+
         阶段序列: NREM-SWR → NREM-CASCADE → REM-GENERATIVE
                   → REM-EMOTION → DEEP-SLEEP
-        
+
         每阶段输出日志到 dream_log.jsonl
-        
+
         Returns:
             完整周期的统计数据
         """

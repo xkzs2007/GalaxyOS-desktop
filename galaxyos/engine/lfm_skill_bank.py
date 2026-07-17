@@ -227,7 +227,7 @@ class LfmVerificationReport:
 @dataclass
 class LfmSkill:
     """LFM 技能 — 整合契约 + 协议 + 实例引用
-    
+
     类比 COSPLAY Skill: Part 1=Protocol Store, Part 2=Evidence Store
     """
 
@@ -305,7 +305,7 @@ def compute_segment_effects(
     config: LfmSkillBankConfig,
 ) -> LfmSegmentRecord:
     """从 segment 的起始/结束 predicates 计算效果
-    
+
     类比 COSPLAY effects_compute.py compute_effects()
     """
     p_thresh = config.reliability_min_for_effects
@@ -335,7 +335,7 @@ def _frequent_literals(
     budget: int,
 ) -> Tuple[Set[str], Dict[str, int]]:
     """保留出现频率 ≥ freq_thresh 的字面量，上限 budget
-    
+
     类比 COSPLAY contract_learn.py _frequent_literals()
     """
     qualifying = {
@@ -355,7 +355,7 @@ def learn_effects_contract(
     prev_version: int = 0,
 ) -> LfmSkillEffectsContract:
     """从 segment 实例学习效果契约
-    
+
     类比 COSPLAY contract_learn.py learn_effects_contract()
     """
     n = len(instances)
@@ -417,7 +417,7 @@ def verify_effects_contract(
     config: LfmSkillBankConfig,
 ) -> LfmVerificationReport:
     """验证契约在各实例上的通过率
-    
+
     类比 COSPLAY contract_verify.py verify_effects_contract()
     """
     n = len(instances)
@@ -498,7 +498,7 @@ def refine_effects_contract(
     config: LfmSkillBankConfig,
 ) -> LfmSkillEffectsContract:
     """基于验证报告精炼契约：移除低成功率字面量
-    
+
     类比 COSPLAY contract_refine.py refine_effects_contract()
     """
     refined_add = {
@@ -528,13 +528,13 @@ def refine_effects_contract(
 
 class LfmSkillBank:
     """LFM 技能库 — 类比 COSPLAY SkillBankMVP + 自有增强
-    
+
     核心数据：
       _skills: Dict[str, LfmSkill] — 已验证的技能（已固化）
       _proto_skills: Dict[str, ProtoSkill] — 候选技能（待升级）
       _segments: Dict[str, LfmSegmentRecord] — 所有 segment 记录
       _pending_segments: List[LfmSegmentRecord] — 待处理的 segment
-    
+
     工作流：
       1. ingest_segment() → _pending_segments
       2. discover_proto_skills() → _proto_skills
@@ -646,7 +646,7 @@ class LfmSkillBank:
 
     def discover_proto_skills(self) -> List[str]:
         """从 pending segments 中发现新的 ProtoSkill
-        
+
         策略：
           1. 对 pending segments 按 embedding 余弦相似度聚类
           2. 每个聚类 → 一个 ProtoSkill
@@ -947,7 +947,7 @@ class LfmSkillBank:
 
     def run_maintenance(self) -> Dict[str, Any]:
         """运行一轮完整的 bank maintenance
-        
+
         操作：
           1. Merge — 合并相似技能（Jaccard + cosine + transition 三重校验）
           2. Split — 拆分效果分布过宽的技能
@@ -979,7 +979,7 @@ class LfmSkillBank:
 
     def _run_merge(self) -> List[Dict]:
         """Merge — 检测并合并相似技能
-        
+
         三重校验：
           1. 效果 Jaccard ≥ threshold
           2. Embedding 余弦 ≥ threshold
@@ -1067,7 +1067,7 @@ class LfmSkillBank:
 
     def _run_split(self) -> List[Dict]:
         """Split — 检测效果分布过宽的技能并拆分
-        
+
         策略：对 sub_episodes 做二次聚类，如果出现多个明显不同的效果模式则拆分
         """
         splits: List[Dict] = []
@@ -1125,7 +1125,7 @@ class LfmSkillBank:
 
     def _run_refine(self) -> List[Dict]:
         """Refine — 基于新 segment 更新契约
-        
+
         对所有 active skill：
           1. 收集所有关联 segment
           2. 重新学习契约
@@ -1172,7 +1172,7 @@ class LfmSkillBank:
 
     def _run_retire(self) -> List[str]:
         """Retire — 淘汰长期不用的技能
-        
+
         淘汰条件（满足任一）：
           1. use_count == 0 and 创建超过 90 天
           2. 访问频率 < min_frequency
@@ -1218,7 +1218,7 @@ class LfmSkillBank:
         top_k: int = 5,
     ) -> List[Dict]:
         """检索最相关的 active skills
-        
+
         支持 embedding 相似度检索 + 兜底返回最新技能
         """
         active = [s for s in self._skills.values() if not s.retired]
@@ -1463,14 +1463,14 @@ def extract_segments_from_memory(
     config: Optional[LfmSkillBankConfig] = None,
 ) -> List[LfmSegmentRecord]:
     """从记忆记录列表提取 segment 记录
-    
+
     每条记忆记录应包含：
       - content: 内容文本
       - source/type: 来源类型（tool_call, user_input, ai_response）
       - timestamp: 时间戳
       - embedding: 向量（可选）
       - metadata: 元数据（tool_name, params, result 等）
-    
+
     Predicate 提取策略：
       - tool_call → 以 "tool.{name}.called" 为 event predicate
       - tool_result → 以 "tool.{name}.success/failure" 为 end predicate
@@ -1594,7 +1594,7 @@ def feed_memory_to_skill_bank(
     workspace: Optional[str] = None,
 ) -> Dict:
     """将记忆记录批量喂入 Skill Bank
-    
+
     完整流程：
       1. extract_segments_from_memory → LfmSegmentRecord[]
       2. ingest_segment → skill bank pending queue

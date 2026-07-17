@@ -327,7 +327,7 @@ INSERT INTO l1_vec (record_id, embedding, updated_time) VALUES ('{record_id}', X
   L1 记录: {self.stats['l1_records']} 条
   L1 向量: {self.stats['l1_vectors']} 条
   L1 覆盖率: {100.0 * self.stats['l1_vectors'] / max(self.stats['l1_records'], 1):.1f}%
-  
+
   L0 对话: {self.stats['l0_conversations']} 条
   L0 向量: {self.stats['l0_vectors']} 条
   L0 覆盖率: {100.0 * self.stats['l0_vectors'] / max(self.stats['l0_conversations'], 1):.1f}%

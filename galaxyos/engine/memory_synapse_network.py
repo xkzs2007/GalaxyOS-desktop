@@ -831,11 +831,11 @@ class ActivationSpreader:
     ) -> List[Tuple[MemoryNeuron, float]]:
         """
         查找关联记忆
-        
+
         Args:
             neuron_id: 起始神经元 ID
             top_k: 返回前 K 个
-        
+
         Returns:
             [(神经元, 关联强度), ...]
         """
@@ -855,17 +855,17 @@ class ActivationSpreader:
 class MemorySynapseNetwork:
     """
     记忆突触网络
-    
+
     使用示例:
         network = MemorySynapseNetwork()
-        
+
         # 创建神经元
         n1 = network.create_neuron("Python 项目")
         n2 = network.create_neuron("修复了一个 bug")
-        
+
         # 创建突触连接
         network.create_synapse(n1.id, n2.id)
-        
+
         # 激活传播
         associated = network.find_associated_memories(n1.id)
         for neuron, strength in associated:
@@ -1023,7 +1023,7 @@ if __name__ == "__main__":
 class AdaptiveSynapsePruner:
     """
     自适应突触修剪引擎
-    
+
     动态保留分数 = f(weight, access_freq, recency, emotional_valence, nlp_importance)
     修剪阈值根据全量突触的保留分数分布自适应调整（mean - k * std）
     """
@@ -1052,7 +1052,7 @@ class AdaptiveSynapsePruner:
                                 now: Optional[datetime] = None) -> float:
         """
         计算突触保留分数 [0, 1]
-        
+
         多因子加权综合：
         - 权重因子：当前权重值
         - 频率因子：reinforcement_count 归一化
@@ -1101,7 +1101,7 @@ class AdaptiveSynapsePruner:
     def compute_adaptive_threshold(self, retention_scores: List[float]) -> float:
         """
         自适应修剪阈值
-        
+
         基于保留分数分布：
         threshold = max(mean - k * std, MIN_RETENTION)
         """
@@ -1119,7 +1119,7 @@ class AdaptiveSynapsePruner:
     def get_prune_candidates(self, threshold: Optional[float] = None) -> List[Tuple[str, float, float]]:
         """
         获取待修剪的突触候选列表
-        
+
         Returns:
             [(synapse_id, retention_score, current_weight), ...]
         """
@@ -1149,7 +1149,7 @@ class AdaptiveSynapsePruner:
     def run_prune(self, dry_run: bool = False) -> Dict[str, Any]:
         """
         执行一次自适应修剪
-        
+
         Returns:
             统计结果
         """

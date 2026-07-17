@@ -74,13 +74,13 @@ class RAGResult:
 class SelfRAG:
     """
     Self-RAG 主控制器
-    
+
     实现完整的 Self-RAG 流程，包括：
     - 检索决策 (IsREL)
     - 检索结果评估 (IsSUP)
     - 生成评估 (IsUSE)
     - 迭代优化
-    
+
     特点：
     1. 自适应检索：只在必要时检索
     2. 质量感知：评估每个环节的输出
@@ -95,7 +95,7 @@ class SelfRAG:
     ):
         """
         初始化 Self-RAG
-        
+
         Args:
             retriever: 检索函数，签名: (query: str) -> List[str]
             generator: 生成函数，签名: (query: str, context: str) -> str
@@ -126,11 +126,11 @@ class SelfRAG:
     def process(self, query: str, context: Optional[str] = None) -> RAGResult:
         """
         处理查询的主入口
-        
+
         Args:
             query: 用户查询
             context: 可选的初始上下文
-            
+
         Returns:
             RAGResult: 处理结果
         """
@@ -480,12 +480,12 @@ def create_self_rag(
 ) -> SelfRAG:
     """
     创建 Self-RAG 实例的工厂函数
-    
+
     Args:
         retriever: 检索函数
         generator: 生成函数
         config: 配置字典
-        
+
     Returns:
         SelfRAG: Self-RAG 实例
     """

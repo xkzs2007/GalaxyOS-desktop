@@ -57,7 +57,7 @@ class DependencyParseResult:
 class LightweightDependencyParser:
     """
     轻量依存句法分析器
-    
+
     基于词性模板匹配，不做神经网络。
     覆盖中文核心依存关系：
     - 主谓关系 (SBV): 名词+动词
@@ -104,10 +104,10 @@ class LightweightDependencyParser:
     def parse(self, text: str) -> DependencyParseResult:
         """
         对句子做依存分析
-        
+
         Args:
             text: 输入文本
-        
+
         Returns:
             依存分析结果
         """
@@ -173,9 +173,9 @@ class LightweightDependencyParser:
     def extract_triple(self, text: str) -> Optional[Tuple[str, str, str]]:
         """
         从句子中提取主谓宾三元组
-        
+
         适用：简单的 "主语 + 谓语 + 宾语" 结构
-        
+
         Returns:
             (主语, 谓语, 宾语) 或 None
         """
@@ -217,7 +217,7 @@ class KnowledgeEntity:
 class EntityLinker:
     """
     实体链接器
-    
+
     将 NLP 抽取出的命名实体映射到系统知识库，
     为检索提供精确的实体→文档/记忆跳转。
     """
@@ -305,10 +305,10 @@ class EntityLinker:
     def link(self, text: str) -> List[Tuple[str, KnowledgeEntity, float]]:
         """
         将文本中的实体链接到知识库
-        
+
         Args:
             text: 输入文本
-        
+
         Returns:
             [(匹配文本, 实体, 置信度), ...]
         """
@@ -341,7 +341,7 @@ class EntityLinker:
 class CoreferenceResolver:
     """
     指代消解器
-    
+
     基于就近原则 + 语法角色的代词解析。
     支持：人称代词（它/他/她/它们）、指示代词（这/那/这个/那个）
     """
@@ -387,11 +387,11 @@ class CoreferenceResolver:
     def resolve(self, text: str, context_text: str = "") -> Dict[str, str]:
         """
         解析文本中的代词
-        
+
         Args:
             text: 当前文本
             context_text: 上下文文本（用于提取候选实体）
-        
+
         Returns:
             {代词: 指代对象}
         """
@@ -440,7 +440,7 @@ class ComparisonResult:
 class ComparisonDetector:
     """
     对比句检测器
-    
+
     检测比较关系并抽取：
     - 显式比较：A比B更X, A不如B, A和B一样
     - 隐式比较：A更X（省略B）, A最好（最高级）
@@ -557,10 +557,10 @@ class ComparisonDetector:
     def extract_comparison_graph(self, texts: List[str]) -> List[ComparisonResult]:
         """
         从多条文本中抽取比较关系图谱
-        
+
         Args:
             texts: 文本列表
-        
+
         Returns:
             比较关系列表
         """
@@ -577,7 +577,7 @@ class ComparisonDetector:
 class EnhancedNLP:
     """
     增强 NLP 集成入口
-    
+
     整合依存分析、实体链接、指代消解、对比检测四项能力。
     """
 
@@ -590,11 +590,11 @@ class EnhancedNLP:
     def analyze(self, text: str, context: str = "") -> Dict[str, Any]:
         """
         对文本做全量增强分析
-        
+
         Args:
             text: 输入文本
             context: 上下文文本（用于指代消解）
-        
+
         Returns:
             分析结果字典
         """

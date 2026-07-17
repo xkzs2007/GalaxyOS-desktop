@@ -715,24 +715,24 @@ class RuleUpdater:
 class MemoryReflector:
     """
     记忆反思器 - 统一接口
-    
+
     使用示例:
         reflector = MemoryReflector()
-        
+
         # 记录错误
         error_id = reflector.record_error(
             type="command_failure",
             context="执行向量插入",
             detail="Expected 4096 dimensions but received 1024"
         )
-        
+
         # 检测模式
         pattern = reflector.detect_pattern(error_id)
-        
+
         # 如果检测到模式，生成改进
         if pattern:
             improvement = reflector.generate_improvement(error_id, pattern)
-            
+
             # 应用改进
             if improvement.auto_applicable:
                 reflector.apply_improvement(improvement)
@@ -761,7 +761,7 @@ class MemoryReflector:
     ) -> str:
         """
         记录错误
-        
+
         Args:
             type: 错误类型 (command_failure, api_error, user_correction, etc.)
             context: 错误上下文
@@ -769,7 +769,7 @@ class MemoryReflector:
             source: 错误来源 (command, user, self)
             session_key: 会话 ID
             related_files: 相关文件列表
-        
+
         Returns:
             错误 ID
         """

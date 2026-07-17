@@ -513,7 +513,7 @@ class ClawWorker:
     def verify_reply_style(self, p: dict) -> dict:
         """
         L2: 回复风格一致性校验（运行时检测）
-        
+
         基于 SOUL.md 中定义的表达规则检查回复是否跑偏。
         轻量级规则检测，不做 LLM 调用。
         """
@@ -1302,7 +1302,7 @@ class ClawWorker:
 
     def vector_info(self, _p: dict) -> dict:
         """跨平台 SIMD 向量计算能力报告
-        
+
         返回当前平台的向量计算后端信息：
         - 架构 (AVX-512/AVX2/AVX/SSE/NEON/SVE/Scalar)
         - SIMD lane 数 (每寄存器并行 float32 数)
@@ -1326,7 +1326,7 @@ class ClawWorker:
 
     def implicit_feedback(self, p: dict) -> dict:
         """隐式偏好学习 — 记录用户纠错/校正信号
-        
+
         当 XiaoYiClawLLM 的 process() 检测到用户不满或纠正时，
         将信号持久化到 .learnings/implicit_preferences.jsonl，
         长期积累可提升重放缓冲区质量。
@@ -1356,7 +1356,7 @@ class ClawWorker:
     def restore_context(self, p: dict) -> dict:
         """
         L3: 跨会话记忆恢复 + 人格恢复联动
-        
+
         从 DAG 检索最近记忆摘要 + 最新人格快照。
         """
         session_key = p.get("sessionKey", "default")
@@ -1404,7 +1404,7 @@ class ClawWorker:
 
     def _get_dag(self):
         """获取 DAGIntegration 实例（懒加载）
-        
+
         DAGIntegration 包裹 DAGContextManager，提供 auto_summarize、
         add_message_with_scene 等完整方法集。
         统一 DB: 优先 workspace，再 fallback HOME。
@@ -1862,7 +1862,7 @@ class ClawWorker:
 
 def _handle_batch(p: dict) -> dict:
     """批量 RPC：一次请求执行多个方法，返回结果数组
-    
+
     params: { calls: [{method, params}, ...] }
     返回: { results: [{result}, ...], count: N }
     """
@@ -2345,7 +2345,7 @@ def _zmq_pub_event(event_type, data):
 
 def _heartbeat_writer_thread():
     """心跳 mmap 线程：每秒刷 8 字节 float64 时间戳到独立文件
-    
+
     插件端只读此文件判断存活，不走 UDS，不抢 GIL。
     结构极简：8 字节 little-endian double，无锁、无序列化、无锁竞争。
     """
@@ -2366,7 +2366,7 @@ def _heartbeat_writer_thread():
 
 def _preload_rccam_deps():
     """Worker 启动时预加载 R-CCAM 核心依赖
-    
+
     避免第一次 rccam() 调用时 import + lazy init 卡死 GIL。
     静默失败，不影响启动。
     """

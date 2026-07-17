@@ -17,9 +17,26 @@ from __future__ import annotations
 #  版本号 — 单一定义点
 # ═══════════════════════════════════════════════════════════════════
 
-__version__ = "0.1.4"  # synced from pyproject.toml
+def _read_version() -> str:
+    import importlib.metadata
+    try:
+        return importlib.metadata.version("galaxyos")
+    except importlib.metadata.PackageNotFoundError:
+        pass
+    try:
+        from pathlib import Path
+        v = (Path(__file__).resolve().parent.parent.parent / "pyproject.toml").read_text(encoding="utf-8")
+        for line in v.splitlines():
+            s = line.strip()
+            if s.startswith("version"):
+                return s.split("=", 1)[1].strip().strip('"').strip("'")
+    except Exception:
+        pass
+    return "0.0.0"
+
+__version__ = _read_version()
 GALAXYOS_VERSION = __version__
-VERSION_TUPLE = (0, 1, 4)
+VERSION_TUPLE = tuple(int(x) for x in __version__.split(".")[:3])
 VERSION_CODENAME = "Cognitive Nexus"  # synced from config.version
 
 VERSION_INFO = {
@@ -63,7 +80,7 @@ DEFAULT_MEMORY_LIMIT_MB = 0  # 0 = unlimited
 #  环境变量名
 # ═══════════════════════════════════════════════════════════════════
 
-ENV_OPENCLAW_HOME = "OPENCLAW_HOME"
+ENV_GALAXYOS_HOME = "GALAXYOS_HOME"
 ENV_WORKSPACE = "WORKSPACE"
 ENV_OPENCLAW_WORKSPACE = "OPENCLAW_WORKSPACE"
 ENV_GALAXYOS_VAR_DIR = "GALAXYOS_VAR_DIR"

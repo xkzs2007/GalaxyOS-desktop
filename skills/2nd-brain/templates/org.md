@@ -1,13 +1,13 @@
 ---
 type: org
-name: 
+name:
 org_type:     # company, community, group, agency, etc.
-industry: 
-website: 
+industry:
+website:
 relationship: # client, partner, employer, community, etc.
 contacts: []  # [[people/person-slug]]
 tags: []
-last_updated: 
+last_updated:
 ---
 
 ## Overview
@@ -16,12 +16,12 @@ last_updated:
 
 ## Key People
 
-- 
+-
 
 ## Notes
 
-- 
+-
 
 ## Interactions
 
-- **YYYY-MM**: 
+- **YYYY-MM**:

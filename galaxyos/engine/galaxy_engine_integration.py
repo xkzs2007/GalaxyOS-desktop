@@ -61,7 +61,7 @@ def _lazy(mod_name: str):
 class EngramRetrievalAugmenter:
     """
     Engram 条件记忆 → 检索阶段增强
-    
+
     在 retrieval_phase 中：
       1. 检索前：用 Engram O(1) 快速查找常见模式，预填充结果
       2. 检索后：用 Engram hit_rate 调节 retrieval_confidence
@@ -99,10 +99,10 @@ class EngramRetrievalAugmenter:
     def pre_retrieval_lookup(self, query: str) -> Dict:
         """
         检索前快速条件记忆查找
-        
+
         如果 Engram 命中率高，说明是常见问题模式，
         可以直接提高 retrieval_confidence 或提供预填充答案。
-        
+
         Returns:
             {"hit": bool, "hit_rate": float, "embedding": ...}
         """
@@ -124,7 +124,7 @@ class EngramRetrievalAugmenter:
                             retrieved_count: int) -> float:
         """
         检索后：用 Engram hit_rate 微调 confidence
-        
+
         如果 Engram 命中率高 + 检索结果少 → 降低 confidence（常见问题但没找到）
         如果 Engram 命中率高 + 检索结果多 → 提升 confidence（模式确认）
         """
@@ -165,7 +165,7 @@ class EngramRetrievalAugmenter:
 class DAGLiquidAdviceProvider:
     """
     DAG + Liquid → 给 DAG 上下文管理器提供压缩建议
-    
+
     在 retrieval_phase 中，DAG 上下文组装时调用：
       - should_compact() 判断
       - select_nodes_to_compact() 选择
@@ -200,9 +200,9 @@ class DAGLiquidAdviceProvider:
                            dag_nodes: List[Dict]) -> Dict:
         """
         获取压缩建议（不操作 DAG，只给建议）
-        
+
         Returns:
-            {"should_compact": bool, "readiness": float, 
+            {"should_compact": bool, "readiness": float,
              "candidates": [...], "retain": [...]}
         """
         if not self._ensure():
@@ -275,7 +275,7 @@ def _get_lfm_real() -> Optional[Any]:
 class LFMReasoningChannel:
     """
     LFM 推理通道 — 委托到全局 RealLFMNetwork（与 v8.1 管线共享模型实例）
-    
+
     提供 analyze_query / lfm_reason 接口，
     底层使用 LFM2.5-1.2B-Thinking 真实权重。
     """
@@ -386,7 +386,7 @@ Query: {query}
 class SSMStateTracker:
     """
     SSM 状态预测器 → 跟踪对话状态、记忆热度模式
-    
+
     在 cognition_phase 和 memory_phase 中：
       - 预测用户的"注意力状态"（话题切换/延续）
       - 预测哪些记忆应该被激活
@@ -429,7 +429,7 @@ class SSMStateTracker:
     def on_turn(self, query: str, topic: str = "") -> Dict:
         """
         每轮对话更新状态追踪
-        
+
         Returns:
             {"switch_probability": float, "engagement": float,
              "predicted_next_hour_recalls": int, ...}
@@ -476,7 +476,7 @@ class SSMStateTracker:
 
     def record_memory_access(self, memory_id: str, now: float = None):
         """记录记忆访问（供 SSM 学习时间模式）
-        
+
         SSMStatePredictor.record_recall 的真实签名：
           record_recall(self, memory_ids: List[str])
         """
@@ -498,7 +498,7 @@ class SSMStateTracker:
 class ContinualLearningPipeline:
     """
     ODE-RNN 持续学习管线 → 后台心跳
-    
+
     在心跳周期中：
       1. 收集近期交互数据
       2. 用 EWC 正则项微调 ODE-RNN 参数
@@ -557,7 +557,7 @@ class ContinualLearningPipeline:
     def execute_learning_step(self, max_steps: int = 10) -> Dict:
         """
         执行一次持续学习步骤（心跳调用）
-        
+
         Returns:
             {"learned": int, "ewc_loss": float, "total_steps": int, ...}
         """
@@ -605,7 +605,7 @@ class ContinualLearningPipeline:
     def summarize_patterns(self) -> Dict:
         """
         总结学习到的模式
-        
+
         Returns:
             {"patterns_found": List, "ewc_importance": Dict, ...}
         """
@@ -635,7 +635,7 @@ class ContinualLearningPipeline:
 class GalaxyEngineIntegration:
     """
     Galaxy Engine 顶层集成入口
-    
+
     统一管理所有子模块的初始化、生命周期、状态报告。
     """
 

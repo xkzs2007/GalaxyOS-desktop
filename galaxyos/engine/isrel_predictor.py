@@ -42,10 +42,10 @@ class RetrievalDecision:
 class IsRELPredictor:
     """
     IsREL 预测器 - 判断是否需要检索
-    
+
     基于 Self-RAG 论文的检索决策模块，通过分析查询特征判断是否需要
     从外部知识库检索信息来增强回答。
-    
+
     核心判断逻辑：
     1. 事实性问题 → 需要检索
     2. 时间敏感问题 → 需要检索
@@ -121,7 +121,7 @@ class IsRELPredictor:
     def __init__(self, config: Optional[Dict] = None):
         """
         初始化 IsREL 预测器
-        
+
         Args:
             config: 配置字典，可包含：
                 - confidence_threshold: 置信度阈值，默认 0.7
@@ -144,11 +144,11 @@ class IsRELPredictor:
     def predict(self, query: str, context: Optional[str] = None) -> RetrievalDecision:
         """
         预测是否需要检索
-        
+
         Args:
             query: 用户查询
             context: 可选的上下文信息
-            
+
         Returns:
             RetrievalDecision: 检索决策结果
         """
@@ -193,11 +193,11 @@ class IsRELPredictor:
     def should_retrieve(self, query: str, context: Optional[str] = None) -> Tuple[bool, float]:
         """
         简化接口：判断是否需要检索
-        
+
         Args:
             query: 用户查询
             context: 可选的上下文
-            
+
         Returns:
             Tuple[bool, float]: (是否需要检索, 置信度)
         """
@@ -338,11 +338,11 @@ class IsRELPredictor:
 def should_retrieve(query: str, config: Optional[Dict] = None) -> Tuple[bool, float]:
     """
     便捷函数：判断是否需要检索
-    
+
     Args:
         query: 用户查询
         config: 可选配置
-        
+
     Returns:
         Tuple[bool, float]: (是否需要检索, 置信度)
     """

@@ -23,7 +23,7 @@ except ImportError:
 class KnowledgeGraphGNN(nn.Module):
     """
     图神经网络增强的知识图谱
-    
+
     功能：
     - 整合 GraphSAGE 和 GAT
     - 实体嵌入学习
@@ -292,10 +292,10 @@ class KnowledgeGraphGNN(nn.Module):
     ) -> Optional[torch.Tensor]:
         """
         获取实体嵌入
-        
+
         Args:
             entity_name: 实体名称
-            
+
         Returns:
             实体嵌入向量
         """
@@ -322,12 +322,12 @@ class KnowledgeGraphGNN(nn.Module):
     ) -> List[Tuple[Entity, float]]:
         """
         查询知识图谱
-        
+
         Args:
             query: 查询文本
             top_k: 返回数量
             query_embedding: 查询向量
-            
+
         Returns:
             (实体, 分数) 列表
         """
@@ -368,11 +368,11 @@ class KnowledgeGraphGNN(nn.Module):
     ) -> List[Tuple[Entity, float]]:
         """
         查找相似实体
-        
+
         Args:
             entity_name: 实体名称
             top_k: 返回数量
-            
+
         Returns:
             (实体, 相似度) 列表
         """
@@ -413,11 +413,11 @@ class KnowledgeGraphGNN(nn.Module):
     ) -> Dict[str, Any]:
         """
         获取邻居信息
-        
+
         Args:
             entity_name: 实体名称
             hop: 跳数
-            
+
         Returns:
             邻居信息字典
         """
@@ -491,7 +491,7 @@ class KnowledgeGraphGNN(nn.Module):
 class KnowledgeGraphEncoder(KnowledgeGraphGNN):
     """
     知识图谱编码器
-    
+
     用于下游任务的实体和关系编码
     """
 
@@ -513,12 +513,12 @@ class KnowledgeGraphEncoder(KnowledgeGraphGNN):
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         编码三元组
-        
+
         Args:
             head: 头实体名称
             relation: 关系类型
             tail: 尾实体名称
-            
+
         Returns:
             (头实体嵌入, 关系嵌入, 尾实体嵌入)
         """
@@ -544,13 +544,13 @@ class KnowledgeGraphEncoder(KnowledgeGraphGNN):
     ) -> float:
         """
         计算三元组得分
-        
+
         Args:
             head: 头实体
             relation: 关系
             tail: 尾实体
             scoring_func: 打分函数 ('distmult', 'transe', 'complex')
-            
+
         Returns:
             三元组得分
         """

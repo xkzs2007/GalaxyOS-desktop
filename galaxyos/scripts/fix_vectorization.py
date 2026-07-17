@@ -137,8 +137,8 @@ def fix_vectorization():
 
     # 获取未向量化的对话
     cursor.execute("""
-        SELECT record_id, message_text 
-        FROM l0_conversations 
+        SELECT record_id, message_text
+        FROM l0_conversations
         WHERE record_id NOT IN (SELECT rowid FROM l0_vec_rowids)
         ORDER BY timestamp DESC
     """)

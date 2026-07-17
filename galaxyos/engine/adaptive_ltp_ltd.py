@@ -47,12 +47,12 @@ class LTP_LTDParams:
 class AdaptiveLTP_LTD:
     """
     自适应 LTP/LTD 机制
-    
+
     基于 Hebbian Learning 和 Ebbinghaus 遗忘曲线:
     1. 突触强度应根据使用频率动态调整
     2. 遗忘遵循艾宾浩斯指数衰减规律：R = e^(-t/S)
     3. 重要记忆应该保留更久（记忆强度S更大）
-    
+
     创新点:
     - LTP 强度根据当前权重、激活频率、时间间隔动态计算
     - LTD 衰减率基于艾宾浩斯指数衰减模型
@@ -65,7 +65,7 @@ class AdaptiveLTP_LTD:
     def __init__(self, params: Optional[LTP_LTDParams] = None):
         """
         初始化自适应 LTP/LTD
-        
+
         Args:
             params: 自定义参数
         """
@@ -80,18 +80,18 @@ class AdaptiveLTP_LTD:
     ) -> float:
         """
         动态计算 LTP 强度
-        
+
         考虑因素:
         1. 当前权重（接近上限时减弱增强）
         2. 激活频率（高频激活时增强效果）
         3. 时间间隔（短间隔内重复激活时增强）
         4. 惊讶度调制器 (v3: Titans 门控): modulator > 0 增强LTP，< 0 削弱
-        
+
         Args:
             synapse: 突触状态
             context: 额外上下文
             modulator: 惊讶度调制器（-1~1），来自 NeuralMemoryGate
-        
+
         Returns:
             LTP 强度
         """
@@ -155,7 +155,7 @@ class AdaptiveLTP_LTD:
     def _calc_memory_strength(self, synapse: SynapseState) -> float:
         """
         计算记忆强度 S（艾宾浩斯曲线参数）
-        
+
         决定遗忘曲线 R = e^(-t/S) 的陡峭程度。
         强化次数越多、重要性越高 → S 越大 → 曲线越平缓 → 忘得越慢。
         """
@@ -170,9 +170,9 @@ class AdaptiveLTP_LTD:
     def _calc_retention(self, synapse: SynapseState, days_unused: float) -> float:
         """
         计算当前保留率（艾宾浩斯遗忘曲线）
-        
+
         R = e^(-t/S)
-        
+
         返回 0~1 的保留率。保留率越低，LTD 衰减量越大。
         """
         if days_unused <= 0:
@@ -187,16 +187,16 @@ class AdaptiveLTP_LTD:
     ) -> float:
         """
         基于艾宾浩斯遗忘曲线计算 LTD 衰减率
-        
+
         核心逻辑：
         - 遗忘不是匀速发生，而是指数衰减 R = e^(-t/S)
         - S（记忆强度）由回忆次数×重要性决定
         - 每条记忆有独立的遗忘曲线，非固定阈值触发
-        
+
         Args:
             synapse: 突触状态
             days_unused: 未使用天数（可选，自动计算）
-        
+
         Returns:
             LTD 衰减率（权重的减少量）
         """
@@ -239,11 +239,11 @@ class AdaptiveLTP_LTD:
     ) -> SynapseState:
         """
         应用 LTP（长时程增强）
-        
+
         Args:
             synapse: 突触状态
             context: 额外上下文
-        
+
         Returns:
             更新后的突触状态
         """
@@ -264,11 +264,11 @@ class AdaptiveLTP_LTD:
     ) -> SynapseState:
         """
         应用 LTD（长时程抑制）
-        
+
         Args:
             synapse: 突触状态
             days_unused: 未使用天数
-        
+
         Returns:
             更新后的突触状态
         """

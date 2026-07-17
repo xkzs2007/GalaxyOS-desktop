@@ -53,7 +53,7 @@ class NLPConfig:
 class NLPIntegration:
     """
     NLP 整合器
-    
+
     作为 NLP 模块与系统其他模块的桥梁。
     """
 
@@ -75,7 +75,7 @@ class NLPIntegration:
     ):
         """
         初始化整合器
-        
+
         Args:
             config: NLP 配置
             embedding_func: 向量化函数（来自系统的 embedding 模块）
@@ -108,12 +108,12 @@ class NLPIntegration:
     ) -> NLPResult:
         """
         处理文本
-        
+
         Args:
             text: 输入文本
             tasks: 任务列表
             use_cache: 是否使用缓存
-            
+
         Returns:
             NLP 结果
         """
@@ -185,11 +185,11 @@ class NLPIntegration:
     def extract_memory_keywords(self, text: str, top_k: int = 10) -> List[str]:
         """
         为记忆模块提取关键词
-        
+
         Args:
             text: 记忆文本
             top_k: 返回数量
-            
+
         Returns:
             关键词列表
         """
@@ -199,10 +199,10 @@ class NLPIntegration:
     def extract_memory_entities(self, text: str) -> Dict[str, List[str]]:
         """
         为记忆模块提取实体
-        
+
         Args:
             text: 记忆文本
-            
+
         Returns:
             {实体类型: [实体列表]}
         """
@@ -219,12 +219,12 @@ class NLPIntegration:
     def calculate_memory_importance(self, text: str) -> float:
         """
         计算记忆重要性
-        
+
         基于情感强度、实体数量、关键词密度
-        
+
         Args:
             text: 记忆文本
-            
+
         Returns:
             重要性分数 (0-1)
         """
@@ -257,10 +257,10 @@ class NLPIntegration:
     def tokenize_for_search(self, text: str) -> List[str]:
         """
         为检索模块分词
-        
+
         Args:
             text: 查询文本
-            
+
         Returns:
             分词列表
         """
@@ -270,10 +270,10 @@ class NLPIntegration:
     def get_search_terms(self, text: str) -> Dict[str, Any]:
         """
         获取检索术语
-        
+
         Args:
             text: 查询文本
-            
+
         Returns:
             {
                 'tokens': 分词列表,
@@ -292,10 +292,10 @@ class NLPIntegration:
     def expand_query(self, query: str) -> List[str]:
         """
         查询扩展
-        
+
         Args:
             query: 原始查询
-            
+
         Returns:
             扩展后的查询列表
         """
@@ -320,10 +320,10 @@ class NLPIntegration:
     def check_claim_sentiment(self, claim: str) -> Dict[str, Any]:
         """
         检查声明的情感倾向
-        
+
         Args:
             claim: 声明文本
-            
+
         Returns:
             情感分析结果
         """
@@ -339,11 +339,11 @@ class NLPIntegration:
     def compare_texts(self, text1: str, text2: str) -> Dict[str, Any]:
         """
         比较两段文本
-        
+
         Args:
             text1: 文本1
             text2: 文本2
-            
+
         Returns:
             {
                 'similarity': 相似度,
@@ -376,11 +376,11 @@ class NLPIntegration:
     def detect_contradiction(self, text1: str, text2: str) -> Dict[str, Any]:
         """
         检测矛盾
-        
+
         Args:
             text1: 文本1
             text2: 文本2
-            
+
         Returns:
             {
                 'has_contradiction': 是否矛盾,
@@ -424,10 +424,10 @@ class NLPIntegration:
     def extract_triples(self, text: str) -> List[Dict[str, str]]:
         """
         提取三元组（简化版）
-        
+
         Args:
             text: 输入文本
-            
+
         Returns:
             [{'subject': ..., 'predicate': ..., 'object': ...}, ...]
         """
@@ -468,7 +468,7 @@ class NLPIntegration:
     def register_callback(self, event: str, callback: Callable):
         """
         注册回调函数
-        
+
         Args:
             event: 事件名称
             callback: 回调函数
@@ -518,11 +518,11 @@ def get_nlp_integration(
 ) -> NLPIntegration:
     """
     获取全局 NLP 整合器实例
-    
+
     Args:
         config: NLP 配置
         embedding_func: 向量化函数
-        
+
     Returns:
         NLP 整合器实例
     """
@@ -539,10 +539,10 @@ def get_nlp_integration(
 def init_nlp(embedding_func: Optional[Callable] = None) -> NLPIntegration:
     """
     初始化 NLP 模块
-    
+
     Args:
         embedding_func: 向量化函数
-        
+
     Returns:
         NLP 整合器实例
     """
