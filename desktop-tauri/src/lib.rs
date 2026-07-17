@@ -5,9 +5,11 @@ mod backend;
 mod commands;
 
 pub struct AppState {
-    swarm_process: Mutex<Option<std::process::Child>>,
+    swarm_agentserver: Mutex<Option<std::process::Child>>,
+    swarm_gateway: Mutex<Option<std::process::Child>>,
     galaxyos_process: Mutex<Option<std::process::Child>>,
     swarm_port: u16,
+    gateway_port: u16,
     galaxyos_port: u16,
     locale: Mutex<String>,
 }
@@ -18,9 +20,11 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_process::init())
         .manage(AppState {
-            swarm_process: Mutex::new(None),
+            swarm_agentserver: Mutex::new(None),
+            swarm_gateway: Mutex::new(None),
             galaxyos_process: Mutex::new(None),
             swarm_port: 19000,
+            gateway_port: 5173,
             galaxyos_port: 8765,
             locale: Mutex::new("zh".into()),
         })

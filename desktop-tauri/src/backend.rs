@@ -45,6 +45,7 @@ fn emit_status(handle: &AppHandle, event: StartupStatusEvent) {
 pub async fn start_all(state: &AppState, handle: &AppHandle) -> Result<(), String> {
     let galaxyos_port = state.galaxyos_port;
     let swarm_port = state.swarm_port;
+    let gateway_port = state.gateway_port;
 
     emit_status(handle, StartupStatusEvent {
         stage: "McpStarting".into(),
@@ -70,6 +71,8 @@ pub async fn start_all(state: &AppState, handle: &AppHandle) -> Result<(), Strin
                 gateway_healthy: false,
                 agent_core_available: false,
                 fallback_active: false,
+                eui_neo_healthy: false,
+                native_render_available: false,
                 error: Some(StartupError {
                     stage: "McpStarting".into(),
                     error_type: "process_spawn".into(),
@@ -119,6 +122,7 @@ pub async fn start_all(state: &AppState, handle: &AppHandle) -> Result<(), Strin
         }
     }
 
+    // Start AgentServer first
     emit_status(handle, StartupStatusEvent {
         stage: "SwarmStarting".into(),
         mcp_healthy: true,
@@ -132,65 +136,82 @@ pub async fn start_all(state: &AppState, handle: &AppHandle) -> Result<(), Strin
         error: None,
     });
 
-    match start_swarm_agentserver(swarm_port) {
-        Ok(swarm_child) => {
-            *state.swarm_process.lock().map_err(|e| e.to_string())? = Some(swarm_child);
+    let agentserver_ok = match start_swarm_agentserver(swarm_port) {
+        Ok(child) => {
+            *state.swarm_agentserver.lock().map_err(|e| e.to_string())? = Some(child);
             match wait_for_health(swarm_port, "agentserver", 60).await {
                 Ok(_) => {
-                    emit_status(handle, StartupStatusEvent {
-                        stage: "SwarmReady".into(),
-                        mcp_healthy: true,
-                        agentserver_healthy: true,
-                        swarm_healthy: true,
-                        gateway_healthy: true,
-                        agent_core_available: true,
-                        fallback_active: false,
-                        eui_neo_healthy: false,
-                        native_render_available: false,
-                        error: None,
-                    });
-                    log::info!("All backends started: galaxyos=:{} agentserver=:{}", galaxyos_port, swarm_port);
+                    log::info!("AgentServer started on port {}", swarm_port);
+                    true
                 }
                 Err(e) => {
-                    log::warn!("AgentServer health check failed: {}, degrading to SwarmDegraded", e);
-                    emit_status(handle, StartupStatusEvent {
-                        stage: "SwarmDegraded".into(),
-                        mcp_healthy: true,
-                        agentserver_healthy: false,
-                        swarm_healthy: false,
-                        gateway_healthy: false,
-                        agent_core_available: true,
-                        fallback_active: true,
-                        eui_neo_healthy: false,
-                        native_render_available: false,
-                        error: None,
-                    });
+                    log::warn!("AgentServer health check failed: {}", e);
+                    false
                 }
             }
         }
         Err(e) => {
-            log::warn!("AgentServer start failed: {}, degrading to SwarmDegraded", e);
-            emit_status(handle, StartupStatusEvent {
-                stage: "SwarmDegraded".into(),
-                mcp_healthy: true,
-                agentserver_healthy: false,
-                swarm_healthy: false,
-                gateway_healthy: false,
-                agent_core_available: true,
-                fallback_active: true,
-                eui_neo_healthy: false,
-                native_render_available: false,
-                error: None,
-            });
+            log::warn!("AgentServer start failed: {}", e);
+            false
         }
+    };
+
+    // Start Gateway (frontend connects to Gateway WebSocket, not AgentServer directly)
+    let gateway_ok = match start_swarm_gateway(gateway_port) {
+        Ok(child) => {
+            *state.swarm_gateway.lock().map_err(|e| e.to_string())? = Some(child);
+            match wait_for_health(gateway_port, "gateway", 30).await {
+                Ok(_) => {
+                    log::info!("Gateway started on port {}", gateway_port);
+                    true
+                }
+                Err(e) => {
+                    log::warn!("Gateway health check failed: {}", e);
+                    false
+                }
+            }
+        }
+        Err(e) => {
+            log::warn!("Gateway start failed: {}", e);
+            false
+        }
+    };
+
+    if agentserver_ok && gateway_ok {
+        emit_status(handle, StartupStatusEvent {
+            stage: "SwarmReady".into(),
+            mcp_healthy: true,
+            agentserver_healthy: true,
+            swarm_healthy: true,
+            gateway_healthy: true,
+            agent_core_available: true,
+            fallback_active: false,
+            eui_neo_healthy: false,
+            native_render_available: false,
+            error: None,
+        });
+    } else {
+        log::warn!("Swarm degraded: agentserver={}, gateway={}", agentserver_ok, gateway_ok);
+        emit_status(handle, StartupStatusEvent {
+            stage: "SwarmDegraded".into(),
+            mcp_healthy: true,
+            agentserver_healthy: agentserver_ok,
+            swarm_healthy: agentserver_ok,
+            gateway_healthy: gateway_ok,
+            agent_core_available: true,
+            fallback_active: true,
+            eui_neo_healthy: false,
+            native_render_available: false,
+            error: None,
+        });
     }
 
     emit_status(handle, StartupStatusEvent {
         stage: "AgentCoreReady".into(),
         mcp_healthy: true,
-        agentserver_healthy: state.swarm_process.lock().map(|g| g.is_some()).unwrap_or(false),
-        swarm_healthy: state.swarm_process.lock().map(|g| g.is_some()).unwrap_or(false),
-        gateway_healthy: state.swarm_process.lock().map(|g| g.is_some()).unwrap_or(false),
+        agentserver_healthy: state.swarm_agentserver.lock().map(|g| g.is_some()).unwrap_or(false),
+        swarm_healthy: state.swarm_agentserver.lock().map(|g| g.is_some()).unwrap_or(false),
+        gateway_healthy: state.swarm_gateway.lock().map(|g| g.is_some()).unwrap_or(false),
         agent_core_available: true,
         fallback_active: false,
         eui_neo_healthy: false,
@@ -203,7 +224,13 @@ pub async fn start_all(state: &AppState, handle: &AppHandle) -> Result<(), Strin
 }
 
 pub fn stop_all(state: &AppState) -> Result<(), String> {
-    if let Ok(mut guard) = state.swarm_process.lock() {
+    if let Ok(mut guard) = state.swarm_gateway.lock() {
+        if let Some(ref mut child) = *guard {
+            let _ = child.kill();
+        }
+        *guard = None;
+    }
+    if let Ok(mut guard) = state.swarm_agentserver.lock() {
         if let Some(ref mut child) = *guard {
             let _ = child.kill();
         }
@@ -254,6 +281,20 @@ fn start_swarm_agentserver(port: u16) -> Result<std::process::Child, String> {
     #[cfg(windows)]
     cmd.creation_flags(CREATE_NO_WINDOW);
     cmd.spawn().map_err(|e| format!("Failed to start AgentServer: {}", e))
+}
+
+fn start_swarm_gateway(port: u16) -> Result<std::process::Child, String> {
+    let python = find_python()?;
+    let mut cmd = Command::new(&python);
+    cmd.args(["-m", "jiuwenswarm.gateway.app_gateway"])
+        .env("GATEWAY_HOST", "127.0.0.1")
+        .env("GATEWAY_PORT", &port.to_string())
+        .env("GALAXYOS_MODE", "desktop")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    #[cfg(windows)]
+    cmd.creation_flags(CREATE_NO_WINDOW);
+    cmd.spawn().map_err(|e| format!("Failed to start Gateway: {}", e))
 }
 
 fn find_galaxyos_binary() -> Result<BinaryResult, String> {
