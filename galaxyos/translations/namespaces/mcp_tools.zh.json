@@ -1,0 +1,23 @@
+{
+  "galaxy_pool.description": "GalaxyPool 全系统运行状态查询",
+  "claw_rccam_progress.description": "R-CCAM 认知循环实时进度查询",
+  "claw_recall.description": "深度语义记忆检索（CRAG + GraphRAG + RAPTOR + Self-RAG + 液态神经记忆）",
+  "claw_lobster.description": "Lobster 管道执行",
+  "claw_health.description": "系统健康检查（17 层架构 + Worker Tier + 记忆系统 + R-CCAM + Agent 运行时状态）",
+  "claw_vector_info.description": "向量计算能力查询",
+  "claw_events.description": "事件日志查询（基于 TKG 时序知识图谱）",
+  "claw_store.description": "记忆存储（液态神经记忆 + DAG 上下文 + agent-core 上下文双写）",
+  "claw_verify.description": "幻觉验证（10 重交叉验证 + 多源证据）",
+  "claw_rccam.description": "R-CCAM 认知循环（Retrieval→Cognition→Control→Action→Memory）",
+  "claw_save_memory.description": "记忆持久化（记忆巩固 + 艾宾浩斯遗忘曲线）",
+  "claw_compile_skill.description": "Skill 编译（SkVM + COSPLAY 技能自演化）",
+  "claw_asset_search.description": "KnowledgeAsset 搜索（MemGAS-SkVM 融合系统）",
+  "claw_asset_register.description": "KnowledgeAsset 注册",
+  "claw_node_invoke.description": "Node 外设调用（拍照/定位/录屏/健康数据）",
+  "skill_execute.description": "技能执行（经 AgentCoreBridge 路由到 ReActAgent/WorkflowAgent）",
+  "skill_install.description": "技能安装（source + scope + workspace_id）",
+  "skill_discover.description": "技能发现（invocation_type + query + workspace_id）",
+  "skill_compile.description": "技能编译（skill_name + skill_content + workspace_id）",
+  "llm_call.description": "LLM 调用（经 GalaxyOS LLM Router 直接路由）",
+  "tokui_render.description": "TokUI 结构化 UI 渲染（生成 DSL + SSE 流式推送到前端）"
+}

@@ -37,5 +37,36 @@ pub async fn check_health(state: tauri::State<'_, AppState>) -> Result<serde_jso
     Ok(serde_json::json!({
         "agentserver": agentserver_ok,
         "galaxyos": galaxyos_ok,
+        "eui_neo": {
+            "status": "unavailable",
+            "native_render_available": false,
+        },
     }))
+}
+
+#[tauri::command]
+pub async fn get_locale(state: tauri::State<'_, AppState>) -> Result<String, String> {
+    let locale = state.locale.lock().map_err(|e| e.to_string())?;
+    Ok(locale.clone())
+}
+
+#[tauri::command]
+pub async fn set_locale(locale: String, state: tauri::State<'_, AppState>, handle: tauri::AppHandle) -> Result<String, String> {
+    let supported = vec!["zh", "en"];
+    if !supported.contains(&locale.as_str()) {
+        return Err(format!("Unsupported locale: {}", locale));
+    }
+    {
+        let mut l = state.locale.lock().map_err(|e| e.to_string())?;
+        *l = locale.clone();
+    }
+    if let Err(e) = handle.emit("galaxyos://locale-changed", &locale) {
+        log::warn!("Failed to emit locale_changed: {}", e);
+    }
+    Ok(locale)
+}
+
+#[tauri::command]
+pub async fn get_supported_locales() -> Result<serde_json::Value, String> {
+    Ok(serde_json::json!(["zh", "en"]))
 }

@@ -1,0 +1,13 @@
+{
+  "TOKUI_UNKNOWN_COMPONENT": "Unknown component type",
+  "TOKUI_INVALID_JSON": "Attributes must be valid JSON",
+  "TOKUI_RENDER_FAILED": "TokUI render failed",
+  "MCP_CONNECTION_FAILED": "MCP connection failed",
+  "MCP_TOOL_NOT_FOUND": "Tool not found",
+  "AGENT_CORE_UNAVAILABLE": "Agent Core unavailable",
+  "SWARM_CONNECTION_FAILED": "JiuwenSwarm connection failed",
+  "SSE_CONNECTION_FAILED": "SSE connection failed",
+  "EUI_NEO_LOAD_FAILED": "EUI-NEO load failed",
+  "EUI_NEO_FFI_TIMEOUT": "EUI-NEO FFI call timeout",
+  "DSL_BRIDGE_CONVERSION_FAILED": "DSL Bridge conversion failed"
+}

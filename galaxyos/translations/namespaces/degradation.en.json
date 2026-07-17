@@ -1,0 +1,11 @@
+{
+  "tokui_unknown_component": "Component {component_type} unavailable, degraded to plain text",
+  "tokui_render_timeout": "Response generation timeout, displaying partial results",
+  "tokui_handler_unregistered": "Event handler unregistered, skipping callback",
+  "eui_neo_init_failure": "EUI-NEO initialization failed, degraded to WebView rendering",
+  "eui_neo_surface_crash": "Native render surface crashed, auto-rebuilding",
+  "eui_neo_ffi_timeout": "FFI call timeout, degraded to WebView rendering",
+  "dsl_bridge_failure": "DSL Bridge conversion failed, skipping unsupported components",
+  "sse_disconnected": "SSE connection lost, degraded to WebSocket transport",
+  "chat_frontend_fallback": "Chat frontend load failed, falling back to JiuwenSwarm ChatPanel"
+}

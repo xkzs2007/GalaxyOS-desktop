@@ -23,6 +23,8 @@ struct StartupStatusEvent {
     gateway_healthy: bool,
     agent_core_available: bool,
     fallback_active: bool,
+    eui_neo_healthy: bool,
+    native_render_available: bool,
     error: Option<StartupError>,
 }
 
@@ -52,6 +54,8 @@ pub async fn start_all(state: &AppState, handle: &AppHandle) -> Result<(), Strin
         gateway_healthy: false,
         agent_core_available: false,
         fallback_active: false,
+        eui_neo_healthy: false,
+        native_render_available: false,
         error: None,
     });
 
@@ -88,6 +92,8 @@ pub async fn start_all(state: &AppState, handle: &AppHandle) -> Result<(), Strin
                 gateway_healthy: false,
                 agent_core_available: false,
                 fallback_active: false,
+                eui_neo_healthy: false,
+                native_render_available: false,
                 error: None,
             });
         }
@@ -100,6 +106,8 @@ pub async fn start_all(state: &AppState, handle: &AppHandle) -> Result<(), Strin
                 gateway_healthy: false,
                 agent_core_available: false,
                 fallback_active: false,
+                eui_neo_healthy: false,
+                native_render_available: false,
                 error: Some(StartupError {
                     stage: "McpStarting".into(),
                     error_type: "health_timeout".into(),
@@ -119,6 +127,8 @@ pub async fn start_all(state: &AppState, handle: &AppHandle) -> Result<(), Strin
         gateway_healthy: false,
         agent_core_available: false,
         fallback_active: false,
+        eui_neo_healthy: false,
+        native_render_available: false,
         error: None,
     });
 
@@ -135,6 +145,8 @@ pub async fn start_all(state: &AppState, handle: &AppHandle) -> Result<(), Strin
                         gateway_healthy: true,
                         agent_core_available: true,
                         fallback_active: false,
+                        eui_neo_healthy: false,
+                        native_render_available: false,
                         error: None,
                     });
                     log::info!("All backends started: galaxyos=:{} agentserver=:{}", galaxyos_port, swarm_port);
@@ -149,6 +161,8 @@ pub async fn start_all(state: &AppState, handle: &AppHandle) -> Result<(), Strin
                         gateway_healthy: false,
                         agent_core_available: true,
                         fallback_active: true,
+                        eui_neo_healthy: false,
+                        native_render_available: false,
                         error: None,
                     });
                 }
@@ -164,6 +178,8 @@ pub async fn start_all(state: &AppState, handle: &AppHandle) -> Result<(), Strin
                 gateway_healthy: false,
                 agent_core_available: true,
                 fallback_active: true,
+                eui_neo_healthy: false,
+                native_render_available: false,
                 error: None,
             });
         }
@@ -177,6 +193,8 @@ pub async fn start_all(state: &AppState, handle: &AppHandle) -> Result<(), Strin
         gateway_healthy: state.swarm_process.lock().map(|g| g.is_some()).unwrap_or(false),
         agent_core_available: true,
         fallback_active: false,
+        eui_neo_healthy: false,
+        native_render_available: false,
         error: None,
     });
 

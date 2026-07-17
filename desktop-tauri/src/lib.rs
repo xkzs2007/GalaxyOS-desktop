@@ -9,6 +9,7 @@ pub struct AppState {
     galaxyos_process: Mutex<Option<std::process::Child>>,
     swarm_port: u16,
     galaxyos_port: u16,
+    locale: Mutex<String>,
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -21,11 +22,15 @@ pub fn run() {
             galaxyos_process: Mutex::new(None),
             swarm_port: 19000,
             galaxyos_port: 8765,
+            locale: Mutex::new("zh".into()),
         })
         .invoke_handler(tauri::generate_handler![
             commands::start_backends,
             commands::stop_backends,
             commands::check_health,
+            commands::get_locale,
+            commands::set_locale,
+            commands::get_supported_locales,
         ])
         .setup(|app| {
             let handle = app.handle().clone();
