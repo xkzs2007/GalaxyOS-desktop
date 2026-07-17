@@ -78,6 +78,8 @@ models/**/model_q4.onnx
 
 # Rust/Cargo build cache
 extensions/galaxyos/native/target/
+desktop-tauri/target/
+desktop-tauri/Cargo.lock
 extensions/galaxyos/var/
 workspace/
 
@@ -86,6 +88,8 @@ _eval/
 .arts/
 logs/
 _*.py
+build_log.txt
+cargo_check_output.txt
 
 # ── vendor（CI 单独 checkout，不入库）──
 vendor/
