@@ -1,4 +1,5 @@
 use crate::AppState;
+use tauri::Emitter;
 
 #[tauri::command]
 pub async fn start_backends(state: tauri::State<'_, AppState>, handle: tauri::AppHandle) -> Result<String, String> {
