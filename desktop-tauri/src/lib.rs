@@ -58,6 +58,8 @@ pub fn run() {
             eui_neo::update_surface,
             eui_neo::check_eui_neo_health,
             eui_neo::rebuild_surface,
+            eui_neo::open_cognitive_overlay,
+            eui_neo::close_cognitive_overlay,
         ])
         .setup(|app| {
             let handle = app.handle().clone();

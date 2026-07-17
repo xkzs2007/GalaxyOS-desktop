@@ -121,7 +121,14 @@ jobs:
 
       - name: Checkout JiuwenSwarm
         shell: bash
-        run: GIT_LFS_SKIP_SMUDGE=1 git clone --depth 1 https://github.com/openJiuwen-ai/jiuwenswarm.git jiuwenswarm
+        run: |
+          if git ls-remote https://github.com/xkzs2007/jiuwenswarm.git HEAD 2>/dev/null; then
+            echo "Using GalaxyOS fork of JiuwenSwarm"
+            GIT_LFS_SKIP_SMUDGE=1 git clone --depth 1 https://github.com/xkzs2007/jiuwenswarm.git jiuwenswarm
+          else
+            echo "GalaxyOS fork not found, using upstream JiuwenSwarm"
+            GIT_LFS_SKIP_SMUDGE=1 git clone --depth 1 https://github.com/openJiuwen-ai/jiuwenswarm.git jiuwenswarm
+          fi
 
       - name: Set up Node.js
         uses: actions/setup-node@v4

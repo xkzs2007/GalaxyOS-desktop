@@ -325,3 +325,92 @@ pub async fn rebuild_surface(
         })),
     }
 }
+
+#[tauri::command]
+pub async fn open_cognitive_overlay(
+    position: String,
+    width: f64,
+    height: f64,
+    state: tauri::State<'_, crate::AppState>,
+    handle: tauri::AppHandle,
+) -> Result<serde_json::Value, String> {
+    let label = format!("cognitive-overlay-{}", chrono_like_timestamp());
+
+    let mut ctx = state.eui_neo_context.lock().map_err(|e| e.to_string())?;
+
+    if !ctx.surface_manager.native_available {
+        return Ok(serde_json::json!({
+            "status": "fallback_webview",
+            "label": label,
+            "message": "EUI-NEO native not available, using webview overlay",
+        }));
+    }
+
+    let surface_id = format!("cognitive-overlay-{}", chrono_like_timestamp());
+    let config = SurfaceConfig {
+        surface_id: surface_id.clone(),
+        surface_type: "cognitive_overlay".to_string(),
+        position: position.clone(),
+        width: width as u32,
+        height: height as u32,
+    };
+
+    match ctx.surface_manager.create_surface(&config) {
+        Ok(surface) => {
+            let locale = state.locale.lock().map_err(|e| e.to_string())?.clone();
+            let dsl = build_cognitive_panel_dsl(&locale);
+            match ctx.surface_manager.update_surface(&surface_id, &dsl) {
+                Ok(updated) => Ok(serde_json::json!({
+                    "status": "success",
+                    "surface_id": surface_id,
+                    "render_handle": updated.render_handle,
+                    "channel": updated.active_channel,
+                    "position": position,
+                    "width": width,
+                    "height": height,
+                })),
+                Err(e) => Ok(serde_json::json!({
+                    "status": "surface_created_render_failed",
+                    "surface_id": surface_id,
+                    "error": e,
+                })),
+            }
+        }
+        Err(e) => Ok(serde_json::json!({
+            "status": "surface_creation_failed",
+            "error": e,
+            "fallback": "webview_overlay",
+        })),
+    }
+}
+
+#[tauri::command]
+pub async fn close_cognitive_overlay(
+    surface_id: String,
+    state: tauri::State<'_, crate::AppState>,
+) -> Result<serde_json::Value, String> {
+    let mut ctx = state.eui_neo_context.lock().map_err(|e| e.to_string())?;
+    match ctx.surface_manager.destroy_surface(&surface_id) {
+        Ok(_) => Ok(serde_json::json!({"status": "closed", "surface_id": surface_id})),
+        Err(e) => Ok(serde_json::json!({"status": "close_failed", "error": e})),
+    }
+}
+
+fn chrono_like_timestamp() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64
+}
+
+fn build_cognitive_panel_dsl(locale: &str) -> String {
+    let zh = locale == "zh";
+    let title = if zh { "认知面板" } else { "Cognitive Panel" };
+    let memory = if zh { "液态神经记忆" } else { "Liquid Neural Memory" };
+    let rccam = if zh { "R-CCAM 循环" } else { "R-CCAM Loop" };
+    let dag = if zh { "DAG 上下文树" } else { "DAG Context Tree" };
+    format!(
+        r#"{{"type":"panel","title":"{}","tabs":["{}","{}","{}"],"locale":"{}"}}"#,
+        title, memory, rccam, dag, locale
+    )
+}
