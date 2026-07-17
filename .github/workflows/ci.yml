@@ -279,7 +279,7 @@ jobs:
       - name: Download EUI-NEO SDK v0.5.2
         shell: bash
         run: |
-          curl -sL "https://github.com/sudoevolve/EUI-NEO/releases/download/v0.5.2/EUI-NEO-v0.5.2-windows-x64-sdk.zip" -o eui-neo-sdk.zip
+          curl -sLf "https://github.com/sudoevolve/EUI-NEO/releases/download/v0.5.2/EUI-NEO-v0.5.2-windows-x64-sdk.zip" -o eui-neo-sdk.zip
           mkdir -p vendor/eui-neo/sdk
           cd vendor/eui-neo/sdk && unzip -q ../../../eui-neo-sdk.zip
           top_dir=$(find . -maxdepth 1 -type d ! -name '.' | head -1)
@@ -288,12 +288,12 @@ jobs:
             rmdir "$top_dir" 2>/dev/null || true
           fi
           echo "EUI-NEO SDK extracted"
-          ls vendor/eui-neo/sdk/lib/ || { echo "ERROR: lib/ not found"; ls -la vendor/eui-neo/sdk/; exit 1; }
+          ls lib/ || { echo "ERROR: lib/ not found"; ls -la .; exit 1; }
 
       - name: Download EUI-NEO Runtime v0.5.2
         shell: bash
         run: |
-          curl -sL "https://github.com/sudoevolve/EUI-NEO/releases/download/v0.5.2/EUI-NEO-v0.5.2-windows-x64-runtime.zip" -o eui-neo-runtime.zip
+          curl -sLf "https://github.com/sudoevolve/EUI-NEO/releases/download/v0.5.2/EUI-NEO-v0.5.2-windows-x64-runtime.zip" -o eui-neo-runtime.zip
           mkdir -p vendor/eui-neo/runtime
           cd vendor/eui-neo/runtime && unzip -q ../../../eui-neo-runtime.zip
           top_dir=$(find . -maxdepth 1 -type d ! -name '.' | head -1)
@@ -302,7 +302,7 @@ jobs:
             rmdir "$top_dir" 2>/dev/null || true
           fi
           echo "EUI-NEO Runtime extracted"
-          ls vendor/eui-neo/runtime/
+          ls ./
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
