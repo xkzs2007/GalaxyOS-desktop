@@ -129,6 +129,42 @@ class TokUIDegradationManager:
         self._record("kernel_crash", DegradationLevel.PARTIAL, "allowed_with_warning", {"hook": hook_name})
         return {"allowed": True, "warning": "GalaxyOS kernel not running"}
 
+    def handle_eui_init_failure(self, error: str) -> Dict[str, Any]:
+        self._record("eui_init_failure", DegradationLevel.FULL, "webview_dom", {"error": error})
+        return {
+            "status": "degraded",
+            "fallback": "webview_dom",
+            "native_render_available": False,
+            "error": error,
+        }
+
+    def handle_dsl_bridge_failure(self, unsupported: list, error: str = "") -> Dict[str, Any]:
+        self._record("dsl_bridge_failure", DegradationLevel.PARTIAL, "skip_unsupported", {"unsupported": unsupported, "error": error})
+        return {
+            "status": "degraded",
+            "fallback": "skip_unsupported",
+            "unsupported_components": unsupported,
+            "error": error,
+        }
+
+    def handle_surface_crash(self, surface_id: str, error: str = "") -> Dict[str, Any]:
+        self._record("surface_crash", DegradationLevel.PARTIAL, "rebuild_surface", {"surface_id": surface_id, "error": error})
+        return {
+            "status": "degraded",
+            "fallback": "rebuild_surface",
+            "surface_id": surface_id,
+            "error": error,
+        }
+
+    def handle_ffi_timeout(self, surface_id: str, timeout_ms: float) -> Dict[str, Any]:
+        self._record("ffi_timeout", DegradationLevel.PARTIAL, "webview_dom", {"surface_id": surface_id, "timeout_ms": timeout_ms})
+        return {
+            "status": "degraded",
+            "fallback": "webview_dom",
+            "surface_id": surface_id,
+            "timeout_ms": timeout_ms,
+        }
+
     def check_dsl_size(self, dsl: str) -> bool:
         return len(dsl) <= self.MAX_DSL_SIZE
 

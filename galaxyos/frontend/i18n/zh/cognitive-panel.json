@@ -1,0 +1,11 @@
+{
+  "title": "认知面板",
+  "close_panel": "关闭认知面板",
+  "open_panel": "打开认知面板",
+  "layout_sidebar": "侧栏",
+  "layout_embedded": "内嵌",
+  "layout_floating": "浮动",
+  "rccam_progress": "R-CCAM 进度",
+  "dag_tree": "DAG 上下文树",
+  "no_data": "暂无认知数据"
+}

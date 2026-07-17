@@ -1,0 +1,19 @@
+{
+  "cognitive-panel.title": "GalaxyOS Cognitive Panel",
+  "cognitive-panel.close": "Close Cognitive Panel",
+  "cognitive-panel.open": "Open Cognitive Panel",
+  "memory-panel.title": "Liquid Neural Memory",
+  "memory-panel.search": "Search memories...",
+  "memory-panel.count": "{{count}} memories",
+  "rccam.progress": "R-CCAM Progress",
+  "rccam.phase_perceive": "Perceive",
+  "rccam.phase_comprehend": "Comprehend",
+  "rccam.phase_analyze": "Analyze",
+  "rccam.phase_modulate": "Modulate",
+  "dag.tree": "DAG Context Tree",
+  "dag.expand": "Expand",
+  "dag.collapse": "Collapse",
+  "status.ready": "Ready",
+  "status.degraded": "Degraded",
+  "status.unavailable": "Unavailable"
+}

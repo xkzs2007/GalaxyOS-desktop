@@ -1,0 +1,9 @@
+{
+  "input_placeholder": "输入消息...",
+  "send": "发送",
+  "thinking": "思考中...",
+  "error_send": "发送失败",
+  "new_chat": "新对话",
+  "history": "历史记录",
+  "no_history": "暂无历史记录"
+}

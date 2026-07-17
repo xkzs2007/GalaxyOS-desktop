@@ -1,0 +1,11 @@
+{
+  "title": "Cognitive Panel",
+  "close_panel": "Close Cognitive Panel",
+  "open_panel": "Open Cognitive Panel",
+  "layout_sidebar": "Sidebar",
+  "layout_embedded": "Embedded",
+  "layout_floating": "Floating",
+  "rccam_progress": "R-CCAM Progress",
+  "dag_tree": "DAG Context Tree",
+  "no_data": "No cognitive data"
+}

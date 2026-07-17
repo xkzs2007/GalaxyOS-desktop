@@ -1,0 +1,19 @@
+{
+  "cognitive-panel.title": "GalaxyOS 认知面板",
+  "cognitive-panel.close": "关闭认知面板",
+  "cognitive-panel.open": "打开认知面板",
+  "memory-panel.title": "液态神经记忆",
+  "memory-panel.search": "搜索记忆...",
+  "memory-panel.count": "共 {{count}} 条记忆",
+  "rccam.progress": "R-CCAM 进度",
+  "rccam.phase_perceive": "感知",
+  "rccam.phase_comprehend": "理解",
+  "rccam.phase_analyze": "分析",
+  "rccam.phase_modulate": "调制",
+  "dag.tree": "DAG 上下文树",
+  "dag.expand": "展开",
+  "dag.collapse": "折叠",
+  "status.ready": "就绪",
+  "status.degraded": "降级模式",
+  "status.unavailable": "不可用"
+}

@@ -1,0 +1,20 @@
+{
+  "app_name": "GalaxyOS",
+  "loading": "加载中...",
+  "error": "错误",
+  "retry": "重试",
+  "cancel": "取消",
+  "confirm": "确认",
+  "save": "保存",
+  "close": "关闭",
+  "open": "打开",
+  "search": "搜索",
+  "no_results": "无结果",
+  "status_ready": "就绪",
+  "status_loading": "加载中",
+  "status_error": "异常",
+  "status_degraded": "降级模式",
+  "language": "语言",
+  "language_zh": "中文",
+  "language_en": "English"
+}
