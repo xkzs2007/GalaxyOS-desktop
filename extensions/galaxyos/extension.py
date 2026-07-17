@@ -28,9 +28,12 @@ class SimpleExtensionRegistry:
         self._rpc_handlers[method] = handler
         logger.info(f"Registered RPC handler: {method}")
 
-    def register_hook_handler(self, event: str, handler: Any) -> None:
+    def register(self, event: str, handler: Any) -> None:
         self._hook_handlers[event] = handler
         logger.info(f"Registered hook handler: {event}")
+
+    def register_hook_handler(self, event: str, handler: Any) -> None:
+        self.register(event, handler)
 
     def get_rpc_handler(self, method: str) -> Optional[Any]:
         return self._rpc_handlers.get(method)

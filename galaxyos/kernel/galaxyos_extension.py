@@ -51,9 +51,9 @@ class GalaxyOSExtension:
         registry.register_rpc_handler("galaxyos.cognitive_tools", self.handle_cognitive_tools)
 
     def _register_hook_handlers(self, registry) -> None:
-        registry.register_hook_handler("before_chat_request", self._on_before_chat_request)
-        registry.register_hook_handler("memory_after_chat", self._on_memory_after_chat)
-        registry.register_hook_handler("before_system_prompt_build", self._on_before_system_prompt_build)
+        registry.register("gateway:before_chat_request", self._on_before_chat_request)
+        registry.register("agent_server:memory_after_chat", self._on_memory_after_chat)
+        registry.register("agent_server:before_system_prompt_build", self._on_before_system_prompt_build)
 
     async def handle_tokui_render(self, params: Dict[str, Any]) -> Dict[str, Any]:
         try:

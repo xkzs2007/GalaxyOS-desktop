@@ -22,15 +22,15 @@ class HookResult:
 
 
 SWARM_HOOK_TO_GALAXYOS = {
-    "gateway_started": "gateway_start",
-    "gateway_stopped": "gateway_stop",
-    "before_chat_request": "before_agent_reply",
-    "after_chat_request": "after_agent_reply",
-    "memory_before_chat": "before_tool_call",
-    "memory_after_chat": "after_tool_call",
-    "before_system_prompt_build": "before_agent_reply",
-    "agent_server_started": "gateway_start",
-    "agent_server_stopped": "gateway_stop",
+    "gateway:gateway_started": "gateway_start",
+    "gateway:gateway_stopped": "gateway_stop",
+    "gateway:before_chat_request": "before_agent_reply",
+    "agent_server:agent_server_started": "gateway_start",
+    "agent_server:agent_server_stopped": "gateway_stop",
+    "agent_server:before_chat_request": "before_agent_reply",
+    "agent_server:memory_before_chat": "before_tool_call",
+    "agent_server:memory_after_chat": "after_tool_call",
+    "agent_server:before_system_prompt_build": "before_agent_reply",
 }
 
 

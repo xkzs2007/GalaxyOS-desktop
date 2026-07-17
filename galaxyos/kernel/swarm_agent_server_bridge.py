@@ -37,7 +37,7 @@ class SwarmHealthStatus:
 
 class SwarmAgentServerBridge:
     DEFAULT_HOST = "127.0.0.1"
-    DEFAULT_PORT = 19000
+    DEFAULT_PORT = 18092
     MAX_RESTART_ATTEMPTS = 3
     HEALTH_CHECK_TIMEOUT = 60
     SHUTDOWN_TIMEOUT = 5.0
@@ -65,8 +65,8 @@ class SwarmAgentServerBridge:
             env = {
                 **dict(__import__("os").environ),
                 "GALAXYOS_MODE": "desktop",
-                "AGENTSERVER_HOST": self._host,
-                "AGENTSERVER_PORT": str(self._port),
+                "AGENT_SERVER_HOST": self._host,
+                "AGENT_SERVER_PORT": str(self._port),
             }
 
             if self._dotenv_path:
@@ -118,18 +118,19 @@ class SwarmAgentServerBridge:
             self._running = False
 
     async def check_health(self) -> bool:
-        import aiohttp
+        import socket
 
-        url = f"http://{self._host}:{self._port}/health"
         for i in range(self.HEALTH_CHECK_TIMEOUT):
             if not self._process or self._process.poll() is not None:
                 return False
             try:
-                async with aiohttp.ClientSession() as session:
-                    async with session.get(url, timeout=aiohttp.ClientTimeout(total=2)) as resp:
-                        if resp.status == 200:
-                            logger.info(f"AgentServer health check passed after {i}s")
-                            return True
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock.settimeout(2)
+                result = sock.connect_ex((self._host, self._port))
+                sock.close()
+                if result == 0:
+                    logger.info(f"AgentServer health check passed (TCP) after {i}s")
+                    return True
             except Exception:
                 pass
             await asyncio.sleep(1)

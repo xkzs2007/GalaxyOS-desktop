@@ -1,13 +1,7 @@
+id: galaxyos
 name: galaxyos
-version: "8.6.0"
-description: GalaxyOS 认知增强 Extension — 液态神经记忆 + R-CCAM 认知循环 + 技能自演化 + 17 层认知架构
-entry_point: extension.py
-hooks:
-  - before_chat_request
-  - memory_after_chat
-  - before_system_prompt_build
-rpc_methods:
-  - galaxyos.tokui_render
-  - galaxyos.rccam_status
-  - galaxyos.memory_query
-  - galaxyos.cognitive_tools
+version: "0.2.0"
+description: GalaxyOS cognitive enhancement Extension for JiuwenSwarm — liquid neural memory + R-CCAM cognitive cycle + skill evolution + 17-layer cognitive architecture
+author: galaxyos
+min_jiuwenswarm_version: "0.2.0"
+dependencies: {}
