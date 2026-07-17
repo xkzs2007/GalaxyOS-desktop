@@ -51,7 +51,7 @@ def _log(msg: str):
 class SmartProcessor:
     """智能处理层 — 三模型通道 + 人格注入 + R-CCAM 路由
 
-    可接受外部 llm_flash/llm_pro 实例（来自 XiaoYiClawLLM），
+    可接受外部 llm_flash/llm_pro 实例（来自 AgentCoreBridge），
     避免重复初始化 OpenAI 客户端。未提供时自动创建。
     """
 
@@ -390,8 +390,8 @@ class SmartProcessor:
 
         # 降级
         try:
-            if hasattr(self, 'xiaoyi_claw') and self.xiaoyi_claw:
-                return self.xiaoyi_claw.recall(query, top_k=top_k) or []
+            if hasattr(self, '_recall_via_bridge'):
+                return self._recall_via_bridge(query, top_k=top_k) or []
         except Exception:
             pass
         return []

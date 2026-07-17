@@ -6,7 +6,7 @@
 实现跨模态的语义检索和记忆绑定。
 
 架构：
-- 快速桥接路径：xiaoyi-image-understanding → caption → LFM embed_text
+- 快速桥接路径：OpenJiuwen multimodal tool → caption → LFM embed_text
 - 原生视觉路径：LFMWithVision VisualPatchEmbedding → 2048 dim
 - 统一 embedding 存储：所有模态输出(2048,)向量
 
@@ -178,13 +178,13 @@ class CrossModalMemoryBinder:
         """
         图像描述 → 2048-dim（桥接路径）
 
-        先用 xiaoyi-image-understanding 生成 caption，
+        先用 OpenJiuwen multimodal tool 生成 caption，
         再通过 LFM embed_text 编码 caption。
 
         这是快速桥接方案，不需要加载视觉模型。
 
         Args:
-            caption: 图像文本描述（来自 xiaoyi-image-understanding）
+            caption: 图像文本描述（来自 OpenJiuwen multimodal tool）
 
         Returns:
             (2048,) float32 向量

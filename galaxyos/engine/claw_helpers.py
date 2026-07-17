@@ -62,7 +62,7 @@ def _rci_async_criticism(self, state):
     import struct as _s
     import tempfile as _tf
 
-    _rci_session = getattr(self, '_kv_session_id', 'xiaoyi-claw-main')
+    _rci_session = getattr(self, '_kv_session_id', 'galaxyos-main')
     _rci_results = {
         "session_id": _rci_session,
         "rounds": [{"rci": 1, "scores": {"faithfulness": 5, "relevance": 7,

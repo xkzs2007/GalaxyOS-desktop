@@ -1405,7 +1405,7 @@ class DAGContextManager:
                 import logging
                 logging.getLogger(__name__).warning(f"write_capability_node failed: {e}")
 
-    def query_capability_nodes(self, limit: int = 5, session_key: str = 'xiaoyi-claw-dag') -> List[Dict]:
+    def query_capability_nodes(self, limit: int = 5, session_key: str = 'galaxyos-dag') -> List[Dict]:
         """查询最近的 evolved_capability 节点（APO/ThinkingEnhanced 自优化结果）"""
         import json
         with self._lock:
@@ -3139,7 +3139,7 @@ def multi_path_search(query: str, context: str = "", llm=None) -> Dict:
     Args:
         query: 搜索问题
         context: 可选的背景上下文
-        llm: LLM Flash 客户端（可选，从 xiaoyi_claw_api 自动获取）
+        llm: LLM Flash 客户端（可选，从 AgentCoreBridge 自动获取）
 
     Returns:
         {

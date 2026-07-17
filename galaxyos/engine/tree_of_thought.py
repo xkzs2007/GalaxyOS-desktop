@@ -607,13 +607,13 @@ def get_tree_of_thought(
     """
     获取 ToT 实例
 
-    尝试从 xiaoyi_claw_api 获取已初始化的 LLM Flash 客户端。
+    尝试从 AgentCoreBridge 获取已初始化的 LLM Flash 客户端。
     """
     if llm_flash is None:
         try:
             pass
         except Exception as e:
-            logger.warning(f"从 xiaoyi_claw_api 获取 llm_flash 失败: {e}")
+            logger.warning(f"从 AgentCoreBridge 获取 llm_flash 失败: {e}")
 
     return TreeOfThought(
         llm_flash=llm_flash,

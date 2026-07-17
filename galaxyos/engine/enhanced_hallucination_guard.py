@@ -872,7 +872,7 @@ class EnhancedHallucinationGuard:
 
         # 2.2 网络搜索（如果启用）
         if use_web_search and level in [VerificationLevel.MODERATE, VerificationLevel.DEEP, VerificationLevel.EXHAUSTIVE]:
-            # 实际实现需要调用 xiaoyi-web-search
+            # 实际实现需要调用 multi-search-engine
             # web_sources = self._search_web(statement)
             # sources.extend(web_sources)
             pass

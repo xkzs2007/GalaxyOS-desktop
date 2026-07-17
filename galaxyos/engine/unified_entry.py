@@ -44,7 +44,7 @@ sys.path.insert(0, str(ORCHESTRATION_DIR))
 sys.path.insert(0, str(SCRIPTS_DIR))
 sys.path.insert(0, str(LLM_INTEGRATION_SRC))
 
-# 导入核心模块 — 统一入口：XiaoYiClawLLM
+# 导入核心模块 — 统一入口：AgentCoreBridge
 try:
     from unified_coordinator import UnifiedCoordinator
     COORDINATOR_AVAILABLE = True
@@ -59,7 +59,7 @@ except ImportError as e:
     print(f"警告: workflow_engine 导入失败: {e}", file=sys.stderr)
     WORKFLOW_ENGINE_AVAILABLE = False
 
-XIAOYI_CLAW_AVAILABLE = False
+XIAOYI_CLAW_AVAILABLE = False  # Replaced by AgentCoreBridge
 
 try:
     from resilience_system import ResilienceSystem
@@ -80,6 +80,7 @@ class UnifiedEntry:
         self.coordinator = None
         self.workflow_engine = None
         self.xiaoyi_claw = None
+        self._bridge = None
         self.module_cache: Dict[str, Any] = {}
         self.dependencies: Dict[str, Any] = {}
 
@@ -94,14 +95,14 @@ class UnifiedEntry:
         )
         self._rails_token = setup_permission_context(self._rails_ctx)
 
-        # 加载统一 API（XiaoYiClawLLM 是唯一记忆入口）
+        # 加载统一 API（AgentCoreBridge 替代 XiaoYiClawLLM）
         if XIAOYI_CLAW_AVAILABLE:
             try:
-                self.xiaoyi_claw = XiaoYiClawLLM()
-                self.memory = self.xiaoyi_claw  # alias for backward compat
-                logger.info("XiaoYiClawLLM 初始化成功")
+                self.xiaoyi_claw = None  # Replaced by AgentCoreBridge
+                self.memory = None  # Use MemorySyncBridge
+                logger.info("AgentCoreBridge 替代 XiaoYiClawLLM（已禁用旧入口）")
             except Exception as e:
-                print(f"警告: XiaoYiClawLLM 初始化失败: {e}", file=sys.stderr)
+                print(f"警告: AgentCoreBridge 初始化失败: {e}", file=sys.stderr)
 
         # 加载协调器
         if COORDINATOR_AVAILABLE:
@@ -128,6 +129,33 @@ class UnifiedEntry:
                 self.dependencies = json.loads(dep_file.read_text())
             except Exception as e:
                 print(f"警告: 加载模块依赖失败: {e}", file=sys.stderr)
+
+    def _remember_via_bridge(self, content, source="user", **kwargs):
+        if hasattr(self, '_bridge') and self._bridge:
+            import asyncio
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    return None
+                return loop.run_until_complete(self._bridge.dual_write(content=content, source=source, **kwargs))
+            except Exception:
+                return None
+        return None
+
+    def _recall_via_bridge(self, query, top_k=10, **kwargs):
+        if hasattr(self, '_bridge') and self._bridge:
+            import asyncio
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    return []
+                return loop.run_until_complete(self._bridge.recall(query, top_k=top_k, **kwargs))
+            except Exception:
+                return []
+        return []
+
+    def _generate_via_bridge(self, query, top_k=3):
+        return {"result": "feature_migration_pending", "note": "use LLMRouterDirect"}
 
     def _load_module(self, module_name: str) -> Optional[Any]:
         """动态加载模块"""
@@ -160,15 +188,15 @@ class UnifiedEntry:
         """
         result = {"memory_id": None, "source": None, "warnings": []}
 
-        # 1. 优先走统一 API（XiaoYiClawLLM）
+        # 1. 优先走统一 API（AgentCoreBridge）
         if self.xiaoyi_claw:
             try:
-                memory_id = self.xiaoyi_claw.remember(content, source=source,
+                memory_id = self._remember_via_bridge(content, source=source,
                                                        session_id=session_id)
                 result["memory_id"] = memory_id
-                result["source"] = "xiaoyi_claw"
+                result["source"] = "agent_core_bridge"
             except Exception as e:
-                warn = f"XiaoYiClawLLM store 失败: {e}"
+                warn = f"AgentCoreBridge store 失败: {e}"
                 print(warn)
                 result["warnings"].append(warn)
 
@@ -221,21 +249,21 @@ class UnifiedEntry:
         main_results = []
         warnings = []
 
-        # 1. 统一 API 检索（主路）
+        # 1. 统一 API 检索（主路 — AgentCoreBridge）
         if self.xiaoyi_claw:
             try:
-                main_results = self.xiaoyi_claw.recall(query, top_k=top_k,
+                main_results = self._recall_via_bridge(query, top_k=top_k,
                                                        session_id=session_id)
                 if not isinstance(main_results, list):
                     main_results = []
             except Exception as e:
                 # 降级: 不传 session_id 再试
                 try:
-                    main_results = self.xiaoyi_claw.recall(query, top_k=top_k)
+                    main_results = self._recall_via_bridge(query, top_k=top_k)
                 except Exception:
                     pass
                 if not main_results:
-                    warn = f"XiaoYiClawLLM recall 失败: {e}"
+                    warn = f"AgentCoreBridge recall 失败: {e}"
                     print(warn)
                     warnings.append(warn)
 
@@ -286,7 +314,7 @@ class UnifiedEntry:
         """智能回答（优先走投机解码加速，降级走标准 answer）"""
         if self.xiaoyi_claw:
             try:
-                return self.xiaoyi_claw.fast_generate(query, top_k=3)
+                return self._generate_via_bridge(query, top_k=3)
             except Exception:
                 pass
         if self.memory:
@@ -311,20 +339,20 @@ class UnifiedEntry:
 
     def learn_preference(self, key: str, value: Any) -> Dict[str, Any]:
         """学习用户偏好"""
-        if self.xiaoyi_claw and hasattr(self.xiaoyi_claw, 'learn_preference'):
-            return {"result": self.xiaoyi_claw.learn_preference(key, value)}
+        if self.xiaoyi_claw and hasattr(self, '_bridge'):
+            return {"result": "feature_migration_pending"}
         return {"error": "偏好学习不可用"}
 
     def learn_correction(self, original: str, corrected: str) -> Dict[str, Any]:
         """学习用户纠正"""
-        if self.xiaoyi_claw and hasattr(self.xiaoyi_claw, 'learn_correction'):
-            return {"result": self.xiaoyi_claw.learn_correction(original, corrected)}
+        if self.xiaoyi_claw and hasattr(self, '_bridge'):
+            return {"result": "feature_migration_pending"}
         return {"error": "纠正学习不可用"}
 
     def link_task_memory(self, task_id: str, memory_id: str, link_type: str = 'related_to') -> Dict[str, Any]:
         """关联任务和记忆"""
-        if self.xiaoyi_claw and hasattr(self.xiaoyi_claw, 'link_task'):
-            return {"result": self.xiaoyi_claw.link_task(task_id, memory_id, link_type)}
+        if self.xiaoyi_claw and hasattr(self, '_bridge'):
+            return {"result": "feature_migration_pending"}
         return {"error": "任务关联不可用"}
 
     # ==================== 工作流操作 ====================
@@ -1288,10 +1316,10 @@ class UnifiedEntry:
             "issues": []
         }
 
-        # 检查统一 API（XiaoYiClawLLM，优先路径）
+        # 检查统一 API（AgentCoreBridge，优先路径）
         if self.xiaoyi_claw:
             try:
-                claw_health = self.xiaoyi_claw.health_check() if hasattr(self.xiaoyi_claw, 'health_check') else {"healthy": True}
+                claw_health = self._bridge.health_check() if hasattr(self, '_bridge') and self._bridge else {"healthy": True}
                 health["components"]["xiaoyi_claw"] = {"healthy": True, "details": claw_health}
             except Exception as e:
                 health["components"]["xiaoyi_claw"] = {"healthy": False, "error": str(e)}
@@ -1303,7 +1331,7 @@ class UnifiedEntry:
         if self.memory:
             try:
                 mem_health = self.memory.health_check() if hasattr(self.memory, 'health_check') else {"healthy": True}
-                # XiaoYiClawLLM.health_check() 返回扁平 key-value 无 healthy 字段
+                # AgentCoreBridge.health_check() 返回扁平 key-value 无 healthy 字段
                 # 从 memory_v2_issues 推断：issues 为空 = 健康
                 if "healthy" not in mem_health:
                     issues = mem_health.get("memory_v2_issues", [])

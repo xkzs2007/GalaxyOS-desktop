@@ -1601,7 +1601,7 @@ def _do_web(query: str, max_web_results: int) -> list:
     _r = []
     try:
         search_script = os.path.expanduser(
-            "~/.openclaw/workspace/skills/xiaoyi-web-search/scripts/search.js")
+            "~/.openclaw/workspace/skills/multi-search-engine/scripts/search.js")
         if os.path.exists(search_script):
             inline = (
                 f"const s = require('{search_script}');"
