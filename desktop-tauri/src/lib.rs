@@ -51,6 +51,7 @@ pub fn run() {
             commands::get_locale,
             commands::set_locale,
             commands::get_supported_locales,
+            commands::request_cognitive_data,
             eui_neo::render_native,
             eui_neo::create_surface,
             eui_neo::destroy_surface,
@@ -64,6 +65,11 @@ pub fn run() {
                 let state = handle.state::<AppState>();
                 let _ = backend::start_all(&state, &handle).await;
             });
+
+            let window = app.get_webview_window("main").expect("main window not found");
+            let inject_script = include_str!("inject_cognitive_panel.js");
+            let _ = window.eval(inject_script);
+
             Ok(())
         })
         .run(tauri::generate_context!())
