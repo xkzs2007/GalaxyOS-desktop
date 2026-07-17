@@ -247,7 +247,7 @@ jobs:
             rmdir "$top_dir" 2>/dev/null || true
           fi
           echo "EUI-NEO SDK extracted"
-          ls vendor/eui-neo/sdk/lib/ || { echo "ERROR: lib/ not found"; ls -la vendor/eui-neo/sdk/; exit 1; }
+          ls lib/ || { echo "ERROR: lib/ not found"; ls -la .; exit 1; }
 
       - name: Download EUI-NEO Runtime v0.5.2
         if: runner.os == 'Windows'
