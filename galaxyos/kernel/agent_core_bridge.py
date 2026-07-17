@@ -102,13 +102,18 @@ class AgentCoreBridge:
             self._SysOperationRail(),
             self._AskUserRail(),
             self._ConfirmInterruptRail(
-                tool_names=["bash", "write_file", "edit_file"]
+                tool_names=["bash", "write_file", "edit_file", "shell_run"]
             ),
         ]
 
         skills_dir = self._config.get("skills_dir")
         if skills_dir:
             self._rails.append(self._SkillUseRail(skills_dir=[skills_dir]))
+
+        try:
+            self._rails.append(self._TaskPlanningRail())
+        except Exception as e:
+            logger.debug(f"TaskPlanningRail not available: {e}")
 
         logger.info(f"Configured {len(self._rails)} Rails: {[type(r).__name__ for r in self._rails]}")
 
@@ -117,8 +122,30 @@ class AgentCoreBridge:
             return
 
         try:
-            self._permission_engine = self._build_permission_interrupt_rail()
-            logger.info("PermissionEngine configured")
+            from openjiuwen.harness.security.models import PermissionsSection
+            from openjiuwen.harness.security.host import ToolPermissionHost
+
+            perms_config = self._config.get("permissions", {})
+            permissions_section = PermissionsSection(**perms_config) if perms_config else PermissionsSection()
+
+            host = ToolPermissionHost(
+                resolve_workspace_dir=lambda: self._config.get("workspace", "./"),
+                tool_permission_checks_active=lambda: True,
+            )
+
+            self._permission_engine = self._build_permission_interrupt_rail(
+                permissions=permissions_section,
+                host=host,
+                workspace_root=self._config.get("workspace_root"),
+            )
+            logger.info("PermissionEngine configured with ToolPermissionHost")
+        except ImportError as e:
+            logger.warning(f"PermissionEngine imports failed: {e}, trying simple config")
+            try:
+                self._permission_engine = self._build_permission_interrupt_rail()
+                logger.info("PermissionEngine configured (simple mode)")
+            except Exception as e2:
+                logger.warning(f"PermissionEngine configuration failed: {e2}")
         except Exception as e:
             logger.warning(f"PermissionEngine configuration failed: {e}")
 
@@ -218,6 +245,23 @@ class AgentCoreBridge:
         if not self._openjiuwen_available or not self._rails:
             return {"allowed": True}
 
+        try:
+            from openjiuwen.harness.rails.security.base_security_rail import SecurityCheckContext
+            for rail in self._rails:
+                if hasattr(rail, 'run_security_check'):
+                    try:
+                        ctx = SecurityCheckContext(
+                            tool_name=skill_name,
+                            parameters=parameters,
+                        )
+                        decision = await rail.run_security_check(ctx)
+                        if hasattr(decision, 'allow') and not decision.allow:
+                            return {"allowed": False, "reason": f"Blocked by {type(rail).__name__}: {getattr(decision, 'reason', '')}"}
+                    except Exception:
+                        pass
+        except ImportError:
+            pass
+
         dangerous_patterns = ["rm -rf", "format", "del /s", "shutdown", "reboot"]
         param_str = str(parameters).lower()
         for pattern in dangerous_patterns:
@@ -232,6 +276,15 @@ class AgentCoreBridge:
 
         shell_tools = {"bash", "shell_run", "write_file", "edit_file"}
         if skill_name in shell_tools:
+            try:
+                from openjiuwen.harness.security.shell_ast import parse_shell_for_permission
+                command = parameters.get("command", parameters.get("content", ""))
+                if command:
+                    parse_result = parse_shell_for_permission(command)
+                    if parse_result.kind == "too_complex":
+                        return {"approved": False, "reason": "Shell command too complex for AST analysis, requires HITL confirmation"}
+            except ImportError:
+                pass
             return {"approved": True, "reason": "Requires HITL confirmation via ConfirmInterruptRail"}
 
         return {"approved": True}

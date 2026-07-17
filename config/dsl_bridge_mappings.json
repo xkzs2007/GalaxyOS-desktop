@@ -1,0 +1,18 @@
+{
+  "mappings": {
+    "card": {"eui_type": "Container", "attrs": {"padding": "8", "border_radius": "4"}, "confidence": 0.9},
+    "p": {"eui_type": "Text", "attrs": {}, "confidence": 1.0},
+    "btn": {"eui_type": "Button", "attrs": {}, "confidence": 0.9},
+    "table": {"eui_type": "Grid", "attrs": {}, "confidence": 0.8},
+    "chart": {"eui_type": "Chart", "attrs": {}, "confidence": 0.7},
+    "img": {"eui_type": "Image", "attrs": {}, "confidence": 0.9},
+    "input": {"eui_type": "TextInput", "attrs": {}, "confidence": 0.9},
+    "list": {"eui_type": "ListView", "attrs": {}, "confidence": 0.8},
+    "memory-panel": {"eui_type": "CognitivePanel", "attrs": {"panel_type": "memory"}, "confidence": 1.0},
+    "rccam-progress": {"eui_type": "CognitivePanel", "attrs": {"panel_type": "rccam"}, "confidence": 0.8},
+    "dag-tree": {"eui_type": "CognitivePanel", "attrs": {"panel_type": "dag_tree"}, "confidence": 0.7},
+    "memory-search": {"eui_type": "CognitivePanel", "attrs": {"panel_type": "search"}, "confidence": 0.7},
+    "rccam-control": {"eui_type": "CognitivePanel", "attrs": {"panel_type": "rccam_control"}, "confidence": 0.6},
+    "dag-node-expand": {"eui_type": "CognitivePanel", "attrs": {"panel_type": "dag_expand"}, "confidence": 0.6}
+  }
+}
