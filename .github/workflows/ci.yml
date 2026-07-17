@@ -275,8 +275,13 @@ jobs:
           curl -sL "https://github.com/sudoevolve/EUI-NEO/releases/download/v0.5.2/EUI-NEO-v0.5.2-windows-x64-sdk.zip" -o eui-neo-sdk.zip
           mkdir -p vendor/eui-neo/sdk
           cd vendor/eui-neo/sdk && unzip -q ../../../eui-neo-sdk.zip
-          echo "EUI-NEO SDK extracted to vendor/eui-neo/sdk/"
-          ls vendor/eui-neo/sdk/lib/
+          top_dir=$(find . -maxdepth 1 -type d ! -name '.' | head -1)
+          if [ -n "$top_dir" ] && [ ! -d "./lib" ] && [ -d "$top_dir/lib" ]; then
+            mv "$top_dir"/* . 2>/dev/null || true
+            rmdir "$top_dir" 2>/dev/null || true
+          fi
+          echo "EUI-NEO SDK extracted"
+          ls vendor/eui-neo/sdk/lib/ || { echo "ERROR: lib/ not found"; ls -la vendor/eui-neo/sdk/; exit 1; }
 
       - name: Download EUI-NEO Runtime v0.5.2
         shell: bash
@@ -284,7 +289,12 @@ jobs:
           curl -sL "https://github.com/sudoevolve/EUI-NEO/releases/download/v0.5.2/EUI-NEO-v0.5.2-windows-x64-runtime.zip" -o eui-neo-runtime.zip
           mkdir -p vendor/eui-neo/runtime
           cd vendor/eui-neo/runtime && unzip -q ../../../eui-neo-runtime.zip
-          echo "EUI-NEO Runtime extracted to vendor/eui-neo/runtime/"
+          top_dir=$(find . -maxdepth 1 -type d ! -name '.' | head -1)
+          if [ -n "$top_dir" ] && [ ! -f "./gallery.exe" ] && [ -f "$top_dir/gallery.exe" ]; then
+            mv "$top_dir"/* . 2>/dev/null || true
+            rmdir "$top_dir" 2>/dev/null || true
+          fi
+          echo "EUI-NEO Runtime extracted"
           ls vendor/eui-neo/runtime/
 
       - name: Install Rust stable
