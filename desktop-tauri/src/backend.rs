@@ -157,7 +157,7 @@ pub async fn start_all(state: &AppState, handle: &AppHandle) -> Result<(), Strin
     };
 
     // Start Gateway (frontend connects to Gateway WebSocket, not AgentServer directly)
-    let gateway_ok = match start_swarm_gateway(gateway_port) {
+    let gateway_ok = match start_swarm_gateway(gateway_port, swarm_port) {
         Ok(child) => {
             *state.swarm_gateway.lock().map_err(|e| e.to_string())? = Some(child);
             match wait_for_health(gateway_port, "gateway", 30).await {
@@ -273,8 +273,8 @@ fn start_swarm_agentserver(port: u16) -> Result<std::process::Child, String> {
     let python = find_python()?;
     let mut cmd = Command::new(&python);
     cmd.args(["-m", "jiuwenswarm.server.app_agentserver"])
-        .env("AGENTSERVER_HOST", "127.0.0.1")
-        .env("AGENTSERVER_PORT", &port.to_string())
+        .env("AGENT_SERVER_HOST", "127.0.0.1")
+        .env("AGENT_SERVER_PORT", &port.to_string())
         .env("GALAXYOS_MODE", "desktop")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
@@ -283,12 +283,16 @@ fn start_swarm_agentserver(port: u16) -> Result<std::process::Child, String> {
     cmd.spawn().map_err(|e| format!("Failed to start AgentServer: {}", e))
 }
 
-fn start_swarm_gateway(port: u16) -> Result<std::process::Child, String> {
+fn start_swarm_gateway(port: u16, agentserver_port: u16) -> Result<std::process::Child, String> {
     let python = find_python()?;
     let mut cmd = Command::new(&python);
     cmd.args(["-m", "jiuwenswarm.gateway.app_gateway"])
-        .env("GATEWAY_HOST", "127.0.0.1")
-        .env("GATEWAY_PORT", &port.to_string())
+        .env("WEB_HOST", "127.0.0.1")
+        .env("WEB_PORT", &port.to_string())
+        .env("WEB_PATH", "/ws")
+        .env("AGENT_SERVER_HOST", "127.0.0.1")
+        .env("AGENT_SERVER_PORT", &agentserver_port.to_string())
+        .env("AGENT_SERVER_URL", &format!("ws://127.0.0.1:{}", agentserver_port))
         .env("GALAXYOS_MODE", "desktop")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
@@ -362,14 +366,10 @@ fn find_python() -> Result<String, String> {
 }
 
 async fn wait_for_health(port: u16, name: &str, max_secs: u64) -> Result<(), String> {
-    let client = reqwest::Client::new();
-    let url = format!("http://127.0.0.1:{}/health", port);
     for i in 0..max_secs {
-        if let Ok(resp) = client.get(&url).timeout(Duration::from_secs(2)).send().await {
-            if resp.status().is_success() {
-                log::info!("{} health check passed after {}s", name, i);
-                return Ok(());
-            }
+        if tokio::net::TcpStream::connect(format!("127.0.0.1:{}", port)).await.is_ok() {
+            log::info!("{} health check passed (TCP) after {}s", name, i);
+            return Ok(());
         }
         tokio::time::sleep(Duration::from_secs(1)).await;
     }

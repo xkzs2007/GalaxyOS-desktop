@@ -23,8 +23,8 @@ pub fn run() {
             swarm_agentserver: Mutex::new(None),
             swarm_gateway: Mutex::new(None),
             galaxyos_process: Mutex::new(None),
-            swarm_port: 19000,
-            gateway_port: 5173,
+            swarm_port: 18092,
+            gateway_port: 19000,
             galaxyos_port: 8765,
             locale: Mutex::new("zh".into()),
         })
