@@ -65,7 +65,7 @@ impl EuiNeoI18nBridge {
             let mut locale_map = HashMap::new();
             let file_path = translations_dir.join(format!("{}.json", locale));
             if let Ok(content) = fs::read_to_string(&file_path) {
-                if let Ok(json): Result<serde_json::Value, _> = serde_json::from_str(&content) {
+                if let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) {
                     Self::flatten_json(&json, "", &mut locale_map);
                 }
             }

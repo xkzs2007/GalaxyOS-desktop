@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::sync::Mutex;
+
 use tauri::Emitter;
 
 pub struct EuiNeoContext {
@@ -94,7 +94,7 @@ impl NativeRenderSurfaceManager {
         Ok(())
     }
 
-    pub fn update_surface(&mut self, surface_id: &str, dsl: &str) -> Result<RenderSurface, String> {
+    pub fn update_surface(&mut self, surface_id: &str, _dsl: &str) -> Result<RenderSurface, String> {
         let surface = self
             .surfaces
             .get_mut(surface_id)
