@@ -9,7 +9,7 @@ Engram — Conditional Memory via Scalable Lookup
 
 核心：条件记忆 = 静态知识查找 + 可学习嵌入 + N-gram 上下文哈希
 
-Author: 小艺 Claw
+Author: GalaxyOS
 Version: 1.0.0
 Created: 2026-06-14
 """

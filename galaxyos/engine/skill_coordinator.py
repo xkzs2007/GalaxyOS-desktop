@@ -8,7 +8,7 @@
 - 组合多个技能
 - 执行工作流
 
-Author: 小艺 Claw
+Author: GalaxyOS
 Version: 1.0.0
 Created: 2026-04-19
 """

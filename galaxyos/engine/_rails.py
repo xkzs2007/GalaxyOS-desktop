@@ -80,7 +80,7 @@ class PermissionContext:
 
 # 全局 ContextVar（线程/协程安全）
 TOOL_PERMISSION_CONTEXT: contextvars.ContextVar[Optional[PermissionContext]] = contextvars.ContextVar(
-    "xiaoyi_claw_tool_permission_context",
+    "galaxy_tool_permission_context",
     default=None,
 )
 

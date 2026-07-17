@@ -591,7 +591,7 @@ if __name__ == "__main__":
 
     s1 = create_skill_asset(
         "skill_web_search_001",
-        "Perform web search using xiaoyi-web-search. Supports query expansion and result dedup.",
+        "Perform web search using galaxy-web-search. Supports query expansion and result dedup.",
         capability_profile={"web_access": 0.9, "search": 0.8},
         tags=["search", "web", "external"],
         category="retrieval",

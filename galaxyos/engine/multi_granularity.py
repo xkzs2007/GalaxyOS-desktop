@@ -709,7 +709,7 @@ if __name__ == "__main__":
     extractor = MultiGranularityExtractor()
 
     texts = [
-        "用户偏好中文表达和七情六欲风格，避免 AI 味。这是小艺 Claw 的人格设定规则。",
+        "用户偏好中文表达和七情六欲风格，避免 AI 味。这是GalaxyOS 的人格设定规则。",
         "记忆系统支持混合检索：KG + DAG + synapse + paper 五路并行，RRF 融合排序。",
         "系统架构共 16 层，包含 4 个自研插件，以 claw-core 为底层核心。",
         "用户要求 AI 在复杂问题先调 intelligent_thinking_trigger 再组合输出。",

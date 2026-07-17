@@ -24,7 +24,7 @@ Mamba-3 增强:
   - 与 LTC/CfC/Neural ODE 等连续模型互补
   - 需要快速推断（非 ODE 求解）的场景
 
-Author: 小艺 Claw
+Author: GalaxyOS
 Version: 1.0.0
 Created: 2026-06-14
 """

@@ -7,7 +7,7 @@
 2. 错误模式检测 — 同类错误 ≥3 次自动生成改进建议
 3. 进化追踪 — 改进前后的质量对比，形成进化曲线
 
-Author: 小艺 Claw
+Author: GalaxyOS
 Version: 1.0.0
 Created: 2026-05-09
 """

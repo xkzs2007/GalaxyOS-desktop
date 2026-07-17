@@ -5,7 +5,7 @@
 
 集成 Galaxy Engine 持续学习管线。
 
-Author: 小艺 Claw
+Author: GalaxyOS
 Version: 2.0.0
 Updated: 2026-06-14
 """

@@ -11,7 +11,7 @@ CfC Inference Engine — 结合 NCP Wiring 的动态突触权重推理层
 
 不破坏现有 JSONL 存储层。推理层可按需开关。
 
-Author: 小艺 Claw
+Author: GalaxyOS
 Version: 1.0.0
 Created: 2026-06-05
 """

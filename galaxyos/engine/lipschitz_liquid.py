@@ -21,7 +21,7 @@ Lipschitz Liquid — Lipschitz 约束的液体单元
   - 在需要高稳定性训练的场景替代普通 LTC
   - L3 优化器使用此单元保证长程训练不崩溃
 
-Author: 小艺 Claw
+Author: GalaxyOS
 Version: 1.0.0
 Created: 2026-06-14
 """

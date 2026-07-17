@@ -15,7 +15,7 @@ KoRa v2 — 行为模式引擎
 - 用户行为模式挖掘: Wang et al. 2018, User Behavior Pattern Mining
 - 时序聚类: TimeSeries KMeans / DTW
 
-Author: 小艺 Claw
+Author: GalaxyOS
 Version: 2.0.0
 Created: 2026-06-02
 """

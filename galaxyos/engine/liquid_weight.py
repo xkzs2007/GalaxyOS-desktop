@@ -15,7 +15,7 @@ P19: Liquid Weight 独立模块 — 液态权重生成、融合、混合
   - LTC: Liquid Time-Constant Networks (Hasani, AAAI 2021)
   - CfC: Closed-form Continuous-time (Hasani, Nature MI 2022)
 
-Author: 小艺 Claw
+Author: GalaxyOS
 Version: 1.0.0
 Created: 2026-06-14
 """

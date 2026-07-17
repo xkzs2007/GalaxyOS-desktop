@@ -364,7 +364,7 @@ def build_default_skill_catalog() -> Dict[str, dict]:
 
         # 多模态 (3)
         "seedream-image-gen": {"category": "multimodal", "description": "图像生成"},
-        "xiaoyi-image-understanding": {"category": "multimodal", "description": "图像理解"},
+        "galaxy-image-understanding": {"category": "multimodal", "description": "图像理解"},
         "xiaoyi-image-search": {"category": "multimodal", "description": "图像搜索"},
 
         # 开发工具 (3)

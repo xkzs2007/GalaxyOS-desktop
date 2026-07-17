@@ -8,7 +8,7 @@ Generative Agents 模块单元测试
 - reflection_engine.py: 反思引擎
 - planning_engine.py: 规划引擎
 
-Author: 小艺 Claw
+Author: GalaxyOS
 Version: 1.0.0
 Created: 2026-04-21
 """

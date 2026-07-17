@@ -294,7 +294,7 @@ def create_cron_config():
     """创建 cron 配置说明"""
     print("\n📅 定时任务配置:")
 
-    cron_config = f"""# 小艺 Claw 维护任务定时配置
+    cron_config = f"""# GalaxyOS 维护任务定时配置
 # 添加到 crontab: crontab -e
 
 # 每周一 03:00 运行完整维护

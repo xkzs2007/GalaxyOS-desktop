@@ -8,7 +8,7 @@
 
 Layer 12: 多模态生成层
 
-作者: 小艺 Claw
+Author: GalaxyOS
 日期: 2026-04-21
 """
 

@@ -11,7 +11,7 @@ LFM Skill Bank — 将 COSPLAY 的 Skill Bank 架构移植到 GalaxyOS LFM
 集成入口:
   memory_consolidation.py: ConsolidationEngine._run_consolidation_cycle()
 
-Author: 小艺 Claw
+Author: GalaxyOS
 Version: 1.0.0
 Created: 2026-06-23 (移植自 COSPLAY: arxiv 2604.20987)
 """

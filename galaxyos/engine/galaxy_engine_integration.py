@@ -21,7 +21,7 @@ Galaxy Engine Integration Layer
   - lazyload：首次调用才导入，不影响系统启动
   - 降级友好：模块不可用时静默跳过
 
-Author: 小艺 Claw
+Author: GalaxyOS
 Version: 1.0.0
 Created: 2026-06-14
 """

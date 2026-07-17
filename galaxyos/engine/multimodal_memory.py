@@ -212,7 +212,7 @@ class MultimodalMemoryStore:
         从图像理解结果存储记忆
 
         Args:
-            understanding_result: xiaoyi-image-understanding 返回结果
+            understanding_result: galaxy-image-understanding 返回结果
             source_path: 原始图像路径
 
         Returns:
@@ -224,7 +224,7 @@ class MultimodalMemoryStore:
         embedding = understanding_result.get('embedding')
 
         metadata = {
-            'source': 'xiaoyi-image-understanding',
+            'source': 'galaxy-image-understanding',
             'source_path': source_path,
             'raw_result': understanding_result
         }

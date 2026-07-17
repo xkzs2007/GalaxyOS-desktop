@@ -16,7 +16,7 @@ https://arxiv.org/abs/2210.03629
   - 每一步的 Action 复用现有的 R-CCAM 五阶段
   - 最终结果整合后返回
 
-Author: 小艺 Claw
+Author: GalaxyOS
 """
 
 import json

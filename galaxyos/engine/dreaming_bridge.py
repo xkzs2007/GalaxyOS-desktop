@@ -37,7 +37,7 @@ Dreaming Bridge — OpenClaw Dreaming ↔ GalaxyOS BioRhythm 双系统整合
   ├─ Deep ↔ DEEP-SLEEP: 评分提升→MEMORY.md 升格
   └─ 空闲调度: ConsolidationEngine → dreaming cron
 
-Author: 小艺 Claw
+Author: GalaxyOS
 Version: 1.0.0
 Created: 2026-06-02
 """

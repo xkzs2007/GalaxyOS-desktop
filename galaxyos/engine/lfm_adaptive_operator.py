@@ -21,7 +21,7 @@ LFM 自适应算子 — Liquid Foundation Model Adaptive Linear Operator
   - 提供更高效的时序建模通道
   - 支持长序列场景下的推理加速
 
-Author: 小艺 Claw
+Author: GalaxyOS
 Version: 1.0.0
 Created: 2026-06-14
 """

@@ -7,7 +7,7 @@
 2. 思考能力增强 - 使用思考技能分析不确定性
 3. 渐进式验证 - 根据不确定性级别选择验证策略
 
-Author: 小艺 Claw
+Author: GalaxyOS
 Version: 2.0.0
 Created: 2026-04-21
 """

@@ -9,7 +9,7 @@
 - 配置文件规则
 - 学习记录规则
 
-Author: 小艺 Claw
+Author: GalaxyOS
 Version: 1.0.0
 Created: 2026-04-21
 """
@@ -127,11 +127,11 @@ class RulesManager:
 
         content = self.tools_md.read_text(encoding="utf-8")
 
-        rules["web_search_default"] = "xiaoyi-web-search" in content
+        rules["web_search_default"] = "galaxy-web-search" in content
         rules["gui_agent_rules"] = "xiaoyi-gui-agent" in content
         rules["find_skills_default"] = "find-skills" in content
         rules["doc_convert_default"] = "xiaoyi-doc-convert" in content
-        rules["image_understanding_default"] = "xiaoyi-image-understanding" in content
+        rules["image_understanding_default"] = "galaxy-image-understanding" in content
         rules["file_return_default"] = "send_file_to_user" in content
         rules["cron_channel_required"] = "cron" in content and "channel" in content
         rules["git_download_dir"] = "OPENCLAW_GIT_DIR" in content
@@ -308,7 +308,7 @@ class RulesManager:
         summary.append("\n【工具规则】")
         tools = rules.get("tool_rules", {})
         if tools.get("web_search_default"):
-            summary.append("  ✅ 联网搜索: xiaoyi-web-search")
+            summary.append("  ✅ 联网搜索: galaxy-web-search")
         if tools.get("gui_agent_rules"):
             summary.append("  ✅ 手机操控: xiaoyi-gui-agent")
         if tools.get("find_skills_default"):

@@ -8,7 +8,7 @@
 1. 在 AGENTS.md 中添加规则：检测到用户纠正时调用此脚本
 2. 或在对话处理流程中自动调用
 
-Author: 小艺 Claw
+Author: GalaxyOS
 Version: 1.0.0
 Created: 2026-04-19
 """

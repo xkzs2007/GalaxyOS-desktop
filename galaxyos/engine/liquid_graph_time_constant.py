@@ -17,7 +17,7 @@ LGTC — Liquid-Graph Time-Constant Network
   2. 节点更新：dh_v/dt = σ(W_h h_v + W_m m_v + b) * (E - h_v) / τ_v
   3. 时间常数：τ_v = σ(W_τ h_v + W_τm m_v + b_τ) * (τ_max - τ_min) + τ_min
 
-Author: 小艺 Claw
+Author: GalaxyOS
 Version: 1.0.0
 Created: 2026-06-14
 """

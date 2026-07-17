@@ -12,7 +12,7 @@ LFM Boundary Detector — 移植 COSPLAY Boundary Proposal 到 GalaxyOS DAG
   memory_consolidation.py: ConsolidationEngine._run_consolidation_cycle()
   dag_context_manager.py:   add_message() 时标记意图边界
 
-Author: 小艺 Claw
+Author: GalaxyOS
 Version: 1.0.0
 Created: 2026-06-23 (移植自 COSPLAY: arxiv 2604.20987)
 """

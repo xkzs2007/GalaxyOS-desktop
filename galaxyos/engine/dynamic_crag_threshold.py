@@ -6,7 +6,7 @@ CRAG 动态阈值模块
 - Corrective Retrieval Augmented Generation (CRAG 2024)
 - https://arxiv.org/abs/2401.15884
 
-Author: 小艺 Claw
+Author: GalaxyOS
 Version: 1.0.0
 Created: 2026-04-21
 """

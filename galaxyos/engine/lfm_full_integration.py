@@ -10,7 +10,7 @@ LFM 全链路集成桥 — v8.2.2
   因此输出结果能在统计层面体现"真实 embedding 经过液态动态"的意义。
   经过 consolidation 周期积累，能建立 embedding 分布 → 模块响应的映射。
 
-Author: 小艺 Claw
+Author: GalaxyOS
 Created: 2026-06-15
 """
 

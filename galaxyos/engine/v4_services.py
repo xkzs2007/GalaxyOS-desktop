@@ -1,5 +1,5 @@
 """
-小艺 Claw 系统架构 v4.0 — IPC 服务层
+GalaxyOS架构 v4.0 — IPC 服务层
 Phase 2/3/4 综合实现
 
 不修改 xiaoyi_claw_api.py（2500 行），

@@ -6,7 +6,7 @@ LTC Synapse — 液态时间常数突触
   每条突触学一对 (t_a, t_b, ff1, ff2)
   权重由 sigmoid( t_a * days_unused + t_b ) 动态插值
 
-Author: 小艺 Claw
+Author: GalaxyOS
 Version: 1.0.0
 Created: 2026-06-05
 """

@@ -12,7 +12,7 @@
 论文参考: Generative Agents: Interactive Simulacra (2023)
 https://arxiv.org/abs/2304.03442
 
-Author: 小艺 Claw
+Author: GalaxyOS
 Version: 1.0.0
 Created: 2026-04-21
 """

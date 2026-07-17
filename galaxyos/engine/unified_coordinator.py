@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-小艺 Claw 统一协调器 V2 (Unified Coordinator V2)
+GalaxyOS 统一协调器 V2 (Unified Coordinator V2)
 
 整合所有 78 个未使用模块，形成完整的记忆增强系统。
 
-Author: 小艺 Claw
+Author: GalaxyOS
 Version: 2.0.0
 Created: 2026-04-21
 """
@@ -1211,8 +1211,8 @@ MODULE_REGISTRY: Dict[str, ModuleInfo] = {
     "xiaoyi_claw_api": ModuleInfo(
         name="xiaoyi_claw_api",
         module_type=ModuleType.XIAOYI_MEMORY_V2,
-        description="小艺 Claw 统一 API - 记忆管理接口",
-        triggers=["统一API", "小艺API"],
+        description="GalaxyOS 统一 API - 记忆管理接口",
+        triggers=["统一API", "GalaxyOS API"],
         script_path=str(CORE_DIR / "xiaoyi_claw_api.py"),
         layer=1
     ),

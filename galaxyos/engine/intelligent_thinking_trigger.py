@@ -5,7 +5,7 @@
 论文参考:
 - Intent Detection in Conversational Systems (2023)
 
-Author: 小艺 Claw
+Author: GalaxyOS
 Version: 1.0.0
 Created: 2026-04-21
 """

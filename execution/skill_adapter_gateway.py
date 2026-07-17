@@ -38,7 +38,7 @@ for _p in [_ws_root, "/workspace"]:
     if _p not in _sys.path:
         _sys.path.insert(0, _p)
 import path_resolver
-logger = logging.getLogger('xiaoyi-claw-omega.L4')
+logger = logging.getLogger('galaxyos.L4')
 
 
 class ExecutionStatus(Enum):

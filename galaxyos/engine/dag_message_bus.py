@@ -31,7 +31,7 @@ DAG 消息总线 — A2A 异步消息路由
   - priority = 消息优先级
 
 Layer: L4 (Agent 通信层)
-作者: 小艺 Claw
+Author: GalaxyOS
 版本: 1.0.0
 创建: 2026-06-09
 """

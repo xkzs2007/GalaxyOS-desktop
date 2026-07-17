@@ -10,7 +10,7 @@
 
 参考 MemGPT 论文中的 Archival Memory 设计。
 
-Author: 小艺 Claw
+Author: GalaxyOS
 Version: 1.0.0
 Created: 2026-04-21
 """

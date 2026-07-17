@@ -21,7 +21,7 @@ def claw():
     """创建一次 Agent 实例，所有 smoke test 复用"""
     from services.xiaoyi_claw_api import XiaoYiClawLLM
     import logging
-    logging.getLogger('xiaoyi-claw-omega').setLevel(logging.WARNING)
+    logging.getLogger('galaxyos').setLevel(logging.WARNING)
     logging.getLogger('galaxyos.engine').setLevel(logging.WARNING)
     return XiaoYiClawLLM()
 

@@ -4,7 +4,7 @@
 
 整合所有优化模块，提供统一调用接口
 
-Author: 小艺 Claw
+Author: GalaxyOS
 Version: 1.0.0
 Created: 2026-04-21
 """

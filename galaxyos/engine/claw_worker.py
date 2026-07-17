@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-claw_worker — 小艺 Claw 常驻 Python Worker 进程
+claw_worker — GalaxyOS 常驻 Python Worker 进程
 
 三通道 JSON-RPC 2.0:
   1. UDS socket:   ~/.openclaw/extensions/galaxyos/var/claw-worker.sock (主通道, fallback: claw-core/var)
@@ -2742,7 +2742,7 @@ def main():
             if not answer:
                 return
             # 拼接完整对话对作为分析输入
-            _full_text = f"用户说: {query[:300]}\n小艺回答: {answer[:600]}"
+            _full_text = f"用户说: {query[:300]}\nGalaxyOS回答: {answer[:600]}"
             try:
                 _p = _lazy_pi()
                 # 情感分析：传入完整对话（有 AI 回答才有情感判断依据）

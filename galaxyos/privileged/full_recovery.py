@@ -120,7 +120,7 @@ def check_status():
     if skills_dir.exists():
         skills = [s for s in skills_dir.iterdir() if s.is_dir()]
         print(f"  技能数量: {len(skills)}")
-        key_skills = ['llm-memory-integration', 'yaoyao-memory', 'xiaoyi-web-search', 'xiaoyi-gui-agent']
+        key_skills = ['llm-memory-integration', 'yaoyao-memory', 'galaxy-web-search', 'xiaoyi-gui-agent']
         for ks in key_skills:
             if (skills_dir / ks).exists():
                 print(f"  - ✅ {ks}")

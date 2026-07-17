@@ -18,7 +18,7 @@
   → knowledge/ （结构化 .md 文件）
 
 Layer: L4 (知识层)
-作者: 小艺 Claw
+Author: GalaxyOS
 版本: 1.0.0
 创建: 2026-06-09
 """

@@ -10,7 +10,7 @@ KAN — Kolmogorov-Arnold Networks
 核心：KAN 层的每条边是一条可学习的样条曲线，
       而非 MLP 中固定激活 + 线性权重的组合。
 
-Author: 小艺 Claw
+Author: GalaxyOS
 Version: 1.0.0
 Created: 2026-06-14
 """

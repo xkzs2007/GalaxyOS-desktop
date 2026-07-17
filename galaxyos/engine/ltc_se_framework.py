@@ -18,7 +18,7 @@ LTC-SE — Liquid Time-Constant Networks Unified Framework
   - 通过配置切换不同单元类型
   - 与 KAN、Neural ODE 组合使用
 
-Author: 小艺 Claw
+Author: GalaxyOS
 Version: 1.0.0
 Created: 2026-06-14
 """

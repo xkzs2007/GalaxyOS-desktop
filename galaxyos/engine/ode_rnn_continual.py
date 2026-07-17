@@ -15,7 +15,7 @@ ODE-RNN + 记忆增强持续学习
   - 与 MemoryOS 的热度跟踪和分段页式记忆协同
   - 支撑仿生神经网络记忆系统的连续训练
 
-Author: 小艺 Claw
+Author: GalaxyOS
 Version: 1.0.0
 Created: 2026-06-14
 """

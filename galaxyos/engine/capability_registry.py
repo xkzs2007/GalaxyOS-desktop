@@ -174,7 +174,7 @@ class HarnessProfile:
         env = self.environment
 
         # Web access: 如果可用网络工具则开启
-        if "web_fetch" in self.tools or "xiaoyi_web_search" in self.tools:
+        if "web_fetch" in self.tools or "galaxy_web_search" in self.tools:
             profile.web_access = {"enabled": True, "level": "search"}
         if any("browser" in t for t in self.tools):
             profile.web_access["level"] = "scrape"
@@ -205,7 +205,7 @@ class HarnessProfile:
             profile.memory = True
 
         # Search
-        if "claw_recall" in self.tools or "xiaoyi_web_search" in self.tools:
+        if "claw_recall" in self.tools or "galaxy_web_search" in self.tools:
             profile.search = True
 
         # Code gen
@@ -279,7 +279,7 @@ class HarnessProfile:
                 for sk in skills:
                     sk_lower = sk.lower()
                     if "web" in sk_lower or "search" in sk_lower:
-                        hp.tools.append("xiaoyi_web_search")
+                        hp.tools.append("galaxy_web_search")
                     if "memory" in sk_lower or "recall" in sk_lower:
                         if "claw_recall" not in hp.tools:
                             hp.tools.append("claw_recall")
@@ -990,7 +990,7 @@ if __name__ == "__main__":
     # 4. SkillClassifier
     sample_skill = """
 # web-search
-Search the web using xiaoyi-web-search API.
+Search the web using galaxy-web-search API.
 Fetches results from multiple search engines.
 Requires: node, fetch API
 Supports: search, scrape, query expansion

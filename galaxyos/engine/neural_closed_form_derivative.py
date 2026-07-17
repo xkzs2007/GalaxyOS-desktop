@@ -27,7 +27,7 @@ NCD — Neural Closed-Form Derivative
 
   NCD 用高斯误差函数 erf() 精确计算该积分。
 
-Author: 小艺 Claw
+Author: GalaxyOS
 Version: 1.0.0
 Created: 2026-06-14
 """

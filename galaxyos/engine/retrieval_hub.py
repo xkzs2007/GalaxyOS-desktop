@@ -1596,7 +1596,7 @@ def _do_web(query: str, max_web_results: int) -> list:
     不参与 RRF 融合，仅作为检索后的外部验证参考。
     调用方可用验证结果修正 quality 判断。
 
-    调小艺 API（search.js），Node 内联调用输出 JSON。
+    调 GalaxyOS API（search.js），Node 内联调用输出 JSON。
     """
     _r = []
     try:

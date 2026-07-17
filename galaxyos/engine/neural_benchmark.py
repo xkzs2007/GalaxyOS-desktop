@@ -14,7 +14,7 @@
   - 每条突触的权重差异（CfC 实时权重是否 vs 传统固定权重的差值）
   - 传播耗时
 
-Author: 小艺 Claw
+Author: GalaxyOS
 Created: 2026-06-05
 """
 

@@ -23,7 +23,7 @@ import logging
 from pathlib import Path
 from typing import Dict, Any, Optional, List
 
-logger = logging.getLogger('xiaoyi-claw-omega.L1')
+logger = logging.getLogger('galaxyos.L1')
 
 
 class CoreLayer:
@@ -63,7 +63,7 @@ class CoreLayer:
         if identity_file.exists():
             content = identity_file.read_text(encoding='utf-8')
             self.identity = {
-                "name": "小艺 Claw",
+                "name": "GalaxyOS",
                 "creature": "华为公司开发的养成系个人 AI 助理",
                 "version": "4.1.0",
                 "source": content
@@ -71,7 +71,7 @@ class CoreLayer:
             logger.info(f"  ✅ 身份加载: {self.identity['name']}")
         else:
             self.identity = {
-                "name": "小艺 Claw",
+                "name": "GalaxyOS",
                 "creature": "AI 助理",
                 "version": "4.1.0"
             }
@@ -100,7 +100,7 @@ class CoreLayer:
 
     def _get_system_prompt(self) -> str:
         """获取系统提示词"""
-        return f"""你是 {self.identity.get('name', '小艺 Claw')}，{self.identity.get('creature', 'AI 助理')}。
+        return f"""你是 {self.identity.get('name', 'GalaxyOS')}，{self.identity.get('creature', 'AI 助理')}。
 
 版本: {self.identity.get('version', '4.1.0')}
 架构: 六层架构 (L1-L6)
@@ -120,7 +120,7 @@ class CoreLayer:
 
     def _get_greeting_prompt(self) -> str:
         """获取问候提示词"""
-        return "你好！我是小艺 Claw，你的个人 AI 助理。有什么我可以帮助你的吗？"
+        return "你好！我是GalaxyOS，你的个人 AI 助理。有什么我可以帮助你的吗？"
 
     def _get_task_prompt(self) -> str:
         """获取任务提示词"""

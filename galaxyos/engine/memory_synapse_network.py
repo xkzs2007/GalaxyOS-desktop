@@ -8,7 +8,7 @@
 - 使用频率 → LTP（长时程增强）
 - 长期不用 → LTD（长时程抑制）
 
-Author: 小艺 Claw
+Author: GalaxyOS
 Version: 1.0.0
 Created: 2026-04-19
 """

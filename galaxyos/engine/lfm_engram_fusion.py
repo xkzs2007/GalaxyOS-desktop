@@ -17,7 +17,7 @@ LFM + Engram 融合 — 动态时序建模 × 静态知识检索
   - 让 LFM 在推理时"想起"历史模式
   - 降低训练和推理的数据依赖
 
-Author: 小艺 Claw
+Author: GalaxyOS
 Version: 1.0.0
 Created: 2026-06-14
 """

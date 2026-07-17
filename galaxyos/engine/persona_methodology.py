@@ -15,7 +15,7 @@ Persona-Methodology Matching Engine
   → intelligent_thinking_trigger.py (get_skill_for_query)
   → health_check()
 
-Author: 小艺 Claw
+Author: GalaxyOS
 Version: 1.0.0
 """
 

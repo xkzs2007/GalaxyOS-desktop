@@ -16,7 +16,7 @@
 - 不阻塞主线程，异步执行
 - 只更新 small adapter（~1M params），不动 2.2B LFM 主模型
 
-Author: 小艺 Claw
+Author: GalaxyOS
 Version: 1.0.0
 Created: 2026-06-15
 """

@@ -31,7 +31,7 @@ class QueryRewriter:
     # 语义扩展词典（新增）
     SEMANTIC_EXPANSIONS = {
         "记住": ["记忆系统", "长时记忆", "记忆存储"],
-        "AI": ["智能助手", "OpenClaw", "小艺"],
+        "AI": ["智能助手", "OpenClaw", "GalaxyOS"],
         "配置": ["设置", "参数", "选项"],
         "优化": ["性能提升", "效率改进", "调优"],
     }

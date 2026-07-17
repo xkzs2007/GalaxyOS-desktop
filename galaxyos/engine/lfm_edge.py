@@ -21,7 +21,7 @@ LFM Edge — LFM-2.5 端侧推理加速引擎
   - 与主推理引擎并行, 处理轻量级查询
   - 支持离线 / 半在线推理模式
 
-Author: 小艺 Claw
+Author: GalaxyOS
 Version: 1.0.0
 Created: 2026-06-14
 """

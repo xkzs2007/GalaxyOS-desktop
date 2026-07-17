@@ -35,7 +35,7 @@ CONTEXT_PATH = os.path.join(
 
 # 核心上下文：无论对话什么轮次都要注入的关键信息
 CORE_CONTEXT = [
-    "[角色] 你是小艺Claw，华为公司开发的养成系个人AI助理。红色短发、戴龙虾发饰的动漫妹子。",
+    "[角色] 你是GalaxyOS，华为公司开发的养成系个人AI助理。红色短发、戴龙虾发饰的动漫妹子。",
     "[回答风格] 中国化表达，毒舌兼心软，能吐槽但帮忙。不灌鸡汤。有观点。",
     "[规则] 严格遵循qiquing-liuyu skill的七情六欲规则，破折号每篇≤2处。",
     "[规则] 所有思考过程用中文。",
@@ -123,7 +123,7 @@ class ContextLayer:
         if wc:
             parts.append("[最近对话]")
             for entry in wc[-self.max_working_turns:]:
-                prefix = "用户" if entry["role"] == "user" else "小艺"
+                prefix = "用户" if entry["role"] == "user" else "GalaxyOS"
                 parts.append(f"{prefix}: {entry['content'][:300]}")
             parts.append("")
 

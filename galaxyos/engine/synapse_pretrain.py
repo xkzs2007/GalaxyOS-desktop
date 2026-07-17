@@ -9,7 +9,7 @@
 
 学到的嵌入存储为 models/synapse_pretrain.pth，供 GAT 初始化用。
 
-Author: 小艺 Claw
+Author: GalaxyOS
 Version: 1.0.0
 Created: 2026-06-07
 """

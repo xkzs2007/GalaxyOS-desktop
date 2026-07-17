@@ -14,7 +14,7 @@ TitansNeuralMemory — 在线神经记忆模块
 - 替代/补充 ConsolidationEngine 的被动等待 → 主动在线更新
 - 记忆向量持续追踪系统状态，不做批量固化
 
-Author: 小艺 Claw
+Author: GalaxyOS
 Version: 1.0.0
 Created: 2026-06-15
 """

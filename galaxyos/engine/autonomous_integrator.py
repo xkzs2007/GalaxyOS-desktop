@@ -8,7 +8,7 @@
 - proactive-tasks
 - natural-language-planner
 
-Author: 小艺 Claw
+Author: GalaxyOS
 Version: 1.0.0
 Created: 2026-04-21
 """

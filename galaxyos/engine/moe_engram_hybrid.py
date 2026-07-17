@@ -20,7 +20,7 @@ MoE + Engram 融合 — U 型缩放律
   - 在需要大容量推理时用 MoE，需要精确记忆时用 Engram
   - 根据 U 型缩放律动态调整 MoE/Engram 比例
 
-Author: 小艺 Claw
+Author: GalaxyOS
 Version: 1.0.0
 Created: 2026-06-14
 """

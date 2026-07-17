@@ -17,7 +17,7 @@
   - 当 ReAct 的 Action 类型为 "analyze_code" 时调用此引擎
   - 结果可以作为 Observation 返回
 
-Author: 小艺 Claw
+Author: GalaxyOS
 """
 
 import ast

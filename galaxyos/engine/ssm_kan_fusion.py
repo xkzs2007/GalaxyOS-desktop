@@ -25,7 +25,7 @@ KAN 的 B-spline 基函数可以捕捉：
   - 替代标准 SSM 的线性投影
   - 与其他模块（KAN+LTC 融合、KAN+NeuralODE）互补
 
-Author: 小艺 Claw
+Author: GalaxyOS
 Version: 1.0.0
 Created: 2026-06-14
 """

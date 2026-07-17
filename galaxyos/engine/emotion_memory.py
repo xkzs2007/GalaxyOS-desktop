@@ -6,7 +6,7 @@
 - 强烈情绪（开心/生气/焦虑）→ 高权重 → 长期记忆
 - 平淡情绪 → 低权重 → 短期记忆
 
-Author: 小艺 Claw
+Author: GalaxyOS
 Version: 1.0.0
 Created: 2026-04-19
 """

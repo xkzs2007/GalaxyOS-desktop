@@ -10,7 +10,7 @@ MemGPT 风格记忆管理器
 - Working Memory: 当前对话上下文（自动压缩）
 - Archival Memory: 历史记忆（无限容量，向量检索）
 
-Author: 小艺 Claw
+Author: GalaxyOS
 Version: 1.0.0
 Created: 2026-04-21
 """

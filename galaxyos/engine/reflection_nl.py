@@ -7,7 +7,7 @@
 - "最近有什么问题吗？" → 返回反思摘要
 - "帮我改进一下" → 应用待处理的改进
 
-Author: 小艺 Claw
+Author: GalaxyOS
 Version: 1.0.0
 Created: 2026-04-19
 """

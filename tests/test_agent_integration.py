@@ -21,7 +21,7 @@ import logging
 from unittest.mock import patch, MagicMock
 
 # 抑制日志噪音
-logging.getLogger('xiaoyi-claw-omega').setLevel(logging.ERROR)
+logging.getLogger('galaxyos').setLevel(logging.ERROR)
 logging.getLogger('galaxyos.engine').setLevel(logging.ERROR)
 logging.getLogger('galaxyos.privileged').setLevel(logging.ERROR)
 
@@ -229,7 +229,7 @@ class TestMemoryIntegration:
         """标准 Agent 实例"""
         from services.xiaoyi_claw_api import XiaoYiClawLLM
         import logging
-        for name in ['xiaoyi-claw-omega', 'galaxyos', 'services']:
+        for name in ['galaxyos', 'galaxyos', 'services']:
             logging.getLogger(name).setLevel(logging.WARNING)
         claw = XiaoYiClawLLM()
         return _setup_essential_attrs(claw)

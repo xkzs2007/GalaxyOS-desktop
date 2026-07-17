@@ -8,7 +8,7 @@
 3. 应用待处理的改进
 4. 验证已应用的改进
 
-Author: 小艺 Claw
+Author: GalaxyOS
 Version: 1.0.0
 Created: 2026-04-19
 """

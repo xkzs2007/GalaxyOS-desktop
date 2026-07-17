@@ -8,7 +8,7 @@
 3. 指代消解 — 基于就近原则的代词解析
 4. 对比句检测 — 比较关系抽取与图谱构建
 
-Author: 小艺 Claw
+Author: GalaxyOS
 Version: 1.0.0
 Created: 2026-05-14
 """
@@ -244,7 +244,7 @@ class EntityLinker:
         """构建系统内置知识库"""
         kb = {}
         entities = [
-            KnowledgeEntity("小艺Claw", aliases=["小艺 Claw", "小艺Claw系统", "claw系统"], type="system", description="基于OpenClaw框架的AI助手系统"),
+            KnowledgeEntity("GalaxyOS", aliases=["GalaxyOS", "claw系统"], type="system", description="基于OpenClaw框架的AI助手系统"),
             KnowledgeEntity("OpenClaw", aliases=["openclaw", "Claw框架"], type="framework", description="开源AI助手框架"),
             KnowledgeEntity("DeepSeek", aliases=["deepseek", "DeepSeek V4"], type="model", description="AI模型提供商"),
             KnowledgeEntity("腾讯云记忆插件", aliases=["memory-tencentdb", "腾讯云插件", "tdai-memory"], type="plugin", description="腾讯云记忆存储插件"),
@@ -698,27 +698,27 @@ if __name__ == "__main__":
     nlp = EnhancedNLP()
 
     print("=== 1. 依存句法 ===")
-    dep = nlp.dep_parser.parse("小艺Claw系统使用Python开发")
+    dep = nlp.dep_parser.parse("GalaxyOS使用Python开发")
     print(f"  核心词: {dep.root_word}")
     for r in dep.relations:
         print(f"  {r.relation}: {r.head_word}({r.head_pos}) ← {r.dep_word}({r.dep_pos})")
-    triple = nlp.dep_parser.extract_triple("小艺系统使用Python")
+    triple = nlp.dep_parser.extract_triple("GalaxyOS系统使用Python")
     print(f"  三元组: {triple}")
 
     print("\n=== 2. 实体链接 ===")
-    links = nlp.entity_linker.link("对比一下小艺Claw和无问芯穹哪个更好")
+    links = nlp.entity_linker.link("对比一下GalaxyOS和无问芯穹哪个更好")
     for m, e, c in links:
         print(f"  {m} → {e.name} ({e.type}) [{c}]")
 
     print("\n=== 3. 指代消解 ===")
-    nlp.coref_resolver.update_context(["小艺Claw", "DAG", "突触网络"])
-    res = nlp.coref_resolver.resolve("它好用吗", "小艺Claw的DAG上下文管理器")
+    nlp.coref_resolver.update_context(["GalaxyOS", "DAG", "突触网络"])
+    res = nlp.coref_resolver.resolve("它好用吗", "GalaxyOS的DAG上下文管理器")
     for k, v in res.items():
         print(f"  {k} → {v}")
 
     print("\n=== 4. 对比检测 ===")
     tests = [
-        "小艺Claw比腾讯云插件更方便",
+        "GalaxyOS比腾讯云插件更方便",
         "突触网络不如DAG稳定",
         "今天天气很好",
     ]
@@ -730,5 +730,5 @@ if __name__ == "__main__":
             print(f"  ❌ 非对比句: {t[:30]}")
 
     print("\n=== 5. 全量分析 ===")
-    result = nlp.analyze("DAG上下文管理器比腾讯云插件稳定得多", "小艺Claw系统架构")
+    result = nlp.analyze("DAG上下文管理器比腾讯云插件稳定得多", "GalaxyOS架构")
     print(json.dumps(result, indent=2, ensure_ascii=False))

@@ -17,7 +17,7 @@
     ↓ 关联记忆列表
   返回给检索调用方
 
-Author: 小艺 Claw
+Author: GalaxyOS
 Version: 1.0.0
 Created: 2026-06-05
 """

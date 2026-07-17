@@ -34,7 +34,7 @@
   ▶ 更深空闲 = "REM" → 生成式梦境 + 情感整合
   ▶ 最后 = "deep_sleep" → 记忆迁移(短期→长期)
 
-Author: 小艺 Claw
+Author: GalaxyOS
 Version: 1.0.0
 Created: 2026-06-02
 """

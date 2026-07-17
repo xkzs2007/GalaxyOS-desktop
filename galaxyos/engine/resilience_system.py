@@ -9,7 +9,7 @@
 - 渐进式降级策略
 - 自动恢复与热重载
 
-Author: 小艺 Claw
+Author: GalaxyOS
 Version: 2.0.0
 Created: 2026-04-23
 """
@@ -948,7 +948,7 @@ REMAINING_MODULES = {
     ),
     "xiaoyi_claw_api": ComponentInfo(
         id="xiaoyi_claw_api",
-        name="小艺Claw API",
+        name="GalaxyOS API",
         tier=ComponentTier.CORE,
         module_path="xiaoyi_claw_api",
         class_name="XiaoYiClawLLM",

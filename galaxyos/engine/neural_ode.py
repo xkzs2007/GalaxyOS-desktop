@@ -15,7 +15,7 @@ Neural ODE — Neural Ordinary Differential Equations
   - KAN 替代 MLP 作为 ODE 右端函数
   - 与 DAG 上下文管理器的连续时间 compact
 
-Author: 小艺 Claw
+Author: GalaxyOS
 Version: 1.0.0
 Created: 2026-06-14
 """

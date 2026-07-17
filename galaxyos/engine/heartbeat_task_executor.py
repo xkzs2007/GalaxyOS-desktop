@@ -6,7 +6,7 @@
 - Autonomous Agents: A Survey (2023)
 - Proactive Task Management (2023)
 
-Author: 小艺 Claw
+Author: GalaxyOS
 Version: 1.0.0
 Created: 2026-04-21
 """

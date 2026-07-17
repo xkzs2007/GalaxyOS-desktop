@@ -15,7 +15,7 @@
   R-CCAM _action_phase 不再内联 Flash/Pro 调用，统一走 SmartProcessor。
   Worker 通过 RPC 暴露 smart_processor 端点，CLI 也可独立调用。
 
-Author: 小艺 Claw
+Author: GalaxyOS
 Version: 2.0.0 (R-CCAM 统一路由)
 """
 

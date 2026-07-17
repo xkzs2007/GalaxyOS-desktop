@@ -24,7 +24,7 @@
     在 _memory_phase 中:
         self._engine_int.run_memory_schedule(state)
 
-Author: 小艺 Claw
+Author: GalaxyOS
 """
 
 import logging

@@ -18,7 +18,7 @@ Unified Sparsity View — 稀疏设计空间统一视图
   - 推荐优化方向（哪些维度可以加强稀疏）
   - 与 intelligent_thinking_trigger 协同
 
-Author: 小艺 Claw
+Author: GalaxyOS
 Version: 1.0.0
 Created: 2026-06-14
 """

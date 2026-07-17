@@ -14,7 +14,7 @@ https://arxiv.org/abs/2310.08560
   - 与 ConsolidationEngine 互补: 巩固是"写入"优化，层次管理是"读出"优化
   - 替代全量召回策略: 从"所有记忆都重要"变为"选择重要记忆"
 
-Author: 小艺 Claw
+Author: GalaxyOS
 """
 
 import json

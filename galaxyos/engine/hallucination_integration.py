@@ -8,7 +8,7 @@
 - 输出生成时验证
 - 不确定性表达
 
-Author: 小艺 Claw
+Author: GalaxyOS
 Version: 1.0.0
 Created: 2026-04-20
 """

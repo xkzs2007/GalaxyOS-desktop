@@ -10,7 +10,7 @@
 所有复杂 NLP 任务（指代消解、对比检测、语义分析）通过 Flash API 完成，
 手搓规则降级为基础 0ms 任务（分词、关键词抽取）。
 
-Author: 小艺 Claw
+Author: GalaxyOS
 Version: 1.0.0
 Created: 2026-05-14
 """
@@ -756,11 +756,11 @@ if __name__ == "__main__":
     print("=== 测试: Reflexion 存储与检索 ===")
     te = ThinkingEnhanced()
     te.reflexion.record(
-        question="小艺Claw的记忆系统是什么样的",
+        question="GalaxyOS的记忆系统是什么样的",
         answer="是基于BERT的中文NLP系统",
         scores={"faithfulness": 4, "relevance": 6, "completeness": 5},
     )
-    results = te.reflexion.retrieve("小艺Claw记忆系统架构")
+    results = te.reflexion.retrieve("GalaxyOS记忆系统架构")
     print(f"检索到 {len(results)} 条反思经验")
     print(te.reflexion.format_context(results))
 
@@ -770,9 +770,9 @@ if __name__ == "__main__":
     print(f"探索路径数: {result['path_count']}")
 
     print("\n=== 测试: Flash NLP (无Flash降级) ===")
-    cr = te.flash_nlp.resolve_coref("它好用吗", "小艺Claw系统")
+    cr = te.flash_nlp.resolve_coref("它好用吗", "GalaxyOS")
     print(f"指代消解: {cr}")
-    cmp = te.flash_nlp.detect_comparison("小艺Claw比腾讯云插件更方便")
+    cmp = te.flash_nlp.detect_comparison("GalaxyOS比腾讯云插件更方便")
     print(f"对比检测: {'有' if cmp else '无'}")
 
     print("\n✅ 基础测试完成（Flash 版需运行时注入 llm_flash 客户端）")

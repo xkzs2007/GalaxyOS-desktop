@@ -9,7 +9,7 @@ neural_pipeline.py 期望的三个接口：
   SynapseGATEncoder     — GAT 编码器
   SynapseGraphSAGEEncoder — GraphSAGE 编码器
 
-Author: 小艺 Claw
+Author: GalaxyOS
 Created: 2026-06-06
 """
 

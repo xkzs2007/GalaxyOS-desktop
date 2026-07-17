@@ -15,7 +15,7 @@
 - memory_recall() 时文本/图像混合检索
 - Titans 神经记忆模块可接收跨模态输入
 
-Author: 小艺 Claw
+Author: GalaxyOS
 Version: 1.0.0
 Created: 2026-06-15
 """

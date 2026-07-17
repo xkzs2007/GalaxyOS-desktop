@@ -8,7 +8,7 @@
 3. 记忆干扰模型 — 相似记忆合并/替换，减少冗余
 4. 预测编码记忆 — 冲突检测，标记预测错误
 
-Author: 小艺 Claw
+Author: GalaxyOS
 Version: 1.0.0
 Created: 2026-05-14
 """

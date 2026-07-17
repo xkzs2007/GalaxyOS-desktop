@@ -20,7 +20,7 @@ COSPLAY → DAG 上下文桥接器
    反馈到 Skill Bank 的 refine_effects_contract()。
 
 Layer: L9 (会话管理层)
-Author: 小艺 Claw
+Author: GalaxyOS
 Created: 2026-06-23
 """
 

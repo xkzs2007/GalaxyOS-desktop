@@ -298,7 +298,7 @@ class TestCapabilityRegistry(unittest.TestCase):
         classifier = self.SkillClassifier()
         skill_text = """
 # web-search
-Search the web using xiaoyi-web-search API.
+Search the web using galaxy-web-search API.
 Fetches results from multiple search engines.
 Requires: node, fetch API
 Supports: search, scrape, query expansion

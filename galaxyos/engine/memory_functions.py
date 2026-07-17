@@ -11,7 +11,7 @@
 
 这些函数可以被 LLM 直接调用，实现自主内存管理。
 
-Author: 小艺 Claw
+Author: GalaxyOS
 Version: 1.0.0
 Created: 2026-04-21
 """

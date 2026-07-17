@@ -18,7 +18,7 @@ MultiAgentOrchestrator — 多 Agent 编排器
   - galaxyos/engine/dag_message_bus.py（A2A 通信）
   - galaxyos/engine/hallucination_guard.py（MultiAgentVerifier）
 
-Author: 小艺 Claw
+Author: GalaxyOS
 Version: 0.2.0
 Created: 2026-06-25
 """

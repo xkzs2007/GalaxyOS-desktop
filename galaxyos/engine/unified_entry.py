@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-小艺 Claw 统一入口 V2
+GalaxyOS 统一入口 V2
 整合协调器、工作流引擎、模块调用
 
-Author: 小艺 Claw
+Author: GalaxyOS
 Version: 2.0.0
 Created: 2026-04-23
 """
@@ -1452,7 +1452,7 @@ class UnifiedEntry:
 
 def main():
     """CLI 接口"""
-    parser = argparse.ArgumentParser(description="小艺 Claw 统一入口 V2")
+    parser = argparse.ArgumentParser(description="GalaxyOS 统一入口 V2")
     parser.add_argument("command", choices=[
         "store", "recall", "answer", "forget",
         "health", "status",

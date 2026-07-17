@@ -18,7 +18,7 @@ for _p in [_ws_root, "/workspace"]:
         _sys.path.insert(0, _p)
 import path_resolver
 def get_xiaoyi_claw(config: Optional[Dict] = None):
-    """获取小艺 Claw 实例（单例）"""
+    """获取GalaxyOS 实例（单例）"""
     from .xiaoyi_claw_api import XiaoYiClawLLM
 
     global _instance

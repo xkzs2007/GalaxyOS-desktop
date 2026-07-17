@@ -117,7 +117,7 @@ XIAOYI_OMEGA_LLM_CONFIG  = GALAXYOS_CONFIG / "llm_config.json"
 XIAOYI_OMEGA_SCRIPTS     = GALAXYOS_SCRIPTS
 
 SEEDREAM_SCRIPT          = SKILLS_DIR / "seedream-image_gen" / "scripts" / "generate_seedream.py"
-XIAOYI_WEB_SEARCH_SCRIPT = SKILLS_DIR / "xiaoyi-web-search" / "scripts" / "search.js"
+XIAOYI_WEB_SEARCH_SCRIPT = SKILLS_DIR / "galaxy-web-search" / "scripts" / "search.js"
 TODAY_TASK_DIR           = SKILLS_DIR / "today-task"
 HUAWEI_DRIVE_SCRIPT      = SKILLS_DIR / "huawei-drive" / "scripts" / "smart_backup.py"
 

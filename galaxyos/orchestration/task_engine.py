@@ -20,7 +20,7 @@ from typing import Dict, Any, Optional, List, Callable
 from datetime import datetime
 from enum import Enum
 
-logger = logging.getLogger('xiaoyi-claw-omega.L3')
+logger = logging.getLogger('galaxyos.L3')
 
 
 class TaskStatus(Enum):

@@ -8,7 +8,7 @@
 - 持续优化行为规则
 - 避免重复犯错
 
-Author: 小艺 Claw
+Author: GalaxyOS
 Version: 1.0.0
 Created: 2026-04-19
 """
