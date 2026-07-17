@@ -34,7 +34,11 @@ fn main() {
         println!("cargo:rustc-link-lib=static=eui_neo");
         println!("cargo:rustc-link-lib=static=freetype");
         println!("cargo:rustc-link-lib=static=glfw3");
-        println!("cargo:rustc-link-lib=static=harfbuzz");
+        if cfg!(target_os = "linux") {
+            println!("cargo:rustc-link-lib=dylib=harfbuzz");
+        } else {
+            println!("cargo:rustc-link-lib=static=harfbuzz");
+        }
         println!("cargo:rustc-link-lib=static=glad");
 
         let png_lib = if cfg!(target_os = "windows") {
