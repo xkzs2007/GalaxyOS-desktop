@@ -277,6 +277,8 @@ jobs:
           fi
           echo "EUI-NEO SDK extracted (Linux)"
           ls vendor/eui-neo/sdk/lib/ || { echo "WARNING: lib/ not found in SDK"; ls -la vendor/eui-neo/sdk/; }
+          rm -f vendor/eui-neo/sdk/lib/libharfbuzz.a
+          echo "Removed non-PIC libharfbuzz.a (using system libharfbuzz-dev instead)"
 
       - name: Set up Python
         uses: actions/setup-python@v5
