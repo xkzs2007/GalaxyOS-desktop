@@ -29,7 +29,11 @@ RUN --mount=type=/root/.cargo/registry,target=/root/.cargo/registry \
     cargo install tauri-cli --version "^2"
 
 RUN mkdir -p /app/models/embeddings && \
-    curl -sLf "https://hf-mirror.com/BAAI/bge-small-zh-v1.5/resolve/main/onnx/model.onnx" \
+    curl -sLf --retry 3 --retry-delay 5 --max-time 120 \
+    "https://hf-mirror.com/BAAI/bge-small-zh-v1.5/resolve/main/onnx/model.onnx" \
+    -o /app/models/embeddings/bge-small-zh.onnx || \
+    curl -sLf --retry 3 --retry-delay 5 --max-time 120 \
+    "https://huggingface.co/BAAI/bge-small-zh-v1.5/resolve/main/onnx/model.onnx" \
     -o /app/models/embeddings/bge-small-zh.onnx
 
 COPY --link galaxyos/ /app/galaxyos/
@@ -63,4 +67,3 @@ WORKDIR /app
 LABEL org.opencontainers.image.title="GalaxyOS Desktop Build Environment"
 LABEL org.opencontainers.image.description="GalaxyOS CI/CD build environment with Python 3.12, Rust, Tauri CLI, and all dependencies"
 LABEL org.opencontainers.image.source="https://github.com/xkzs2007/GalaxyOS-desktop"
-
