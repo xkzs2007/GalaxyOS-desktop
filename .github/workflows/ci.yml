@@ -55,7 +55,7 @@ jobs:
           python -c "from openjiuwen.core.foundation.llm.model import Model; print('openjiuwen.core OK')"
           python -c "import torch; print('torch:', torch.__version__)"
           python -c "import faiss; print('faiss:', faiss.__version__)"
-          python -c "import hnswlib; print('hnswlib:', hnswlib.__version__)"
+          python -c "import hnswlib; print('hnswlib: OK')"
           python -c "import transformers; print('transformers:', transformers.__version__)"
           python -c "import pandas; print('pandas:', pandas.__version__)"
 
