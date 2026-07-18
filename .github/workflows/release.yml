@@ -75,7 +75,9 @@ jobs:
           platforms: linux/amd64
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          build-args: INSTALL_HEAVY=0
+          build-args: |
+            INSTALL_HEAVY=1
+            TORCH_VARIANT=cpu
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -119,6 +121,9 @@ jobs:
           pip install "openjiuwen>=0.1.13"
           pip install "pymilvus>=2.6.2,<2.6.10"
           pip install onnxruntime pyinstaller
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install faiss-cpu transformers pandas
+          pip install hnswlib==0.8.0
 
       - name: Download bge-small-zh ONNX model
         shell: bash

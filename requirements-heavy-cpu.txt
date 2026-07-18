@@ -1,0 +1,26 @@
+# GalaxyOS — 重型依赖（CPU 版本，CI/无 GPU 环境用）
+# 安装：pip install -r requirements-heavy-cpu.txt
+#
+# GPU 用户请用：pip install -r requirements-heavy-cuda.txt
+# 或直接：pip install torch && pip install -r requirements-heavy-cpu.txt
+#
+# Windows 注意：
+#   - hnswlib 编译需要 MSVC Build Tools (winget install Microsoft.VisualStudio.2022.BuildTools)
+
+# === 向量检索 ===
+faiss-cpu>=1.7.0
+hnswlib==0.8.0
+
+# === 深度学习（CPU-only）===
+onnxruntime>=1.15.0
+# torch 通过 --index-url 安装，见下方说明
+transformers>=4.44.0
+
+# === 数据分析 ===
+pandas>=2.0.0
+
+# ── torch 安装说明 ──
+# CPU: pip install torch --index-url https://download.pytorch.org/whl/cpu
+# CUDA 12.8: pip install torch --index-url https://download.pytorch.org/whl/cu128
+# CUDA 12.6: pip install torch --index-url https://download.pytorch.org/whl/cu126
+# CUDA 11.8: pip install torch --index-url https://download.pytorch.org/whl/cu118

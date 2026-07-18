@@ -35,6 +35,12 @@ jobs:
       - name: Install onnxruntime
         run: pip install onnxruntime
 
+      - name: Install heavy dependencies (CPU-only)
+        run: |
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install faiss-cpu transformers pandas
+          pip install hnswlib==0.8.0
+
       - name: Verify critical imports
         run: |
           python -c "import fastmcp; print('fastmcp:', fastmcp.__version__)"
@@ -47,6 +53,11 @@ jobs:
           python -c "from openjiuwen.harness.factory import create_deep_agent; print('openjiuwen.harness OK')"
           python -c "from openjiuwen.harness.rails import SecurityRail, SysOperationRail; print('openjiuwen.rails OK')"
           python -c "from openjiuwen.core.foundation.llm.model import Model; print('openjiuwen.core OK')"
+          python -c "import torch; print('torch:', torch.__version__)"
+          python -c "import faiss; print('faiss:', faiss.__version__)"
+          python -c "import hnswlib; print('hnswlib:', hnswlib.__version__)"
+          python -c "import transformers; print('transformers:', transformers.__version__)"
+          python -c "import pandas; print('pandas:', pandas.__version__)"
 
       - name: Verify GalaxyOS imports
         run: |
@@ -92,6 +103,9 @@ jobs:
           pip install "openjiuwen>=0.1.13"
           pip install "pymilvus>=2.6.2,<2.6.10"
           pip install onnxruntime pyinstaller
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install faiss-cpu transformers pandas
+          pip install hnswlib==0.8.0
 
       - name: Download bge-small-zh ONNX model
         shell: bash

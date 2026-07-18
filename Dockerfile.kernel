@@ -2,7 +2,8 @@
 
 FROM python:3.12-slim-bookworm AS kernel
 
-ARG INSTALL_HEAVY=0
+ARG INSTALL_HEAVY=1
+ARG TORCH_VARIANT=cpu
 
 WORKDIR /app
 
@@ -38,8 +39,13 @@ RUN mkdir -p /app/models/embeddings && \
     done
 
 RUN if [ "$INSTALL_HEAVY" = "1" ]; then \
-        pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu && \
-        pip install --no-cache-dir faiss-cpu hnswlib transformers pandas; \
+        if [ "$TORCH_VARIANT" = "cuda" ]; then \
+            pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cu128 && \
+            pip install --no-cache-dir onnxruntime-gpu faiss-cpu transformers pandas hnswlib==0.8.0; \
+        else \
+            pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu && \
+            pip install --no-cache-dir faiss-cpu transformers pandas hnswlib==0.8.0; \
+        fi; \
     fi
 
 EXPOSE 8765

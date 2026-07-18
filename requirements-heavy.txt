@@ -1,11 +1,13 @@
-# GalaxyOS — 重型依赖（CI 可选，本地开发装）
+# GalaxyOS — 重型依赖（默认 CPU 版本）
 # 安装：pip install -r requirements-heavy.txt
-# 这层依赖 ~3GB（torch + CUDA + transformers），CI 中用 Docker 缓存
+#
+# 此文件安装 CPU-only 版本（CI/无 GPU 环境适用）
+# GPU 用户请用：pip install -r requirements-heavy-cuda.txt
 #
 # Windows 注意：
 #   - hnswlib 编译需要 MSVC Build Tools (winget install Microsoft.VisualStudio.2022.BuildTools)
-#   - torch 建议用 CPU 版：pip install torch --index-url https://download.pytorch.org/whl/cpu
-#   - GPU 版需手动下载：pip install torch --index-url https://download.pytorch.org/whl/cu128
+#   - torch CPU 版：pip install torch --index-url https://download.pytorch.org/whl/cpu
+#   - torch CUDA 版：pip install torch --index-url https://download.pytorch.org/whl/cu128
 
 # === Intel 数学库（预编译包，libs/ 中有 x86_64 tar.gz）===
 # mkl 和 tbb 仅在本地有预编译包，CI 中跳过
@@ -18,6 +20,9 @@ hnswlib==0.8.0
 
 # === 深度学习 ===
 onnxruntime>=1.15.0
+# torch 需按 GPU 情况选择安装源：
+#   CPU:      pip install torch --index-url https://download.pytorch.org/whl/cpu
+#   CUDA 12.8: pip install torch --index-url https://download.pytorch.org/whl/cu128
 torch>=2.0.0
 transformers>=4.44.0
 
