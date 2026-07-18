@@ -29,17 +29,20 @@ RUN --mount=type=/root/.cargo/registry,target=/root/.cargo/registry \
     cargo install tauri-cli --version "^2"
 
 RUN mkdir -p /app/models/embeddings && \
-    curl -sLf --retry 3 --retry-delay 5 --max-time 120 \
-    "https://hf-mirror.com/BAAI/bge-small-zh-v1.5/resolve/main/onnx/model.onnx" \
-    -o /app/models/embeddings/bge-small-zh.onnx || \
-    curl -sLf --retry 3 --retry-delay 5 --max-time 120 \
-    "https://huggingface.co/BAAI/bge-small-zh-v1.5/resolve/main/onnx/model.onnx" \
-    -o /app/models/embeddings/bge-small-zh.onnx
+    HF_MIRROR="https://hf-mirror.com/onnx-community/bge-small-zh-v1.5-ONNX/resolve/main" && \
+    HF_OFFICIAL="https://huggingface.co/onnx-community/bge-small-zh-v1.5-ONNX/resolve/main" && \
+    for f in onnx/model.onnx onnx/model.onnx_data tokenizer.json; do \
+        dest="/app/models/embeddings/$(basename $f)" && \
+        curl -sLf --retry 3 --retry-delay 5 --max-time 120 \
+            "${HF_MIRROR}/${f}" -o "$dest" || \
+        curl -sLf --retry 3 --retry-delay 5 --max-time 120 \
+            "${HF_OFFICIAL}/${f}" -o "$dest"; \
+    done
 
 COPY --link galaxyos/ /app/galaxyos/
 COPY --link skills/ /app/skills/
 COPY --link pyproject.toml README.md /app/
-COPY --link models/embeddings/config.json models/embeddings/tokenizer.json /app/models/embeddings/
+
 RUN --mount=type=cache,target=/root/.cache/pip \
     cd /app && pip install --no-cache-dir .
 

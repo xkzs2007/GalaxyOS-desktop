@@ -53,14 +53,18 @@ _candidates.append(os.path.expanduser("~/.openclaw/workspace/GalaxyOS/models/emb
 # GalaxyOS 运行时安装目录
 _candidates.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "models", "embeddings"))
 
-_MODEL_DIR = ""
-for _c in _candidates:
-    _c = os.path.abspath(_c)
-    if os.path.isdir(_c) and os.path.exists(os.path.join(_c, "bge-small-zh.onnx")):
-        _MODEL_DIR = _c
-        break
-if not _MODEL_DIR:
-    _MODEL_DIR = _candidates[-1]  # fallback to user dir for error message
+def _find_model_dir():
+    for c in _candidates:
+        c = os.path.abspath(c)
+        if not os.path.isdir(c):
+            continue
+        if os.path.exists(os.path.join(c, "bge-small-zh.onnx")):
+            return c
+        if os.path.exists(os.path.join(c, "model.onnx")):
+            return c
+    return _candidates[-1]
+
+_MODEL_DIR = _find_model_dir()
 _CACHE_DIR = os.path.expanduser(
     "~/.openclaw/workspace/.neural_cache"
 )
@@ -110,10 +114,14 @@ class LocalEmbeddingService:
         # 降级到 bge ONNX
         onnx_path = os.path.join(_MODEL_DIR, "bge-small-zh.onnx")
         if not os.path.exists(onnx_path):
-            raise FileNotFoundError(
-                f"ONNX 模型不存在: {onnx_path}\n"
-                "请从 Modelscope 下载 BAAI/bge-small-zh-v1.5 后导出 ONNX"
-            )
+            onnx_alt = os.path.join(_MODEL_DIR, "model.onnx")
+            if os.path.exists(onnx_alt):
+                onnx_path = onnx_alt
+            else:
+                raise FileNotFoundError(
+                    f"ONNX 模型不存在: {_MODEL_DIR}/bge-small-zh.onnx 或 model.onnx\n"
+                    "请从 onnx-community/bge-small-zh-v1.5-ONNX 下载 ONNX 模型"
+                )
         import tokenizers
         tok_path = os.path.join(_MODEL_DIR, "tokenizer.json")
         if not os.path.exists(tok_path):

@@ -97,16 +97,19 @@ jobs:
         shell: bash
         run: |
           mkdir -p models/embeddings
-          if [ -f models/embeddings/bge-small-zh.onnx ]; then
+          if [ -f models/embeddings/model.onnx ]; then
             echo "Model already exists, skipping download"
           else
-            curl -sLf --retry 3 --retry-delay 5 --max-time 120 \
-              "https://hf-mirror.com/BAAI/bge-small-zh-v1.5/resolve/main/onnx/model.onnx" \
-              -o models/embeddings/bge-small-zh.onnx || \
-            curl -sLf --retry 3 --retry-delay 5 --max-time 120 \
-              "https://huggingface.co/BAAI/bge-small-zh-v1.5/resolve/main/onnx/model.onnx" \
-              -o models/embeddings/bge-small-zh.onnx
-            echo "Model downloaded: $(ls -lh models/embeddings/bge-small-zh.onnx)"
+            HF_MIRROR="https://hf-mirror.com/onnx-community/bge-small-zh-v1.5-ONNX/resolve/main"
+            HF_OFFICIAL="https://huggingface.co/onnx-community/bge-small-zh-v1.5-ONNX/resolve/main"
+            for f in onnx/model.onnx onnx/model.onnx_data tokenizer.json; do
+              dest="models/embeddings/$(basename $f)"
+              curl -sLf --retry 3 --retry-delay 5 --max-time 120 \
+                "${HF_MIRROR}/${f}" -o "$dest" || \
+              curl -sLf --retry 3 --retry-delay 5 --max-time 120 \
+                "${HF_OFFICIAL}/${f}" -o "$dest"
+              echo "Downloaded: $dest ($(ls -lh "$dest" | awk '{print $5}'))"
+            done
           fi
 
       - name: Install GalaxyOS
