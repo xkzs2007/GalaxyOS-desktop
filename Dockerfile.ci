@@ -1,26 +1,26 @@
-# GalaxyOS — CI 构建镜像
-# 预装全部依赖，利用 Docker layer 缓存避免每次 CI 重装
-#
-# 用法（CNB .cnb.yml）:
-#   docker:
-#     build:
-#       dockerfile: Dockerfile.ci
+# DEPRECATED: 此文件已被 Dockerfile.buildkit 替代，仅保留用于向后兼容
+# syntax=docker/dockerfile:1
 
 FROM python:3.12
 
-# 系统依赖（hnswlib 编译需要 Python.h）
-RUN apt-get update -qq && \
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update -qq && \
     apt-get install -y -qq --no-install-recommends \
-        python3-dev build-essential gcc g++ && \
+        python3-dev build-essential gcc g++ \
+        libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev \
+        patchelf libssl-dev libharfbuzz-dev curl && \
     rm -rf /var/lib/apt/lists/*
 
-# 先装核心依赖（变更少，缓存命中率高）
-COPY requirements-core.txt /tmp/
-RUN pip install --no-cache-dir -i https://mirrors.tencent.com/pypi/simple -r /tmp/requirements-core.txt
+COPY --link requirements-core.txt /tmp/
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install --no-cache-dir -r /tmp/requirements-core.txt
 
-# 再装重型依赖（变更少，缓存命中率高）
-COPY requirements-heavy.txt /tmp/
-RUN pip install --no-cache-dir -i https://mirrors.tencent.com/pypi/simple -r /tmp/requirements-heavy.txt
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install --no-cache-dir openjiuwen "pymilvus>=2.6.2,<2.6.10" onnxruntime pyinstaller
 
-# 验证关键包
-RUN python -c "import numpy, scipy, sklearn, torch, pydantic, faiss, jieba, ncps; print('deps OK')"
+RUN mkdir -p /app/models/embeddings && \
+    curl -sLf "https://hf-mirror.com/BAAI/bge-small-zh-v1.5/resolve/main/onnx/model.onnx" \
+    -o /app/models/embeddings/bge-small-zh.onnx
+
+RUN python -c "import numpy, scipy, pydantic, openjiuwen, onnxruntime; print('deps OK')"

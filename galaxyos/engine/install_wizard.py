@@ -47,8 +47,19 @@ B = "\033[1m"   # 粗体
 N = "\033[0m"   # 重置
 
 # ── --report 模式：所有 UI 输出走 stderr，stdout 只留 JSON ──
+_IS_CI_MODE = "--ci" in sys.argv
 _IS_REPORT_MODE = "--report" in sys.argv or "-r" in sys.argv
 _OUT = sys.stderr if _IS_REPORT_MODE else sys.stdout
+
+if _IS_CI_MODE:
+    G = Y = R = C = B = N = ""
+else:
+    G = "\033[92m"
+    Y = "\033[93m"
+    R = "\033[91m"
+    C = "\033[96m"
+    B = "\033[1m"
+    N = "\033[0m"
 
 
 def _print(*args, **kwargs):
@@ -58,28 +69,45 @@ def _print(*args, **kwargs):
 
 def info(msg, indent=0):
     prefix = "  " * indent
-    _print(f"{prefix}ℹ️  {msg}")
+    if _IS_CI_MODE:
+        _print(f"{prefix}[INFO] {msg}")
+    else:
+        _print(f"{prefix}ℹ️  {msg}")
 
 
 def ok(msg, indent=0):
     prefix = "  " * indent
-    _print(f"{prefix}{G}✅ {msg}{N}")
+    if _IS_CI_MODE:
+        _print(f"{prefix}[OK] {msg}")
+    else:
+        _print(f"{prefix}{G}✅ {msg}{N}")
 
 
 def warn(msg, indent=0):
     prefix = "  " * indent
-    _print(f"{prefix}{Y}⚠️  {msg}{N}")
+    if _IS_CI_MODE:
+        _print(f"{prefix}[WARN] {msg}")
+    else:
+        _print(f"{prefix}{Y}⚠️  {msg}{N}")
 
 
 def err(msg, indent=0):
     prefix = "  " * indent
-    _print(f"{prefix}{R}❌ {msg}{N}")
+    if _IS_CI_MODE:
+        _print(f"{prefix}[ERR] {msg}")
+    else:
+        _print(f"{prefix}{R}❌ {msg}{N}")
 
 
 def heading(title):
-    _print(f"\n{C}{'='*60}{N}")
-    _print(f"{B}{title}{N}")
-    _print(f"{C}{'='*60}{N}")
+    if _IS_CI_MODE:
+        _print(f"\n{'='*60}")
+        _print(f"{title}")
+        _print(f"{'='*60}")
+    else:
+        _print(f"\n{C}{'='*60}{N}")
+        _print(f"{B}{title}{N}")
+        _print(f"{C}{'='*60}{N}")
 
 # ── 路径定义 — 自动检测部署布局 ──
 # install_wizard.py 位于 extensions/galaxyos/scripts/
@@ -675,9 +703,12 @@ def _resolve_python_runtime(
         except Exception:
             pass
         if prefer_having_torch:
-            if info.get("torch"): s += 5000
-            if info.get("pyg"): s += 2000
-            if info.get("hnswlib"): s += 1000
+            if info.get("torch"):
+                s += 5000
+            if info.get("pyg"):
+                s += 2000
+            if info.get("hnswlib"):
+                s += 1000
         return s
 
     probed.sort(key=score, reverse=True)
@@ -987,35 +1018,62 @@ def test_all_modules() -> Dict[str, Any]:
             results["details"].append({"module": mod_name, "file": str(fp), "status": "no_try",
                                         "try_blocks": 0, "imports": import_count})
 
-    # ── 4) 关键系统：实例化 XiaoYiClawLLM 走其降级链路 ──
+    # ── 4) 关键系统：GalaxyOS 内核模块检查 ──
     print()
-    heading("🔬 子系统初始化链路（XiaoYiClawLLM）")
-    try:
-        sys.path.insert(0, str(galaxy_scripts))
-        import logging
-        logging.disable(logging.CRITICAL)
-        mod = importlib.import_module("xiaoyi_claw_api")
-        instance = mod.XiaoYiClawLLM(config={"session_id": "wizard_test"})
-        # 检查各 self.xxx 模块初始化状态
-        sub_count = {"total": 0, "ok": 0, "fail": 0, "fail_details": []}
-        for attr_name in sorted(dir(instance)):
-            if attr_name.startswith("_") or attr_name in ("config",):
-                continue
-            val = getattr(instance, attr_name, None)
-            sub_count["total"] += 1
-            if val is not None:
-                sub_count["ok"] += 1
-                print(f"  {G}✅{N} self.{attr_name}")
-            else:
+    if _IS_CI_MODE:
+        heading("GalaxyOS kernel module imports (CI mode)")
+        kernel_modules = [
+            ("galaxyos.kernel.mcp_server_entry", "create_kernel"),
+            ("galaxyos.kernel.agent_core_bridge", "AgentCoreBridge"),
+            ("galaxyos.kernel.memory_sync_bridge", "MemorySyncBridge"),
+            ("galaxyos.kernel.dsl_bridge", "DSLBridge"),
+            ("galaxyos.kernel.tokui_chat_adapter", "TokuiChatAdapter"),
+            ("galaxyos.kernel.render_channel_router", "RenderChannelRouter"),
+        ]
+        sub_count = {"total": len(kernel_modules), "ok": 0, "fail": 0, "fail_details": []}
+        for mod_path, attr_name in kernel_modules:
+            try:
+                mod = importlib.import_module(mod_path)
+                if hasattr(mod, attr_name):
+                    sub_count["ok"] += 1
+                    print(f"  {G}✅{N} {mod_path}.{attr_name}")
+                else:
+                    sub_count["fail"] += 1
+                    sub_count["fail_details"].append(f"{mod_path}.{attr_name}")
+                    print(f"  {R}❌{N} {mod_path}.{attr_name} not found")
+            except Exception as e:
                 sub_count["fail"] += 1
-                sub_count["fail_details"].append(attr_name)
-                print(f"  {R}❌{N} self.{attr_name} = None")
-        logging.disable(logging.NOTSET)
+                sub_count["fail_details"].append(f"{mod_path}.{attr_name}")
+                print(f"  {R}❌{N} {mod_path} import failed: {e}")
         results["subsystem"] = sub_count
-        print(f"\n  子系统: {sub_count['ok']}/{sub_count['total']} 初始化成功")
-    except Exception as e:
-        results["subsystem"] = {"total": 0, "ok": 0, "fail": 0, "error": str(e)[:200]}
-        err(f"XiaoYiClawLLM 实例化失败: {e}", indent=1)
+        print(f"\n  Kernel modules: {sub_count['ok']}/{sub_count['total']} OK")
+    else:
+        heading("🔬 子系统初始化链路（XiaoYiClawLLM）")
+        try:
+            sys.path.insert(0, str(galaxy_scripts))
+            import logging
+            logging.disable(logging.CRITICAL)
+            mod = importlib.import_module("xiaoyi_claw_api")
+            instance = mod.XiaoYiClawLLM(config={"session_id": "wizard_test"})
+            sub_count = {"total": 0, "ok": 0, "fail": 0, "fail_details": []}
+            for attr_name in sorted(dir(instance)):
+                if attr_name.startswith("_") or attr_name in ("config",):
+                    continue
+                val = getattr(instance, attr_name, None)
+                sub_count["total"] += 1
+                if val is not None:
+                    sub_count["ok"] += 1
+                    print(f"  {G}✅{N} self.{attr_name}")
+                else:
+                    sub_count["fail"] += 1
+                    sub_count["fail_details"].append(attr_name)
+                    print(f"  {R}❌{N} self.{attr_name} = None")
+            logging.disable(logging.NOTSET)
+            results["subsystem"] = sub_count
+            print(f"\n  子系统: {sub_count['ok']}/{sub_count['total']} 初始化成功")
+        except Exception as e:
+            results["subsystem"] = {"total": 0, "ok": 0, "fail": 0, "error": str(e)[:200]}
+            err(f"XiaoYiClawLLM 实例化失败: {e}", indent=1)
 
     print()
     if results["fail"] == 0:
@@ -3473,6 +3531,8 @@ def main():
     parser.add_argument("--migrate-auto", action="store_true", help="数据迁移（非互动模式）：自动迁移所有可迁移数据")
     parser.add_argument("--migrate-target", default=None, help="数据迁移目标目录（默认当前 workspace）")
     parser.add_argument("--openclaw-home", default=None, help="显式指定 OpenClaw 用户配置目录（覆盖 OPENCLAW_HOME 环境变量，覆盖 dev/prod 自动检测）")
+    parser.add_argument("--ci", action="store_true", help="CI/CD 非交互模式：禁用 ANSI 颜色码和 emoji，跳过运行时服务检查")
+    parser.add_argument("--target-dir", default=None, help="指定模型下载目标目录（配合 --download-embedding 使用）")
     args = parser.parse_args()
 
     # ── 显式 OpenClaw home 时重新解析全局路径 ──
@@ -3502,7 +3562,8 @@ def main():
         sys.exit(0 if ok else 1)
 
     if args.download_embedding:
-        ok = download_embedding_model()
+        td = Path(args.target_dir) if args.target_dir else None
+        ok = download_embedding_model(target_dir=td)
         sys.exit(0 if ok else 1)
 
 
@@ -3663,7 +3724,10 @@ def main():
     all_results["v84_modules"] = check_v84_modules()
     all_results["v85_modules"] = check_v85_modules()
     all_results["sync"] = check_file_sync()
-    all_results["services"] = check_services()
+    if args.ci:
+        all_results["services"] = {"skipped": True, "reason": "CI mode"}
+    else:
+        all_results["services"] = check_services()
     all_results["breakers"] = scan_breakers()
     all_results["config"] = check_and_wizard_config(interactive=not args.check and not args.report and not args.fix)
 
@@ -3688,7 +3752,20 @@ def main():
 
     # 非零退出码表示有问题
     s = report.get("summary", {})
-    if s.get("health_score", 100) < 70 or s.get("modules_fail", 0) > 0:
+    if args.ci:
+        core_modules = ["mcp_server_entry", "agent_core_bridge"]
+        core_fail = any(
+            d.get("status") != "ok"
+            for d in all_results.get("modules", {}).get("details", [])
+            if any(cm in d.get("module", "") for cm in core_modules)
+        )
+        if core_fail:
+            sys.exit(2)
+        elif s.get("modules_fail", 0) > 0:
+            sys.exit(1)
+        else:
+            sys.exit(0)
+    elif s.get("health_score", 100) < 70 or s.get("modules_fail", 0) > 0:
         sys.exit(1)
 
 

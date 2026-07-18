@@ -49,12 +49,15 @@ DEFAULT_MAPPINGS = {
     "color-picker": {"eui_type": "colorPicker", "attrs": {}, "confidence": 1.0},
     "bar-chart": {"eui_type": "barChart", "attrs": {}, "confidence": 1.0},
     "pie-chart": {"eui_type": "pieChart", "attrs": {}, "confidence": 1.0},
-    "memory-panel": {"eui_type": "panel", "attrs": {"panel_type": "memory"}, "confidence": 1.0},
-    "rccam-progress": {"eui_type": "panel", "attrs": {"panel_type": "rccam"}, "confidence": 0.8},
-    "dag-tree": {"eui_type": "panel", "attrs": {"panel_type": "dag_tree"}, "confidence": 0.7},
-    "memory-search": {"eui_type": "panel", "attrs": {"panel_type": "search"}, "confidence": 0.7},
-    "rccam-control": {"eui_type": "panel", "attrs": {"panel_type": "rccam_control"}, "confidence": 0.6},
-    "dag-node-expand": {"eui_type": "panel", "attrs": {"panel_type": "dag_expand"}, "confidence": 0.6},
+    "memory-panel": {"eui_type": "panel", "attrs": {"panel_type": "memory"}, "confidence": 1.0, "builder": "ProgressBuilder + InputBuilder + SegmentedBuilder"},
+    "rccam-progress": {"eui_type": "panel", "attrs": {"panel_type": "rccam"}, "confidence": 1.0, "builder": "ProgressBuilder + ButtonBuilder + SliderBuilder + DropdownBuilder"},
+    "dag-tree": {"eui_type": "panel", "attrs": {"panel_type": "dag_tree"}, "confidence": 1.0, "builder": "TextBuilder + ButtonBuilder (recursive)"},
+    "memory-search": {"eui_type": "panel", "attrs": {"panel_type": "search"}, "confidence": 1.0, "builder": "InputBuilder + SegmentedBuilder + ScrollViewBuilder"},
+    "rccam-control": {"eui_type": "panel", "attrs": {"panel_type": "rccam_control"}, "confidence": 1.0, "builder": "ButtonBuilder + SliderBuilder + DropdownBuilder"},
+    "dag-node-expand": {"eui_type": "panel", "attrs": {"panel_type": "dag_expand"}, "confidence": 1.0, "builder": "TextBuilder + ButtonBuilder"},
+    "cognitive-panel": {"eui_type": "panel", "attrs": {"panel_type": "cognitive"}, "confidence": 1.0, "builder": "SidebarBuilder + TabsBuilder"},
+    "chat-renderer": {"eui_type": "panel", "attrs": {"panel_type": "chat"}, "confidence": 1.0, "builder": "ScrollViewBuilder + TextBuilder"},
+    "message-renderer": {"eui_type": "panel", "attrs": {"panel_type": "message"}, "confidence": 1.0, "builder": "TextBuilder + MarkdownBuilder"},
 }
 
 CONVERSION_TIMEOUT_MS = 5.0

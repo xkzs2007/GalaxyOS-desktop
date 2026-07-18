@@ -19,6 +19,7 @@ a = Analysis(
     datas=[
         ('galaxyos', 'galaxyos'),
         ('skills', 'skills'),
+        ('models', 'models'),
         *fastmcp_datas,
         *mcp_datas,
         *starlette_datas,
@@ -58,6 +59,7 @@ a = Analysis(
         'aiohttp',
         'orjson',
         'openai',
+        'onnxruntime',
         *fastmcp_hiddenimports,
         *mcp_hiddenimports,
         *starlette_hiddenimports,
@@ -67,7 +69,7 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=['torch', 'transformers', 'faiss', 'hnswlib', 'onnxruntime', 'pandas', 'tkinter', 'matplotlib', 'openjiuwen_studio', 'pythoncom', 'pywintypes', 'win32com', 'win32api', 'win32con', 'win32event', 'win32file', 'win32pipe', 'win32process', 'win32security', 'winerror'],
+    excludes=['torch', 'transformers', 'faiss', 'hnswlib', 'pandas', 'tkinter', 'matplotlib', 'openjiuwen_studio', 'pythoncom', 'pywintypes', 'win32com', 'win32api', 'win32con', 'win32event', 'win32file', 'win32pipe', 'win32process', 'win32security', 'winerror'],
     noarchive=False,
 )
 pyz = PYZ(a.pure)

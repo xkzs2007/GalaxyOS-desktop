@@ -1,0 +1,99 @@
+# syntax=docker/dockerfile:1
+
+ARG TARGETPLATFORM
+
+# ============ Linux amd64 ============
+FROM python:3.12-slim-bookworm AS build-deps-linux-amd64
+ARG TARGETPLATFORM
+
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update -qq && \
+    apt-get install -y -qq --no-install-recommends \
+        libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev \
+        patchelf libssl-dev libharfbuzz-dev build-essential \
+        python3-dev git curl && \
+    rm -rf /var/lib/apt/lists/*
+
+COPY --link requirements-core.txt /tmp/
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install --no-cache-dir -r /tmp/requirements-core.txt
+
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install --no-cache-dir openjiuwen "pymilvus>=2.6.2,<2.6.10" onnxruntime pyinstaller
+
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
+ENV PATH="/root/.cargo/bin:${PATH}"
+RUN --mount=type=/root/.cargo/registry,target=/root/.cargo/registry \
+    --mount=type=/root/.cargo/git,target=/root/.cargo/git \
+    cargo install tauri-cli --version "^2"
+
+RUN mkdir -p /app/models/embeddings && \
+    curl -sLf "https://hf-mirror.com/BAAI/bge-small-zh-v1.5/resolve/main/onnx/model.onnx" \
+    -o /app/models/embeddings/bge-small-zh.onnx
+
+COPY --link galaxyos/ /app/galaxyos/
+COPY --link skills/ /app/skills/
+COPY --link pyproject.toml README.md /app/
+COPY --link models/embeddings/config.json models/embeddings/tokenizer.json /app/models/embeddings/
+RUN --mount=type=cache,target=/root/.cache/pip \
+    cd /app && pip install --no-cache-dir .
+
+FROM python:3.12-slim-bookworm AS runtime-linux-amd64
+
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update -qq && \
+    apt-get install -y -qq --no-install-recommends \
+        libwebkit2gtk-4.1-0 libappindicator3-1 librsvg2-2 \
+        libssl3 libharfbuzz0b libgcc-s1 && \
+    rm -rf /var/lib/apt/lists/*
+
+COPY --from=build-deps-linux-amd64 /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
+COPY --from=build-deps-linux-amd64 /usr/local/bin /usr/local/bin
+COPY --from=build-deps-linux-amd64 /app /app
+COPY --from=build-deps-linux-amd64 /root/.cargo/bin/tauri-cli /usr/local/bin/tauri-cli
+COPY --from=build-deps-linux-amd64 /root/.cargo /root/.cargo
+
+RUN useradd --create-home --shell /bin/bash galaxyos
+USER galaxyos
+
+WORKDIR /app
+
+LABEL org.opencontainers.image.title="GalaxyOS Desktop Build Environment"
+LABEL org.opencontainers.image.description="GalaxyOS CI/CD build environment with Python 3.12, Rust, Tauri CLI, and all dependencies"
+LABEL org.opencontainers.image.source="https://github.com/xkzs2007/GalaxyOS-desktop"
+
+# ============ Windows amd64 ============
+FROM python:3.12-windowsservercore-ltsc2022 AS build-deps-windows-amd64
+ARG TARGETPLATFORM
+
+COPY --link requirements-core.txt /tmp/
+RUN --mount=type=cache,target=C:\pip\cache \
+    pip install --no-cache-dir -r /tmp/requirements-core.txt
+
+RUN --mount=type=cache,target=C:\pip\cache \
+    pip install --no-cache-dir openjiuwen "pymilvus>=2.6.2,<2.6.10" onnxruntime pyinstaller
+
+RUN mkdir -p C:\app\models\embeddings && \
+    curl -sLf "https://hf-mirror.com/BAAI/bge-small-zh-v1.5/resolve/main/onnx/model.onnx" \
+    -o C:\app\models\embeddings\bge-small-zh.onnx
+
+COPY --link galaxyos/ C:\app\galaxyos\
+COPY --link skills/ C:\app\skills\
+COPY --link pyproject.toml README.md C:\app\
+COPY --link models\embeddings\config.json models\embeddings\tokenizer.json C:\app\models\embeddings\
+RUN --mount=type=cache,target=C:\pip\cache \
+    cd C:\app && pip install --no-cache-dir .
+
+FROM python:3.12-windowsservercore-ltsc2022 AS runtime-windows-amd64
+
+COPY --from=build-deps-windows-amd64 C:\Python312\Lib\site-packages C:\Python312\Lib\site-packages
+COPY --from=build-deps-windows-amd64 C:\Python312\Scripts C:\Python312\Scripts
+COPY --from=build-deps-windows-amd64 C:\app C:\app
+
+WORKDIR C:\app
+
+LABEL org.opencontainers.image.title="GalaxyOS Desktop Build Environment (Windows)"
+LABEL org.opencontainers.image.description="GalaxyOS CI/CD build environment for Windows with Python 3.12 and all dependencies"
+LABEL org.opencontainers.image.source="https://github.com/xkzs2007/GalaxyOS-desktop"

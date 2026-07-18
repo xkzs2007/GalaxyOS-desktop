@@ -40,7 +40,7 @@ jobs:
           path: dist/
 
   build-docker:
-    name: Build Docker image
+    name: Build Docker image (multi-platform)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -70,8 +70,9 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
-          file: Dockerfile.kernel
+          file: Dockerfile.buildkit
           push: true
+          platforms: linux/amd64,windows/amd64
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: INSTALL_HEAVY=0
@@ -80,159 +81,46 @@ jobs:
 
   build-tauri:
     name: Build Tauri ${{ matrix.platform }}
+    needs: build-docker
     strategy:
       fail-fast: false
       matrix:
         include:
           - platform: windows-latest
+            container: ghcr.io/xkzs2007/galaxyos-desktop:latest
             args: ""
           - platform: ubuntu-24.04
+            container: ghcr.io/xkzs2007/galaxyos-desktop:latest
             args: ""
     runs-on: ${{ matrix.platform }}
+    container: ${{ matrix.container }}
     steps:
       - name: Checkout GalaxyOS
         uses: actions/checkout@v4
 
-      - name: Checkout JiuwenSwarm
+      - name: Download bge-small-zh ONNX model
         shell: bash
         run: |
-          if git ls-remote https://github.com/xkzs2007/jiuwenswarm.git HEAD 2>/dev/null; then
-            echo "Using GalaxyOS fork of JiuwenSwarm"
-            GIT_LFS_SKIP_SMUDGE=1 git clone --depth 1 https://github.com/xkzs2007/jiuwenswarm.git jiuwenswarm
+          mkdir -p models/embeddings
+          if [ -f models/embeddings/bge-small-zh.onnx ]; then
+            echo "Model already exists, skipping download"
           else
-            echo "GalaxyOS fork not found, using upstream JiuwenSwarm"
-            GIT_LFS_SKIP_SMUDGE=1 git clone --depth 1 https://github.com/openJiuwen-ai/jiuwenswarm.git jiuwenswarm
+            curl -sLf "https://hf-mirror.com/BAAI/bge-small-zh-v1.5/resolve/main/onnx/model.onnx" \
+              -o models/embeddings/bge-small-zh.onnx
+            echo "Model downloaded: $(ls -lh models/embeddings/bge-small-zh.onnx)"
           fi
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - name: Patch JiuwenSwarm UI (homepage + sidebar hierarchy)
-        shell: python
-        run: |
-          import pathlib, re
-          src = pathlib.Path('jiuwenswarm/jiuwenswarm/channels/web/frontend/src')
-
-          app_css = src / 'App.css'
-          if app_css.exists():
-              t = app_css.read_text(encoding='utf-8')
-              patch = """
-          /* === GalaxyOS Patch === */
-
-          /* 1. Homepage: hide bee image, enlarge slogan with Serif */
-          img[src*="bee"], img[src*="swarm"], img[alt*="bee"], img[alt*="Swarm"],
-          .welcome-image, .empty-state-image, .hero-image {
-              display: none !important;
-          }
-          .welcome-slogan, .empty-state-title, .hero-title,
-          h1, h2.huge-title {
-              font-family: 'Georgia', 'Garamond', 'Times New Roman', serif !important;
-              font-weight: 800 !important;
-              font-size: 2.5rem !important;
-              letter-spacing: -0.02em !important;
-          }
-
-          /* 2. Sidebar hierarchy: single-side shadows for paddle1 > paddle2 > chat */
-          nav, aside, [class*="sidebar"], [class*="Sidebar"],
-          [class*="nav-panel"], [class*="NavPanel"],
-          [class*="side-panel"]:first-of-type,
-          [class*="paddle1"], [class*="Paddle1"] {
-              box-shadow: 4px 0 12px -4px rgba(0,0,0,0.12) !important;
-              z-index: 30 !important;
-          }
-          [class*="sub-sidebar"], [class*="SubSidebar"],
-          [class*="nav-content"], [class*="NavContent"],
-          [class*="side-panel"]:nth-of-type(2),
-          [class*="paddle2"], [class*="Paddle2"] {
-              box-shadow: 4px 0 12px -4px rgba(0,0,0,0.08) !important;
-              z-index: 20 !important;
-          }
-          main, [class*="chat"], [class*="Chat"],
-          [class*="content-area"], [class*="ContentArea"] {
-              box-shadow: none !important;
-              z-index: 10 !important;
-          }
-
-          /* 3. Paddle 1: clearer icons, remove text labels */
-          nav [class*="nav-item"], nav [class*="NavItem"],
-          [class*="sidebar"] > [class*="item"],
-          [class*="paddle1"] [class*="item"] {
-              font-size: 0 !important;
-              line-height: 0 !important;
-          }
-          nav [class*="nav-item"] svg, nav [class*="NavItem"] svg,
-          nav [class*="nav-item"] img, nav [class*="NavItem"] img,
-          [class*="sidebar"] > [class*="item"] svg,
-          [class*="sidebar"] > [class*="item"] img,
-          [class*="paddle1"] [class*="item"] svg,
-          [class*="paddle1"] [class*="item"] img {
-              font-size: 20px !important;
-              width: 20px !important;
-              height: 20px !important;
-          }
-
-          /* 4. Paddle 2: remove all icons */
-          [class*="sub-sidebar"] svg, [class*="SubSidebar"] svg,
-          [class*="sub-sidebar"] img, [class*="SubSidebar"] img,
-          [class*="nav-content"] svg, [class*="NavContent"] svg,
-          [class*="paddle2"] svg, [class*="Paddle2"] svg,
-          [class*="paddle2"] img, [class*="Paddle2"] img {
-              display: none !important;
-          }
-
-          /* 5. Paddle 2 top: left-aligned Sans bold section title */
-          [class*="sub-sidebar"]::before, [class*="SubSidebar"]::before,
-          [class*="nav-content"]::before, [class*="NavContent"]::before,
-          [class*="paddle2"]::before, [class*="Paddle2"]::before {
-              content: attr(data-section-title) !important;
-              display: block !important;
-              font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
-              font-weight: 700 !important;
-              font-size: 0.875rem !important;
-              text-align: left !important;
-              padding: 12px 16px 8px !important;
-              color: #1a1a1a !important;
-              letter-spacing: -0.01em !important;
-          }
-          """
-              if 'GalaxyOS Patch' not in t:
-                  t += patch
-                  app_css.write_text(t, encoding='utf-8')
-                  print('App.css patched: homepage + sidebar hierarchy')
-              else:
-                  print('App.css already patched')
-          else:
-              print('WARNING: App.css not found')
-
-          idx_css = src / 'index.css'
-          if idx_css.exists():
-              t = idx_css.read_text(encoding='utf-8')
-              if 'GalaxyOS Patch' not in t:
-                  t += """
-          /* GalaxyOS Patch: Serif fallback for headings */
-          h1, h2.huge-title, .welcome-title {
-              font-family: 'Georgia', 'Garamond', 'Times New Roman', serif !important;
-              font-weight: 800 !important;
-          }
-          """
-                  idx_css.write_text(t, encoding='utf-8')
-                  print('index.css patched: Serif fallback')
-
-      - name: Build JiuwenSwarm Web Frontend
-        working-directory: jiuwenswarm/jiuwenswarm/channels/web/frontend
+      - name: Install GalaxyOS + PyInstaller
         shell: bash
         run: |
-          npm install
-          npm install @jboltai/tokui
-          npx vite build --mode production
+          pip install .
+          pip install pyinstaller
 
-      - name: Copy Swarm dist for Tauri
+      - name: Build GalaxyOS MCP with PyInstaller
         shell: bash
         run: |
-          mkdir -p swarm-dist
-          cp -r jiuwenswarm/jiuwenswarm/channels/web/frontend/dist/* swarm-dist/
+          pyinstaller galaxyos-mcp.spec --noconfirm
+          cp -r dist/galaxyos-mcp galaxyos-mcp-dist
 
       - name: Download EUI-NEO SDK v0.5.2
         if: runner.os == 'Windows'
@@ -280,27 +168,6 @@ jobs:
           rm -f vendor/eui-neo/sdk/lib/libharfbuzz.a
           echo "Removed non-PIC libharfbuzz.a (using system libharfbuzz-dev instead)"
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.13'
-
-      - name: Install GalaxyOS + PyInstaller
-        shell: bash
-        run: |
-          pip install pyinstaller
-          pip install -r requirements-core.txt
-          pip install "openjiuwen>=0.1.13"
-          pip install "pymilvus>=2.6.2,<2.6.10"
-          pip install jiuwenswarm
-          pip install .
-
-      - name: Build GalaxyOS MCP with PyInstaller
-        shell: bash
-        run: |
-          pyinstaller galaxyos-mcp.spec --noconfirm
-          cp -r dist/galaxyos-mcp galaxyos-mcp-dist
-
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
 
@@ -339,7 +206,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: tauri-linux
-          path: desktop-tauri/target/release/bundle/deb/*.deb
+          path: |
+            desktop-tauri/target/release/bundle/deb/*.deb
+            desktop-tauri/target/release/bundle/appimage/*.AppImage
 
   create-release:
     needs: [build-wheel, build-docker, build-tauri]

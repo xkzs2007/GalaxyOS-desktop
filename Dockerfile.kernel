@@ -1,27 +1,39 @@
+# syntax=docker/dockerfile:1
+
 FROM python:3.12-slim-bookworm AS kernel
 
 ARG INSTALL_HEAVY=0
 
 WORKDIR /app
 
-RUN apt-get update -qq && \
-    apt-get install -y -qq --no-install-recommends build-essential python3-dev git && \
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update -qq && \
+    apt-get install -y -qq --no-install-recommends build-essential python3-dev git curl && \
     rm -rf /var/lib/apt/lists/*
 
-COPY requirements-core.txt .
-RUN pip install --no-cache-dir -r requirements-core.txt
+COPY --link requirements-core.txt .
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install --no-cache-dir -r requirements-core.txt
 
-COPY galaxyos/ ./galaxyos/
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install --no-cache-dir openjiuwen "pymilvus>=2.6.2,<2.6.10" onnxruntime
 
-COPY skills/ ./skills/
-COPY pyproject.toml README.md .
+COPY --link galaxyos/ ./galaxyos/
+COPY --link skills/ ./skills/
+COPY --link pyproject.toml README.md .
+
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install --no-cache-dir .
+
+RUN mkdir -p /app/models/embeddings && \
+    curl -sLf "https://hf-mirror.com/BAAI/bge-small-zh-v1.5/resolve/main/onnx/model.onnx" \
+    -o /app/models/embeddings/bge-small-zh.onnx
 
 RUN if [ "$INSTALL_HEAVY" = "1" ]; then \
         pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu && \
-        pip install --no-cache-dir faiss-cpu hnswlib onnxruntime transformers pandas; \
+        pip install --no-cache-dir faiss-cpu hnswlib transformers pandas; \
     fi
-
-RUN pip install --no-cache-dir .
 
 EXPOSE 8765
 

@@ -3,11 +3,156 @@ use std::collections::HashMap;
 
 use tauri::Emitter;
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SpringAnimationConfig {
+    pub damping: f64,
+    pub stiffness: f64,
+    pub mass: f64,
+    pub max_duration_ms: u32,
+    pub interruptible: bool,
+}
+
+impl Default for SpringAnimationConfig {
+    fn default() -> Self {
+        Self {
+            damping: 1.0,
+            stiffness: 200.0,
+            mass: 1.0,
+            max_duration_ms: 300,
+            interruptible: true,
+        }
+    }
+}
+
+impl SpringAnimationConfig {
+    pub fn panel_spring() -> Self {
+        Self {
+            damping: 1.0,
+            stiffness: 200.0,
+            mass: 1.0,
+            max_duration_ms: 300,
+            interruptible: true,
+        }
+    }
+
+    pub fn momentum_spring() -> Self {
+        Self {
+            damping: 0.8,
+            stiffness: 200.0,
+            mass: 1.0,
+            max_duration_ms: 100,
+            interruptible: true,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RccamState {
+    pub current_stage: String,
+    pub stages_completed: u8,
+    pub total_stages: u8,
+    pub is_running: bool,
+    pub strategy: String,
+    pub depth: u8,
+}
+
+impl Default for RccamState {
+    fn default() -> Self {
+        Self {
+            current_stage: "retrieval".into(),
+            stages_completed: 0,
+            total_stages: 5,
+            is_running: false,
+            strategy: "direct_reply".into(),
+            depth: 3,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MemoryState {
+    pub engram_count: u32,
+    pub neural_count: u32,
+    pub synapse_count: u32,
+    pub consolidation_status: String,
+    pub total: u32,
+}
+
+impl Default for MemoryState {
+    fn default() -> Self {
+        Self {
+            engram_count: 0,
+            neural_count: 0,
+            synapse_count: 0,
+            consolidation_status: "idle".into(),
+            total: 0,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DagNodeData {
+    pub id: String,
+    pub role: String,
+    pub content: String,
+    pub importance: f64,
+    pub summary: Option<String>,
+    pub children: Vec<DagNodeData>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DagState {
+    pub total_nodes: u32,
+    pub sessions: u32,
+    pub nodes: Vec<DagNodeData>,
+}
+
+impl Default for DagState {
+    fn default() -> Self {
+        Self {
+            total_nodes: 0,
+            sessions: 0,
+            nodes: Vec::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CognitivePanelState {
+    pub workspace_id: String,
+    pub rccam: RccamState,
+    pub memory: MemoryState,
+    pub dag: DagState,
+}
+
+impl Default for CognitivePanelState {
+    fn default() -> Self {
+        Self {
+            workspace_id: String::new(),
+            rccam: RccamState::default(),
+            memory: MemoryState::default(),
+            dag: DagState::default(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MemorySearchResult {
+    pub id: String,
+    pub content: String,
+    pub score: f64,
+    pub memory_type: String,
+    pub source: String,
+}
+
 #[allow(dead_code)]
 pub struct EuiNeoContext {
     pub native_available: bool,
     pub surfaces: HashMap<String, RenderSurface>,
     pub surface_manager: NativeRenderSurfaceManager,
+    pub panel_spring: SpringAnimationConfig,
+    pub momentum_spring: SpringAnimationConfig,
+    pub cognitive_state: CognitivePanelState,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -21,6 +166,14 @@ pub struct RenderSurface {
     pub render_handle: Option<String>,
     pub created_at: u64,
     pub last_updated: u64,
+    #[serde(default)]
+    pub degraded: bool,
+    #[serde(default = "default_layout_mode")]
+    pub layout_mode: String,
+}
+
+fn default_layout_mode() -> String {
+    "sidebar".to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -40,6 +193,8 @@ pub struct SurfaceConfig {
     pub position: String,
     pub width: u32,
     pub height: u32,
+    #[serde(default = "default_layout_mode")]
+    pub layout_mode: String,
 }
 
 #[allow(dead_code)]
@@ -85,9 +240,12 @@ impl NativeRenderSurfaceManager {
             },
             created_at: now,
             last_updated: now,
+            degraded: false,
+            layout_mode: config.layout_mode.clone(),
         };
 
-        self.surfaces.insert(config.surface_id.clone(), surface.clone());
+        self.surfaces
+            .insert(config.surface_id.clone(), surface.clone());
         Ok(surface)
     }
 
@@ -98,7 +256,11 @@ impl NativeRenderSurfaceManager {
         Ok(())
     }
 
-    pub fn update_surface(&mut self, surface_id: &str, _dsl: &str) -> Result<RenderSurface, String> {
+    pub fn update_surface(
+        &mut self,
+        surface_id: &str,
+        _dsl: &str,
+    ) -> Result<RenderSurface, String> {
         let surface = self
             .surfaces
             .get_mut(surface_id)
@@ -150,9 +312,12 @@ impl NativeRenderSurfaceManager {
             },
             created_at: old.created_at,
             last_updated: now,
+            degraded: false,
+            layout_mode: old.layout_mode.clone(),
         };
 
-        self.surfaces.insert(surface_id.to_string(), rebuilt.clone());
+        self.surfaces
+            .insert(surface_id.to_string(), rebuilt.clone());
         Ok(rebuilt)
     }
 }
@@ -190,7 +355,12 @@ impl NativeEventBridge {
         event
     }
 
-    pub fn emit_event(handle: &tauri::AppHandle, surface_id: &str, event_type: &str, event_data: &serde_json::Value) {
+    pub fn emit_event(
+        handle: &tauri::AppHandle,
+        surface_id: &str,
+        event_type: &str,
+        event_data: &serde_json::Value,
+    ) {
         let payload = serde_json::json!({
             "event": "native_ui_event",
             "data": {
@@ -242,7 +412,10 @@ pub async fn render_native(
         }));
     }
 
-    match ctx.surface_manager.update_surface(&surface_id, &i18n_injected_dsl) {
+    match ctx
+        .surface_manager
+        .update_surface(&surface_id, &i18n_injected_dsl)
+    {
         Ok(surface) => Ok(serde_json::json!({
             "status": "success",
             "surface_id": surface.surface_id,
@@ -410,14 +583,207 @@ fn chrono_like_timestamp() -> u64 {
         .as_millis() as u64
 }
 
-fn build_cognitive_panel_dsl(locale: &str) -> String {
+pub fn build_cognitive_panel_dsl(locale: &str) -> String {
     let zh = locale == "zh";
-    let title = if zh { "认知面板" } else { "Cognitive Panel" };
-    let memory = if zh { "液态神经记忆" } else { "Liquid Neural Memory" };
+    let title = if zh {
+        "认知面板"
+    } else {
+        "Cognitive Panel"
+    };
+    let memory = if zh {
+        "液态神经记忆"
+    } else {
+        "Liquid Neural Memory"
+    };
     let rccam = if zh { "R-CCAM 循环" } else { "R-CCAM Loop" };
-    let dag = if zh { "DAG 上下文树" } else { "DAG Context Tree" };
-    format!(
-        r#"{{"type":"panel","title":"{}","tabs":["{}","{}","{}"],"locale":"{}"}}"#,
-        title, memory, rccam, dag, locale
-    )
+    let dag = if zh {
+        "DAG 上下文树"
+    } else {
+        "DAG Context Tree"
+    };
+    let search = if zh { "记忆检索" } else { "Memory Search" };
+    let search_placeholder = if zh {
+        "搜索记忆..."
+    } else {
+        "Search memories..."
+    };
+    let search_btn = if zh { "搜索" } else { "Search" };
+    let all = if zh { "全部" } else { "All" };
+    let pause = if zh { "暂停" } else { "Pause" };
+    let resume = if zh { "继续" } else { "Resume" };
+    let depth = if zh {
+        "检索深度"
+    } else {
+        "Retrieval Depth"
+    };
+    let strategy = if zh {
+        "认知策略"
+    } else {
+        "Cognitive Strategy"
+    };
+    let direct_reply = if zh { "直接回复" } else { "Direct Reply" };
+    let deep_analysis = if zh { "深度分析" } else { "Deep Analysis" };
+    let creative = if zh { "创意模式" } else { "Creative Mode" };
+
+    serde_json::json!({
+        "type": "cognitive_panel",
+        "title": title,
+        "layout_mode": "sidebar",
+        "spring": {
+            "damping": 1.0,
+            "max_duration_ms": 300,
+            "interruptible": true
+        },
+        "tabs": [
+            {
+                "id": "memory",
+                "label": memory,
+                "components": [
+                    {"type": "progress", "id": "engram_progress", "label": "Engram", "value": 0, "max": 100},
+                    {"type": "progress", "id": "neural_progress", "label": "Neural", "value": 0, "max": 100},
+                    {"type": "progress", "id": "synapse_progress", "label": "Synapse", "value": 0, "max": 100},
+                    {"type": "text", "id": "consolidation_status", "text": "idle", "color": "#999"},
+                    {"type": "segmented", "id": "memory_filter", "options": [all, "Engram", "Neural", "Synapse"], "selected": 0},
+                    {"type": "input", "id": "memory_search_input", "placeholder": search_placeholder},
+                    {"type": "button", "id": "memory_search_btn", "text": search_btn}
+                ]
+            },
+            {
+                "id": "rccam",
+                "label": rccam,
+                "components": [
+                    {"type": "progress", "id": "rccam_progress", "label": "R-CCAM", "value": 0, "max": 5, "stages": ["Retrieval", "Cognition", "Control", "Action", "Memory"]},
+                    {"type": "button", "id": "rccam_toggle", "text": pause},
+                    {"type": "slider", "id": "rccam_depth", "label": depth, "min": 1, "max": 5, "value": 3},
+                    {"type": "dropdown", "id": "rccam_strategy", "label": strategy, "options": [direct_reply, deep_analysis, creative], "selected": 0}
+                ]
+            },
+            {
+                "id": "dag",
+                "label": dag,
+                "components": [
+                    {"type": "scrollview", "id": "dag_tree", "children": []},
+                    {"type": "text", "id": "dag_stats", "text": "0 nodes / 0 sessions"}
+                ]
+            },
+            {
+                "id": "search",
+                "label": search,
+                "components": [
+                    {"type": "input", "id": "search_input", "placeholder": search_placeholder},
+                    {"type": "segmented", "id": "search_filter", "options": [all, "Engram", "Neural", "Synapse"], "selected": 0},
+                    {"type": "button", "id": "search_btn", "text": search_btn},
+                    {"type": "scrollview", "id": "search_results", "children": []}
+                ]
+            }
+        ],
+        "locale": locale,
+        "material": {"blur_radius": 20.0, "background_opacity": 0.6}
+    }).to_string()
+}
+
+#[tauri::command]
+pub async fn get_memory_stats(
+    workspace_id: String,
+    state: tauri::State<'_, crate::AppState>,
+) -> Result<serde_json::Value, String> {
+    let ctx = state.eui_neo_context.lock().map_err(|e| e.to_string())?;
+    let mem = &ctx.cognitive_state.memory;
+    Ok(serde_json::json!({
+        "engram_count": mem.engram_count,
+        "neural_count": mem.neural_count,
+        "synapse_count": mem.synapse_count,
+        "consolidation_status": mem.consolidation_status,
+        "total": mem.total,
+        "workspace_id": workspace_id,
+    }))
+}
+
+#[tauri::command]
+pub async fn rccam_control(
+    action: String,
+    strategy: Option<String>,
+    depth: Option<u8>,
+    state: tauri::State<'_, crate::AppState>,
+) -> Result<serde_json::Value, String> {
+    let mut ctx = state.eui_neo_context.lock().map_err(|e| e.to_string())?;
+    let rccam = &mut ctx.cognitive_state.rccam;
+
+    match action.as_str() {
+        "pause" => rccam.is_running = false,
+        "resume" => rccam.is_running = true,
+        _ => {}
+    }
+
+    if let Some(s) = strategy {
+        rccam.strategy = s;
+    }
+    if let Some(d) = depth {
+        rccam.depth = d.clamp(1, 5);
+    }
+
+    Ok(serde_json::json!({
+        "is_running": rccam.is_running,
+        "current_stage": rccam.current_stage,
+        "strategy": rccam.strategy,
+        "depth": rccam.depth,
+        "stages_completed": rccam.stages_completed,
+    }))
+}
+
+#[tauri::command]
+pub async fn get_dag_tree(
+    workspace_id: String,
+    state: tauri::State<'_, crate::AppState>,
+) -> Result<serde_json::Value, String> {
+    let ctx = state.eui_neo_context.lock().map_err(|e| e.to_string())?;
+    let dag = &ctx.cognitive_state.dag;
+    Ok(serde_json::json!({
+        "total_nodes": dag.total_nodes,
+        "sessions": dag.sessions,
+        "nodes": dag.nodes,
+        "workspace_id": workspace_id,
+    }))
+}
+
+#[tauri::command]
+pub async fn search_memory(
+    query: String,
+    memory_type: Option<String>,
+    top_k: Option<u32>,
+    state: tauri::State<'_, crate::AppState>,
+) -> Result<serde_json::Value, String> {
+    let ctx = state.eui_neo_context.lock().map_err(|e| e.to_string())?;
+    Ok(serde_json::json!({
+        "results": [],
+        "query": query,
+        "memory_type": memory_type.unwrap_or_else(|| "all".into()),
+        "top_k": top_k.unwrap_or(10),
+        "workspace_id": ctx.cognitive_state.workspace_id,
+    }))
+}
+
+#[tauri::command]
+pub async fn set_panel_layout(
+    layout_mode: String,
+    state: tauri::State<'_, crate::AppState>,
+) -> Result<serde_json::Value, String> {
+    let valid = ["sidebar", "inline", "floating"];
+    if !valid.contains(&layout_mode.as_str()) {
+        return Err(format!(
+            "Invalid layout_mode: {}. Must be one of: sidebar, inline, floating",
+            layout_mode
+        ));
+    }
+
+    let mut ctx = state.eui_neo_context.lock().map_err(|e| e.to_string())?;
+
+    for surface in ctx.surface_manager.surfaces.values_mut() {
+        surface.layout_mode = layout_mode.clone();
+    }
+
+    Ok(serde_json::json!({
+        "layout_mode": layout_mode,
+        "updated_surfaces": ctx.surface_manager.surfaces.len(),
+    }))
 }

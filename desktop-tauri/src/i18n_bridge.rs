@@ -90,7 +90,10 @@ impl EuiNeoI18nBridge {
                 Self::flatten_json(value, &new_prefix, map);
             }
         } else {
-            map.insert(prefix.to_string(), json.to_string().trim_matches('"').to_string());
+            map.insert(
+                prefix.to_string(),
+                json.to_string().trim_matches('"').to_string(),
+            );
         }
     }
 

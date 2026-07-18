@@ -118,7 +118,7 @@ def main():
         import uvicorn
         path_prefix = "/sse" if args.transport == "sse" else "/mcp"
         app = server._mcp.http_app(path=path_prefix)
-        
+
         from starlette.responses import JSONResponse
         from starlette.routing import Route
 
@@ -129,10 +129,52 @@ def main():
                 "status": "healthy",
                 "uptime_s": round(time.time() - _start_time, 1),
                 "kernel": "running",
+                "agent_core_available": bridge._openjiuwen_available,
             })
 
         app.routes.insert(0, Route("/health", health_handler))
-        logger.info(f"/health endpoint mounted, {args.transport} on http://{args.host}:{args.port}{path_prefix}")
+
+        async def agent_chat_sse(request):
+            from starlette.responses import StreamingResponse
+            import asyncio
+            import json as _json
+
+            workspace_id = request.query_params.get("workspace_id", "")
+            if not workspace_id:
+                from starlette.responses import JSONResponse
+                return JSONResponse({"error": "workspace_id is required"}, status_code=400)
+
+            async def event_generator():
+                try:
+                    if bridge._openjiuwen_available and bridge._deep_agent:
+                        yield f"event: agent_chunk\ndata: {_json.dumps({'content': '', 'workspace_id': workspace_id, 'is_final': False}, ensure_ascii=False)}\n\n"
+
+                        agent = bridge._deep_agent
+                        if hasattr(agent, 'chat'):
+                            async for chunk in agent.chat(workspace_id=workspace_id):
+                                if isinstance(chunk, str):
+                                    yield f"event: agent_chunk\ndata: {_json.dumps({'content': chunk, 'workspace_id': workspace_id, 'is_final': False}, ensure_ascii=False)}\n\n"
+                                elif isinstance(chunk, dict):
+                                    content = chunk.get('content', chunk.get('text', str(chunk)))
+                                    yield f"event: agent_chunk\ndata: {_json.dumps({'content': content, 'workspace_id': workspace_id, 'is_final': False}, ensure_ascii=False)}\n\n"
+
+                        yield f"event: agent_done\ndata: {_json.dumps({'workspace_id': workspace_id, 'is_final': True}, ensure_ascii=False)}\n\n"
+                    else:
+                        yield f"event: agent_error\ndata: {_json.dumps({'error': 'Agent core not available', 'workspace_id': workspace_id}, ensure_ascii=False)}\n\n"
+                except asyncio.CancelledError:
+                    pass
+                except Exception as e:
+                    logger.error(f"Agent chat SSE error: {e}")
+                    yield f"event: agent_error\ndata: {_json.dumps({'error': str(e), 'workspace_id': workspace_id}, ensure_ascii=False)}\n\n"
+
+            return StreamingResponse(event_generator(), media_type="text/event-stream", headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",
+            })
+
+        app.routes.insert(0, Route("/agent-chat", agent_chat_sse))
+        logger.info(f"/health and /agent-chat endpoints mounted, {args.transport} on http://{args.host}:{args.port}{path_prefix}")
         uvicorn.run(app, host=args.host, port=args.port)
 
 
