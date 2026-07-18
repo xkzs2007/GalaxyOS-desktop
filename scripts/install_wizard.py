@@ -14,7 +14,7 @@ GalaxyOS — 安装向导 + 配置向导
   python3 install_wizard.py --kg-test       # 知识图谱功能专项测试
   python3 install_wizard.py --all            # 全量模式（体检 + 睡眠测试 + 修复）
   python3 install_wizard.py --update         # 增量更新：版本检测 + 仅同步变更，保护已有配置
-  python3 install_wizard.py --download-lfm  # 下载 LFM2.5-1.2B-Thinking 真实权重（~2.2GB）
+  python3 install_wizard.py --download-lfm  # 下载 LFM2.5-1.2B-Thinking ONNX Q4 权重（~850MB）
   python3 install_wizard.py --setup-rust     # 安装 Rust 工具链（国内镜像，ARM64/x86_64自动识别）
   python3 install_wizard.py --check --hardware  # 仅硬件/设备环境检测
 """
@@ -25,17 +25,15 @@ import json
 import ast
 import time
 import socket
-import struct
 import shutil
 import sqlite3
 import subprocess
 import importlib
 import importlib.util
-import inspect
 import re
 from pathlib import Path
 from datetime import datetime
-from typing import Dict, Any, List, Optional, Tuple
+from typing import Dict, Any, List, Optional
 
 # ── ANSI 颜色（必须定义在 UI 函数之前） ──
 G = "\033[92m"  # 绿
@@ -200,7 +198,7 @@ def check_environment() -> Dict[str, Any]:
         "openai": "LLM API 调用",
         "requests": "HTTP 请求",
     }
-    optional_pkgs = {
+    _optional_pkgs = {
         "pysqlite3": "向量存储",
     }
 
@@ -276,7 +274,7 @@ def check_hardware() -> Dict[str, Any]:
     if not cpu_model:
         # ARM 机型从 implementer + part 反查
         impl = results["cpu"].get("implementer", "")
-        part = results["cpu"].get("part", "")
+        _part = results["cpu"].get("part", "")
         if impl == "0x48" or impl == "0x41":
             cpu_model = "华为鲲鹏 (HiSilicon)"
             results["cpu"]["vendor"] = "HiSilicon/Kunpeng"
@@ -404,7 +402,6 @@ def check_hardware() -> Dict[str, Any]:
         if not any("AVX" in f for f in simd_features):
             # 用 Python 尝试检测
             try:
-                import struct
                 # x86 cpuid 模拟检测 — 简单版：从 /proc/cpuinfo flags 补
                 pass
             except Exception:
@@ -661,7 +658,7 @@ def _resolve_python_runtime(
 
     if not probed:
         warn(f"找到 {len(candidates)} 个候选，但都无法执行 -c")
-        info(f"建议手动指定: --python /path/to/python3.12", indent=1)
+        info("建议手动指定: --python /path/to/python3.12", indent=1)
         return candidates[0]  # 返回当前解释器
 
     # 评分
@@ -674,9 +671,12 @@ def _resolve_python_runtime(
         except Exception:
             pass
         if prefer_having_torch:
-            if info.get("torch"): s += 5000
-            if info.get("pyg"): s += 2000
-            if info.get("hnswlib"): s += 1000
+            if info.get("torch"):
+                s += 5000
+            if info.get("pyg"):
+                s += 2000
+            if info.get("hnswlib"):
+                s += 1000
         return s
 
     probed.sort(key=score, reverse=True)
@@ -777,7 +777,7 @@ def check_torch_stack(interactive_offer: bool = True) -> Dict[str, Any]:
     # hnswlib 特殊：编译失败时用预编译 cpXXX wheel
     if "hnswlib" in missing:
         py_tag = f"cp{sys.version_info.major}{sys.version_info.minor}"
-        info(f"hnswlib 编译常失败，优先用预编译 wheel (libs/hnswlib-*.tar.gz)：", indent=1)
+        info("hnswlib 编译常失败，优先用预编译 wheel (libs/hnswlib-*.tar.gz)：", indent=1)
         info(f"  tar xzf libs/hnswlib-0.8.0-{py_tag}-x86_64.tar.gz -C $SITE_PACKAGES", indent=2)
 
     # v2026.6.11+: 互动模式自动询问是否装
@@ -848,7 +848,7 @@ def fix_torch_stack(
         if r.returncode != 0 and not quiet:
             err(f"PyG 安装失败: {r.stderr[-500:]}")
         else:
-            ok(f"PyG 生态安装完成")
+            ok("PyG 生态安装完成")
 
     # PyTorch CPU 版
     if "torch" in missing:
@@ -860,7 +860,7 @@ def fix_torch_stack(
         if r.returncode != 0 and not quiet:
             err(f"PyTorch 安装失败: {r.stderr[-500:]}")
         else:
-            ok(f"PyTorch CPU 安装完成")
+            ok("PyTorch CPU 安装完成")
 
     # hnswlib / faiss / ncps（纯 PyPI 包，走清华即可）
     other = [p for p in missing if p in ("hnswlib", "faiss", "ncps")]
@@ -1068,7 +1068,7 @@ def check_file_sync() -> Dict[str, Any]:
     # 也检查 galaxyos 插件 index.js
     plugin_src = EXT_DIR / "index.js"
     if plugin_src.exists():
-        dst_plugin = EXT_DIR / "dist" / "index.js"
+        _dst_plugin = EXT_DIR / "dist" / "index.js"
 
     # ── 也检查 galaxyos/engine/ → dist (运行时同步) ──
     if DIST_DIR.exists() and galaxy_engine.exists():
@@ -1209,7 +1209,7 @@ def check_services() -> Dict[str, Any]:
                 sock.connect(str(actual_uds))
                 sock.close()
                 results["worker"]["ping"] = True
-                ok(f"Worker UDS 可连接 (REST 探测失败但 socket live)")
+                ok("Worker UDS 可连接 (REST 探测失败但 socket live)")
             except Exception as e2:
                 err(f"Worker 不可达: REST={e}; UDS={e2}")
     else:
@@ -1688,7 +1688,7 @@ def test_kg() -> Dict[str, Any]:
     # ── 导入测试 ──
     print(f"\n{C}┌─ {B}模块导入{N}")
     try:
-        from temporal_kg import get_temporal_kg, TemporalKnowledgeGraph
+        from temporal_kg import get_temporal_kg
         kg = get_temporal_kg()
         results["import"] = True
         print(f"  {G}✅ temporal_kg 导入成功 (DB: {kg.db_path}){N}")
@@ -2013,31 +2013,44 @@ def _write_version_marker(version: str):
 # ════════════════════════════════════════════════════════════════
 
 def check_lfm_weights() -> Dict[str, Any]:
-    """检查 LFM2.5-1.2B-Thinking 真实权重是否存在"""
-    heading("🧠 模块检查：LFM2.5 真实权重")
-    results = {"present": False, "size_mb": 0, "model_path": ""}
+    """检查 LFM2.5-1.2B-Thinking ONNX Q4 权重是否存在"""
+    heading("🧠 模块检查：LFM2.5 ONNX Q4 权重")
+    results = {"present": False, "size_mb": 0, "model_path": "", "format": ""}
 
     candidates = [
         WORKSPACE / "models" / "LFM2.5-1.2B",
         WORKSPACE / "skills" / "xiaoyi-claw-omega-final" / "models" / "LFM2.5-1.2B",
     ]
     for mp in candidates:
-        weights = mp / "model.safetensors"
-        if weights.exists():
+        onnx_q4 = mp / "model_q4.onnx_data"
+        safetensors = mp / "model.safetensors"
+        if onnx_q4.exists():
             results["present"] = True
             results["model_path"] = str(mp)
-            size = weights.stat().st_size
+            results["format"] = "onnx_q4"
+            size = onnx_q4.stat().st_size
             results["size_mb"] = round(size / 1024 / 1024, 1)
             results["size_gb"] = round(size / 1024 / 1024 / 1024, 2)
-            ok(f"LFM2.5-1.2B 实际权重: {results['size_mb']} MB")
-            # 检查额外文件
+            ok(f"LFM2.5-1.2B ONNX Q4 权重: {results['size_mb']} MB")
+            for extra in ["config.json", "tokenizer.json", "generation_config.json"]:
+                if (mp / extra).exists():
+                    results[f"has_{extra.replace('.', '_')}"] = True
+            return results
+        if safetensors.exists():
+            results["present"] = True
+            results["model_path"] = str(mp)
+            results["format"] = "safetensors_legacy"
+            size = safetensors.stat().st_size
+            results["size_mb"] = round(size / 1024 / 1024, 1)
+            results["size_gb"] = round(size / 1024 / 1024 / 1024, 2)
+            warn(f"LFM2.5-1.2B 旧版 safetensors 格式: {results['size_mb']} MB（建议迁移到 ONNX Q4）", indent=1)
             for extra in ["config.json", "tokenizer.json", "generation_config.json"]:
                 if (mp / extra).exists():
                     results[f"has_{extra.replace('.', '_')}"] = True
             return results
 
     warn("LFM2.5-1.2B 权重未下载（管线 2 将降级到随机 NumPy）", indent=1)
-    info("使用 --download-lfm 一键下载", indent=2)
+    info("使用 --download-lfm 一键下载 ONNX Q4 版本（~850MB）", indent=2)
     return results
 
 
@@ -2068,25 +2081,25 @@ def _download_hf_file(url: str, dst: Path, desc: str = "") -> bool:
 
 
 LFM_MODEL_FILES = [
-    ("https://hf-mirror.com/LiquidAI/LFM2.5-1.2B-Thinking/resolve/main/model.safetensors", "model.safetensors", "权重文件(2.2GB)"),
-    ("https://hf-mirror.com/LiquidAI/LFM2.5-1.2B-Thinking/resolve/main/config.json", "config.json", "模型配置"),
-    ("https://hf-mirror.com/LiquidAI/LFM2.5-1.2B-Thinking/resolve/main/tokenizer.json", "tokenizer.json", "分词器"),
-    ("https://hf-mirror.com/LiquidAI/LFM2.5-1.2B-Thinking/resolve/main/tokenizer_config.json", "tokenizer_config.json", "分词器配置"),
-    ("https://hf-mirror.com/LiquidAI/LFM2.5-1.2B-Thinking/resolve/main/generation_config.json", "generation_config.json", "生成配置"),
-    ("https://hf-mirror.com/LiquidAI/LFM2.5-1.2B-Thinking/resolve/main/special_tokens_map.json", "special_tokens_map.json", "特殊token"),
-    ("https://hf-mirror.com/LiquidAI/LFM2.5-1.2B-Thinking/resolve/main/chat_template.jinja", "chat_template.jinja", "对话模板"),
+    ("https://hf-mirror.com/LiquidAI/LFM2.5-1.2B-Thinking-ONNX/resolve/main/onnx/model_q4.onnx", "model_q4.onnx", "ONNX Q4 图(183kB)"),
+    ("https://hf-mirror.com/LiquidAI/LFM2.5-1.2B-Thinking-ONNX/resolve/main/onnx/model_q4.onnx_data", "model_q4.onnx_data", "ONNX Q4 权重(850MB)"),
+    ("https://hf-mirror.com/LiquidAI/LFM2.5-1.2B-Thinking-ONNX/resolve/main/tokenizer.json", "tokenizer.json", "分词器"),
+    ("https://hf-mirror.com/LiquidAI/LFM2.5-1.2B-Thinking-ONNX/resolve/main/tokenizer_config.json", "tokenizer_config.json", "分词器配置"),
+    ("https://hf-mirror.com/LiquidAI/LFM2.5-1.2B-Thinking-ONNX/resolve/main/config.json", "config.json", "模型配置"),
+    ("https://hf-mirror.com/LiquidAI/LFM2.5-1.2B-Thinking-ONNX/resolve/main/generation_config.json", "generation_config.json", "生成配置"),
+    ("https://hf-mirror.com/LiquidAI/LFM2.5-1.2B-Thinking-ONNX/resolve/main/chat_template.jinja", "chat_template.jinja", "对话模板"),
 ]
 
 
 def download_lfm_weights(target_dir: Optional[Path] = None) -> bool:
-    """从 hf-mirror 下载 LFM2.5-1.2B-Thinking 全部文件"""
-    heading("📥 下载 LFM2.5-1.2B-Thinking")
+    """从 hf-mirror 下载 LFM2.5-1.2B-Thinking ONNX Q4 全部文件"""
+    heading("📥 下载 LFM2.5-1.2B-Thinking ONNX Q4")
     if target_dir is None:
         target_dir = WORKSPACE / "models" / "LFM2.5-1.2B"
     info(f"目标目录: {target_dir}")
-    if (target_dir / "model.safetensors").exists():
-        sz = (target_dir / "model.safetensors").stat().st_size / 1024**3
-        ok(f"权重已存在: {sz:.1f} GB")
+    if (target_dir / "model_q4.onnx_data").exists():
+        sz = (target_dir / "model_q4.onnx_data").stat().st_size / 1024**2
+        ok(f"ONNX Q4 权重已存在: {sz:.1f} MB")
         return True
     ok("开始下载（来源: hf-mirror.com）...")
     start = time.time()
@@ -2150,7 +2163,10 @@ def _setup_rust(use_make: bool = True):
     """跨平台安装 Rust：Windows / Linux / macOS
     使用 TUNA 镜像加速，自动识别 ARM64/x86_64。
     """
-    import subprocess, sys, os, platform
+    import subprocess
+    import sys
+    import os
+    import platform
     from pathlib import Path
 
     print()
@@ -2169,7 +2185,7 @@ def _setup_rust(use_make: bool = True):
     arch = platform.machine().lower()
 
     # 架构映射
-    arch_map = {
+    _arch_map = {
         "x86_64":   "x86_64-unknown-linux-gnu",
         "amd64":    "x86_64-pc-windows-msvc",
         "aarch64":  "aarch64-unknown-linux-gnu",
@@ -2512,7 +2528,7 @@ def check_v84_modules() -> Dict[str, Any]:
                 warn("  MODULE_REGISTRY 缺少 skill_graph 条目")
                 results["warn"] += 1
             if "dag_liquid_fusion" in mr:
-                ok(f"  MODULE_REGISTRY[dag_liquid_fusion] ✅")
+                ok("  MODULE_REGISTRY[dag_liquid_fusion] ✅")
         else:
             warn("unified_coordinator.py 未找到")
             results["warn"] += 1
@@ -2858,11 +2874,11 @@ def _install_plugin_guide():
     else:
         err("GalaxyOS 插件文件不完整")
         info(f"期望路径: {ext_dir}", indent=1)
-        info(f"需要文件: openclaw.plugin.json + plugin-bootstrap.cjs + index.js + scripts/", indent=1)
+        info("需要文件: openclaw.plugin.json + plugin-bootstrap.cjs + index.js + scripts/", indent=1)
         info("", indent=1)
         info("手动安装:", indent=1)
         info(f"  1. GalaxyOS 插件路径: {EXT_DIR}", indent=1)
-        info(f"  2. 重启 Gateway: supervisorctl restart openclaw-gateway", indent=1)
+        info("  2. 重启 Gateway: supervisorctl restart openclaw-gateway", indent=1)
 
     # 检查 Worker（多 worker 模式，socket 为 claw-worker-worker-N.sock）
     if VAR_DIR.exists():
@@ -2985,7 +3001,7 @@ def _apply_cspl_patch():
             script = _candidate / "patches" / "cspl_patch.py"
             break
     else:
-        err(f"CSPL 补丁脚本不存在，请确认 patches/cspl_patch.py 存在")
+        err("CSPL 补丁脚本不存在，请确认 patches/cspl_patch.py 存在")
         return
     if not script.exists():
         err(f"CSPL 补丁脚本不存在: {script}")
@@ -3078,7 +3094,7 @@ def check_existing_data() -> Dict[str, Any]:
         p = src_info["path"]
         if p.exists() and p.stat().st_size > 0:
             size_kb = p.stat().st_size / 1024
-            size_mb = size_kb / 1024
+            _size_mb = size_kb / 1024
             src_info["size"] = round(size_kb, 1)
 
             # 统计记录数
@@ -3270,7 +3286,7 @@ def migration_wizard(
 
     home = Path.home()
     ws = WORKSPACE
-    tgt = Path(target_dir) if target_dir else ws
+    _tgt = Path(target_dir) if target_dir else ws
 
     # ── 扫描现有数据 ──
     scanned = check_existing_data()
@@ -3461,7 +3477,7 @@ def main():
         help="(旧版) 仅检测 GalaxyOS 插件状态，不做操作")
     parser.add_argument("--fix-torch", action="store_true", help="自动补齐 torch/torch_geometric/hnswlib 等 ML 栈（清华源 + PyG wheel + CPU 索引）")
     parser.add_argument("--python", default=None, help="显式指定 Python 解释器路径（覆盖自动检测，常用于生产环境/容器固定运行时）")
-    parser.add_argument("--download-lfm", action="store_true", help="从 hf-mirror 下载 LFM2.5-1.2B-Thinking 真实权重（~2.2GB）")
+    parser.add_argument("--download-lfm", action="store_true", help="从 hf-mirror 下载 LFM2.5-1.2B-Thinking ONNX Q4 权重（~850MB）")
     parser.add_argument("--download-embedding", action="store_true", help="从 hf-mirror 下载 bge-small-zh-v1.5 ONNX 模型（~96MB）")
     parser.add_argument("--setup-rust", action="store_true", help="安装 Rust 工具链（国内镜像，自动识别 ARM64/x86_64）")
     parser.add_argument("--update", action="store_true", help="增量更新模式：版本检测 + 仅同步变更文件，保护已有配置")
@@ -3612,7 +3628,7 @@ def main():
                 warn(f"Git 操作异常: {e}", indent=1)
                 info("使用本地代码继续...", indent=1)
         else:
-            warn(f"未找到 Git 仓库", indent=1)
+            warn("未找到 Git 仓库", indent=1)
             info("使用本地代码继续...", indent=1)
 
         # 硬件检测 + 环境检测（轻量）

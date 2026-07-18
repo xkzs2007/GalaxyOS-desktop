@@ -216,6 +216,10 @@ impl NativeRenderSurfaceManager {
         self.native_available = available;
     }
 
+    pub fn is_native_available(&self) -> bool {
+        self.native_available
+    }
+
     pub fn create_surface(&mut self, config: &SurfaceConfig) -> Result<RenderSurface, String> {
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -399,11 +403,12 @@ pub async fn render_native(
             position: "right".to_string(),
             width: 320,
             height: 600,
+            layout_mode: "sidebar".to_string(),
         };
         ctx.surface_manager.create_surface(&config)?;
     }
 
-    if !ctx.surface_manager.native_available {
+    if !ctx.surface_manager.is_native_available() {
         return Ok(serde_json::json!({
             "status": "unavailable",
             "surface_id": surface_id,
@@ -481,8 +486,8 @@ pub async fn check_eui_neo_health(
 ) -> Result<serde_json::Value, String> {
     let ctx = state.eui_neo_context.lock().map_err(|e| e.to_string())?;
     Ok(serde_json::json!({
-        "status": if ctx.surface_manager.native_available { "available" } else { "unavailable" },
-        "native_render_available": ctx.surface_manager.native_available,
+        "status": if ctx.surface_manager.is_native_available() { "available" } else { "unavailable" },
+        "native_render_available": ctx.surface_manager.is_native_available(),
         "active_surfaces": ctx.surface_manager.list_surfaces().len(),
     }))
 }
@@ -518,7 +523,7 @@ pub async fn open_cognitive_overlay(
 
     let mut ctx = state.eui_neo_context.lock().map_err(|e| e.to_string())?;
 
-    if !ctx.surface_manager.native_available {
+    if !ctx.surface_manager.is_native_available() {
         return Ok(serde_json::json!({
             "status": "fallback_webview",
             "label": label,
@@ -533,6 +538,7 @@ pub async fn open_cognitive_overlay(
         position: position.clone(),
         width: width as u32,
         height: height as u32,
+        layout_mode: "overlay".to_string(),
     };
 
     match ctx.surface_manager.create_surface(&config) {
@@ -610,7 +616,7 @@ pub fn build_cognitive_panel_dsl(locale: &str) -> String {
     let search_btn = if zh { "搜索" } else { "Search" };
     let all = if zh { "全部" } else { "All" };
     let pause = if zh { "暂停" } else { "Pause" };
-    let resume = if zh { "继续" } else { "Resume" };
+    let _resume = if zh { "继续" } else { "Resume" };
     let depth = if zh {
         "检索深度"
     } else {

@@ -1,3 +1,4 @@
+use crate::eui_neo;
 use crate::AppState;
 use tauri::Emitter;
 
@@ -26,7 +27,7 @@ pub async fn check_health(state: tauri::State<'_, AppState>) -> Result<serde_jso
 
     let eui_neo_status = {
         let ctx = state.eui_neo_context.lock().map_err(|e| e.to_string())?;
-        ctx.surface_manager.native_available
+        ctx.surface_manager.is_native_available()
     };
 
     Ok(serde_json::json!({
@@ -81,7 +82,7 @@ pub async fn request_cognitive_data(
     let locale = state.locale.lock().map_err(|e| e.to_string())?.clone();
     let active_channel = {
         let ctx = state.eui_neo_context.lock().map_err(|e| e.to_string())?;
-        ctx.surface_manager.native_available
+        ctx.surface_manager.is_native_available()
     };
 
     if active_channel {

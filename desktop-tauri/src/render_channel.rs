@@ -2,7 +2,7 @@ use crate::eui_neo::RenderSurface;
 use std::collections::HashMap;
 use std::fmt;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum RenderChannel {
     EuiNative,
     WebviewDom,

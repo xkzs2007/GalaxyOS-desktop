@@ -18,7 +18,7 @@ repos:
     rev: v0.11.0
     hooks:
       - id: ruff
-        args: [--fix, --select=E,F,W, --ignore=E501,E402]
+        args: [--fix]
 
   - repo: local
     hooks:
