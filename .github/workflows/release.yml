@@ -127,6 +127,10 @@ jobs:
           pip install faiss-cpu transformers pandas
           pip install hnswlib==0.8.0
 
+      - name: Install curl (Linux container)
+        if: runner.os == 'Linux'
+        run: apt-get update -qq && apt-get install -y -qq curl
+
       - name: Download bge-small-zh ONNX model
         shell: bash
         run: |
