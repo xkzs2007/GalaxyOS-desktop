@@ -95,7 +95,9 @@ jobs:
             use_container: true
             args: ""
     runs-on: ${{ matrix.platform }}
-    container: ${{ matrix.use_container && 'ghcr.io/xkzs2007/galaxyos-desktop:latest' || '' }}
+    container:
+      image: ${{ matrix.use_container && 'ghcr.io/xkzs2007/galaxyos-desktop:latest' || '' }}
+      options: ${{ matrix.use_container && '--user root' || '' }}
     steps:
       - name: Checkout GalaxyOS
         uses: actions/checkout@v5
