@@ -59,7 +59,7 @@ uvicorn>=0.29.0
 sse-starlette>=2.0.0
 
 # === OpenJiuwen Agent Core ===
-openjiuwen>=0.1.13
+openjiuwen>=0.1.16
 
 # === OpenJiuwen Studio ===
 # 注意: PyPI 版本锁死 openjiuwen==0.1.10，与 >=0.1.13 冲突

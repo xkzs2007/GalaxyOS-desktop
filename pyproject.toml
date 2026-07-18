@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "galaxyos"
-version = "0.2.0"
-description = "GalaxyOS — 认知增强型 AI Agent 引擎"
+version = "0.3.0"
+description = "GalaxyOS — 认知增强型 AI Agent 引擎（EUI-NEO + Tauri 2）"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.11"
@@ -71,25 +71,22 @@ async-accel = [
      "sse-starlette>=2.0.0",
  ]
  openjiuwen = [
-     "openjiuwen>=0.1.13",
+     "openjiuwen>=0.1.16",
  ]
  openjiuwen-vendor = [
-     "openjiuwen>=0.1.13",
- ]
- jiuwenswarm-vendor = [
-     "jiuwenswarm>=0.2.3",
+     "openjiuwen>=0.1.16",
  ]
  all = [
      "galaxyos[ml,neural,nlp,async-accel,mcp,tokui,openjiuwen]",
  ]
-dev = [
-    "pytest>=9.0.0",
-    "pytest-cov>=5.0.0",
-    "pytest-asyncio>=0.23.0",
-    "ruff>=0.4.0",
-    "mypy>=1.10.0",
-    "hatchling>=1.24.0",
-]
+ dev = [
+     "pytest>=9.0.0",
+     "pytest-cov>=5.0.0",
+     "pytest-asyncio>=0.23.0",
+     "ruff>=0.4.0",
+     "mypy>=1.10.0",
+     "hatchling>=1.24.0",
+ ]
 
 [project.scripts]
 galaxyos-mcp = "galaxyos.kernel.mcp_server_entry:main"

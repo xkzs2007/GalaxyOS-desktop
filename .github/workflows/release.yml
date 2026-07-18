@@ -118,7 +118,7 @@ jobs:
         shell: bash
         run: |
           pip install -r requirements-core.txt
-          pip install "openjiuwen>=0.1.13"
+          pip install "openjiuwen>=0.1.16"
           pip install "pymilvus>=2.6.2,<2.6.10"
           pip install onnxruntime pyinstaller
           pip install torch --index-url https://download.pytorch.org/whl/cpu
