@@ -61,11 +61,4 @@ sse-starlette>=2.0.0
 # === OpenJiuwen Agent Core ===
 openjiuwen @ git+https://github.com/openJiuwen-ai/agent-core@v0.1.16
 
-# === OpenJiuwen Studio ===
-# 注意: PyPI 版本锁死 openjiuwen==0.1.10，与 >=0.1.13 冲突
-# CI 中从 agent-studio 源码 --no-deps 安装，不走 PyPI
-# openjiuwen-studio>=0.1.5
 
-# === 测试 ===
-pytest>=9.0.0
-pytest-cov>=5.0.0

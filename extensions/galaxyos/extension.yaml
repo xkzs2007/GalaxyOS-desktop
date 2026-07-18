@@ -1,7 +1,7 @@
 id: galaxyos
 name: galaxyos
-version: "0.2.0"
-description: GalaxyOS cognitive enhancement Extension for JiuwenSwarm — liquid neural memory + R-CCAM cognitive cycle + skill evolution + 17-layer cognitive architecture
+version: "0.3.0"
+description: GalaxyOS cognitive enhancement Extension — liquid neural memory + R-CCAM cognitive cycle + skill evolution + 17-layer cognitive architecture
 author: galaxyos
-min_jiuwenswarm_version: "0.2.0"
+min_agent_core_version: "0.1.16"
 dependencies: {}
