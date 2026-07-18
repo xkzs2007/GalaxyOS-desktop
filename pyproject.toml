@@ -71,10 +71,10 @@ async-accel = [
      "sse-starlette>=2.0.0",
  ]
  openjiuwen = [
-     "openjiuwen>=0.1.16",
+     "openjiuwen @ git+https://github.com/openJiuwen-ai/agent-core@v0.1.16",
  ]
  openjiuwen-vendor = [
-     "openjiuwen>=0.1.16",
+     "openjiuwen @ git+https://github.com/openJiuwen-ai/agent-core@v0.1.16",
  ]
  all = [
      "galaxyos[ml,neural,nlp,async-accel,mcp,tokui,openjiuwen]",
