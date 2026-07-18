@@ -103,4 +103,5 @@ cargo_check_output.txt
 
 # ── vendor（CI 单独 checkout，不入库）──
 vendor/
+swarm-dist/
 .venv313/
