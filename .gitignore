@@ -13,6 +13,8 @@ package-lock.json
 
 # ── 测试/CI ──
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
 htmlcov/
 .coverage
 coverage.xml
