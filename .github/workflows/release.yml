@@ -40,7 +40,7 @@ jobs:
           path: dist/
 
   build-docker:
-    name: Build Docker image (multi-platform)
+    name: Build Docker image
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -72,7 +72,7 @@ jobs:
           context: .
           file: Dockerfile.buildkit
           push: true
-          platforms: linux/amd64,windows/amd64
+          platforms: linux/amd64
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: INSTALL_HEAVY=0
@@ -87,16 +87,38 @@ jobs:
       matrix:
         include:
           - platform: windows-latest
-            container: ghcr.io/xkzs2007/galaxyos-desktop:latest
+            use_container: false
             args: ""
           - platform: ubuntu-24.04
-            container: ghcr.io/xkzs2007/galaxyos-desktop:latest
+            use_container: true
             args: ""
     runs-on: ${{ matrix.platform }}
-    container: ${{ matrix.container }}
+    container: ${{ matrix.use_container && 'ghcr.io/xkzs2007/galaxyos-desktop:latest' || '' }}
     steps:
       - name: Checkout GalaxyOS
         uses: actions/checkout@v4
+
+      - name: Install system dependencies (Chocolatey, Windows)
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          choco install -y nsis
+
+      - name: Set up Python 3.12 (Windows)
+        if: runner.os == 'Windows'
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Install Python dependencies (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          pip install -r requirements-core.txt
+          pip install "openjiuwen>=0.1.13"
+          pip install "pymilvus>=2.6.2,<2.6.10"
+          pip install onnxruntime pyinstaller
 
       - name: Download bge-small-zh ONNX model
         shell: bash

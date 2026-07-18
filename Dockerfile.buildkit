@@ -64,36 +64,3 @@ LABEL org.opencontainers.image.title="GalaxyOS Desktop Build Environment"
 LABEL org.opencontainers.image.description="GalaxyOS CI/CD build environment with Python 3.12, Rust, Tauri CLI, and all dependencies"
 LABEL org.opencontainers.image.source="https://github.com/xkzs2007/GalaxyOS-desktop"
 
-# ============ Windows amd64 ============
-FROM python:3.12-windowsservercore-ltsc2022 AS build-deps-windows-amd64
-ARG TARGETPLATFORM
-
-COPY --link requirements-core.txt /tmp/
-RUN --mount=type=cache,target=C:\pip\cache \
-    pip install --no-cache-dir -r /tmp/requirements-core.txt
-
-RUN --mount=type=cache,target=C:\pip\cache \
-    pip install --no-cache-dir openjiuwen "pymilvus>=2.6.2,<2.6.10" onnxruntime pyinstaller
-
-RUN mkdir -p C:\app\models\embeddings && \
-    curl -sLf "https://hf-mirror.com/BAAI/bge-small-zh-v1.5/resolve/main/onnx/model.onnx" \
-    -o C:\app\models\embeddings\bge-small-zh.onnx
-
-COPY --link galaxyos/ C:\app\galaxyos\
-COPY --link skills/ C:\app\skills\
-COPY --link pyproject.toml README.md C:\app\
-COPY --link models\embeddings\config.json models\embeddings\tokenizer.json C:\app\models\embeddings\
-RUN --mount=type=cache,target=C:\pip\cache \
-    cd C:\app && pip install --no-cache-dir .
-
-FROM python:3.12-windowsservercore-ltsc2022 AS runtime-windows-amd64
-
-COPY --from=build-deps-windows-amd64 C:\Python312\Lib\site-packages C:\Python312\Lib\site-packages
-COPY --from=build-deps-windows-amd64 C:\Python312\Scripts C:\Python312\Scripts
-COPY --from=build-deps-windows-amd64 C:\app C:\app
-
-WORKDIR C:\app
-
-LABEL org.opencontainers.image.title="GalaxyOS Desktop Build Environment (Windows)"
-LABEL org.opencontainers.image.description="GalaxyOS CI/CD build environment for Windows with Python 3.12 and all dependencies"
-LABEL org.opencontainers.image.source="https://github.com/xkzs2007/GalaxyOS-desktop"

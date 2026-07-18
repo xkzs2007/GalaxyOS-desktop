@@ -69,11 +69,29 @@ jobs:
   build-tauri:
     name: Tauri build check (Windows)
     runs-on: windows-latest
-    container: ghcr.io/xkzs2007/galaxyos-desktop:latest
     needs: check-deps
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Install system dependencies (Chocolatey)
+        shell: powershell
+        run: |
+          choco install -y nsis
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Install Python dependencies
+        shell: bash
+        run: |
+          pip install -r requirements-core.txt
+          pip install "openjiuwen>=0.1.13"
+          pip install "pymilvus>=2.6.2,<2.6.10"
+          pip install onnxruntime pyinstaller
 
       - name: Download bge-small-zh ONNX model
         shell: bash
@@ -87,11 +105,9 @@ jobs:
             echo "Model downloaded: $(ls -lh models/embeddings/bge-small-zh.onnx)"
           fi
 
-      - name: Install GalaxyOS + PyInstaller
+      - name: Install GalaxyOS
         shell: bash
-        run: |
-          pip install .
-          pip install pyinstaller
+        run: pip install .
 
       - name: Build with PyInstaller
         shell: bash
