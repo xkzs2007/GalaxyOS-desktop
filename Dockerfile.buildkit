@@ -52,8 +52,7 @@ RUN apt-get update -qq && \
 COPY --from=build-deps-linux-amd64 /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
 COPY --from=build-deps-linux-amd64 /usr/local/bin /usr/local/bin
 COPY --from=build-deps-linux-amd64 /app /app
-COPY --from=build-deps-linux-amd64 /root/.cargo/bin/tauri-cli /usr/local/bin/tauri-cli
-COPY --from=build-deps-linux-amd64 /root/.cargo /root/.cargo
+
 
 RUN useradd --create-home --shell /bin/bash galaxyos
 USER galaxyos
