@@ -1,4 +1,5 @@
 # Agent 配置
+执行任何操作都应注意启用不少于两个 agent 的多 agent 协作，避免单点故障。
 
 ## Agent Skills
 
