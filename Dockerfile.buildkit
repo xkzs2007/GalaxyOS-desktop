@@ -1,4 +1,3 @@
-# syntax=docker/dockerfile:1
 
 ARG TARGETPLATFORM
 
@@ -6,9 +5,7 @@ ARG TARGETPLATFORM
 FROM python:3.12-slim-bookworm AS build-deps-linux-amd64
 ARG TARGETPLATFORM
 
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    apt-get update -qq && \
+RUN apt-get update -qq && \
     apt-get install -y -qq --no-install-recommends \
         libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev \
         patchelf libssl-dev libharfbuzz-dev build-essential \
@@ -16,21 +13,16 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     rm -rf /var/lib/apt/lists/*
 
 COPY --link requirements-core.txt /tmp/
-RUN --mount=type=cache,target=/root/.cache/pip \
-    pip install --no-cache-dir -r /tmp/requirements-core.txt
+RUN pip install --no-cache-dir -r /tmp/requirements-core.txt
 
-RUN --mount=type=cache,target=/root/.cache/pip \
-    pip install --no-cache-dir "openjiuwen @ git+https://github.com/openJiuwen-ai/agent-core@v0.1.16" "pymilvus>=2.6.2,<2.6.10" onnxruntime pyinstaller
+RUN pip install --no-cache-dir "openjiuwen @ git+https://github.com/openJiuwen-ai/agent-core@v0.1.16" "pymilvus>=2.6.2,<2.6.10" onnxruntime pyinstaller
 
-RUN --mount=type=cache,target=/root/.cache/pip \
-    pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu && \
+RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu && \
     pip install --no-cache-dir faiss-cpu transformers pandas hnswlib==0.8.0
 
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
 ENV PATH="/root/.cargo/bin:${PATH}"
-RUN --mount=type=/root/.cargo/registry,target=/root/.cargo/registry \
-    --mount=type=/root/.cargo/git,target=/root/.cargo/git \
-    cargo install tauri-cli --version "^2"
+RUN cargo install tauri-cli --version "^2"
 
 RUN mkdir -p /app/models/embeddings && \
     HF_MIRROR="https://hf-mirror.com/onnx-community/bge-small-zh-v1.5-ONNX/resolve/main" && \
@@ -47,14 +39,11 @@ COPY --link galaxyos/ /app/galaxyos/
 COPY --link skills/ /app/skills/
 COPY --link pyproject.toml README.md /app/
 
-RUN --mount=type=cache,target=/root/.cache/pip \
-    cd /app && pip install --no-cache-dir .
+RUN cd /app && pip install --no-cache-dir .
 
 FROM python:3.12-slim-bookworm AS runtime-linux-amd64
 
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    apt-get update -qq && \
+RUN apt-get update -qq && \
     apt-get install -y -qq --no-install-recommends \
         libwebkit2gtk-4.1-0 libappindicator3-1 librsvg2-2 \
         libssl3 libharfbuzz0b libgcc-s1 && \
