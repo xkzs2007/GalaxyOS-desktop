@@ -129,7 +129,7 @@ jobs:
 
       - name: Install curl (Linux container)
         if: runner.os == 'Linux'
-        run: apt-get update -qq && apt-get install -y -qq curl
+        run: apt-get update -qq && apt-get install -y -qq curl binutils
 
       - name: Download bge-small-zh ONNX model
         shell: bash
