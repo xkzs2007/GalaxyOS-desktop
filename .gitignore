@@ -97,6 +97,7 @@ _eval/
 .arts/
 logs/
 _*.py
+*.log
 build_log.txt
 cargo_check_output.txt
 
