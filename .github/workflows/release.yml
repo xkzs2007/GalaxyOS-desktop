@@ -83,7 +83,7 @@ jobs:
 
   build-tauri:
     name: Build Tauri ${{ matrix.platform }}
-    needs: build-docker
+    needs: [build-wheel, build-docker]
     strategy:
       fail-fast: false
       matrix:

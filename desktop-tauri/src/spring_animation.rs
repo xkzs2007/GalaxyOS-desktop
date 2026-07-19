@@ -54,13 +54,29 @@ impl SpringAnimationEngine {
         let stiffness = self.config.stiffness;
         let mass = self.config.mass;
 
-        let omega = (stiffness / mass).sqrt();
+        let omega0 = (stiffness / mass).sqrt();
+        let zeta = damping / (2.0 * mass * omega0);
+
         let displacement = self.to - self.from;
 
-        let exp_decay = (-damping * t).exp();
-        let cos_val = (omega * t).cos();
-
-        let value = self.to - displacement * exp_decay * cos_val;
+        let value = if zeta < 0.999 {
+            let omega_d = omega0 * (1.0 - zeta * zeta).sqrt();
+            let exp_decay = (-zeta * omega0 * t).exp();
+            let cos_val = (omega_d * t).cos();
+            self.to - displacement * exp_decay * cos_val
+        } else if zeta <= 1.001 {
+            let exp_decay = (-omega0 * t).exp();
+            self.to - displacement * exp_decay * (1.0 + omega0 * t)
+        } else {
+            let sqrt_term = (zeta * zeta - 1.0).sqrt();
+            let s1 = -zeta * omega0 + omega0 * sqrt_term;
+            let s2 = -zeta * omega0 - omega0 * sqrt_term;
+            let c1 = displacement / (2.0 * omega0 * sqrt_term);
+            let c2 = displacement / (2.0 * omega0 * sqrt_term);
+            let exp_s1 = (s1 * t).exp();
+            let exp_s2 = (s2 * t).exp();
+            self.to - c1 * exp_s1 + c2 * exp_s2
+        };
 
         if value.is_nan() || value.is_infinite() {
             self.current = self.to;

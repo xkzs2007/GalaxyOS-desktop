@@ -394,6 +394,21 @@ pub async fn render_native(
         bridge.inject_into_dsl(&dsl)
     };
 
+    let is_tokui = crate::tokui_renderer::TokuiStreamRenderer::is_tokui_dsl(&i18n_injected_dsl);
+    let converted_dsl = if is_tokui {
+        let dsl_bridge = state.dsl_bridge.lock().map_err(|e| e.to_string())?;
+        let result = dsl_bridge.tokui_to_eui(&i18n_injected_dsl);
+        if !result.unsupported_components.is_empty() {
+            log::warn!("DSL Bridge unsupported: {:?}", result.unsupported_components);
+        }
+        result.output_dsl
+    } else {
+        i18n_injected_dsl.clone()
+    };
+
+    let i18n_changed = dsl != i18n_injected_dsl;
+    let dsl_converted = i18n_injected_dsl != converted_dsl;
+
     let mut ctx = state.eui_neo_context.lock().map_err(|e| e.to_string())?;
 
     if !ctx.surfaces.contains_key(&surface_id) {
@@ -413,20 +428,22 @@ pub async fn render_native(
             "status": "unavailable",
             "surface_id": surface_id,
             "fallback": "webview_dom",
-            "i18n_injected": dsl != i18n_injected_dsl,
+            "i18n_injected": i18n_changed,
+            "dsl_converted": dsl_converted,
         }));
     }
 
     match ctx
         .surface_manager
-        .update_surface(&surface_id, &i18n_injected_dsl)
+        .update_surface(&surface_id, &converted_dsl)
     {
         Ok(surface) => Ok(serde_json::json!({
             "status": "success",
             "surface_id": surface.surface_id,
             "render_handle": surface.render_handle,
             "channel": surface.active_channel,
-            "i18n_injected": dsl != i18n_injected_dsl,
+            "i18n_injected": i18n_changed,
+            "dsl_converted": dsl_converted,
         })),
         Err(e) => Ok(serde_json::json!({
             "status": "error",

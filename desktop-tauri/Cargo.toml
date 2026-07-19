@@ -1,6 +1,6 @@
 [package]
 name = "galaxyos-desktop"
-version = "0.2.0"
+version = "0.3.1"
 description = "GalaxyOS Desktop — 认知增强型 AI Agent"
 authors = ["GalaxyOS"]
 license = "MIT"
@@ -18,7 +18,9 @@ serde_json = "1"
 tokio = { version = "1", features = ["full"] }
 regex = "1"
 log = "0.4"
-reqwest = { version = "0.12", features = ["json"] }
+reqwest = { version = "0.12", features = ["json", "stream"] }
+futures-util = "0.3"
+libloading = "0.8"
 
 [features]
 default = []

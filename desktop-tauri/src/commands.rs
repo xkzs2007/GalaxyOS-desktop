@@ -144,3 +144,137 @@ pub async fn request_cognitive_data(
         )
     }
 }
+
+#[tauri::command]
+pub async fn sse_stream_chat(
+    _message: String,
+    workspace_id: String,
+    state: tauri::State<'_, AppState>,
+    handle: tauri::AppHandle,
+) -> Result<serde_json::Value, String> {
+    let port = state.galaxyos_port;
+    let base_url = format!("http://127.0.0.1:{}", port);
+
+    let initial_channel = {
+        let pipeline = state.render_pipeline.lock().map_err(|e| e.to_string())?;
+        pipeline.current_channel()
+    };
+
+    let mut sse = crate::sse_client::SseClient::new(&base_url, &workspace_id);
+
+    let mut chunks_rendered = 0u32;
+    let mut final_event = String::new();
+    let stream_id = format!("stream-{}", std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis());
+
+    {
+        let mut pipeline = state.render_pipeline.lock().map_err(|e| e.to_string())?;
+        let mut surface = crate::eui_neo::RenderSurface {
+            surface_id: "chat-main".into(),
+            surface_type: "chat".into(),
+            position: "center".into(),
+            width: 800,
+            height: 600,
+            active_channel: if initial_channel == crate::render_channel::RenderChannel::EuiNative {
+                "eui_native".into()
+            } else {
+                "webview_dom".into()
+            },
+            render_handle: None,
+            created_at: 0,
+            last_updated: 0,
+            degraded: false,
+            layout_mode: "sidebar".into(),
+        };
+        let _ = pipeline.begin_sse_stream(&stream_id, &mut surface);
+    }
+
+    sse.listen(|event_type, event_data| {
+        if event_type == "tokui_chunk" || event_type == "agent_token" {
+            if let Ok(mut pipeline) = state.render_pipeline.lock() {
+                let mut surface = crate::eui_neo::RenderSurface {
+                    surface_id: "chat-main".into(),
+                    surface_type: "chat".into(),
+                    position: "center".into(),
+                    width: 800,
+                    height: 600,
+                    active_channel: if initial_channel == crate::render_channel::RenderChannel::EuiNative {
+                        "eui_native".into()
+                    } else {
+                        "webview_dom".into()
+                    },
+                    render_handle: None,
+                    created_at: 0,
+                    last_updated: 0,
+                    degraded: false,
+                    layout_mode: "sidebar".into(),
+                };
+
+                let node_id = format!("chunk-{}", chunks_rendered);
+                let rendered = pipeline.on_sse_stream_chunk(event_data, &node_id, &mut surface)
+                    .unwrap_or_else(|_| event_data.to_string());
+
+                chunks_rendered += 1;
+                let _ = handle.emit("galaxyos://chat-chunk", serde_json::json!({
+                    "chunk": rendered,
+                    "surface_id": surface.surface_id,
+                    "channel": pipeline.current_channel().to_string(),
+                    "stream_id": stream_id,
+                    "node_id": node_id,
+                }));
+            }
+        } else if event_type == "agent_done" {
+            final_event = "done".into();
+        }
+    }).await?;
+
+    {
+        let mut pipeline = state.render_pipeline.lock().map_err(|e| e.to_string())?;
+        let mut surface = crate::eui_neo::RenderSurface {
+            surface_id: "chat-main".into(),
+            surface_type: "chat".into(),
+            position: "center".into(),
+            width: 800,
+            height: 600,
+            active_channel: "webview_dom".into(),
+            render_handle: None,
+            created_at: 0,
+            last_updated: 0,
+            degraded: false,
+            layout_mode: "sidebar".into(),
+        };
+        let _ = pipeline.end_sse_stream(&mut surface);
+    }
+
+    let (buffer_len, channel, streaming, node_count) = {
+        let pipeline = state.render_pipeline.lock().map_err(|e| e.to_string())?;
+        (pipeline.renderer_buffer_len(), pipeline.current_channel(), pipeline.is_streaming(), pipeline.stream_node_count())
+    };
+
+    Ok(serde_json::json!({
+        "status": final_event,
+        "chunks_rendered": chunks_rendered,
+        "channel": channel.to_string(),
+        "buffer_len": buffer_len,
+        "stream_id": stream_id,
+        "streaming": streaming,
+        "node_count": node_count,
+    }))
+}
+
+#[tauri::command]
+pub async fn render_pipeline_status(
+    state: tauri::State<'_, AppState>,
+) -> Result<serde_json::Value, String> {
+    let pipeline = state.render_pipeline.lock().map_err(|e| e.to_string())?;
+    Ok(serde_json::json!({
+        "channel": pipeline.current_channel().to_string(),
+        "buffer_len": pipeline.renderer_buffer_len(),
+        "degradation_count": pipeline.degradation_count(),
+        "spring_running": pipeline.spring_is_running(),
+        "streaming": pipeline.is_streaming(),
+        "stream_node_count": pipeline.stream_node_count(),
+    }))
+}

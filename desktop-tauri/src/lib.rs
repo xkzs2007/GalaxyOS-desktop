@@ -3,16 +3,20 @@ use tauri::Manager;
 
 mod backend;
 mod commands;
+mod dsl_bridge;
 mod eui_neo;
 mod eui_neo_ffi;
 mod i18n_bridge;
 mod render_channel;
+mod render_pipeline;
 mod spring_animation;
 mod sse_client;
 mod tokui_renderer;
 
 use eui_neo::{EuiNeoContext, NativeRenderSurfaceManager};
 use i18n_bridge::EuiNeoI18nBridge;
+use render_pipeline::RenderPipeline;
+use dsl_bridge::DslBridge;
 
 pub struct AppState {
     galaxyos_process: Mutex<Option<std::process::Child>>,
@@ -20,12 +24,14 @@ pub struct AppState {
     locale: Mutex<String>,
     eui_neo_context: Mutex<EuiNeoContext>,
     i18n_bridge: Mutex<EuiNeoI18nBridge>,
+    render_pipeline: Mutex<RenderPipeline>,
+    dsl_bridge: Mutex<DslBridge>,
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let surface_manager = NativeRenderSurfaceManager::new();
-    let native_available = false;
+    let native_available = eui_neo_ffi::probe_native();
 
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
@@ -43,6 +49,8 @@ pub fn run() {
                 cognitive_state: eui_neo::CognitivePanelState::default(),
             }),
             i18n_bridge: Mutex::new(EuiNeoI18nBridge::new()),
+            render_pipeline: Mutex::new(RenderPipeline::new(native_available)),
+            dsl_bridge: Mutex::new(DslBridge::new()),
         })
         .invoke_handler(tauri::generate_handler![
             commands::start_backends,
@@ -52,6 +60,8 @@ pub fn run() {
             commands::set_locale,
             commands::get_supported_locales,
             commands::request_cognitive_data,
+            commands::sse_stream_chat,
+            commands::render_pipeline_status,
             eui_neo::render_native,
             eui_neo::create_surface,
             eui_neo::destroy_surface,
