@@ -93,7 +93,7 @@ jobs:
             args: ""
           - platform: ubuntu-24.04
             use_container: true
-            args: ""
+            args: "--bundles deb"
     runs-on: ${{ matrix.platform }}
     container:
       image: ${{ matrix.use_container && 'ghcr.io/xkzs2007/galaxyos-desktop:latest' || '' }}
@@ -248,7 +248,7 @@ jobs:
           name: tauri-linux
           path: |
             desktop-tauri/target/release/bundle/deb/*.deb
-            desktop-tauri/target/release/bundle/appimage/*.AppImage
+
 
   create-release:
     needs: [build-wheel, build-docker, build-tauri]
