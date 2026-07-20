@@ -9,8 +9,7 @@ target_include_directories(galaxyos-desktop-test PRIVATE
 )
 
 target_link_libraries(galaxyos-desktop-test PRIVATE
-    eui::neo
-    Threads::Threads
+
     cpp-httplib
     nlohmann_json
 )
