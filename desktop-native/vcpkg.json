@@ -1,0 +1,10 @@
+{
+    "name": "galaxyos-desktop",
+    "version-string": "0.3.0",
+    "description": "GalaxyOS Desktop - Cognitive AI Agent Desktop Engine",
+    "dependencies": [
+        "glfw3",
+        "cpp-httplib",
+        "nlohmann-json"
+    ]
+}

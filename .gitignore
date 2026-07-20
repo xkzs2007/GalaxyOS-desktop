@@ -88,6 +88,29 @@ workspace/
 # C++ Desktop build cache
 desktop-native/build/
 
+# EUI-NEO SDK (CI checkout, not in repo)
+EUI-NEO/
+
+# openjiuwen agent-core source (local reference)
+agent-core/
+
+# CMake binaries (local only)
+bin/
+share/
+man/
+
+# PyInstaller distribution
+galaxyos-mcp-dist/
+
+# TokUI chat dev
+tokui_chat/
+
+# Cargo check output
+cargo_check_output.txt
+
+# HLD documents (generated)
+doc/
+
 # ── Skill 管理器自动生成 ──
 .agents/
 .claude/

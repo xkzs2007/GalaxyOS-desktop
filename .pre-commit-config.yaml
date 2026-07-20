@@ -11,6 +11,7 @@ repos:
       - id: check-json
       - id: check-added-large-files
         args: ['--maxkb=500']
+        exclude: '^desktop-native/third_party/'
       - id: detect-private-key
       - id: check-merge-conflict
 
