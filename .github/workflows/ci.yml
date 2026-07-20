@@ -118,10 +118,12 @@ jobs:
           pip install -r requirements-core.txt
           pip install "openjiuwen @ git+https://github.com/openJiuwen-ai/agent-core@v0.1.16"
           pip install "pymilvus>=2.6.2,<2.6.10"
-          pip install onnxruntime pyinstaller
+          pip install onnxruntime
           pip install torch --index-url https://download.pytorch.org/whl/cpu
           pip install faiss-cpu transformers pandas
           pip install hnswlib==0.8.0
+          pip install nuitka ordered-set zstandard
+          pip install pyinstaller
 
       - name: Download bge-small-zh ONNX model
         shell: bash
@@ -147,27 +149,41 @@ jobs:
         shell: bash
         run: pip install .
 
-      - name: Build with PyInstaller
+      - name: Build with Nuitka (or PyInstaller fallback)
+        shell: bash
+        env:
+          TORCH_VARIANT: cpu
+          PACKAGING_TOOL: nuitka
+        run: |
+          python nuitka-build.py
+
+      - name: Cache Nuitka compilation
+        uses: actions/cache@v4
+        with:
+          path: nuitka-cache
+          key: nuitka-${{ runner.os }}-py3.12-${{ hashFiles('galaxyos/**/*.py') }}
+          restore-keys: nuitka-${{ runner.os }}-py3.12-
+
+      - name: Verify C extension imports
         shell: bash
         run: |
-          pyinstaller galaxyos-mcp.spec --noconfirm
+          galaxyos-mcp-dist/galaxyos-mcp-cpu.exe -c "import torch; import faiss; import hnswlib; import onnxruntime; import transformers; import pandas; print('All C extensions OK')"
 
       - name: Verify native_translations packaged
         shell: bash
         run: |
-          test -f dist/galaxyos-mcp/native_translations/zh.json || echo "WARNING: native_translations/zh.json not found in dist"
-          test -f dist/galaxyos-mcp/native_translations/en.json || echo "WARNING: native_translations/en.json not found in dist"
+          test -f galaxyos-mcp-dist/native_translations/zh.json || echo "WARNING: native_translations/zh.json not found"
+          test -f galaxyos-mcp-dist/native_translations/en.json || echo "WARNING: native_translations/en.json not found"
 
       - name: Verify build output
         shell: bash
         run: |
-          test -f dist/galaxyos-mcp/galaxyos-mcp.exe
-          test -d dist/galaxyos-mcp/_internal
+          test -d galaxyos-mcp-dist
 
       - name: Prepare galaxyos-mcp-dist for C++ desktop
         shell: bash
         run: |
-          cp -r dist/galaxyos-mcp galaxyos-mcp-dist
+          echo "galaxyos-mcp-dist already prepared by nuitka-build.py"
 
       - name: Checkout EUI-NEO source
         shell: bash

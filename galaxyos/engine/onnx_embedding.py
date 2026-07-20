@@ -51,6 +51,8 @@ _candidates.append(os.path.join(_cwd, "..", "models", "embeddings"))
 _candidates.append(os.path.expanduser("~/.openclaw/workspace/GalaxyOS/models/embeddings"))
 # GalaxyOS 运行时安装目录
 _candidates.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "models", "embeddings"))
+# Nuitka standalone: sys.executable points to {dist_dir}/galaxyos-mcp-{variant}.exe
+_candidates.append(os.path.join(os.path.dirname(sys.executable), "models", "embeddings"))
 
 def _find_model_dir():
     for c in _candidates:
@@ -131,7 +133,7 @@ class LocalEmbeddingService:
         self._tok.enable_truncation(max_length=128)
         self._tok.enable_padding(length=128)
 
-        import onnxruntime as ort
+        import onnxruntime as ort  # type: ignore[import-not-found]
         so = ort.SessionOptions()
         so.enable_cpu_mem_arena = False
         so.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL

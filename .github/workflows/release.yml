@@ -82,15 +82,23 @@ jobs:
           cache-to: type=gha,mode=max
 
   build-native:
-    name: Build C++ Desktop ${{ matrix.platform }}
+    name: Build C++ Desktop ${{ matrix.platform }} (${{ matrix.torch_variant }})
     needs: [build-wheel, build-docker]
     strategy:
       fail-fast: false
       matrix:
         include:
           - platform: windows-latest
+            torch_variant: cpu
+            use_container: false
+          - platform: windows-latest
+            torch_variant: cuda
             use_container: false
           - platform: ubuntu-24.04
+            torch_variant: cpu
+            use_container: true
+          - platform: ubuntu-24.04
+            torch_variant: cuda
             use_container: true
     runs-on: ${{ matrix.platform }}
     container:
@@ -120,10 +128,17 @@ jobs:
           pip install -r requirements-core.txt
           pip install "openjiuwen @ git+https://github.com/openJiuwen-ai/agent-core@v0.1.16"
           pip install "pymilvus>=2.6.2,<2.6.10"
-          pip install onnxruntime pyinstaller
-          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install onnxruntime
+          if [ "${{ matrix.torch_variant }}" = "cuda" ]; then
+            pip install torch --index-url https://download.pytorch.org/whl/cu128
+            pip install onnxruntime-gpu
+          else
+            pip install torch --index-url https://download.pytorch.org/whl/cpu
+          fi
           pip install faiss-cpu transformers pandas
           pip install hnswlib==0.8.0
+          pip install nuitka ordered-set zstandard
+          pip install pyinstaller
 
       - name: Install curl (Linux container)
         if: runner.os == 'Linux'
@@ -148,17 +163,27 @@ jobs:
             done
           fi
 
-      - name: Install GalaxyOS + PyInstaller
+      - name: Install GalaxyOS + Nuitka
         shell: bash
         run: |
           pip install .
+          pip install nuitka ordered-set zstandard
           pip install pyinstaller
 
-      - name: Build GalaxyOS MCP with PyInstaller
+      - name: Cache Nuitka compilation
+        uses: actions/cache@v4
+        with:
+          path: nuitka-cache
+          key: nuitka-${{ runner.os }}-py3.12-${{ matrix.torch_variant }}-${{ hashFiles('galaxyos/**/*.py') }}
+          restore-keys: nuitka-${{ runner.os }}-py3.12-${{ matrix.torch_variant }}-
+
+      - name: Build GalaxyOS MCP with Nuitka
         shell: bash
+        env:
+          TORCH_VARIANT: ${{ matrix.torch_variant }}
+          PACKAGING_TOOL: nuitka
         run: |
-          pyinstaller galaxyos-mcp.spec --noconfirm
-          cp -r dist/galaxyos-mcp galaxyos-mcp-dist
+          python nuitka-build.py
 
       - name: Checkout EUI-NEO source
         shell: bash
@@ -200,14 +225,14 @@ jobs:
         if: runner.os == 'Windows'
         uses: actions/upload-artifact@v4
         with:
-          name: native-windows
+          name: native-windows-${{ matrix.torch_variant }}
           path: desktop-native/build/*.exe
 
       - name: Upload native artifacts (Linux)
         if: runner.os == 'Linux'
         uses: actions/upload-artifact@v4
         with:
-          name: native-linux
+          name: native-linux-${{ matrix.torch_variant }}
           path: desktop-native/build/*.deb
 
 
@@ -251,3 +276,8 @@ jobs:
 
             **Desktop (Native C++):**
             Download the installer for your platform below.
+
+            - **CPU version**: For machines without NVIDIA GPU. Includes torch CPU, onnxruntime, faiss-cpu, hnswlib.
+            - **CUDA version**: For machines with NVIDIA GPU. Includes torch CUDA, onnxruntime-gpu, CUDA runtime (no separate CUDA Toolkit install needed).
+
+            > Built with Nuitka. If Nuitka build fails, PyInstaller fallback is used (heavy deps excluded, install manually).
