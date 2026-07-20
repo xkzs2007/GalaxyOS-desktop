@@ -31,7 +31,7 @@ GALAXYOS_MODE=desktop python -m galaxyos.kernel.mcp_server_entry
 # 安装向导（CI 非交互模式）
 python scripts/install_wizard.py --ci --target-dir models/embeddings
 
-# C++ 桌面壳构建（需先安装 EUI-NEO SDK 到 vendor/eui-neo/sdk/）
+# C++ 桌面壳构建（需先 checkout EUI-NEO 到项目根目录 EUI-NEO/）
 cmake -B desktop-native/build -S desktop-native
 cmake --build desktop-native/build --config Release
 
@@ -48,7 +48,7 @@ python -m pytest tests/ -x -q --tb=short
 | 目录 | 职责 | 注意事项 |
 |------|------|---------|
 | `desktop-native/src/` | C++ 桌面壳源码 | EUI-NEO FFI、GLFW 窗口、IPC、SSE、托盘 |
-| `desktop-native/include/` | C++ 头文件 | 14 个模块头文件 |
+| `desktop-native/include/` | C++ 头文件 | 7 个模块头文件 |
 | `vendor/eui-neo/sdk/` | EUI-NEO C++ SDK | CI 中下载，不入库（.gitignore 排除） |
 | `galaxyos/kernel/` | Python 认知内核 | MCP Server、AgentCore Bridge、DSL Bridge |
 | `galaxyos/engine/` | Python 核心引擎 | ONNX Embedding、检索、神经网络 |
@@ -96,19 +96,21 @@ python -m pytest tests/ -x -q --tb=short
 
 | 模块 | 头文件 | 源文件 | 职责 |
 |------|--------|--------|------|
-| GalaxyOSNativeApp | galaxyos_native_app.h | galaxyos_native_app.cpp | 主入口、生命周期、模块协调 |
+| GalaxyOSApp | — | galaxyos_app.cpp | EUI-NEO 应用入口、UI 构建、生命周期 |
 | NativeLogger | native_logger.h | native_logger.cpp | JSON 结构化日志 |
 | NativeConfig | native_config.h | native_config.cpp | 配置管理（JSON） |
-| NativeWindowManager | native_window_manager.h | native_window_manager.cpp | GLFW 窗口管理 |
 | NativeEventBus | native_event_bus.h | native_event_bus.cpp | 发布-订阅事件总线 |
-| NativeIPCChannel | native_ipc_channel.h | native_ipc_channel.cpp | HTTP IPC 通道 |
-| NativeSSEClient | native_sse_client.h | native_sse_client.cpp | SSE 协议客户端 |
+| NativeIPCChannel | native_ipc_channel.h | native_ipc_channel.cpp | HTTP IPC 通道（URL 编码） |
+| NativeSSEClient | native_sse_client.h | native_sse_client.cpp | SSE 协议客户端（无锁 dispatch） |
 | NativeProcessManager | native_process_manager.h | native_process_manager.cpp | Python 子进程管理 |
-| EuiNeoFFIWrapper | eui_neo_ffi_wrapper.h | eui_neo_ffi_wrapper.cpp | EUI-NEO FFI 安全包装 |
-| DslMappingTable | dsl_mapping_table.h | dsl_mapping_table.cpp | TokUI→EUI-NEO 组件映射 |
-| NativeRenderEngine | native_render_engine.h | native_render_engine.cpp | 渲染引擎 |
 | I18nBridge | i18n_bridge.h | i18n_bridge.cpp | i18n 翻译桥接 |
-| NativeTrayIcon | native_tray_icon.h | native_tray_icon.cpp | 系统托盘（Win32） |
+
+**待实现模块**（AGENTS.md 规划但尚未编码）：
+- NativeWindowManager（GLFW 窗口管理，当前由 EUI-NEO 内部处理）
+- EuiNeoFFIWrapper（EUI-NEO FFI 安全包装，当前由 galaxyos_app.cpp 直接调用 EUI-NEO API）
+- DslMappingTable（TokUI→EUI-NEO 组件映射，当前由 DSLBridge Python 侧处理）
+- NativeRenderEngine（渲染引擎，当前由 EUI-NEO 内部处理）
+- NativeTrayIcon（系统托盘，当前由 EUI-NEO `.tray(true)` 配置处理）
 
 ## Agent Skills
 
