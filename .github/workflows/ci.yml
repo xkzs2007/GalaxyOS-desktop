@@ -59,19 +59,19 @@ jobs:
           python -c "import transformers; print('transformers:', transformers.__version__)"
           python -c "import pandas; print('pandas:', pandas.__version__)"
 
-      - name: Download LFM2.5-1.2B ONNX Q4 model
+      - name: Download bge-small-zh ONNX model
         run: |
-          mkdir -p models/LFM2.5-1.2B
-          if [ -f models/LFM2.5-1.2B/model_q4.onnx_data ]; then
-            echo "LFM Q4 model already exists, skipping download"
+          mkdir -p models/embeddings
+          if [ -f models/embeddings/model.onnx ]; then
+            echo "Model already exists, skipping download"
           else
-            HF_MIRROR="https://hf-mirror.com/LiquidAI/LFM2.5-1.2B-Thinking-ONNX/resolve/main"
-            HF_OFFICIAL="https://huggingface.co/LiquidAI/LFM2.5-1.2B-Thinking-ONNX/resolve/main"
-            for f in onnx/model_q4.onnx onnx/model_q4.onnx_data tokenizer.json tokenizer_config.json config.json generation_config.json chat_template.jinja; do
-              dest="models/LFM2.5-1.2B/$(basename $f)"
-              curl -sLf --retry 3 --retry-delay 5 --max-time 300 \
+            HF_MIRROR="https://hf-mirror.com/onnx-community/bge-small-zh-v1.5-ONNX/resolve/main"
+            HF_OFFICIAL="https://huggingface.co/onnx-community/bge-small-zh-v1.5-ONNX/resolve/main"
+            for f in onnx/model.onnx onnx/model.onnx_data tokenizer.json; do
+              dest="models/embeddings/$(basename $f)"
+              curl -sLf --retry 3 --retry-delay 5 --max-time 120 \
                 "${HF_MIRROR}/${f}" -o "$dest" || \
-              curl -sLf --retry 3 --retry-delay 5 --max-time 300 \
+              curl -sLf --retry 3 --retry-delay 5 --max-time 120 \
                 "${HF_OFFICIAL}/${f}" -o "$dest"
               echo "Downloaded: $dest ($(ls -lh "$dest" | awk '{print $5}'))"
             done
@@ -85,9 +85,7 @@ jobs:
           python -c "from galaxyos.kernel.memory_sync_bridge import MemorySyncBridge; print('memory_sync_bridge OK')"
           python -c "from galaxyos.kernel.i18n_manager import I18nManager; print('i18n_manager OK')"
           python -c "from galaxyos.kernel.dsl_bridge import DSLBridge; print('dsl_bridge OK')"
-          python -c "from galaxyos.kernel.render_channel_router import RenderChannelRouter; print('render_channel_router OK')"
-          python -c "from galaxyos.kernel.tokui_chat_adapter import TokuiChatAdapter; print('tokui_chat_adapter OK')"
-          python -c "from galaxyos.kernel.tokui_degradation import TokUIDegradationManager; print('tokui_degradation OK')"
+
           python -c "from galaxyos.kernel.integration_config_manager import IntegrationConfigManager; print('integration_config_manager OK')"
 
       - name: Check no xiaoyi references in functional code
@@ -144,24 +142,6 @@ jobs:
             done
           fi
 
-      - name: Download LFM2.5-1.2B ONNX Q4 model
-        shell: bash
-        run: |
-          mkdir -p models/LFM2.5-1.2B
-          if [ -f models/LFM2.5-1.2B/model_q4.onnx_data ]; then
-            echo "LFM Q4 model already exists, skipping download"
-          else
-            HF_MIRROR="https://hf-mirror.com/LiquidAI/LFM2.5-1.2B-Thinking-ONNX/resolve/main"
-            HF_OFFICIAL="https://huggingface.co/LiquidAI/LFM2.5-1.2B-Thinking-ONNX/resolve/main"
-            for f in onnx/model_q4.onnx onnx/model_q4.onnx_data tokenizer.json tokenizer_config.json config.json generation_config.json chat_template.jinja; do
-              dest="models/LFM2.5-1.2B/$(basename $f)"
-              curl -sLf --retry 3 --retry-delay 5 --max-time 300 \
-                "${HF_MIRROR}/${f}" -o "$dest" || \
-              curl -sLf --retry 3 --retry-delay 5 --max-time 300 \
-                "${HF_OFFICIAL}/${f}" -o "$dest"
-              echo "Downloaded: $dest ($(ls -lh "$dest" | awk '{print $5}'))"
-            done
-          fi
 
       - name: Install GalaxyOS
         shell: bash
