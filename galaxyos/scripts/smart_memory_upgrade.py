@@ -2,13 +2,11 @@
 """智能记忆升级 - 自动判断升级时机"""
 import json
 import subprocess
-from pathlib import Path
-from datetime import datetime, timedelta
-from typing import Dict, List, Optional
+from datetime import datetime
+from typing import Dict, List
 
 
 # ── Centralized path resolution ──
-import os as _os
 import sys as _sys
 from galaxyos.shared.paths import workspace
 _ws_root = workspace()

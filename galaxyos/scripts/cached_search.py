@@ -4,12 +4,10 @@ import sys
 import json
 import hashlib
 import sqlite3
-from pathlib import Path
 from datetime import datetime, timedelta
 
 
 # ── Centralized path resolution ──
-import os as _os
 import sys as _sys
 from galaxyos.shared.paths import workspace
 _ws_root = workspace()
@@ -42,7 +40,6 @@ def set_cache(key, results):
 
 def search_direct(query):
     """直接搜索（使用 sqlite3 连接）"""
-    from pathlib import Path
 
     VECTORS_DB = path_resolver.VECTORS_DB
 

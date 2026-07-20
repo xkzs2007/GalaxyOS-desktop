@@ -17,19 +17,58 @@ Created: 2026-04-21
 """
 
 import json
-import random
-from datetime import datetime, timezone, timedelta
-from typing import List, Dict, Any, Optional, Callable, Tuple
+from datetime import datetime, timezone
+from typing import List, Dict, Any, Optional, Tuple
 from dataclasses import dataclass, field
 from enum import Enum
 import re
 
 try:
-    from .memory_stream import Memory, MemoryStream, MemoryType
-    from .retrieval_formula import MemoryRetriever, RetrievalConfig
+    from galaxyos.kernel.liquid_memory_adapter import LiquidMemoryAdapter, MemoryType as _LiqMemType, MemoryEntry
+    _HAS_LIQUID_MEMORY = True
 except ImportError:
-    from memory_stream import Memory, MemoryStream, MemoryType
-    from retrieval_formula import MemoryRetriever, RetrievalConfig
+    _HAS_LIQUID_MEMORY = False
+
+
+class MemoryType:
+    ACTION = "action"
+    OBSERVATION = "observation"
+    REFLECTION = "reflection"
+
+
+class Memory:
+    def __init__(self, id="", content="", memory_type=MemoryType.ACTION, importance=5.0, created_at=None, metadata=None):
+        self.id = id
+        self.content = content
+        self.memory_type = memory_type
+        self.importance = importance
+        self.created_at = created_at or datetime.now(timezone.utc)
+        self.metadata = metadata or {}
+
+
+class MemoryStream:
+    def __init__(self):
+        self._memories: List[Memory] = []
+
+    def add(self, content, memory_type=MemoryType.ACTION, importance=5.0, metadata=None):
+        m = Memory(id=f"mem_{len(self._memories)}", content=content, memory_type=memory_type, importance=importance, metadata=metadata)
+        self._memories.append(m)
+        return m
+
+    def get_all(self) -> List[Memory]:
+        return list(self._memories)
+
+    def get_important(self, threshold=5.0) -> List[Memory]:
+        return [m for m in self._memories if m.importance >= threshold]
+
+
+class MemoryRetriever:
+    def retrieve(self, query, memories, top_k=10):
+        return memories[:top_k]
+
+
+class RetrievalConfig:
+    pass
 
 
 # ==================== 配置 ====================

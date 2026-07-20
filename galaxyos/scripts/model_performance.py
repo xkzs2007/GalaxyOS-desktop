@@ -4,17 +4,14 @@
 监控 LLM 和 Embedding 调用性能
 """
 
-import os
 import json
 import time
 import requests
-from pathlib import Path
 from datetime import datetime
 
 # 路径配置
 
 # ── Centralized path resolution ──
-import os as _os
 import sys as _sys
 from galaxyos.shared.paths import workspace
 _ws_root = workspace()

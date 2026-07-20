@@ -10,12 +10,9 @@ SKILL0 — Dynamic Curriculum for Skill Internalization
 
 import os
 import json
-import time
-import hashlib
-from typing import Dict, List, Any, Optional, Callable
+from typing import Dict, List, Any, Callable
 from pathlib import Path
 import logging
-from galaxyos.shared.paths import workspace
 
 logger = logging.getLogger("skill_curriculum")
 

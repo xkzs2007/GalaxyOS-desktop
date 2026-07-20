@@ -6,7 +6,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import pytest
-from services.crag_pipeline import (
+from galaxyos.privileged.crag_pipeline import (
     RAGDocument, RetrievalConfidence, CRAGPipeline,
     RetrievalEvaluator, SelfRAG, Reranker,
 )

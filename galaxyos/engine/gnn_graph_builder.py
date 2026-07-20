@@ -18,7 +18,7 @@ import os
 import re
 import logging
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple, Any
+from typing import Dict, List, Optional, Tuple
 
 import torch
 import numpy as np

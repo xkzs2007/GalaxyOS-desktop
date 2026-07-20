@@ -19,14 +19,12 @@ from typing import Optional, Set
 
 
 # ── Centralized path resolution ──
-import os as _os
 import sys as _sys
 from galaxyos.shared.paths import galaxyos_home, workspace
 _ws_root = workspace()
 for _p in [_ws_root, "/workspace"]:
     if _p not in _sys.path:
         _sys.path.insert(0, _p)
-import path_resolver
 PERSONA_WRITE_ENABLED = os.environ.get("LLM_MEMORY_ALLOW_PERSONA_WRITE") == "1"
 
 # 添加脚本目录到路径

@@ -30,7 +30,7 @@ import hmac
 import logging
 import threading
 import numpy as np
-from typing import Optional, Dict, List, Tuple, Any
+from typing import Optional, Dict, List, Tuple
 from collections import OrderedDict
 from dataclasses import dataclass, field
 from pathlib import Path

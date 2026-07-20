@@ -8,9 +8,8 @@ GalaxyOSExtension — JiuwenSwarm Extension 注册 GalaxyOS 认知增强能力
 
 from __future__ import annotations
 
-import json
 import logging
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, Optional
 
 logger = logging.getLogger(__name__)
 

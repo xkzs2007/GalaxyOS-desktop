@@ -9,14 +9,12 @@ import os
 import logging
 
 # ── Centralized path resolution ──
-import os as _os
 import sys as _sys
 from galaxyos.shared.paths import galaxyos_home, workspace
 _ws_root = workspace()
 for _p in [_ws_root, "/workspace"]:
     if _p not in _sys.path:
         _sys.path.insert(0, _p)
-import path_resolver
 logger = logging.getLogger(__name__)
 PERSONA_WRITE_ENABLED = os.environ.get("LLM_MEMORY_ALLOW_PERSONA_WRITE") == "1"
 

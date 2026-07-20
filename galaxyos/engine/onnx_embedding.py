@@ -30,7 +30,6 @@ import os
 import json
 import logging
 import time
-import gc
 import numpy as np
 import threading
 
@@ -149,17 +148,7 @@ class LocalEmbeddingService:
         self._initialized = True
 
     def _try_uds(self):
-        """尝试连接 LFM UDS backend"""
-        try:
-            from galaxyos_native import lfm_ping, lfm_embed_text
-            pong = lfm_ping()
-            if pong == "pong":
-                self._uds_backend = True
-                global _EMBEDDING_DIM
-                _EMBEDDING_DIM = 2048
-                return True
-        except Exception:
-            pass
+
         self._uds_backend = False
         return False
 
@@ -197,26 +186,7 @@ class LocalEmbeddingService:
         return np.vstack(all_embs).astype(np.float32)
 
     def _embed_uds(self, texts: list) -> np.ndarray:
-        """UDS 后端：调 lfm_embed_text 拿 2048 维 embedding"""
-        from galaxyos_native import lfm_embed_text
-
-        # 简单 tokenize：取前 128 个字符的 Unicode 码点做 token ID
-        # 实际 LFM 需要真实 tokenizer，但 embed_text 接受任意 int 序列
-        embs = []
-        for text in texts:
-            ids = [ord(c) % 65536 for c in text[:128]]
-            if not ids:
-                ids = [0]
-            emb = lfm_embed_text(ids)
-            emb_arr = np.array(emb, dtype=np.float32)
-            # 归一化
-            norm = np.linalg.norm(emb_arr)
-            if norm > 0:
-                emb_arr = emb_arr / norm
-            embs.append(emb_arr)
-
-        result = np.stack(embs).astype(np.float32)
-        return result
+        return np.empty((0, _EMBEDDING_DIM), dtype=np.float32)
 
     def embed_query(self, text: str) -> np.ndarray:
         """单条文本 → 归一化 embedding"""

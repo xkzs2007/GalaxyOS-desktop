@@ -4,7 +4,6 @@
 管理 sqlite-vec (主) + Qdrant (副) + TF-IDF (备份)
 """
 
-import os
 import sys
 import json
 import sqlite3
@@ -14,7 +13,6 @@ from datetime import datetime
 # 添加 core 目录到路径
 
 # ── Centralized path resolution ──
-import os as _os
 import sys as _sys
 from galaxyos.shared.paths import workspace
 _ws_root = workspace()

@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
-from safe_extension_loader import safe_load_extension
 
 # ── Centralized path resolution ──
-import os as _os
 import sys as _sys
 from galaxyos.shared.paths import workspace
 _ws_root = workspace()
@@ -16,10 +14,9 @@ import path_resolver
 提供安全的 SQLite 数据库连接，替代 shell=False 调用。
 """
 
-import os
 import sqlite3
 from pathlib import Path
-from typing import Optional, List, Dict, Any, Tuple
+from typing import Optional, List, Tuple
 
 # 数据库路径
 VECTORS_DB = path_resolver.VECTORS_DB

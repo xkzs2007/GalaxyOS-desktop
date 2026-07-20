@@ -1,7 +1,7 @@
 """测试 adaptive_hallucination_params — 自适应防幻觉参数"""
 import sys; sys.path.insert(0, '.')
 import pytest
-from services.adaptive_hallucination_params import (
+from galaxyos.engine.adaptive_hallucination_params import (
     AdaptiveHallucinationParams, AdaptiveThresholds,
     DomainType, QueryType,
 )
@@ -55,7 +55,7 @@ class TestAdaptiveHallucinationParams:
         assert domain in DomainType
 
     def test_get_verification_level(self, params):
-        from services.adaptive_hallucination_params import AdaptiveThresholds
+        from galaxyos.engine.adaptive_hallucination_params import AdaptiveThresholds
         t = AdaptiveThresholds()
         level = params.get_verification_level(confidence=0.3, thresholds=t)
         assert level is not None

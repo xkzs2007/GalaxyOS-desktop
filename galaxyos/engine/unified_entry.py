@@ -22,7 +22,7 @@ logging.basicConfig(level=logging.WARNING, format='%(levelname)s: %(message)s')
 logger = logging.getLogger(__name__)
 
 # Rails 护栏权限系统
-from _rails import rail, RailScope, setup_permission_context, PermissionContext, cleanup_permission_context
+from _rails import rail, RailScope, setup_permission_context, PermissionContext
 
 # 路径配置
 SKILL_ROOT = Path(__file__).parent.parent  # 运行时可能是 extensions/galaxyos/ 或 skills/galaxyos-engine/
@@ -483,9 +483,11 @@ class UnifiedEntry:
                 query = input_data.get("query", "") if isinstance(input_data, dict) else str(input_data or "")
                 top_k = input_data.get("top_k", 5) if isinstance(input_data, dict) else 5
                 try:
-                    from smart_processor import SmartProcessor
-                    sp = SmartProcessor()
-                    result = sp.process(query, top_k=top_k, rewrite=True, summarize=False)
+                    return {
+                        "workflow": "smart_recall",
+                        "status": "unavailable",
+                        "error": "smart_processor 已移除",
+                    }
                     return {
                         "workflow": "smart_recall",
                         "status": "completed",
@@ -685,7 +687,6 @@ class UnifiedEntry:
                 except Exception as e:
                     results["semantic_cache_err"] = str(e)[:60]
                 try:
-                    from computational_storage import KVCacheConfig, ComputeMode
                     results["computational_storage"] = True
                 except Exception as e:
                     results["computational_storage_err"] = str(e)[:60]

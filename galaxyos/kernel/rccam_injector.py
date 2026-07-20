@@ -18,7 +18,7 @@ import logging
 import time
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -69,6 +69,9 @@ class RCCAMInjector:
         config: dict[str, Any] | None = None,
         tokui_builder=None,
         tokui_streamer=None,
+        memory_sync_bridge=None,
+        cognition_backend=None,
+        control_backend=None,
     ):
         self._memory_adapter = memory_adapter
         self._dag_fusion = dag_fusion
@@ -76,6 +79,9 @@ class RCCAMInjector:
         self._config = config or {}
         self._tokui_builder = tokui_builder
         self._tokui_streamer = tokui_streamer
+        self._memory_sync_bridge = memory_sync_bridge
+        self._cognition_backend = cognition_backend
+        self._control_backend = control_backend
         self._active_cycles: dict[str, RCCAMState] = {}
 
     async def on_pre_agent_reply(
@@ -151,32 +157,123 @@ class RCCAMInjector:
         if self._memory_adapter:
             try:
                 result = await self._memory_adapter.recall(query=query, top_k=10, session_key=session_key)
-                context.extend(result.get("results", []))
+                for item in result.get("results", []):
+                    if isinstance(item, dict):
+                        item["source_layer"] = "liquid_neural"
+                    context.append(item)
             except Exception as e:
                 logger.warning(f"Memory recall failed: {e}")
 
         if self._dag_fusion:
             try:
                 result = await self._dag_fusion.assemble(session_key=session_key, token_budget=token_budget)
-                context.extend(result.get("context", []))
+                for item in result.get("context", []):
+                    if isinstance(item, dict):
+                        item["source_layer"] = "dag"
+                    context.append(item)
             except Exception as e:
                 logger.warning(f"DAG assemble failed: {e}")
+
+        if self._memory_sync_bridge:
+            try:
+                workspace_id = session_key.split(":")[-1] if ":" in session_key else session_key
+                oj_entries = await self._memory_sync_bridge._recall_from_oj_context(workspace_id, query, top_k=5)
+                for entry in oj_entries:
+                    entry_dict = {
+                        "id": entry.id,
+                        "content": entry.content,
+                        "source": entry.source,
+                        "score": entry.metadata.get("score", 0),
+                        "source_layer": "agent_core",
+                    }
+                    context.append(entry_dict)
+            except Exception as e:
+                logger.warning(f"Agent-core context recall failed: {e}")
 
         return context
 
     async def _cognition(self, session_key: str, user_input: str, context: list[dict[str, Any]]) -> dict[str, Any]:
+        if self._cognition_backend:
+            try:
+                from galaxyos.engine.cognitive_map import CognitiveMap, VectorOps
+                from galaxyos.engine.causal_reasoning import CausalReasoning
+
+                cmap = self._cognition_backend.get("cognitive_map")
+                causal_engine = self._cognition_backend.get("causal_reasoning")
+
+                if cmap is None:
+                    cmap = CognitiveMap()
+                if causal_engine is None:
+                    causal_engine = CausalReasoning()
+
+                context_texts = [c.get("content", "") for c in context if isinstance(c, dict) and c.get("content")]
+                combined_text = " ".join(context_texts[:10])
+
+                query_vec = VectorOps.randomized_projection(user_input, dim=cmap.dim)
+                nearby = cmap.find_nearby(query_vec, k=5)
+
+                causal_result = {}
+                if combined_text.strip():
+                    causal_result = causal_engine.analyze(combined_text)
+
+                return {
+                    "input_class": "complex" if len(context) >= 3 else "standard",
+                    "context_relevance": min(len(context) / 5.0, 1.0),
+                    "needs_retrieval": len(context) < 3,
+                    "session_key": session_key,
+                    "nearby_anchors": len(nearby),
+                    "causal_pairs": causal_result.get("causal_pairs", []),
+                    "causal_confidence": causal_result.get("confidence", 0),
+                    "causal_graph": causal_result.get("causal_graph", {}),
+                    "cognition_backend": "engine",
+                }
+            except Exception as e:
+                logger.warning(f"R-CCAM cognition backend failed, falling back to heuristic: {e}")
+
         return {
             "input_class": "standard",
             "context_relevance": min(len(context) / 5.0, 1.0),
             "needs_retrieval": len(context) < 3,
             "session_key": session_key,
+            "cognition_backend": "heuristic",
         }
 
     async def _control(self, session_key: str, analysis: dict[str, Any]) -> dict[str, Any]:
+        if self._control_backend:
+            try:
+                from galaxyos.engine.rccam_classifier import classify
+
+                user_input = ""
+                state = self._active_cycles.get(session_key)
+                if state:
+                    user_input = state.user_input
+
+                classification = classify(user_input)
+                is_simple = classification.get("is_simple", False)
+                confidence = classification.get("confidence", 0.5)
+
+                if is_simple and confidence > 0.7:
+                    strategy = "direct_reply"
+                    use_cognitive = False
+                else:
+                    strategy = "cognitive_enhanced"
+                    use_cognitive = analysis.get("context_relevance", 0) > 0.3
+
+                return {
+                    "strategy": strategy,
+                    "use_cognitive_enhancement": use_cognitive,
+                    "session_key": session_key,
+                    "classification": classification,
+                    "control_backend": "engine",
+                }
+            except Exception as e:
+                logger.warning(f"R-CCAM control backend failed, falling back to threshold: {e}")
+
         return {
             "strategy": "direct_reply",
             "use_cognitive_enhancement": analysis.get("context_relevance", 0) > 0.3,
             "session_key": session_key,
+            "control_backend": "threshold",
         }
 
     async def _memory_phase(self, session_key: str, agent_reply: str) -> dict[str, Any]:

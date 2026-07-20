@@ -6,7 +6,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import pytest
-from services.exceptions import (
+from galaxyos.privileged.exceptions import (
     SkillError, EmbeddingError, LLMError, CacheError,
     SafetyError, SearchError, AuthenticationError,
     DependencyError, SerializationError,

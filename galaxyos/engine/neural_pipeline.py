@@ -23,14 +23,11 @@ Created: 2026-06-05
 """
 
 import json
-import os
 import logging
-from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Any
-from dataclasses import dataclass, field
+from typing import Dict, List, Optional
+from dataclasses import dataclass
 
 import torch
-import numpy as np
 from galaxyos.shared.paths import workspace
 
 logger = logging.getLogger("neural_pipeline")
@@ -45,18 +42,18 @@ _LTC_SYNAPSE = None
 def _import_deps():
     global _GNN_BUILDER, _CFC_ENGINE, _SYNAPSE_NETWORK, _LTC_SYNAPSE
     if _GNN_BUILDER is None:
-        from services.gnn_graph_builder import SynapseGraphBuilder, SynapseGATEncoder, \
+        from galaxyos.engine.gnn_graph_builder import SynapseGraphBuilder, SynapseGATEncoder, \
             SynapseGraphSAGEEncoder, SynapseGraph
         _GNN_BUILDER = (SynapseGraphBuilder, SynapseGATEncoder,
                         SynapseGraphSAGEEncoder, SynapseGraph)
     if _CFC_ENGINE is None:
-        from services.cfc_inference import CfCSynapseEngine, NCPTopology, NeuronRole
+        from galaxyos.engine.cfc_inference import CfCSynapseEngine, NCPTopology, NeuronRole
         _CFC_ENGINE = (CfCSynapseEngine, NCPTopology, NeuronRole)
     if _SYNAPSE_NETWORK is None:
-        from services.memory_synapse_network import MemorySynapseNetwork
+        from galaxyos.engine.memory_synapse_network import MemorySynapseNetwork
         _SYNAPSE_NETWORK = MemorySynapseNetwork
     if _LTC_SYNAPSE is None:
-        from services.ltc_synapse import PRESETS, evaluate_preset
+        from galaxyos.engine.ltc_synapse import PRESETS, evaluate_preset
         _LTC_SYNAPSE = (PRESETS, evaluate_preset)
 
 # v3: 神经记忆门控（Titans 惊讶度驱动）
@@ -67,7 +64,7 @@ def _get_memory_gate():
     """全局单例，懒加载"""
     global _MEMORY_GATE
     if _MEMORY_GATE is None:
-        from services.neural_memory_gate import NeuralMemoryGate
+        from galaxyos.engine.neural_memory_gate import NeuralMemoryGate
         _MEMORY_GATE = NeuralMemoryGate()
     return _MEMORY_GATE
 
@@ -251,7 +248,7 @@ class NeuralMemoryPipeline:
 
         # 4. 初始化 GNN 编码器
         if self.gnn_type == "gat":
-            from services.gnn_graph_builder import SynapseGATEncoder
+            from galaxyos.engine.gnn_graph_builder import SynapseGATEncoder
             self.gnn_encoder = SynapseGATEncoder(
                 input_dim=self.feature_dim,
                 hidden_dim=self.hidden_dim,
@@ -261,7 +258,7 @@ class NeuralMemoryPipeline:
                 dropout=0.3,
             )
         elif self.gnn_type == "graphsage":
-            from services.gnn_graph_builder import SynapseGraphSAGEEncoder
+            from galaxyos.engine.gnn_graph_builder import SynapseGraphSAGEEncoder
             self.gnn_encoder = SynapseGraphSAGEEncoder(
                 input_dim=self.feature_dim,
                 hidden_dims=[self.hidden_dim * 2, self.hidden_dim],
@@ -293,7 +290,7 @@ class NeuralMemoryPipeline:
         # ── 6a. 初始化 CfC 序列预测器 ──
         if not self.sequence_predictor:
             try:
-                from services.cfc_sequence_predictor import CfCSequencePredictor
+                from galaxyos.engine.cfc_sequence_predictor import CfCSequencePredictor
                 self.sequence_predictor = CfCSequencePredictor(
                     input_dim=self.cfc_hidden_size,
                     hidden_dim=self.cfc_hidden_size * 2,
@@ -521,7 +518,6 @@ class NeuralMemoryPipeline:
             return 0
 
         # 准备训练数据
-        from services.ltc_synapse import LTCBatchOptimizer
         from datetime import datetime, timezone
 
         training_data = []
@@ -669,7 +665,7 @@ def main():
         print("=" * 55)
 
         # 先创建一些测试数据
-        from services.memory_synapse_network import MemorySynapseNetwork
+        from galaxyos.engine.memory_synapse_network import MemorySynapseNetwork
         net = MemorySynapseNetwork()
 
         names = [
@@ -711,7 +707,7 @@ def main():
         # 对比：原始 LTC 预设
         print()
         print("对比: 无拓扑 BFS（传统模式）:")
-        from services.memory_synapse_network import ActivationSpreader
+        from galaxyos.engine.memory_synapse_network import ActivationSpreader
         spreader = ActivationSpreader(net.network)
         associated = spreader.find_associated_memories(neurons[0].id, top_k=5)
         for neuron, strength in associated:

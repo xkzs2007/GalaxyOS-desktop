@@ -2,7 +2,6 @@
 from safe_extension_loader import safe_load_extension
 
 # ── Centralized path resolution ──
-import os as _os
 import sys as _sys
 from galaxyos.shared.paths import workspace
 _ws_root = workspace()
@@ -19,14 +18,12 @@ import path_resolver
 - 从配置文件读取 API Key
 """
 
-import os
 import json
 import sqlite3
 import struct
 import urllib.request
 from pathlib import Path
-from typing import List, Dict, Optional, Tuple
-from datetime import datetime
+from typing import List, Dict, Optional
 
 # 配置路径
 CONFIG_DIR = Path(__file__).parent.parent / "config"

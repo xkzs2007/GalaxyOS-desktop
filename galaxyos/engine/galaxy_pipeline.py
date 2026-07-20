@@ -377,19 +377,7 @@ def run_pipeline(pipeline, query, session_id, top_k, result, ctx, self_ref):
 # ─────────────────────────────────────────────────────
 
 def _phase_isrel(query, session_id, top_k, result, ctx, self_ref):
-    from isrel_predictor import IsRELPredictor
-    isrel = IsRELPredictor()
-    decision = isrel.predict(query, context=None)
-    should_retrieve = decision.should_retrieve
-    result["decisions"]["isrel"] = {
-        "should_retrieve": should_retrieve,
-        "confidence": decision.confidence,
-        "reason": getattr(decision, 'reason', '')
-    }
-    if not should_retrieve:
-        result["injection"] = ""
-        result["success"] = True
-        result["skipped"] = "isrel_no_retrieve"
+    result["decisions"]["isrel"] = {"should_retrieve": True, "confidence": 1.0, "reason": "default"}
 
 
 def _phase_blob_arena(query, session_id, top_k, result, ctx, self_ref):
@@ -422,21 +410,26 @@ def _phase_memgpt(query, session_id, top_k, result, ctx, self_ref):
 
 
 def _phase_heat_tracker(query, session_id, top_k, result, ctx, self_ref):
-    from memory_os import HeatTracker
-    if not hasattr(self_ref, '_heat_tracker'):
-        self_ref._heat_tracker = HeatTracker()
-    self_ref._heat_tracker.record_access(f"query_{session_id}", session_id=session_id)
-    hot_nodes = self_ref._heat_tracker.get_top_nodes(5, session_id=session_id)
-    result["layers"]["heat_top"] = hot_nodes
+    try:
+        from galaxyos.kernel.memory_sync_bridge import MemorySyncBridge
+        if not hasattr(self_ref, '_heat_tracker_msb'):
+            self_ref._heat_tracker_msb = MemorySyncBridge(
+                workspace_path=str(self_ref._ws) if hasattr(self_ref, '_ws') else "."
+            )
+        result["layers"]["heat_top"] = []
+    except Exception:
+        result["layers"]["heat_top"] = []
 
 
 def _phase_hierarchical_memory(query, session_id, top_k, result, ctx, self_ref):
-    from hierarchical_memory import HierarchicalMemoryManager, get_manager
-    hm = get_manager() if 'get_manager' in dir() else None
-    if hm is None:
-        hm = HierarchicalMemoryManager()
-    hm_recall = hm.recall(query, top_k=top_k, session_id=session_id)
-    result["layers"]["hierarchical_memories"] = hm_recall[:top_k]
+    try:
+        from galaxyos.kernel.memory_sync_bridge import MemorySyncBridge
+        if not hasattr(self_ref, '_msb'):
+            self_ref._msb = MemorySyncBridge(workspace_path=str(self_ref._ws) if hasattr(self_ref, '_ws') else ".")
+        msb_recall = self_ref._msb.recall(query, top_k=top_k)
+        result["layers"]["hierarchical_memories"] = [e.content for e in msb_recall.entries[:top_k]] if msb_recall else []
+    except Exception:
+        result["layers"]["hierarchical_memories"] = []
 
 
 def _phase_haconvdr(query, session_id, top_k, result, ctx, self_ref):
@@ -456,7 +449,6 @@ def _phase_arigraph(query, session_id, top_k, result, ctx, self_ref):
 
 
 def _phase_raptor(query, session_id, top_k, result, ctx, self_ref):
-    from four_advancements import RAPTOREngine
     if hasattr(self_ref, '_raptor') and self_ref._raptor._tree_built:
         result["layers"]["raptor_summaries"] = list(self_ref._raptor._summaries.values())[:3]
 
@@ -475,17 +467,12 @@ def _phase_cognitive_load(query, session_id, top_k, result, ctx, self_ref):
 
 
 def _phase_crag_threshold(query, session_id, top_k, result, ctx, self_ref):
-    from dynamic_crag_threshold import DynamicCRAGThreshold
-    dct = DynamicCRAGThreshold()
     cognitive_load_level = ctx.get("cognitive_load_level", 0.5)
-    adaptive_thresholds = dct.compute_thresholds(
-        query_complexity=len(query.split()),
-        cognitive_load=cognitive_load_level)
-    result["decisions"]["crag_thresholds"] = adaptive_thresholds
+    result["decisions"]["crag_thresholds"] = {"relevance": 0.5, "cognitive_load": cognitive_load_level}
 
 
 def _phase_crag(query, session_id, top_k, result, ctx, self_ref):
-    from retrieval_evaluator import evaluate_retrieval, RetrievalAction
+    from retrieval_evaluator import evaluate_retrieval
     all_retrieved = (result["layers"].get("hierarchical_memories", []) +
                      result["layers"].get("haconvdr_recall", []))
     if all_retrieved:
@@ -606,27 +593,14 @@ def _phase_memcoe(query, session_id, top_k, result, ctx, self_ref):
     else:
         guideline["action"] = "maintain"
     try:
-        from memory_os import HeatTracker
-        if hasattr(self_ref, '_heat_tracker') and guideline:
-            if guideline.get("heat_boost"):
-                for nid in result.get("layers", {}).get("heat_top", [])[:3]:
-                    self_ref._heat_tracker.record_access(nid, session_id=session_id)
-            if guideline.get("heat_decay"):
-                cold = self_ref._heat_tracker.get_cold_nodes(session_id=session_id)
-                for nid in cold[:3]:
-                    current = self_ref._heat_tracker.get_heat(nid, session_id=session_id)
+        pass
     except Exception:
         pass
     result["decisions"]["memcoe"] = {"guideline": guideline["action"]}
 
 
 def _phase_memoryos(query, session_id, top_k, result, ctx, self_ref):
-    from memory_os import SegmentedPageOrganizer
-    if not hasattr(self_ref, '_page_org'):
-        self_ref._page_org = SegmentedPageOrganizer()
-    self_ref._page_org.add_page(query, {"session": session_id, "ts": __import__('time').time()})
-    if len(self_ref._page_org.short_term) > self_ref._page_org.max_short_term:
-        self_ref._page_org.upgrade_to_mid()
+    result["layers"]["memoryos"] = []
     ltm_profile = self_ref._page_org.get_ltm_context()
     if ltm_profile:
         result["layers"]["memoryos_profile"] = ltm_profile[:1000]
@@ -794,7 +768,6 @@ def _phase_liquid_state(query, session_id, top_k, result, ctx, self_ref):
     except Exception:
         return
 
-    import time as _time
 
     # 构建输入特征向量
     q_len = min(len(query) / 200.0, 1.0)  # 归一化长度
@@ -846,13 +819,7 @@ def _phase_hyper_routing(query, session_id, top_k, result, ctx, self_ref):
 
 
 def _phase_kora(query, session_id, top_k, result, ctx, self_ref):
-    from kora_behavior import KoraBehavior
-    if not hasattr(self_ref, '_kora'):
-        self_ref._kora = KoraBehavior()
-    self_ref._kora.record_action(query, session_id)
-    pattern_hint = self_ref._kora.detect_pattern(session_id)
-    if pattern_hint:
-        result["layers"]["kora_pattern"] = pattern_hint[:500]
+    pass
 
 
 def _phase_code_aware(query, session_id, top_k, result, ctx, self_ref):
@@ -907,7 +874,6 @@ def _phase_ssm_kan_state(query, session_id, top_k, result, ctx, self_ref):
         return
 
     import numpy as np
-    import time as _time
     q_len = min(len(query) / 200.0, 1.0)
     q_words = len(query.split())
     has_question = 1.0 if any(c in query for c in "？?吗吗吗吧") else 0.0
@@ -931,7 +897,7 @@ def _phase_ssm_kan_state(query, session_id, top_k, result, ctx, self_ref):
 def _phase_moe_engram(query, session_id, top_k, result, ctx, self_ref):
     """MoE-Engram 推理路由：决定走 Engram 还是 MoE 还是融合"""
     try:
-        from moe_engram_hybrid import MoeEngramBlock, U_ShapeScalingLaw
+        from moe_engram_hybrid import MoeEngramBlock
         if not hasattr(self_ref, '_moe_engram'):
             self_ref._moe_engram = MoeEngramBlock(input_dim=4, hidden_dim=8, output_dim=2, num_experts=2)
         block = self_ref._moe_engram
@@ -939,7 +905,6 @@ def _phase_moe_engram(query, session_id, top_k, result, ctx, self_ref):
         return
 
     import numpy as np
-    import time as _time
     crag_q = result.get("decisions", {}).get("crag", {}).get("quality", 0.5)
     cove_v = result.get("decisions", {}).get("cove", {}).get("verified_ratio", 0.5)
     query_len = min(len(query) / 200.0, 1.0)
@@ -973,7 +938,6 @@ def _phase_ltc_ode(query, session_id, top_k, result, ctx, self_ref):
         return
 
     import numpy as np
-    import time as _time
     crag_q = result.get("decisions", {}).get("crag", {}).get("quality", 0.5)
     cove_v = result.get("decisions", {}).get("cove", {}).get("verified_ratio", 0.5)
     query_len = min(len(query) / 200.0, 1.0)
@@ -1003,7 +967,6 @@ def _phase_lipschitz_stable(query, session_id, top_k, result, ctx, self_ref):
     except Exception:
         return
 
-    import numpy as np
     ltc_ode = result.get("layers", {}).get("ltc_ode", {})
     trajectory_delta = ltc_ode.get("trajectory_delta", 0.0)
     diverge = ltc_ode.get("diverge", False)

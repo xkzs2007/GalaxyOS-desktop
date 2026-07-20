@@ -32,8 +32,7 @@ Created: 2026-06-14
 
 import math
 import logging
-from typing import Dict, List, Optional, Tuple, Any, Union
-from dataclasses import dataclass, field
+from typing import Tuple
 
 logger = logging.getLogger("ssm_kan")
 
@@ -46,7 +45,7 @@ except ImportError:
     import sys
     from pathlib import Path
     sys.path.insert(0, str(Path(__file__).parent))
-    from kan_network import KANNetwork, KANLinear, _bspline_basis, _create_uniform_knots
+    from kan_network import KANNetwork
 
 
 # ==================== SSM + KAN 状态更新 ====================

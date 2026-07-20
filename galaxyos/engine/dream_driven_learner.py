@@ -25,11 +25,10 @@ import json
 import math
 import os
 import random
-import time
 import numpy as np
-from typing import Dict, List, Optional, Tuple, Any
+from typing import Dict, List, Optional, Any
 from pathlib import Path
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from galaxyos.shared.paths import workspace
 
 
@@ -53,14 +52,8 @@ class DreamDrivenLearner:
             if not p.exists():
                 p.touch()
 
-        # LFM embedding 引擎
         self._lfm = None
-        try:
-            from lfm_adaptive_operator import RealLFMNetwork
-            self._lfm_cls = RealLFMNetwork
-            self._lfm_available = True
-        except ImportError:
-            self._lfm_available = False
+        self._lfm_available = False
 
         # Adapter 参数: (2048, 2048) 线性变换矩阵
         # 从零初始化为近单位阵（对角占优）

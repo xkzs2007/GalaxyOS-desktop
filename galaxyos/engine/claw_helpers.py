@@ -9,7 +9,6 @@ import sqlite3
 from typing import Dict, List, Optional
 
 
-import os as _os
 import sys as _sys
 from galaxyos.shared.paths import workspace
 _ws_root = workspace()
@@ -58,7 +57,6 @@ def learn(feedback: Dict) -> bool:
 # ── RCI 异步批评函数 ──
 def _rci_async_criticism(self, state):
     """Background thread: run criticism/consistency, publish via mmap + ZMQ"""
-    import time as _t
     import struct as _s
     import tempfile as _tf
 

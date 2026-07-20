@@ -17,11 +17,10 @@ Yao et al. (2023) arXiv:2305.10601
 - 不确定场景下的决策推理
 """
 
-import json
 import time
 import logging
 import re
-from typing import Dict, List, Optional, Any, Tuple, Callable
+from typing import Dict, List, Optional
 from dataclasses import dataclass, field
 
 logger = logging.getLogger(__name__)
@@ -485,7 +484,6 @@ class TreeOfThought:
             return self._rule_generate(prompt, temperature)
 
         try:
-            import openai
             response = self.llm_flash.chat.completions.create(
                 model=self.llm_flash_model,
                 messages=[{"role": "user", "content": prompt}],

@@ -26,9 +26,8 @@ StreamingLLM Attention Sink 模块
 
 import logging
 import time
-from typing import Optional, Dict, List, Any, Tuple
-from dataclasses import dataclass, field
-from collections import OrderedDict
+from typing import Dict, List, Any
+from dataclasses import dataclass
 
 import numpy as np
 

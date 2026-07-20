@@ -7,7 +7,6 @@
 import unittest
 import tempfile
 import os
-from pathlib import Path
 
 class TestConnectionPool(unittest.TestCase):
     """连接池测试"""

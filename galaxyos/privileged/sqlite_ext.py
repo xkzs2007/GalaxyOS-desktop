@@ -27,14 +27,12 @@ import importlib
 # 配置文件路径（v3.0.0 公私分离：优先使用环境变量）
 
 # ── Centralized path resolution ──
-import os as _os
 import sys as _sys
 from galaxyos.shared.paths import galaxyos_home, workspace
 _ws_root = workspace()
 for _p in [_ws_root, "/workspace"]:
     if _p not in _sys.path:
         _sys.path.insert(0, _p)
-import path_resolver
 _OPENCLAW_HOME = Path(galaxyos_home())
 CONFIG_PATH = Path(os.environ.get("OPENCLAW_SQLITE_CONFIG", str(_OPENCLAW_HOME / "memory-tdai" / "config" / "extension_config.json")))
 

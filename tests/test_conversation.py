@@ -1,7 +1,7 @@
 """测试 conversation — 对话管理"""
 import sys; sys.path.insert(0, '.')
 import pytest
-from services.conversation import Conversation, ConversationManager, Message, MemoryCompressor
+from galaxyos.privileged.conversation import Conversation, ConversationManager, Message, MemoryCompressor
 
 
 class TestMessage:

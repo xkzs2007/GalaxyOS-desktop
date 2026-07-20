@@ -14,17 +14,14 @@ Version: 2.0.0
 Created: 2026-04-23
 """
 
-import os
 import sys
-import json
 import time
-import asyncio
 import threading
 import importlib
 import traceback
 from pathlib import Path
-from datetime import datetime, timezone, timedelta
-from typing import Dict, List, Optional, Any, Callable, Set, Tuple
+from datetime import datetime, timezone
+from typing import Dict, List, Optional, Any, Callable, Tuple
 from dataclasses import dataclass, field, asdict
 from enum import Enum
 from collections import defaultdict
@@ -279,16 +276,7 @@ COMPONENT_REGISTRY: Dict[str, ComponentInfo] = {
         fallback_component="basic_reasoning"
     ),
 
-    "visual_generation": ComponentInfo(
-        id="visual_generation",
-        name="视觉生成模块",
-        tier=ComponentTier.ENHANCED,
-        module_path="visual_generation",
-        class_name="VisualGenerator",
-        description="记忆可视化",
-        dependencies=["memory_core"],
-        fallback_component="text_only"
-    ),
+
     "crag_pipeline": ComponentInfo(
         id="crag_pipeline",
         name="CRAG流水线",

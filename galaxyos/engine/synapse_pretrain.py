@@ -14,19 +14,14 @@ Version: 1.0.0
 Created: 2026-06-07
 """
 
-import json
 import os
-import math
 import logging
-from typing import Dict, List, Optional, Tuple, Any
-from pathlib import Path
+from typing import Dict, Optional, Tuple, Any
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import numpy as np
 
-import os as _os
 import sys as _sys
 from galaxyos.shared.paths import workspace
 _ws_root = workspace()
@@ -342,7 +337,6 @@ class SynapsePretrainer:
         Returns:
             训练统计
         """
-        import sys as _sys
 
         graph = self._get_graph()
         if graph.num_nodes < 3:
@@ -460,7 +454,6 @@ def load_pretrained_weights(model: torch.nn.Module,
 
 
 if __name__ == "__main__":
-    import sys
     logging.basicConfig(level=logging.INFO)
 
     print("=== 突触对比学习测试 ===\n")

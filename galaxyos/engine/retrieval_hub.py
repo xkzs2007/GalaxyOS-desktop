@@ -29,7 +29,7 @@ import subprocess
 import threading
 import math
 from typing import List, Dict, Optional, Any
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor
 from galaxyos.shared.paths import workspace
 
 logger = logging.getLogger(__name__)
@@ -1175,11 +1175,11 @@ def _do_synapse_full(query: str, _ws: str) -> list:
     每次调用会更新 CfC 状态并持久化到磁盘，形成时间序列学习。
     状态文件：{_ws}/.learnings/synapse_network/neuron_states.jsonl
     """
-    from services.onnx_embedding import get_onnx_embedding
+    from galaxyos.engine.onnx_embedding import get_onnx_embedding
     _onnx = get_onnx_embedding()
     _onnx.initialize()
 
-    from services.neural_pipeline import NeuralMemoryPipeline
+    from galaxyos.engine.neural_pipeline import NeuralMemoryPipeline
     _pipe = NeuralMemoryPipeline(
         feature_dim=64, hidden_dim=64, gnn_heads=4,
         gnn_layers=2, cfc_hidden_size=64,
@@ -1362,7 +1362,7 @@ def _do_synapse_gat(query: str, _ws: str, _neuron_count: int) -> list:
         if _core_dir not in sys.path:
             sys.path.insert(0, _core_dir)
 
-        from services.onnx_embedding import get_onnx_embedding
+        from galaxyos.engine.onnx_embedding import get_onnx_embedding
         _onnx = get_onnx_embedding()
         _onnx.initialize()
 
@@ -1829,11 +1829,13 @@ def _neural_rerank_dedup(
     sys.path.insert(0, os.path.join(_ws,
         "skills/galaxyos-engine/skills/llm-memory-integration/core"))
 
-    from memory_consolidation import ConsolidationEngine
-    from memory_synapse_network import MemoryNeuron
-
-    ce = ConsolidationEngine(_ws)
-    syn_network = ce._get_synapse_network() if hasattr(ce, '_get_synapse_network') else None
+    try:
+        from galaxyos.kernel.memory_sync_bridge import MemorySyncBridge
+        _msb = MemorySyncBridge(workspace_path=_ws)
+        syn_network = None
+    except ImportError:
+        _msb = None
+        syn_network = None
 
     # 加载当前会话的 DAG 节点内容（用于激活传播参照）
     _session_neuron_texts = set()

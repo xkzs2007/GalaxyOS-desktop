@@ -6,11 +6,9 @@ Relation Predictor - 关系预测器
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from typing import Dict, List, Optional, Tuple, Any, Set
-import numpy as np
-from collections import defaultdict
+from typing import Dict, List, Optional, Tuple, Set
 
-from knowledge_graph_gnn import KnowledgeGraphGNN, KnowledgeGraphEncoder
+from knowledge_graph_gnn import KnowledgeGraphGNN
 
 
 class RelationPredictor(nn.Module):

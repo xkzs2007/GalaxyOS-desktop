@@ -26,15 +26,12 @@ Author: GalaxyOS
 创建: 2026-06-09
 """
 
-import json
-import os
 import time
 import math
 import logging
 import threading
-from typing import Dict, List, Optional, Tuple, Any, Set
+from typing import Dict, List, Optional, Any, Set
 from collections import defaultdict, deque
-from pathlib import Path
 
 import numpy as np
 
@@ -398,7 +395,7 @@ class CompositePredictor:
         w_cooc: float = 0.6,
         tau: float = 3600.0,
     ):
-        from services.neural_memory_gate import RecallPatternPredictor
+        from galaxyos.engine.neural_memory_gate import RecallPatternPredictor
 
         self.ssm = SSMStatePredictor(tau=tau)
         self.cooc = RecallPatternPredictor()

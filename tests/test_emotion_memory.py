@@ -1,7 +1,7 @@
 """测试 emotion_memory — 情感记忆管理"""
 import sys; sys.path.insert(0, '.')
 import pytest
-from services.emotion_memory import (
+from galaxyos.engine.emotion_memory import (
     EmotionType, EmotionScore, EmotionDetector,
     EmotionMemoryManager, EmotionWeightCalculator,
 )

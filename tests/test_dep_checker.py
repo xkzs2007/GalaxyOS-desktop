@@ -1,7 +1,7 @@
 """测试 dep_checker — 依赖检测"""
 import sys; sys.path.insert(0, '.')
 import pytest
-from services.dep_checker import DependencyChecker, DependencyInfo, ModuleStatus
+from galaxyos.privileged.dep_checker import DependencyChecker, DependencyInfo, ModuleStatus
 
 
 class TestDependencyInfo:

@@ -24,7 +24,7 @@ import json
 import time
 import base64
 import signal
-from typing import Dict, Any
+from typing import Any
 
 # ── 启动时一次性导入 PIL，后续复用 ──
 try:

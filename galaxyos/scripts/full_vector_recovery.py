@@ -8,7 +8,6 @@
 5. 配置 Qdrant 云端同步
 """
 
-import os
 import sys
 import json
 import sqlite3
@@ -20,7 +19,6 @@ from datetime import datetime
 # 添加 core 目录
 
 # ── Centralized path resolution ──
-import os as _os
 import sys as _sys
 from galaxyos.shared.paths import workspace
 _ws_root = workspace()

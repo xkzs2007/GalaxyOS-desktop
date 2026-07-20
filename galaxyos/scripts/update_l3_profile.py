@@ -5,15 +5,12 @@ LLM Memory Integration - L3 长期画像更新脚本
 """
 
 import json
-import os
 import sys
 from datetime import datetime
-from pathlib import Path
 
 # 路径配置
 
 # ── Centralized path resolution ──
-import os as _os
 import sys as _sys
 from galaxyos.shared.paths import workspace
 _ws_root = workspace()

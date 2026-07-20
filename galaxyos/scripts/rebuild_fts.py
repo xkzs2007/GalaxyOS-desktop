@@ -1,11 +1,9 @@
 #!/usr/bin/env python3
 """重建 FTS 索引（安全修复版）"""
 import sqlite3
-from pathlib import Path
 
 
 # ── Centralized path resolution ──
-import os as _os
 import sys as _sys
 from galaxyos.shared.paths import workspace
 _ws_root = workspace()

@@ -26,8 +26,7 @@ import hashlib
 import math
 import re
 import threading
-import numpy as np
-from typing import Dict, List, Optional, Any, Tuple, Callable, Union
+from typing import Dict, List, Optional, Any, Tuple, Union
 from dataclasses import dataclass, field, asdict
 
 import torch

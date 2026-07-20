@@ -1,13 +1,10 @@
 #!/usr/bin/env python3
 """运行所有维护任务"""
 import subprocess
-import json
-from pathlib import Path
 from datetime import datetime
 
 
 # ── Centralized path resolution ──
-import os as _os
 import sys as _sys
 from galaxyos.shared.paths import workspace
 _ws_root = workspace()

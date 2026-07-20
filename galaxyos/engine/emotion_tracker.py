@@ -4,7 +4,7 @@ import json
 import os
 import time
 import logging
-from collections import defaultdict, deque
+from collections import deque
 
 logger = logging.getLogger('emotion_tracker')
 

@@ -6,7 +6,7 @@ GraphSAGE Layer - 图采样聚合层
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from typing import Optional, Tuple, List, Union
+from typing import Optional, Tuple, List
 import numpy as np
 
 

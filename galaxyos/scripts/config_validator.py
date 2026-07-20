@@ -5,7 +5,6 @@
 """
 
 from dataclasses import dataclass
-from typing import Optional, List
 import json
 from pathlib import Path
 

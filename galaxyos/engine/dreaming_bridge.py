@@ -47,12 +47,10 @@ import os
 import sys
 import time
 import hashlib
-import threading
 import logging
 from pathlib import Path
 from datetime import datetime, timezone
-from typing import Dict, Any, List, Optional, Tuple
-from galaxyos.shared.paths import workspace
+from typing import Dict, Any, List
 
 logger = logging.getLogger(__name__)
 

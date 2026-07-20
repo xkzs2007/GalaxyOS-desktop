@@ -15,9 +15,9 @@ import json
 import os
 import sys
 import threading
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import List, Optional
 
 from galaxyos.shared.paths import audit_log_dir
 

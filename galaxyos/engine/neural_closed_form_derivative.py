@@ -32,14 +32,9 @@ Version: 1.0.0
 Created: 2026-06-14
 """
 
-import os
 import math
-import time
-import json
 import logging
-from typing import Dict, List, Optional, Tuple, Any, Callable
-from dataclasses import dataclass, field
-from enum import Enum
+from typing import Dict, Tuple, Any, Callable
 
 logger = logging.getLogger("neural_closed_form")
 
@@ -377,7 +372,6 @@ def compare_ltc_solutions():
     """
     import matplotlib
     matplotlib.use('Agg')
-    import matplotlib.pyplot as plt
 
     h0 = 0.0
     E = 1.0
@@ -402,7 +396,6 @@ def compare_ltc_solutions():
 
     # 计算误差
     # 在闭式解的时间点上采样数值解
-    from scipy.interpolate import interp1d  # 备用手动插值
     num_at_exact = np.interp(ts_exact, ts_num, ys_num)
     diff = np.abs(ys_exact - num_at_exact)
 

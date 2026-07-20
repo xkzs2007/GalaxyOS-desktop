@@ -4,7 +4,6 @@
 增强版：添加加密验证、签名检查、来源追溯
 """
 
-import os
 import hashlib
 import json
 from pathlib import Path
@@ -14,7 +13,6 @@ from datetime import datetime
 # 信任的扩展哈希数据库
 
 # ── Centralized path resolution ──
-import os as _os
 import sys as _sys
 from galaxyos.shared.paths import workspace
 _ws_root = workspace()

@@ -22,11 +22,8 @@ import json
 import logging
 import random
 import sqlite3
-import struct
-import sys
 import threading
 import time
-import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 
@@ -81,7 +78,7 @@ def _unpack_vector(data: bytes, dim: int) -> np.ndarray:
 def _cosine_similarity(a: np.ndarray, b: np.ndarray) -> float:
     """余弦相似度 — 优先 Rust PyO3 SIMD（零 GIL 竞争），回退 numpy"""
     try:
-        from galaxyos_native import vector_cosine
+        from galaxyos.engine.galaxyos_native import vector_cosine
         return vector_cosine(a.tolist(), b.tolist())
     except (ImportError, Exception):
         pass
@@ -475,7 +472,7 @@ class VectorStore:
     def _check_vec_extension(self) -> bool:
         """检查 sqlite-vec 扩展是否可用"""
         try:
-            from .sqlite_vec import is_vec_available, connect
+            from .sqlite_vec import is_vec_available
             if is_vec_available(self._conn):
                 return True
         except Exception:

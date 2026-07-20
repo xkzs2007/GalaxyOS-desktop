@@ -11,8 +11,8 @@ import sys
 import json
 import logging
 from pathlib import Path
-from typing import Dict, List, Any, Optional, Tuple, Callable
-from dataclasses import dataclass, field
+from typing import Dict, List, Any, Optional, Tuple
+from dataclasses import dataclass
 from enum import Enum
 import importlib.util
 
@@ -171,7 +171,7 @@ class WorkflowEngine:
             ],
             "multimodal_recall": [
                 WorkflowStep("multimodal_memory", "get", "多模态记忆"),
-                WorkflowStep("visual_generation", "visualize_memory", "视觉呈现"),
+
                 WorkflowStep("emotion_memory", "get_high_priority_memories", "情感排序"),
             ],
             "cross_lingual_recall": [
@@ -290,7 +290,7 @@ class WorkflowEngine:
             # ==================== 多模态工作流 ====================
             "multi_modal_recall": [
                 WorkflowStep("multimodal_memory", "get", "多模态记忆"),
-                WorkflowStep("visual_generation", "visualize_memory", "视觉呈现"),
+
                 WorkflowStep("emotion_memory", "get_high_priority_memories", "情感排序"),
             ],
 
@@ -695,7 +695,7 @@ class WorkflowEngine:
     ) -> WorkflowResult:
         """执行工作流（支持并行组）"""
         import time
-        from concurrent.futures import ThreadPoolExecutor, as_completed, wait, FIRST_EXCEPTION
+        from concurrent.futures import ThreadPoolExecutor, as_completed
         start_time = time.time()
 
         workflow = self.workflows.get(name)

@@ -15,8 +15,7 @@ Created: 2026-04-19
 
 import json
 import math
-import os
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional, Dict, List, Any, Tuple
 from dataclasses import dataclass, asdict, field
@@ -26,18 +25,7 @@ import hashlib
 import torch
 from galaxyos.shared.paths import workspace
 
-# ═══ NLP 模块（可选导入） ═══
 _NLP_AVAILABLE = False
-try:
-    import sys as _nlp_sys
-    import os as _nlp_os
-    _nlp_dir = _nlp_os.path.dirname(_nlp_os.path.abspath(__file__))
-    if _nlp_dir not in _nlp_sys.path:
-        _nlp_sys.path.insert(0, _nlp_dir)
-    import nlp_integration
-    _NLP_AVAILABLE = hasattr(nlp_integration, 'get_nlp_integration')
-except ImportError:
-    pass
 
 # ncps LTC 引擎（延迟 import，安装检查）
 _NCPS_AVAILABLE = False
@@ -386,22 +374,7 @@ class NeuronManager:
 
     @staticmethod
     def _nlp_extract(content: str) -> Tuple[list, dict, dict, float]:
-        """使用 NLP 模块提取文本语义特征"""
-        if not _NLP_AVAILABLE or not content:
-            return [], {}, {}, 0.5
-        try:
-            nlp = nlp_integration.get_nlp_integration()
-            # 关键词
-            keywords = nlp.extract_memory_keywords(content, top_k=10)
-            # 实体
-            entities = nlp.extract_memory_entities(content)
-            # 情感
-            sentiment = nlp.check_claim_sentiment(content)
-            # 重要度
-            importance = nlp.calculate_memory_importance(content)
-            return keywords, entities, sentiment, importance
-        except Exception:
-            pass
+        """NLP 特征提取（nlp_integration 已移除，返回默认值）"""
         return [], {}, {}, 0.5
 
     @staticmethod
@@ -576,31 +549,9 @@ class SynapseManager:
         if existing:
             return existing
 
-        # NLP 语义相似度→初始权重（如有内容）
+        # NLP 语义相似度→初始权重（nlp_integration 已移除，跳过）
         if weight == 0.5 and src_content and dst_content and _NLP_AVAILABLE:
-            try:
-                nlp = nlp_integration.get_nlp_integration()
-                src_res = nlp.process(src_content, ['tokenize', 'ner', 'keyword'])
-                dst_res = nlp.process(dst_content, ['tokenize', 'ner', 'keyword'])
-                # 关键词 Jaccard
-                src_kw_set = set(kw for kw, _ in src_res.keywords)
-                dst_kw_set = set(kw for kw, _ in dst_res.keywords)
-                kw_overlap = 0.0
-                if src_kw_set or dst_kw_set:
-                    union = src_kw_set | dst_kw_set
-                    kw_overlap = len(src_kw_set & dst_kw_set) / len(union)
-                # 实体重叠
-                src_ent_set = set(e.text for e in src_res.entities)
-                dst_ent_set = set(e.text for e in dst_res.entities)
-                ent_overlap = 0.0
-                if src_ent_set or dst_ent_set:
-                    union_e = src_ent_set | dst_ent_set
-                    ent_overlap = len(src_ent_set & dst_ent_set) / len(union_e)
-                # 综合权重：0.3 基线 + 0.4 关键词 + 0.3 实体
-                weight = round(0.3 + 0.4 * kw_overlap + 0.3 * ent_overlap, 3)
-                weight = min(1.0, max(0.1, weight))
-            except Exception:
-                pass
+            pass
 
         ltc_str = ""
         if ltc_preset and ltc_preset in PRESETS:

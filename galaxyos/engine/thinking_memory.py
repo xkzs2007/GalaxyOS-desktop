@@ -14,8 +14,8 @@ thinking_memory.py — Springdrift 案例推理（CBR）记忆层
 替换 IntelligentThinkingTrigger 无状态的 analysis_log。
 """
 
-from typing import Dict, Any, Optional, List, Tuple
-from dataclasses import dataclass, field
+from typing import Dict, Optional, List
+from dataclasses import dataclass
 import json
 import os
 import time

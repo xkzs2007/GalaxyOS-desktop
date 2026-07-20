@@ -27,12 +27,10 @@ import json
 import time
 import traceback
 import signal
-import contextlib
 import socket as _socket
 import struct
 import threading
-import selectors
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, List
 from galaxyos.shared.paths import galaxyos_home, workspace
 
 # ========== 路径初始化 ==========
@@ -671,20 +669,7 @@ class ClawWorker:
                 # 触发一次健康检查，让模块懒加载
                 self._entry.health_check()
 
-                # 预加载 LFM2.5-1.2B-ONNX Q4（神经网络常驻, mmap 共享）
-                try:
-                    sys.stderr.write("[claw-worker] 预加载 LFM2.5-1.2B-ONNX Q4...\n")
-                    _t0 = time.time()
-                    from lfm_adaptive_operator import RealLFMNetwork
-                    _lfm = RealLFMNetwork()
-                    _lfm._ensure()
-                    _lfm.embed_text("预热")
-                    _t1 = time.time()
-                    self._lfm_preloaded = _lfm
-                    sys.stderr.write(f"[claw-worker] LFM2.5-1.2B-ONNX Q4 加载完成 ({_t1-_t0:.1f}s)\n")
-                except Exception as _e:
-                    sys.stderr.write(f"[claw-worker] LFM ONNX 预加载跳过: {_e}\n")
-                    self._lfm_preloaded = None
+                self._lfm_preloaded = None
 
                 self._load_hardware()
                 self._load_time_ms = round((time.time() - t0) * 1000, 1)
@@ -846,13 +831,14 @@ class ClawWorker:
             elif isinstance(messages, str):
                 content = messages
 
-            from rlm_env import RLMEnvironment
-            rlm = RLMEnvironment(content)
-            # 用 RLM 的 slice 函数递归分解
-            parts = rlm.auto_slice(max_chunk=300, overlap=30)
-            summarized = []
-            for chunk in parts[:5]:
-                summarized.append(chunk[:200])
+            chunk_size = 300
+            overlap = 30
+            parts = []
+            start = 0
+            while start < len(content):
+                parts.append(content[start:start + chunk_size])
+                start += chunk_size - overlap
+            summarized = [chunk[:200] for chunk in parts[:5]]
             return {"compressed": "\n".join(summarized), "parts": len(parts),
                     "original_len": len(content)}
         except Exception as e:
@@ -880,7 +866,7 @@ class ClawWorker:
             # ═══ quick 模式：只跑 IsREL（几百微秒），JS 用来决定是否要跑全量 ═══
             if mode == "quick":
                 try:
-                    from galaxy_pipeline import _phase_isrel
+                    from galaxyos.engine.galaxy_pipeline import _phase_isrel
                     _ctx: Dict[str, Any] = {}
                     _phase_isrel(query, session_id, top_k, result, _ctx, self)
                 except Exception:
@@ -890,7 +876,7 @@ class ClawWorker:
 
             # ═══ 声明式流水线执行（galaxy_pipeline.py 驱动）═══
             try:
-                from galaxy_pipeline import build_pipeline, run_pipeline
+                from galaxyos.engine.galaxy_pipeline import build_pipeline, run_pipeline
                 _pipeline = build_pipeline()
                 _ctx = {}  # type: ignore[no-redef]
                 run_pipeline(_pipeline, query, session_id, top_k, result, _ctx, self)
@@ -1067,13 +1053,7 @@ class ClawWorker:
             return {"error": "缺少 query"}
         try:
             entry = self._ensure_entry()
-            from smart_processor import SmartProcessor
-            sp = SmartProcessor(
-                llm_flash=None,  # LLM routing via LLMRouterDirect
-                llm_pro=None,  # LLM routing via LLMRouterDirect
-                persona_context=p.get("persona", ""),
-            )
-            return sp.process(query, top_k=p.get("top_k", 5))
+            return {"error": "smart_processor 已移除"}
         except Exception as e:
             return {"error": str(e)}
 
@@ -2336,7 +2316,6 @@ def _zmq_pub_event(event_type, data):
         _zmq_last[event_type] = (_now, _session)
         _zmq_pub_event._last = _zmq_last
 
-        import zmq
         payload = json.dumps({"event": event_type, "ts": _now, **data}, ensure_ascii=False)
         _zmq_pub.send_string(payload)
     except Exception:
@@ -2372,7 +2351,7 @@ def _preload_rccam_deps():
     """
     critical_modules = [
         "unified_entry",
-        "smart_processor",
+        "retrieval_hub",
         "enhanced_hallucination_guard",
         "dag_context_manager",
         "galaxyos_memory",
@@ -2567,6 +2546,8 @@ def main():
         from galaxyos.engine.paper_integration_addon import integrate_into_worker
         _paper_addon = integrate_into_worker(worker, _METHODS)
         sys.stderr.write("[claw-worker] 三论文集成注册: RLM + SKILL0 + MemoryOS\n")
+    except ImportError:
+        pass
     except Exception as e:
         sys.stderr.write(f"[claw-worker] 三论文集成跳过: {e}\n")
 
@@ -2575,16 +2556,17 @@ def main():
         from galaxyos.engine.paper_integration_v81 import integrate_v81
         _v81_addon = integrate_v81(worker, _METHODS)
         sys.stderr.write("[claw-worker] v8.1 论文全量集成注册: 22 UDS 方法\n")
+    except ImportError:
+        pass
     except Exception as e:
         sys.stderr.write(f"[claw-worker] v8.1 论文全量集成跳过: {e}\n")
 
     # 启动记忆巩固后台
     try:
-        from memory_consolidation import ConsolidationEngine
+        from galaxyos.kernel.memory_sync_bridge import MemorySyncBridge
         global _consolidation
-        _consolidation = ConsolidationEngine(WORKSPACE)
-        _consolidation.start_background()
-        sys.stderr.write("[claw-worker] Memory consolidation engine started\n")
+        _consolidation = MemorySyncBridge(workspace_path=WORKSPACE)
+        sys.stderr.write("[claw-worker] MemorySyncBridge (consolidation) started\n")
     except Exception as e:
         sys.stderr.write(f"[claw-worker] Memory consolidation skipped: {e}\n")
 
@@ -2887,10 +2869,7 @@ def main():
 
             # 4. 引擎集成层刷新（ReAct + HierarchicalMemory 后台维护）
             try:
-                from engine_integration import get_engine_integration
-                _ei = get_engine_integration(_flash_client, WORKSPACE)
-                if hasattr(_ei, 'background_maintenance'):
-                    _ei.background_maintenance()
+                pass
             except Exception:
                 pass
 

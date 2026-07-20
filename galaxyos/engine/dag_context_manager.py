@@ -30,7 +30,7 @@ from typing import Dict, List, Optional, Any, Tuple
 from dataclasses import dataclass, field, asdict
 from collections import defaultdict, Counter
 from pathlib import Path
-from blob_arena import BlobArena, get_blob_arena, generate_memo
+from blob_arena import get_blob_arena, generate_memo
 from galaxyos.shared.paths import galaxyos_home, workspace
 
 logger = logging.getLogger(__name__)
@@ -1378,7 +1378,6 @@ class DAGContextManager:
         """将自进化检测到的稳定模式写为 evolved_capability 节点到 rccam_nodes"""
         import json
         import time
-        import uuid
         node_id = f"cap_{capability.get('name','pattern')[:30]}_{int(time.time())}"
         content = json.dumps(capability, ensure_ascii=False)
         with self._lock:
@@ -2480,7 +2479,7 @@ class DAGContextManager:
         """
         assets = []
         try:
-            from knowledge_asset import get_asset_registry, create_memory_asset, AssociationEdge, AssetType
+            from knowledge_asset import get_asset_registry, create_memory_asset, AssociationEdge
             from multi_granularity import MultiGranularityExtractor, GMMAssociator
 
             reg = get_asset_registry()

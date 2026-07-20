@@ -16,7 +16,6 @@ SkillInstaller — 从多种来源安装 mattpocock/skills 技能
 
 from __future__ import annotations
 
-import json
 import shutil
 import time
 from dataclasses import dataclass, field

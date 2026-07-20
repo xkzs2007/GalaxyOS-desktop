@@ -80,12 +80,13 @@ backups/
 galaxyos/frontend/dist/
 *.egg-info/
 
-# Rust/Cargo build cache
+# Rust/Cargo build cache (legacy extension)
 extensions/galaxyos/native/target/
-desktop-tauri/target/
-desktop-tauri/Cargo.lock
 extensions/galaxyos/var/
 workspace/
+
+# C++ Desktop build cache
+desktop-native/build/
 
 # ── Skill 管理器自动生成 ──
 .agents/
@@ -99,7 +100,7 @@ logs/
 _*.py
 *.log
 build_log.txt
-cargo_check_output.txt
+
 
 # ── vendor（CI 单独 checkout，不入库）──
 vendor/

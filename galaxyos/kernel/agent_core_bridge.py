@@ -56,9 +56,25 @@ class AgentCoreBridge:
         self._rails: List[Any] = []
         self._permission_engine = None
         self._openjiuwen_available = False
+        self._intelli_router = None
+        self._sessions: Dict[str, Any] = {}
+        self._integration_config_manager = None
 
     async def initialize(self) -> None:
         self._running = True
+
+        try:
+            from galaxyos.kernel.integration_config_manager import IntegrationConfigManager
+            self._integration_config_manager = IntegrationConfigManager()
+            integration_config = self._integration_config_manager.load()
+            if integration_config.locale:
+                self._config["locale"] = integration_config.locale
+            if integration_config.sse_enabled is not None:
+                self._config["sse_enabled"] = integration_config.sse_enabled
+            logger.info("IntegrationConfigManager loaded successfully")
+        except Exception as e:
+            logger.warning(f"IntegrationConfigManager load failed: {e}")
+
         try:
             from openjiuwen.harness.factory import create_deep_agent
             from openjiuwen.harness.deep_agent import DeepAgent
@@ -87,6 +103,7 @@ class AgentCoreBridge:
 
             self._configure_rails()
             self._configure_permission_engine()
+            self._configure_intelli_router()
 
             logger.info("OpenJiuwen agent-core integrated successfully")
         except ImportError as e:
@@ -149,6 +166,50 @@ class AgentCoreBridge:
         except Exception as e:
             logger.warning(f"PermissionEngine configuration failed: {e}")
 
+    def _configure_intelli_router(self) -> None:
+        if not self._openjiuwen_available:
+            return
+
+        try:
+            from openjiuwen.core.foundation.llm.intelli_router import IntelliRouter
+            from openjiuwen.core.foundation.llm.intelli_router_config import IntelliRouterConfig
+
+            router_config = self._config.get("intelli_router", {})
+            if router_config:
+                self._intelli_router = IntelliRouter(IntelliRouterConfig(**router_config))
+            else:
+                self._intelli_router = IntelliRouter()
+
+            logger.info("IntelliRouter configured successfully")
+        except ImportError as e:
+            logger.warning(f"IntelliRouter imports failed ({e}), falling back to hardcoded Model config")
+            self._intelli_router = None
+        except Exception as e:
+            logger.warning(f"IntelliRouter configuration failed ({e}), falling back to hardcoded Model config")
+            self._intelli_router = None
+
+    async def get_or_create_session(self, workspace_id: str) -> Any:
+        if workspace_id in self._sessions:
+            return self._sessions[workspace_id]
+
+        try:
+            from openjiuwen.core.foundation.session import Session
+            from openjiuwen.core.foundation.checkpointer import SQLiteCheckpointer
+
+            session = await Session.create(
+                session_id=f"galaxyos:{workspace_id}",
+                checkpointer=SQLiteCheckpointer(),
+            )
+            self._sessions[workspace_id] = session
+            logger.info(f"Session created for workspace {workspace_id}")
+            return session
+        except ImportError as e:
+            logger.warning(f"Session imports failed ({e}), using stateless mode")
+            return None
+        except Exception as e:
+            logger.warning(f"Session creation failed for {workspace_id}: {e}")
+            return None
+
     async def create_agent(
         self,
         provider: str = "",
@@ -166,16 +227,38 @@ class AgentCoreBridge:
             return None
 
         try:
-            model = self._Model(
-                model_client_config=self._ModelClientConfig(
-                    client_provider=provider or self._config.get("provider", ""),
-                    api_key=api_key or self._config.get("api_key", ""),
-                    api_base=api_base or self._config.get("api_base", ""),
-                ),
-                model_config=self._ModelRequestConfig(
-                    model=model_name or self._config.get("model", ""),
-                ),
-            )
+            resolved_provider = provider or self._config.get("provider", "")
+            resolved_model = model_name or self._config.get("model", "")
+
+            if self._intelli_router is not None:
+                try:
+                    model = self._intelli_router.get_model(resolved_provider, resolved_model)
+                    logger.info(f"IntelliRouter resolved model for provider={resolved_provider}, model={resolved_model}")
+                except Exception as e:
+                    logger.warning(f"IntelliRouter.get_model failed ({e}), falling back to hardcoded Model")
+                    model = self._Model(
+                        model_client_config=self._ModelClientConfig(
+                            client_provider=resolved_provider,
+                            api_key=api_key or self._config.get("api_key", ""),
+                            api_base=api_base or self._config.get("api_base", ""),
+                        ),
+                        model_config=self._ModelRequestConfig(
+                            model=resolved_model,
+                        ),
+                    )
+            else:
+                model = self._Model(
+                    model_client_config=self._ModelClientConfig(
+                        client_provider=resolved_provider,
+                        api_key=api_key or self._config.get("api_key", ""),
+                        api_base=api_base or self._config.get("api_base", ""),
+                    ),
+                    model_config=self._ModelRequestConfig(
+                        model=resolved_model,
+                    ),
+                )
+
+            session = await self.get_or_create_session(workspace)
 
             agent = self._create_deep_agent(
                 model=model,
@@ -186,6 +269,13 @@ class AgentCoreBridge:
                 language=language,
                 restrict_to_work_dir=restrict_to_work_dir,
             )
+
+            if session is not None and hasattr(agent, 'session'):
+                try:
+                    agent.session = session
+                    logger.info(f"Agent bound to session for workspace {workspace}")
+                except Exception as e:
+                    logger.warning(f"Failed to bind session to agent: {e}")
 
             self._deep_agent = agent
             logger.info("DeepAgent created successfully")
@@ -306,8 +396,11 @@ class AgentCoreBridge:
         if not self._openjiuwen_available or not self._rails:
             return {"allowed": True}
 
+        security_check_available = False
         try:
             from openjiuwen.harness.rails.security.base_security_rail import SecurityCheckContext
+            security_check_available = True
+
             for rail in self._rails:
                 if hasattr(rail, 'run_security_check'):
                     try:
@@ -318,16 +411,17 @@ class AgentCoreBridge:
                         decision = await rail.run_security_check(ctx)
                         if hasattr(decision, 'allow') and not decision.allow:
                             return {"allowed": False, "reason": f"Blocked by {type(rail).__name__}: {getattr(decision, 'reason', '')}"}
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.debug(f"Rail {type(rail).__name__} run_security_check failed: {e}")
         except ImportError:
             pass
 
-        dangerous_patterns = ["rm -rf", "format", "del /s", "shutdown", "reboot"]
-        param_str = str(parameters).lower()
-        for pattern in dangerous_patterns:
-            if pattern in param_str:
-                return {"allowed": False, "reason": f"Blocked by SecurityRail: dangerous pattern '{pattern}' detected"}
+        if not security_check_available:
+            dangerous_patterns = ["rm -rf", "format", "del /s", "shutdown", "reboot"]
+            param_str = str(parameters).lower()
+            for pattern in dangerous_patterns:
+                if pattern in param_str:
+                    return {"allowed": False, "reason": f"Blocked by SecurityRail: dangerous pattern '{pattern}' detected"}
 
         return {"allowed": True}
 
@@ -343,9 +437,27 @@ class AgentCoreBridge:
                 if command:
                     parse_result = parse_shell_for_permission(command)
                     if parse_result.kind == "too_complex":
-                        return {"approved": False, "reason": "Shell command too complex for AST analysis, requires HITL confirmation"}
+                        return {"approved": False, "status": "blocked_by_permission", "reason": "HITL required"}
             except ImportError:
                 pass
+
+            confirm_rail = None
+            for rail in self._rails:
+                if type(rail).__name__ == "ConfirmInterruptRail":
+                    confirm_rail = rail
+                    break
+
+            if confirm_rail and hasattr(confirm_rail, "interrupt"):
+                try:
+                    await confirm_rail.interrupt(
+                        tool_name=skill_name,
+                        parameters=parameters,
+                    )
+                    return {"approved": True, "status": "confirmed"}
+                except Exception as e:
+                    logger.warning(f"ConfirmInterruptRail interrupt failed: {e}")
+                    return {"approved": False, "status": "awaiting_permission", "reason": "HITL confirmation required"}
+
             return {"approved": True, "reason": "Requires HITL confirmation via ConfirmInterruptRail"}
 
         return {"approved": True}
@@ -382,6 +494,57 @@ class AgentCoreBridge:
                 workspace_id=workspace_id,
                 agent_type=agent_type,
             )
+
+        if self._deep_agent and self._openjiuwen_available:
+            try:
+                agent = self._deep_agent
+                if hasattr(agent, 'chat'):
+                    message = parameters.get("step", parameters.get("query", str(parameters)))
+                    chunks = []
+                    async for chunk in agent.chat(workspace_id=workspace_id or "default", message=message):
+                        if isinstance(chunk, str):
+                            chunks.append(chunk)
+                        elif isinstance(chunk, dict):
+                            content = chunk.get("content", chunk.get("text", ""))
+                            if content:
+                                chunks.append(content)
+
+                    final_output = "".join(chunks)
+                    return {
+                        "skill_name": skill_name,
+                        "agent_type": agent_type.value,
+                        "status": "completed",
+                        "parameters": parameters,
+                        "workspace_id": workspace_id,
+                        "cognitive_enhancement": self._cognitive_tools_injected,
+                        "rails_active": len(self._rails),
+                        "permission_engine_active": self._permission_engine is not None,
+                        "final_output": final_output,
+                        "chunk_count": len(chunks),
+                    }
+                elif hasattr(agent, 'run'):
+                    result = await agent.run(message=parameters.get("step", str(parameters)))
+                    return {
+                        "skill_name": skill_name,
+                        "agent_type": agent_type.value,
+                        "status": "completed",
+                        "parameters": parameters,
+                        "workspace_id": workspace_id,
+                        "cognitive_enhancement": self._cognitive_tools_injected,
+                        "rails_active": len(self._rails),
+                        "permission_engine_active": self._permission_engine is not None,
+                        "final_output": str(result) if result else "",
+                    }
+            except Exception as e:
+                logger.error(f"DeepAgent execution failed for {skill_name}: {e}")
+                return {
+                    "skill_name": skill_name,
+                    "agent_type": agent_type.value,
+                    "status": "failed",
+                    "parameters": parameters,
+                    "workspace_id": workspace_id,
+                    "error": str(e),
+                }
 
         return {
             "skill_name": skill_name,
@@ -459,6 +622,7 @@ class AgentCoreBridge:
     async def shutdown(self) -> None:
         self._running = False
         self._agents.clear()
+        self._sessions.clear()
         self._cognitive_tools_injected = False
         self._deep_agent = None
 
@@ -478,6 +642,8 @@ class AgentCoreBridge:
             "permission_engine_active": self._permission_engine is not None,
             "fallback_active": self._fallback_engine is not None,
             "deep_agent_created": self._deep_agent is not None,
+            "intelli_router_active": self._intelli_router is not None,
+            "sessions_count": len(self._sessions),
         }
 
 

@@ -9,10 +9,9 @@ import os
 import json
 import logging
 from pathlib import Path
-from typing import Dict, Any, List, Optional, Tuple
+from typing import Dict, Any, List, Optional
 from dataclasses import dataclass
 from datetime import datetime
-import base64
 import hashlib
 from galaxyos.shared.paths import workspace
 

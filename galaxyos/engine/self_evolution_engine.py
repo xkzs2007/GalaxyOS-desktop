@@ -14,13 +14,11 @@ Created: 2026-05-09
 
 import os
 import json
-import math
-import hashlib
 import threading
 import time
 import sys
 from pathlib import Path
-from typing import Dict, List, Optional, Any, Tuple
+from typing import Dict, List
 from datetime import datetime, timezone
 from galaxyos.shared.paths import workspace
 
@@ -48,7 +46,7 @@ class SelfEvolutionEngine:
         # 懒加载子模块
         self._memory_reflector = None
         self._auto_learner = None
-        self._smart_processor = None
+        self._smart_processor_ref = None  # legacy, unused
         self._apo_optimizer = None
 
         # 进化追踪数据

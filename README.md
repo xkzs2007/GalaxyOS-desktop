@@ -1,6 +1,6 @@
 # GalaxyOS Desktop
 
-> 认知增强型桌面 AI Agent — EUI-NEO 原生渲染 + GalaxyOS 认知引擎 + Tauri 2 桌面框架
+> 认知增强型桌面 AI Agent — EUI-NEO C++ 原生渲染 + GalaxyOS 认知引擎
 >
 > **v0.3.0** · EUI-NEO 迁移版
 
@@ -8,11 +8,11 @@
 
 ## 总览
 
-GalaxyOS Desktop 将 **GalaxyOS 认知增强引擎**（17 层架构 + 液态神经记忆 + R-CCAM + DAG 上下文）通过 **Tauri 2** 桌面框架交付，使用 **EUI-NEO C++ DSL** 原生 GPU 直渲替代 React WebView，配合 **openJiuwen agent-core** 作为桌面 Agent 运行时。
+GalaxyOS Desktop 将 **GalaxyOS 认知增强引擎**（17 层架构 + 液态神经记忆 + R-CCAM + DAG 上下文）通过 **C++ 原生桌面壳**交付，使用 **EUI-NEO C++ DSL** 原生 GPU 直渲替代 React WebView，配合 **openJiuwen agent-core** 作为桌面 Agent 运行时。
 
 | 层级 | 框架 | 职责 |
 |------|------|------|
-| **桌面框架** | Tauri 2 | 跨平台桌面壳 + IPC + 原生窗口 + 资源打包 |
+| **桌面框架** | C++ Native (GLFW + CPack) | 跨平台桌面壳 + HTTP IPC + 原生窗口 + NSIS/DEB 打包 |
 | **原生渲染** | EUI-NEO C++ DSL | GPU 直渲 + 弹簧动画 + 材质深度 + 三级降级 |
 | **认知增强层** | GalaxyOS v8.6.0 | 17 层架构 + 液态神经记忆 + R-CCAM + DAG 上下文 + 76 技能包 |
 | **Agent 运行时** | openJiuwen agent-core | DeepAgent + ReActAgent + 安全护栏 + 工作流引擎 |
@@ -64,10 +64,10 @@ GALAXYOS_MODE=desktop python -m galaxyos.kernel.mcp_server_entry
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                    Tauri 2 Desktop Shell                         │
-│  (Rust IPC + EUI-NEO GPU Rendering + NSIS/DEB/AppImage)        │
+│                    C++ Native Desktop Shell                      │
+│  (GLFW + EUI-NEO GPU Rendering + CPack NSIS/DEB)               │
 └──────────────────────────┬──────────────────────────────────────┘
-                           │ Tauri Commands + SSE /agent-chat
+                           │ HTTP IPC + SSE /agent-chat
                            ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │                GalaxyOS Desktop Agent v0.3.0                     │
@@ -102,17 +102,21 @@ GALAXYOS_MODE=desktop python -m galaxyos.kernel.mcp_server_entry
 
 ```
 GalaxyOS-desktop/
-├── desktop-tauri/                 # Tauri 2 桌面应用
-│   ├── src/                       # Rust 源码
-│   │   ├── eui_neo.rs             # EUI-NEO 数据结构 + Command + DSL
-│   │   ├── eui_neo_ffi.rs         # FFI 绑定层（C++ ↔ Rust）
-│   │   ├── render_channel.rs      # 三级渲染降级管理
-│   │   ├── spring_animation.rs    # Apple 设计规范弹簧动画
-│   │   ├── sse_client.rs          # SSE 客户端
-│   │   ├── tokui_renderer.rs      # TokUI 流式渲染器
-│   │   └── backend.rs             # 双进程架构管理
-│   ├── minimal-webview/           # WebView 降级占位页面
-│   └── native_translations/       # i18n 翻译文件
+├── desktop-native/                # C++ 桌面壳（EUI-NEO GPU 直渲）
+│   ├── src/                       # C++ 源码
+│   │   ├── galaxyos_native_app.cpp # 主入口、生命周期
+│   │   ├── native_window_manager.cpp # GLFW 窗口管理
+│   │   ├── native_render_engine.cpp # EUI-NEO 渲染引擎
+│   │   ├── native_event_bus.cpp    # 发布-订阅事件总线
+│   │   ├── native_ipc_channel.cpp  # HTTP IPC 通道
+│   │   ├── native_sse_client.cpp   # SSE 协议客户端
+│   │   ├── native_process_manager.cpp # Python 子进程管理
+│   │   ├── eui_neo_ffi_wrapper.cpp # EUI-NEO FFI 安全包装
+│   │   ├── dsl_mapping_table.cpp   # TokUI→EUI-NEO 映射
+│   │   ├── i18n_bridge.cpp         # i18n 翻译桥接
+│   │   └── native_tray_icon.cpp    # 系统托盘（Win32）
+│   ├── include/                   # C++ 头文件
+│   └── third_party/               # cpp-httplib, nlohmann/json
 ├── vendor/eui-neo/sdk/            # EUI-NEO C++ SDK
 │   ├── include/eui_neo_bridge.h   # C 接口头文件
 │   └── src/eui_neo_bridge.cpp     # C++ 桥接实现
@@ -146,9 +150,9 @@ GalaxyOS-desktop/
 
 ## 跨平台
 
-- **桌面**：Windows (NSIS) / Linux (DEB + AppImage)
+- **桌面**：Windows (NSIS/CPack) / Linux (DEB/CPack)
 - **Python**：Windows (winloop) / Linux (uvloop)
-- **Rust 扩展**：Linux/Windows × x64 条件编译
+- **C++ 桌面壳**：Linux/Windows × x64（GLFW + EUI-NEO GPU 直渲）
 - **渲染降级**：EUI-NEO GPU → WebView DOM → 纯文本
 
 ## 版本历史
@@ -157,11 +161,11 @@ GalaxyOS-desktop/
 
 **EUI-NEO 原生渲染替代 React WebView**：C++ GPU 直渲 + 弹簧物理动画 + 三级降级链
 
-**双进程架构**：Tauri 2 桌面壳 + MCP Server（移除 JiuwenSwarm Gateway/AgentServer）
+**双进程架构**：C++ 原生桌面壳 + MCP Server（移除 JiuwenSwarm Gateway/AgentServer）
 
 **SSE 通信**：/agent-chat SSE 端点替代 Gateway WebSocket
 
-**CI/CD 统一构建**：Tauri bundler + BuildKit 多阶段 + GHCR 容器 + Chocolatey
+**CI/CD 统一构建**：CMake + CPack + BuildKit 多阶段 + GHCR 容器
 
 **FFI 安全修复**：C++ 异常捕获 + malloc 替代悬垂指针 + eui_neo_free_response
 
@@ -178,7 +182,7 @@ Agent Studio 平台集成 + 认知增强内核 + TokUI 流式富 UI
 - **[openJiuwen agent-core](https://github.com/openJiuwen-ai/agent-core)** — Agent 运行时 SDK（v0.1.16+）
 - **[EUI-NEO](https://github.com/sudoevolve/EUI-NEO)** — C++ GPU 直渲 UI 框架
 - **[TokUI](https://www.npmjs.com/package/@jboltai/tokui)** — 零依赖流式 UI 框架
-- **[Tauri 2](https://v2.tauri.app/)** — Rust 跨平台桌面框架
+
 
 ## 开发
 

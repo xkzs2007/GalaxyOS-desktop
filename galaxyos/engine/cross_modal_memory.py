@@ -21,20 +21,12 @@ Created: 2026-06-15
 """
 
 import json
-import math
-import os
 import numpy as np
-from typing import Dict, List, Optional, Tuple, Any
+from typing import List, Optional
 from pathlib import Path
-from datetime import datetime, timezone
 from galaxyos.shared.paths import workspace
 
-# ── LFM embedding 引擎 ──
-try:
-    from lfm_adaptive_operator import RealLFMNetwork
-    _LFM_AVAILABLE = True
-except ImportError:
-    _LFM_AVAILABLE = False
+_LFM_AVAILABLE = False
 
 
 class CrossModalMemoryBinder:
@@ -103,23 +95,10 @@ class CrossModalMemoryBinder:
     # ── 原生视觉 embedding（LFMWithVision） ──
 
     def _ensure_vision(self):
-        """懒加载 LFMWithVision 视觉模型"""
         if self._vision_model_loaded:
             return self._vision_model is not None
         self._vision_model_loaded = True
-        try:
-            from lfm_adaptive_operator import LFMWithVision
-            # 使用与 LFM 对齐的维度
-            self._vision_model = LFMWithVision(
-                hidden_dim=512,
-                num_heads=8,
-                patch_size=16,
-                num_layers=8,
-                weight_rank=8,
-            )
-            return True
-        except Exception:
-            return False
+        return False
 
     def image_to_embedding(self, image: np.ndarray) -> Optional[np.ndarray]:
         """
@@ -365,4 +344,3 @@ if __name__ == "__main__":
         if norm > 0:
             blended = blended / norm * 2048  # 保持 norm 约 2048
         return blended.astype(np.float32)
-

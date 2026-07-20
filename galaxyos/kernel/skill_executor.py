@@ -12,12 +12,15 @@ SkillExecutor — 驱动 SKILL.md 步骤解析和执行（agent-core Agent Loop 
 from __future__ import annotations
 
 import enum
+import logging
 import time
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional
 
 from galaxyos.skill_infra.skill_md_parser import SKILLMDParser, ParsedSkill, SkillStep
-from galaxyos.kernel.agent_core_bridge import AgentCoreBridge, AgentType
+from galaxyos.kernel.agent_core_bridge import AgentCoreBridge
+
+logger = logging.getLogger(__name__)
 
 
 class SkillState(str, enum.Enum):
@@ -65,6 +68,13 @@ class SkillExecutor:
         self._checkpoints: Dict[str, Dict[str, Any]] = {}
         self._parsed_skills: Dict[str, ParsedSkill] = {}
         self._completion_checkers: Dict[str, Callable] = {}
+        self._hook_dispatcher = None
+
+        try:
+            from galaxyos.kernel.workflow_hook_dispatcher import WorkflowHookDispatcher
+            self._hook_dispatcher = WorkflowHookDispatcher()
+        except Exception:
+            pass
 
     def parse_skill(self, skill_name: str, skill_content: str) -> ParsedSkill:
         self._state[skill_name] = SkillState.PARSING
@@ -132,12 +142,29 @@ class SkillExecutor:
             self._state[skill_name] = SkillState.STEP_RUNNING
             step_result = await self._execute_step(skill_name, step, i, parameters or {})
             result.steps_completed = i + 1
+
+            step_output = ""
+            if self._bridge and self._bridge._running:
+                try:
+                    agent_type = self._bridge.select_agent_type(skill_name)
+                    bridge_result = await self._bridge.execute_skill(
+                        skill_name=skill_name,
+                        parameters={"step": step.text, "leading_words": step.leading_words, **parameters},
+                        agent_type=agent_type,
+                    )
+                    step_output = bridge_result.get("final_output", "")
+                    if bridge_result.get("chunk_count"):
+                        result.llm_calls += 1
+                except Exception:
+                    pass
+
             result.step_details.append({
                 "index": i,
                 "text": step.text,
                 "leading_words": step.leading_words,
                 "completion_criterion": step.completion_criterion,
                 "status": "completed" if step_result else "suspended",
+                "output": step_output,
             })
             self._state[skill_name] = SkillState.STEP_COMPLETED
 
@@ -162,6 +189,22 @@ class SkillExecutor:
         step_index: int,
         parameters: Dict[str, Any],
     ) -> bool:
+        if self._hook_dispatcher:
+            try:
+                hook_context = {
+                    "skill_name": skill_name,
+                    "step_index": step_index,
+                    "step_text": step.text,
+                    "leading_words": step.leading_words,
+                    "parameters": parameters,
+                }
+                hook_result = await self._hook_dispatcher.on_workflow_step(hook_context)
+                if not hook_result.allowed:
+                    logger.warning(f"Workflow hook blocked step {step_index} for {skill_name}: {hook_result.warning}")
+                    return False
+            except Exception as e:
+                logger.warning(f"Workflow hook dispatch failed for step {step_index}: {e}")
+
         if self._bridge and self._bridge._running:
             agent_type = self._bridge.select_agent_type(skill_name)
             result = await self._bridge.execute_skill(
@@ -169,7 +212,15 @@ class SkillExecutor:
                 parameters={"step": step.text, "leading_words": step.leading_words, **parameters},
                 agent_type=agent_type,
             )
-            return result.get("status") != "failed"
+            status = result.get("status", "")
+            if status == "failed":
+                return False
+            if status == "completed":
+                final_output = result.get("final_output", "")
+                if final_output:
+                    return True
+                return True
+            return status != "blocked_by_rails" and status != "blocked_by_permission"
         return True
 
     async def resume(self, skill_name: str) -> Optional[SkillExecutionResult]:

@@ -6,16 +6,15 @@ Knowledge Graph GNN - 图神经网络增强的知识图谱
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from typing import Dict, List, Optional, Tuple, Any, Union
+from typing import Dict, List, Optional, Tuple, Any
 import numpy as np
-from collections import defaultdict
 
 try:
     from .graph_constructor import GraphConstructor, Entity, Relation
     from .graphsage_layer import GraphSAGE
     from .gat_layer import GAT
 except ImportError:
-    from graph_constructor import GraphConstructor, Entity, Relation  # type: ignore[no-redef]
+    from graph_constructor import GraphConstructor, Entity  # type: ignore[no-redef]
     from graphsage_layer import GraphSAGE  # type: ignore[no-redef]
     from gat_layer import GAT  # type: ignore[no-redef]
 

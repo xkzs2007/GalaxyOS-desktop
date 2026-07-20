@@ -4,17 +4,14 @@
 每日备份记忆系统数据
 """
 
-import os
 import json
 import shutil
 import sqlite3
-from pathlib import Path
 from datetime import datetime
 
 # 路径配置
 
 # ── Centralized path resolution ──
-import os as _os
 import sys as _sys
 from galaxyos.shared.paths import workspace
 _ws_root = workspace()

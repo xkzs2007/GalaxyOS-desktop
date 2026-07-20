@@ -24,7 +24,7 @@ import logging
 import threading
 import os
 from typing import Dict, List, Optional, Any, Set, Tuple
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field
 from enum import Enum
 
 logger = logging.getLogger(__name__)
@@ -171,7 +171,7 @@ class AssetRegistry:
     """
 
     def __init__(self, blob_arena=None):
-        from blob_arena import BlobArena, get_blob_arena
+        from blob_arena import get_blob_arena
 
         self._arena = blob_arena or get_blob_arena()
         self._assets: Dict[str, KnowledgeAsset] = {}

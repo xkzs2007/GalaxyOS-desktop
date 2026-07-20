@@ -4,16 +4,13 @@
 检查系统各组件健康状态
 """
 
-import os
 import json
 import sqlite3
-from pathlib import Path
 from datetime import datetime
 
 # 路径配置
 
 # ── Centralized path resolution ──
-import os as _os
 import sys as _sys
 from galaxyos.shared.paths import workspace
 _ws_root = workspace()

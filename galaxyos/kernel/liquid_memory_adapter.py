@@ -13,12 +13,11 @@ LiquidMemoryAdapter — GalaxyOS 液态神经记忆适配器
 
 from __future__ import annotations
 
-import json
 import logging
 import time
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -62,7 +61,10 @@ class LiquidMemoryAdapter:
         results = await adapter.recall(query="用户主题偏好", top_k=5)
     """
 
-    def __init__(self, workspace_path: str = "", config: dict[str, Any] | None = None):
+    def __init__(self, workspace_path: str = "", config: dict[str, Any] | None = None,
+                 engram_backend=None, neural_backend=None,
+                 synapse_backend=None, retrieval_backend=None,
+                 biorhythm_backend=None):
         self._workspace_path = workspace_path
         self._config = config or {}
         self._engram_store: dict[str, MemoryEntry] = {}
@@ -71,6 +73,11 @@ class LiquidMemoryAdapter:
         self._id_counter = 0
         self._consolidation_enabled = self._config.get("consolidation_enabled", True)
         self._forgetting_curve_enabled = self._config.get("forgetting_curve_enabled", True)
+        self._engram_backend = engram_backend
+        self._neural_backend = neural_backend
+        self._synapse_backend = synapse_backend
+        self._retrieval_backend = retrieval_backend
+        self._biorhythm_backend = biorhythm_backend
 
     def _next_id(self) -> str:
         self._id_counter += 1
@@ -95,10 +102,25 @@ class LiquidMemoryAdapter:
 
         if memory_type in (MemoryType.ENGRAM, MemoryType.AUTO):
             self._engram_store[entry_id] = entry
+            if self._engram_backend is not None:
+                try:
+                    self._engram_backend.remember(content)
+                except Exception as e:
+                    logger.warning(f"Engram backend write failed: {e}")
         if memory_type in (MemoryType.NEURAL, MemoryType.AUTO):
             self._neural_store[entry_id] = entry
+            if self._neural_backend is not None:
+                try:
+                    self._neural_backend.initialize()
+                except Exception as e:
+                    logger.warning(f"Neural backend init failed: {e}")
         if memory_type in (MemoryType.SYNAPSE, MemoryType.AUTO):
             self._synapse_store[entry_id] = entry
+            if self._synapse_backend is not None:
+                try:
+                    self._synapse_backend.create_neuron(content)
+                except Exception as e:
+                    logger.warning(f"Synapse backend write failed: {e}")
 
         logger.debug(f"LiquidMemory write: id={entry_id}, type={memory_type}, source={source}")
 
@@ -120,6 +142,59 @@ class LiquidMemoryAdapter:
         use_neural_rerank: bool = True,
     ) -> dict[str, Any]:
         start = time.monotonic()
+
+        if self._retrieval_backend is not None:
+            try:
+                hub_result = self._retrieval_backend(
+                    query=query,
+                    top_k=top_k,
+                    enable_crag=use_crag,
+                    session_id=session_key,
+                )
+                results = hub_result.get("results", [])
+                stats = hub_result.get("stats", {})
+                elapsed_ms = (time.monotonic() - start) * 1000
+                entries = []
+                for r in results:
+                    entries.append({
+                        "id": r.get("node_id", f"rh-{int(time.time() * 1000)}"),
+                        "content": r.get("content", ""),
+                        "source": r.get("source", "retrieval_hub"),
+                        "score": r.get("rrf_score", r.get("score", 0)),
+                        "type": "auto",
+                    })
+                return {
+                    "results": entries[:top_k],
+                    "total": stats.get("total", len(entries)),
+                    "query": query,
+                    "elapsed_ms": round(elapsed_ms, 1),
+                    "sources": ["crag", "graph_rag", "neural_rerank"] if use_crag and use_graph_rag and use_neural_rerank else ["retrieval_hub"],
+                    "session_key": session_key,
+                }
+            except Exception as e:
+                logger.warning(f"Retrieval backend recall failed, falling back to keyword: {e}")
+
+        if self._engram_backend is not None:
+            try:
+                emb, info = self._engram_backend.lookup(query)
+                if info.get("hit", False):
+                    pass
+            except Exception as e:
+                logger.debug(f"Engram backend lookup skipped: {e}")
+
+        if self._synapse_backend is not None:
+            try:
+                neurons = self._synapse_backend.neuron_manager.get_all_neurons()
+                for n in neurons:
+                    if n.id not in self._synapse_store:
+                        self._synapse_store[n.id] = MemoryEntry(
+                            id=n.id,
+                            content=n.content,
+                            source="synapse_backend",
+                            memory_type="synapse",
+                        )
+            except Exception as e:
+                logger.debug(f"Synapse backend sync skipped: {e}")
 
         all_entries = []
         all_entries.extend(self._engram_store.values())
@@ -169,6 +244,27 @@ class LiquidMemoryAdapter:
         total = len(self._engram_store) + len(self._neural_store) + len(self._synapse_store)
         if not self._consolidation_enabled:
             return {"status": "skipped", "reason": "consolidation disabled", "total_entries": total}
+
+        if self._biorhythm_backend is not None:
+            try:
+                all_entries = []
+                for store in [self._engram_store, self._neural_store, self._synapse_store]:
+                    all_entries.extend(store.values())
+                result = self._biorhythm_backend.consolidate_memories(all_entries)
+                for entry_id in result.get("removed_ids", []):
+                    for store in [self._engram_store, self._neural_store, self._synapse_store]:
+                        if entry_id in store:
+                            del store[entry_id]
+                return {
+                    "status": "completed",
+                    "consolidated": result.get("consolidated", 0),
+                    "decayed": result.get("decayed", 0),
+                    "remaining": len(self._engram_store) + len(self._neural_store) + len(self._synapse_store),
+                    "session_key": session_key,
+                    "backend": "biorhythm_sleep",
+                }
+            except Exception as e:
+                logger.warning(f"Biorhythm consolidation failed, falling back to forgetting curve: {e}")
 
         consolidated = 0
         decayed = 0
@@ -231,4 +327,9 @@ class LiquidMemoryAdapter:
             "total": len(self._engram_store) + len(self._neural_store) + len(self._synapse_store),
             "consolidation_enabled": self._consolidation_enabled,
             "forgetting_curve_enabled": self._forgetting_curve_enabled,
+            "engram_backend": self._engram_backend is not None,
+            "neural_backend": self._neural_backend is not None,
+            "synapse_backend": self._synapse_backend is not None,
+            "retrieval_backend": self._retrieval_backend is not None,
+            "biorhythm_backend": self._biorhythm_backend is not None,
         }

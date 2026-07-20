@@ -5,7 +5,6 @@ import os
 import json
 
 # ── Centralized path resolution ──
-import os as _os
 import sys as _sys
 from galaxyos.shared.paths import workspace
 _ws_root = workspace()
@@ -24,7 +23,6 @@ from core import (
 import hashlib
 import time
 from datetime import datetime
-from pathlib import Path
 
 # 配置文件路径
 CONFIG_PATH = path_resolver.SKILLS_DIR / "llm-memory-integration" / "config" / "llm_config.json"

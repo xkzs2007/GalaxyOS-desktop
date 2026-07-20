@@ -66,6 +66,7 @@ class MemorySyncBridge:
         dag_context_fusion=None,
         agent_core_context: Optional[Any] = None,
         persist_dir: Optional[Path] = None,
+        dream_backend=None,
     ):
         self._liquid_memory = liquid_memory_adapter
         self._dag_fusion = dag_context_fusion
@@ -76,9 +77,20 @@ class MemorySyncBridge:
         self._audit_log: List[Dict[str, Any]] = []
         self._workspace_sessions: Dict[str, str] = {}
         self._oj_context_engine = None
+        self._oj_ltm: Optional[Any] = None
+        self._dream_backend = dream_backend
         self._init_openjiuwen_context()
 
+    def _session_key(self, workspace_id: str) -> str:
+        return self._workspace_sessions.get(workspace_id, workspace_id)
+
     def _init_openjiuwen_context(self) -> None:
+        try:
+            from openjiuwen.core.long_term_memory import LongTermMemory
+            self._oj_ltm = LongTermMemory
+            logger.info("OpenJiuwen LongTermMemory available for memory sync")
+        except ImportError:
+            logger.debug("OpenJiuwen LongTermMemory not available, trying ContextEngine fallback")
         try:
             from openjiuwen.core.context_engine import ContextEngine
             self._oj_context_engine = ContextEngine
@@ -87,44 +99,68 @@ class MemorySyncBridge:
             logger.debug("OpenJiuwen ContextEngine not available, using in-memory fallback")
 
     async def _write_to_oj_context(self, workspace_id: str, content: str, source: str, metadata: Optional[Dict[str, Any]] = None) -> bool:
-        if not self._oj_context_engine:
-            return False
-        try:
-            engine = self._oj_context_engine()
-            await engine.write(
-                key=f"galaxyos:{workspace_id}:{source}",
-                value=content,
-                metadata=metadata or {},
-            )
-            return True
-        except Exception as e:
-            logger.warning(f"OpenJiuwen context write failed: {e}")
-            return False
+        if self._oj_ltm:
+            try:
+                ltm = self._oj_ltm()
+                await ltm.add_mem(
+                    content=content,
+                    memory_type=metadata.get("memory_type", "observation") if metadata else "observation",
+                    metadata={"workspace_id": workspace_id, "source": source, **(metadata or {})},
+                )
+                return True
+            except Exception as e:
+                logger.warning(f"OpenJiuwen LongTermMemory write failed: {e}")
+        if self._oj_context_engine:
+            try:
+                engine = self._oj_context_engine()
+                await engine.write(
+                    key=f"galaxyos:{workspace_id}:{source}",
+                    value=content,
+                    metadata=metadata or {},
+                )
+                return True
+            except Exception as e:
+                logger.warning(f"OpenJiuwen context write failed: {e}")
+        return False
 
     async def _recall_from_oj_context(self, workspace_id: str, query: str, top_k: int = 5) -> List[MemoryEntry]:
-        if not self._oj_context_engine:
-            return []
-        try:
-            engine = self._oj_context_engine()
-            results = await engine.search(query=query, top_k=top_k)
-            entries = []
-            for r in results:
-                entries.append(MemoryEntry(
-                    id=f"oj-{int(time.time() * 1000)}",
-                    workspace_id=workspace_id,
-                    content=r.get("value", ""),
-                    source=r.get("metadata", {}).get("source", "agent_core"),
-                    scope=MemoryScope.AGENT_CORE,
-                    memory_type="context",
-                    metadata={"score": r.get("score", 0), "source_layer": "openjiuwen_context"},
-                ))
-            return entries
-        except Exception as e:
-            logger.warning(f"OpenJiuwen context recall failed: {e}")
-            return []
-        if workspace_id not in self._workspace_sessions:
-            self._workspace_sessions[workspace_id] = f"ws:dm:{workspace_id}"
-        return self._workspace_sessions[workspace_id]
+        if self._oj_ltm:
+            try:
+                ltm = self._oj_ltm()
+                results = await ltm.search(query=query, top_k=top_k)
+                entries = []
+                for r in results:
+                    entries.append(MemoryEntry(
+                        id=f"oj-ltm-{int(time.time() * 1000)}",
+                        workspace_id=workspace_id,
+                        content=r.get("content", r.get("value", "")),
+                        source=r.get("metadata", {}).get("source", "agent_core"),
+                        scope=MemoryScope.AGENT_CORE,
+                        memory_type=r.get("memory_type", "long_term"),
+                        metadata={"score": r.get("score", 0), "source_layer": "openjiuwen_ltm"},
+                    ))
+                return entries
+            except Exception as e:
+                logger.warning(f"OpenJiuwen LongTermMemory recall failed: {e}")
+        if self._oj_context_engine:
+            try:
+                engine = self._oj_context_engine()
+                results = await engine.search(query=query, top_k=top_k)
+                entries = []
+                for r in results:
+                    entries.append(MemoryEntry(
+                        id=f"oj-{int(time.time() * 1000)}",
+                        workspace_id=workspace_id,
+                        content=r.get("value", ""),
+                        source=r.get("metadata", {}).get("source", "agent_core"),
+                        scope=MemoryScope.AGENT_CORE,
+                        memory_type="context",
+                        metadata={"score": r.get("score", 0), "source_layer": "openjiuwen_context"},
+                    ))
+                return entries
+            except Exception as e:
+                logger.warning(f"OpenJiuwen context recall failed: {e}")
+        return []
 
     async def dual_write(
         self,
@@ -331,12 +367,27 @@ class MemorySyncBridge:
     async def dream_mode_sync(self, workspace_id: str) -> Dict[str, Any]:
         session_key = self._session_key(workspace_id)
 
-        consolidation_result = {"consolidated": 0, "decayed": 0}
-        if self._liquid_memory:
+        if self._dream_backend is not None:
             try:
-                consolidation_result = await self._liquid_memory.consolidate(session_key=session_key)
+                dream_result = self._dream_backend.learn_from_dreams(
+                    dream_log_path=str(self._persist_dir / workspace_id / "dreaming" / "dream_log.jsonl"),
+                )
+                consolidation_result = {"consolidated": dream_result.get("fragments_loaded", 0), "decayed": 0, "backend": "dream_driven_learner"}
             except Exception as e:
-                logger.warning(f"Dream mode consolidation failed: {e}")
+                logger.warning(f"Dream-driven learning failed, falling back: {e}")
+                consolidation_result = {"consolidated": 0, "decayed": 0}
+                if self._liquid_memory:
+                    try:
+                        consolidation_result = await self._liquid_memory.consolidate(session_key=session_key)
+                    except Exception as e2:
+                        logger.warning(f"Dream mode consolidation fallback failed: {e2}")
+        else:
+            consolidation_result = {"consolidated": 0, "decayed": 0}
+            if self._liquid_memory:
+                try:
+                    consolidation_result = await self._liquid_memory.consolidate(session_key=session_key)
+                except Exception as e:
+                    logger.warning(f"Dream mode consolidation failed: {e}")
 
         compact_result = {"compacted": 0}
         if self._dag_fusion:
@@ -413,19 +464,31 @@ class MemorySyncBridge:
             timestamp=time.time(),
             metadata=metadata or {},
         )
-        self._agent_core_store.setdefault(workspace_id, []).append(ac_entry)
 
-        oj_written = await self._write_to_oj_context(
-            workspace_id=workspace_id,
-            content=content,
-            source=source,
-            metadata={"entry_id": entry_id, "skill_name": skill_name, "pinned": pinned, **(metadata or {})},
-        )
+        oj_written = False
+        last_error = None
+        for attempt in range(self.ASYNC_RETRY_MAX):
+            try:
+                oj_written = await self._write_to_oj_context(
+                    workspace_id=workspace_id,
+                    content=content,
+                    source=source,
+                    metadata={"entry_id": entry_id, "skill_name": skill_name, "pinned": pinned, **(metadata or {})},
+                )
+                if oj_written:
+                    break
+            except Exception as e:
+                last_error = e
+                logger.warning(f"OpenJiuwen context write attempt {attempt + 1}/{self.ASYNC_RETRY_MAX} failed: {e}")
+            if attempt < self.ASYNC_RETRY_MAX - 1:
+                await asyncio.sleep(self.ASYNC_RETRY_DELAY_S)
 
         if oj_written:
+            self._agent_core_store.setdefault(workspace_id, []).append(ac_entry)
             self._audit("dual_write", workspace_id, entry_id, "agent_core", "success+oj_context")
         else:
-            self._audit("dual_write", workspace_id, entry_id, "agent_core", "success+in_memory_fallback")
+            self._agent_core_store.setdefault(workspace_id, []).append(ac_entry)
+            self._audit("dual_write", workspace_id, entry_id, "agent_core", f"success+in_memory_fallback(retries_exhausted:{self.ASYNC_RETRY_MAX},last_error:{last_error})")
 
     def _persist_entry(self, workspace_id: str, entry: MemoryEntry) -> None:
         ws_dir = self._persist_dir / workspace_id

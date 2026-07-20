@@ -1,7 +1,7 @@
 # GalaxyOS — 开发命令速查
 # make all | make test | make coverage | make lint | make clean | make native
 
-.PHONY: all install test coverage lint clean install deps bench native native-py native-libs check-no-dupes
+.PHONY: all install test coverage lint clean install deps bench native native-py native-libs check-no-dupes desktop desktop-build desktop-package
 
 PYTHON := python3
 VENV := .venv
@@ -9,8 +9,8 @@ PIP := $(VENV)/bin/pip
 PYTEST := $(VENV)/bin/pytest
 
 # ═══ 一键构建：Python deps + (Rust native + PyO3) 或 pre-built libs ═══
-all: install native native-py
-	@echo "✅ GalaxyOS full build complete (Python + Rust native + PyO3)"
+all: install desktop
+	@echo "✅ GalaxyOS full build complete (Python + C++ Desktop)"
 
 install: $(VENV)
 	$(PIP) install --upgrade pip
@@ -270,3 +270,13 @@ native-install-prebuilt:
 		windows-*) echo "  → Windows binaries installed" ;; \
 	esac; \
 	echo "✅ Prebuilt binary installed from $$PLATFORM"
+
+# -- desktop: Build C++ desktop shell (CMake + CPack) --
+desktop:
+	cmake -B desktop-native/build -S desktop-native
+	cmake --build desktop-native/build --config Release
+	@echo ✅ C++ Desktop shell built
+
+desktop-package: desktop
+	cd desktop-native/build && cpack -G NSIS -C Release
+	@echo ✅ Desktop package created

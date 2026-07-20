@@ -21,20 +21,14 @@ Created: 2026-06-15
 
 import json
 import math
-import os
 import time
 import numpy as np
-from typing import Dict, List, Optional, Tuple, Any
+from typing import Dict, List, Optional, Any
 from pathlib import Path
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from galaxyos.shared.paths import workspace
 
-# ── 尝试加载 LFM embedding ──
-try:
-    from lfm_adaptive_operator import RealLFMNetwork
-    _LFM_AVAILABLE = True
-except ImportError:
-    _LFM_AVAILABLE = False
+_LFM_AVAILABLE = False
 
 
 class TitansNeuralMemory:

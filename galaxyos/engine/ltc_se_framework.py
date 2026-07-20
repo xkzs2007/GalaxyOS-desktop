@@ -23,14 +23,11 @@ Version: 1.0.0
 Created: 2026-06-14
 """
 
-import os
 import math
-import time
-import json
 import logging
-from typing import Dict, List, Optional, Tuple, Any, Callable, Union
+from typing import Tuple
 from enum import Enum
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 logger = logging.getLogger("ltc_se")
 
@@ -333,7 +330,7 @@ class LTCSEManager:
         elif config.cell_type == LiquidCellType.CTRNN:
             return CTRNNUnit(config)
         elif config.cell_type == LiquidCellType.NEURAL_ODE:
-            from neural_ode import NeuralODE, LTCNeuralODEWrapper
+            from neural_ode import LTCNeuralODEWrapper
             return LTCNeuralODEWrapper(config.state_dim, config.input_dim, solver=config.ode_solver)
         elif config.cell_type == LiquidCellType.GRU_ODE:
             return GRUODEUnit(config)

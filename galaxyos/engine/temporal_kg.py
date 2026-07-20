@@ -19,7 +19,7 @@ import logging
 import sqlite3
 import threading
 import re
-from typing import Dict, List, Optional, Any, Tuple, Set
+from typing import Dict, List, Optional, Any, Set
 
 # 默认 DB 路径：与 PaperIntegration 保持一致
 _DEFAULT_TKG_DB = os.path.expanduser("~/.openclaw/workspace/temporal_kg.db")

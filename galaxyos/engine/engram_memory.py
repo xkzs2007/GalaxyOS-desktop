@@ -20,9 +20,8 @@ import math
 import time
 import hashlib
 import logging
-from typing import Dict, List, Optional, Tuple, Any, Set
-from dataclasses import dataclass, field, asdict
-from pathlib import Path
+from typing import Dict, List, Optional, Tuple
+from dataclasses import dataclass
 
 logger = logging.getLogger("engram")
 
@@ -379,14 +378,7 @@ class EngramMemory:
 
         # 如果没有提供嵌入，生成一个
         if embedding is None and self.config.embed_dim == 2048:
-            try:
-                from lfm_adaptive_operator import RealLFMNetwork
-                _lfm = RealLFMNetwork()
-                emb_lfm = _lfm.embed_text(text[:512])
-                if emb_lfm is not None:
-                    embedding = emb_lfm.astype(np.float32)
-            except Exception:
-                pass
+            pass
         if embedding is None:
             embedding = np.random.randn(self.config.embed_dim).astype(np.float32)
             embedding = embedding / (np.linalg.norm(embedding) + 1e-8)

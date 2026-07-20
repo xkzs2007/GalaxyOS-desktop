@@ -4,7 +4,6 @@
 记录安全相关操作和事件
 """
 
-import os
 import json
 import hashlib
 from pathlib import Path
@@ -13,7 +12,6 @@ from datetime import datetime
 # 路径配置
 
 # ── Centralized path resolution ──
-import os as _os
 import sys as _sys
 from galaxyos.shared.paths import workspace
 _ws_root = workspace()

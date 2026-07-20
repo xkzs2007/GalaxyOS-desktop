@@ -4,14 +4,11 @@ Setup Maintenance - 一键配置维护建议
 自动配置定期维护任务和监控
 """
 
-import json
 import subprocess
-from pathlib import Path
 from datetime import datetime
 
 
 # ── Centralized path resolution ──
-import os as _os
 import sys as _sys
 from galaxyos.shared.paths import workspace
 _ws_root = workspace()
@@ -22,7 +19,6 @@ import path_resolver
 WORKSPACE = path_resolver.WORKSPACE_ROOT
 MEMORY_TDDB = path_resolver.MEMORY_TDAI_DIR
 VECTORS_DB = MEMORY_TDDB / "vectors.db"
-from paths import VEC_EXT
 
 # 维护配置
 MAINTENANCE_CONFIG = {

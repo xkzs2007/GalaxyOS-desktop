@@ -12,7 +12,6 @@ from pathlib import Path
 # 添加 core 目录到路径
 
 # ── Centralized path resolution ──
-import os as _os
 import sys as _sys
 from galaxyos.shared.paths import workspace
 _ws_root = workspace()

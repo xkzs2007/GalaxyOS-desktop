@@ -7,7 +7,7 @@
 import time
 import hashlib
 import threading
-from typing import Any, Optional, Dict, Tuple
+from typing import Any, Optional, Dict
 from collections import OrderedDict
 
 class QueryCache:

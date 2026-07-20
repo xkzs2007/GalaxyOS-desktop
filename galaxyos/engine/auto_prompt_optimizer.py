@@ -17,12 +17,11 @@ and Beam Search" (arXiv 2305.03495), Microsoft Research.
 
 import json
 import logging
-import random
 import time
 from collections import defaultdict
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional
 
 logger = logging.getLogger("galaxyos.auto_prompt_optimizer")
 

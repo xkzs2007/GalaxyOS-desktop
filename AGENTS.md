@@ -6,7 +6,7 @@
 
 GalaxyOS 是认知增强型 AI Agent 桌面引擎，v0.3.0，代号 Cognitive Nexus。
 
-**双进程架构**：Tauri 2 桌面壳 (Rust) + GalaxyOS Python 内核 (MCP Server + AgentCore Bridge)
+**双进程架构**：C++ 桌面壳 (EUI-NEO GPU 直渲) + GalaxyOS Python 内核 (MCP Server + AgentCore Bridge)
 
 **渲染三级降级链**（不可逆）：`eui_native` (EUI-NEO C++ GPU 直渲) → `webview_dom` → `plain_text`
 
@@ -25,14 +25,15 @@ pip install -r requirements-heavy-cpu.txt
 pip install torch --index-url https://download.pytorch.org/whl/cu128
 pip install -r requirements-heavy-cuda.txt
 
-# 启动
+# 启动 Python 内核
 GALAXYOS_MODE=desktop python -m galaxyos.kernel.mcp_server_entry
 
 # 安装向导（CI 非交互模式）
 python scripts/install_wizard.py --ci --target-dir models/embeddings
 
-# Tauri 构建（需先安装 EUI-NEO SDK 到 vendor/eui-neo/sdk/）
-cd desktop-tauri && cargo tauri build
+# C++ 桌面壳构建（需先安装 EUI-NEO SDK 到 vendor/eui-neo/sdk/）
+cmake -B desktop-native/build -S desktop-native
+cmake --build desktop-native/build --config Release
 
 # Lint + 类型检查
 ruff check .
@@ -46,7 +47,8 @@ python -m pytest tests/ -x -q --tb=short
 
 | 目录 | 职责 | 注意事项 |
 |------|------|---------|
-| `desktop-tauri/src/` | Rust 桌面壳源码 | EUI-NEO FFI 绑定、渲染降级、弹簧动画 |
+| `desktop-native/src/` | C++ 桌面壳源码 | EUI-NEO FFI、GLFW 窗口、IPC、SSE、托盘 |
+| `desktop-native/include/` | C++ 头文件 | 14 个模块头文件 |
 | `vendor/eui-neo/sdk/` | EUI-NEO C++ SDK | CI 中下载，不入库（.gitignore 排除） |
 | `galaxyos/kernel/` | Python 认知内核 | MCP Server、AgentCore Bridge、DSL Bridge |
 | `galaxyos/engine/` | Python 核心引擎 | ONNX Embedding、检索、神经网络 |
@@ -69,8 +71,8 @@ python -m pytest tests/ -x -q --tb=short
 
 ## CI/CD
 
-- **ci.yml**：check-deps (Ubuntu) + build-tauri (Windows)
-- **release.yml**：build-wheel + build-docker (GHCR, linux/amd64) + build-tauri (Windows + Ubuntu in container)
+- **ci.yml**：check-deps (Ubuntu) + build-native (Windows CMake)
+- **release.yml**：build-wheel + build-docker (GHCR, linux/amd64) + build-native (Windows CMake + NSIS)
 - Windows runner **不支持** `container` 指令（GitHub Actions 仅 Linux 支持）
 - Docker 构建**仅 linux/amd64**（无法在 Linux runner 上构建 Windows 容器镜像）
 - hf-mirror.com 不稳定，curl 需 `--retry 3 --retry-delay 5 --max-time 120` + HuggingFace 官方源降级
@@ -79,16 +81,34 @@ python -m pytest tests/ -x -q --tb=short
 ## 命名约定
 
 - Python 函数/变量：`snake_case`
-- Rust 函数/变量：`snake_case`
+- C++ 函数/变量：`snake_case`
+- C++ 类名：`PascalCase`
 - MCP 工具名：`claw_` 前缀（历史品牌残留，新工具不再使用）
 - i18n 翻译键：`camelCase`（`zh.json` / `en.json`，82 键）
 
 ## 已知陷阱
 
-- **EUI-NEO 与 Tauri WebView 架构冲突**：EUI-NEO 是独立 GPU 直渲框架，与 Tauri WebView 互斥。TokUI 与 Tauri 兼容。当前通过 `RenderChannelRouter` 三级降级链共存。
 - **C++ FFI 内存安全**：C++ 返回 `std::string::c_str()` 是悬垂指针，必须用 `malloc+memcpy`；C++ 异常不可跨越 FFI 边界（UB），需 `try/catch` 包裹；必须调用 `eui_neo_free_response()` 释放内存。
-- **Rust 1.88.0 编译器 bug**：`STATUS_ACCESS_VIOLATION` 崩溃，使用 `stable` channel（见 `rust-toolchain.toml`）。
+- **GLAD 必须在 GLFW 之前 include**：`#include <glad/glad.h>` 必须在 `#include <GLFW/glfw3.h>` 之前，否则编译错误。头文件中使用前向声明 `struct GLFWwindow;` 避免 include 顺序问题。
 - **品牌残留**：`OPENCLAW_HOME` 环境变量保留为向后兼容别名；`claw_` 前缀工具名运行时兼容不改；`xiaoyi/小义` 已标记 removed。
+
+## C++ 桌面壳模块架构
+
+| 模块 | 头文件 | 源文件 | 职责 |
+|------|--------|--------|------|
+| GalaxyOSNativeApp | galaxyos_native_app.h | galaxyos_native_app.cpp | 主入口、生命周期、模块协调 |
+| NativeLogger | native_logger.h | native_logger.cpp | JSON 结构化日志 |
+| NativeConfig | native_config.h | native_config.cpp | 配置管理（JSON） |
+| NativeWindowManager | native_window_manager.h | native_window_manager.cpp | GLFW 窗口管理 |
+| NativeEventBus | native_event_bus.h | native_event_bus.cpp | 发布-订阅事件总线 |
+| NativeIPCChannel | native_ipc_channel.h | native_ipc_channel.cpp | HTTP IPC 通道 |
+| NativeSSEClient | native_sse_client.h | native_sse_client.cpp | SSE 协议客户端 |
+| NativeProcessManager | native_process_manager.h | native_process_manager.cpp | Python 子进程管理 |
+| EuiNeoFFIWrapper | eui_neo_ffi_wrapper.h | eui_neo_ffi_wrapper.cpp | EUI-NEO FFI 安全包装 |
+| DslMappingTable | dsl_mapping_table.h | dsl_mapping_table.cpp | TokUI→EUI-NEO 组件映射 |
+| NativeRenderEngine | native_render_engine.h | native_render_engine.cpp | 渲染引擎 |
+| I18nBridge | i18n_bridge.h | i18n_bridge.cpp | i18n 翻译桥接 |
+| NativeTrayIcon | native_tray_icon.h | native_tray_icon.cpp | 系统托盘（Win32） |
 
 ## Agent Skills
 
@@ -114,8 +134,8 @@ Issue 存放在 GitHub Issues 中，使用 `gh` CLI 操作。详见 `docs/agents
 
 1. **描述层**：TokUI DSL（AI 友好、流式友好）
 2. **桥接层**：`DSLBridge`（`galaxyos/kernel/dsl_bridge.py`），将 TokUI DSL 翻译为 EUI-NEO 渲染指令
-3. **渲染层**：EUI-NEO C++ Engine（Vulkan/Metal GPU 直渲）
+3. **渲染层**：EUI-NEO C++ Engine（OpenGL GPU 直渲）
 
 组件映射：TokUI 150+ 专用组件 → EUI-NEO 基础组件组合（原子化组件库）
-事件同步：双向信使模式（JS→C++ 回调 + C++→JS `tokui.handleAction(id)`）
-流式渲染：增量构建 API（`append_child`, `update_text`），非一次性 `build()`
+事件同步：SSE 事件 → NativeEventBus → NativeRenderEngine
+流式渲染：增量构建 API（`begin_stream`, `create_node`, `update_text`, `end_stream`），非一次性 `build()`

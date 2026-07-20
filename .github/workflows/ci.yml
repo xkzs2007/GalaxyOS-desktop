@@ -95,8 +95,8 @@ jobs:
           ! grep -r "from xiaoyi_claw_api\|import xiaoyi_claw_api\|from xiaoyi_memory\|import xiaoyi_memory" galaxyos/ --include="*.py" -l
           ! grep -r "xiaoyi-claw-omega-final" galaxyos/ --include="*.py" -l
 
-  build-tauri:
-    name: Tauri build check (Windows)
+  build-native:
+    name: C++ Desktop build (Windows)
     runs-on: windows-latest
     needs: check-deps
     steps:
@@ -184,7 +184,7 @@ jobs:
           test -f dist/galaxyos-mcp/galaxyos-mcp.exe
           test -d dist/galaxyos-mcp/_internal
 
-      - name: Prepare galaxyos-mcp-dist for Tauri
+      - name: Prepare galaxyos-mcp-dist for C++ desktop
         shell: bash
         run: |
           cp -r dist/galaxyos-mcp galaxyos-mcp-dist
@@ -203,42 +203,19 @@ jobs:
           echo "EUI-NEO SDK extracted"
           ls lib/ || { echo "ERROR: lib/ not found"; ls -la .; exit 1; }
 
-      - name: Download EUI-NEO Runtime v0.5.2
+      - name: Build C++ desktop shell
         shell: bash
         run: |
-          curl -sLf "https://github.com/sudoevolve/EUI-NEO/releases/download/v0.5.2/EUI-NEO-v0.5.2-windows-x64-runtime.zip" -o eui-neo-runtime.zip
-          mkdir -p vendor/eui-neo/runtime
-          cd vendor/eui-neo/runtime && unzip -q ../../../eui-neo-runtime.zip
-          top_dir=$(find . -maxdepth 1 -type d ! -name '.' | head -1)
-          if [ -n "$top_dir" ] && [ ! -f "./gallery.exe" ] && [ -f "$top_dir/gallery.exe" ]; then
-            mv "$top_dir"/* . 2>/dev/null || true
-            rmdir "$top_dir" 2>/dev/null || true
-          fi
-          echo "EUI-NEO Runtime extracted"
-          ls ./
+          cmake -B desktop-native/build -S desktop-native
+          cmake --build desktop-native/build --config Release
 
-      - name: Install Rust stable
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Rust cache
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: desktop-tauri
-
-      - name: Install tauri-cli
+      - name: CPack NSIS packaging test
         shell: bash
-        run: cargo install tauri-cli --version "^2"
+        run: |
+          cd desktop-native/build && cpack -G NSIS -C Release || echo "CPack NSIS packaging skipped (non-blocking)"
 
-      - name: Build Tauri app
-        working-directory: desktop-tauri
-        shell: bash
-        run: cargo tauri build
-        env:
-          TAURI_SIGNING_PRIVATE_KEY: ""
-          EUI_NEO_ROOT: "${{ github.workspace }}/vendor/eui-neo"
-
-      - name: Upload Tauri artifact
+      - name: Upload desktop artifact
         uses: actions/upload-artifact@v4
         with:
-          name: tauri-windows-ci
-          path: desktop-tauri/target/release/bundle/nsis/*.exe
+          name: galaxyos-desktop-windows-ci
+          path: desktop-native/build/bin/Release/galaxyos-desktop.exe

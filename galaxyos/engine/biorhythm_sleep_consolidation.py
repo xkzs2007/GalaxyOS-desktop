@@ -41,16 +41,15 @@ Created: 2026-06-02
 
 import json
 import os
-import math
 import random
 import time
 import hashlib
 import sqlite3
 import threading
 import logging
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List, Any, Optional, Tuple, Set
+from typing import Dict, List, Any, Set
 from dataclasses import dataclass, asdict, field
 from galaxyos.shared.paths import workspace
 
@@ -235,7 +234,6 @@ class BioRhythmSleepConsolidator:
         import sys
         sys.path.insert(0, os.path.join(self.workspace,
             "skills/galaxyos-engine/skills/llm-memory-integration/core"))
-        from adaptive_ltp_ltd import SynapseState as LTDState
 
         try:
             synapses = network.network._synapses_cache
@@ -1078,7 +1076,6 @@ def mark_system_active(workspace: str = None):
 
 
 if __name__ == "__main__":
-    import sys
     logging.basicConfig(level=logging.INFO)
 
     print("=" * 60)

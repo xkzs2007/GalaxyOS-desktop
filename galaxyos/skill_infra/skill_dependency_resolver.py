@@ -11,12 +11,10 @@ SkillDependencyResolver — 技能依赖关系解析器
 
 from __future__ import annotations
 
-from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Set
 
 from galaxyos.skill_infra.skill_md_parser import SKILLMDParser, ParsedSkill
-from pathlib import Path
 
 
 @dataclass

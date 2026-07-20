@@ -13,7 +13,6 @@ import urllib.request
 import threading
 import time
 import gzip
-import base64
 from pathlib import Path
 from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor
@@ -21,7 +20,6 @@ from concurrent.futures import ThreadPoolExecutor
 # 配置
 
 # ── Centralized path resolution ──
-import os as _os
 import sys as _sys
 from galaxyos.shared.paths import workspace
 _ws_root = workspace()

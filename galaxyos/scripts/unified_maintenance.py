@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """统一维护入口 - 一键执行所有维护任务"""
 import subprocess
-import sys
 from pathlib import Path
 from datetime import datetime
 

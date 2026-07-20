@@ -8,18 +8,17 @@ GalaxyOS 是一个**认知增强型 AI Agent 桌面引擎**（Cognitive-Enhanced
 
 ```
 ┌──────────────────────────────────────────────────┐
-│  Tauri Desktop Shell (Rust)                      │
+│  C++ Desktop Shell (GalaxyOSNativeApp)           │
 │  ┌───────────┐  ┌──────────┐  ┌───────────────┐  │
-│  │ EUI-NEO   │  │ WebView  │  │ Commands       │  │
-│  │ (C++ FFI) │  │ (降级层) │  │ (12 Tauri cmd) │  │
+│  │ EUI-NEO   │  │ Native   │  │ HTTP IPC      │  │
+│  │ (C++ FFI) │  │ EventBus │  │ (cpp-httplib) │  │
 │  └─────┬─────┘  └────┬─────┘  └──────┬────────┘  │
 │  ┌─────┴─────────────┴───────────────┴────────┐  │
-│  │ RenderChannelRouter (三级降级链)             │  │
+│  │ NativeRenderEngine (三级降级链)              │  │
 │  │ eui_native → webview_dom → plain_text       │  │
 │  └─────────────────────────────────────────────┘  │
 │  ┌──────────────────────────────────────────────┐ │
-│  │ SpringAnimationEngine (Apple 设计规范)       │ │
-│  │ 弹簧动画 / 橡皮筋 / 直接操控 / 材质深度     │ │
+│  │ NativeTrayIcon + NativeProcessManager        │ │
 │  └──────────────────────────────────────────────┘ │
 │  ┌──────────────────────────────────────────────┐ │
 │  │ SSE Client → TokUI Stream Renderer           │ │
@@ -72,7 +71,7 @@ GalaxyOS 是一个**认知增强型 AI Agent 桌面引擎**（Cognitive-Enhanced
 
 ## 关键技术决策
 
-- **Tauri 2** 作为桌面壳（非 Electron）
+- **C++ 原生桌面壳** 作为桌面壳（非 Tauri/Electron），基于 GLFW + EUI-NEO GPU 直渲
 - **EUI-NEO** 作为原生渲染加速层（C++ FFI，非 webview 替代）
 - **FastMCP** 作为 MCP Server 实现
 - **openJiuwen** 作为 Agent 执行内核（agent-core，进程内调用）

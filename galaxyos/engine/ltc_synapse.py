@@ -12,11 +12,8 @@ Created: 2026-06-05
 """
 
 import math
-import json
-import time
 import logging
-from typing import Dict, List, Optional, Tuple
-from dataclasses import dataclass, field, asdict
+from typing import Dict, List
 
 logger = logging.getLogger("ltc_synapse")
 

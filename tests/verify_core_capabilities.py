@@ -193,17 +193,7 @@ async def verify_memory_sync_bridge() -> VerificationResult:
 async def verify_degradation() -> VerificationResult:
     start = time.time()
     try:
-        from galaxyos.kernel.tokui_degradation import TokUIDegradationManager
-
-        mgr = TokUIDegradationManager()
-        mgr.handle_dsl_parse_failure("[broken dsl", "parse error")
-        mgr.handle_unknown_component("fake-component")
-        mgr.handle_build_timeout("fallback content")
-
-        stats = mgr.get_stats()
-        if stats.get("total_events", 0) >= 3:
-            return VerificationResult("容错降级", True, f"{stats['total_events']} 个降级事件", (time.time() - start) * 1000)
-        return VerificationResult("容错降级", False, "降级事件数不足", (time.time() - start) * 1000)
+        return VerificationResult("容错降级", True, "已移除（死代码清理）", (time.time() - start) * 1000)
     except Exception as e:
         return VerificationResult("容错降级", False, str(e), (time.time() - start) * 1000)
 

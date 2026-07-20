@@ -12,9 +12,8 @@ import logging
 import os
 import re
 import time
-from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from dataclasses import dataclass
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -207,6 +206,13 @@ class DSLBridge:
             dropped_attrs=dropped,
             conversion_time_ms=round(elapsed_ms, 2),
         )
+
+    def convert(self, dsl: str, target: str = "eui_neo") -> DSLBridgeResult:
+        if target == "eui_neo":
+            return self.tokui_to_eui(dsl)
+        elif target == "tokui":
+            return self.eui_to_tokui(dsl)
+        return self.tokui_to_eui(dsl)
 
     def register_component_mapping(
         self, tokui_type: str, eui_type: str, attr_mapping: Optional[Dict[str, Any]] = None, confidence: float = 0.5

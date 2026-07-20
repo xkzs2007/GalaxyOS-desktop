@@ -20,7 +20,6 @@ import json
 import os
 import sys
 import datetime
-from pathlib import Path
 
 STATE_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                           "memory", "session-state-latest.json")

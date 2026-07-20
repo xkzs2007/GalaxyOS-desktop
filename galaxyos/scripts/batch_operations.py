@@ -4,9 +4,7 @@
 支持高效的批量插入、更新、删除
 """
 
-import sqlite3
 from typing import List, Dict, Any, Tuple
-from pathlib import Path
 from contextlib import contextmanager
 
 from connection_pool import get_connection

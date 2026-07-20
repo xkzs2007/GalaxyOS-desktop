@@ -1,7 +1,7 @@
 """测试 model_router — 模型路由 + 断路器"""
 import sys; sys.path.insert(0, '.')
 import pytest
-from services.model_router import (
+from galaxyos.privileged.model_router import (
     CircuitBreaker, CircuitState,
     ComplexityClassifier, CascadeRouter, CascadeRule,
     QueryComplexity,
@@ -92,13 +92,13 @@ class TestCascadeRouter:
     def test_init(self):
         # CascadeRouter 需要 base_router (ModelRouter)
         # 先创建一个基本 router
-        from services.model_router import ModelRouter
+        from galaxyos.privileged.model_router import ModelRouter
         base = ModelRouter()
         router = CascadeRouter(base_router=base)
         assert router is not None
 
     def test_add_rule_and_route(self):
-        from services.model_router import ModelRouter
+        from galaxyos.privileged.model_router import ModelRouter
         base = ModelRouter()
         router = CascadeRouter(base_router=base)
         router.add_rule(
@@ -111,7 +111,7 @@ class TestCascadeRouter:
         assert result is None or isinstance(result, (str, dict))
 
     def test_get_stats(self):
-        from services.model_router import ModelRouter
+        from galaxyos.privileged.model_router import ModelRouter
         base = ModelRouter()
         router = CascadeRouter(base_router=base)
         stats = router.get_stats()

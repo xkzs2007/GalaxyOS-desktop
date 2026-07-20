@@ -4,8 +4,6 @@ v2.0 全面升级脚本
 实施所有高中低优先级优化
 """
 
-import os
-import sys
 from pathlib import Path
 
 # 使用相对路径，避免硬编码

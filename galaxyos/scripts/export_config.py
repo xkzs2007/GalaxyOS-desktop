@@ -5,7 +5,6 @@
 """
 
 import json
-import shutil
 from pathlib import Path
 from datetime import datetime
 from typing import Optional, List
@@ -13,7 +12,6 @@ from typing import Optional, List
 # 安全导出白名单（仅允许导出这些文件）
 
 # ── Centralized path resolution ──
-import os as _os
 import sys as _sys
 from galaxyos.shared.paths import workspace
 _ws_root = workspace()

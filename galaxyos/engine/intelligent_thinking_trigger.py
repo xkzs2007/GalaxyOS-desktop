@@ -10,7 +10,7 @@ Version: 1.0.0
 Created: 2026-04-21
 """
 
-from typing import Dict, Any, Optional, List, Tuple
+from typing import Dict, Any, Optional
 from dataclasses import dataclass
 from enum import Enum
 import re

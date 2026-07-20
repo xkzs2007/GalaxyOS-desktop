@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "galaxyos"
 version = "0.3.1"
-description = "GalaxyOS — 认知增强型 AI Agent 引擎（EUI-NEO + Tauri 2）"
+description = "GalaxyOS — 认知增强型 AI Agent 桌面引擎（EUI-NEO + C++ Desktop Shell）"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.11"
@@ -144,8 +144,3 @@ python_version = "3.12"
 ignore_missing_imports = true
 show_error_codes = true
 warn_unused_configs = true
-
-[tool.maturin]
-manifest-path = "extensions/galaxyos/native/Cargo.toml"
-python-source = "."
-module-name = "galaxyos_native"

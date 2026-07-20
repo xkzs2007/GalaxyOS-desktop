@@ -13,7 +13,6 @@ from datetime import datetime
 # 路径定义（v3.0.0 公私分离：优先使用环境变量）
 
 # ── Centralized path resolution ──
-import os as _os
 import sys as _sys
 from galaxyos.shared.paths import workspace
 _ws_root = workspace()

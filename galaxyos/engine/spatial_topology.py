@@ -23,7 +23,7 @@ import logging
 import sqlite3
 import threading
 import re
-from typing import Dict, List, Optional, Any, Tuple
+from typing import Dict, List, Optional, Any
 from dataclasses import dataclass, field, asdict
 from galaxyos.shared.paths import workspace
 

@@ -26,8 +26,6 @@ Created: 2026-06-23
 
 from __future__ import annotations
 
-import json
-import math
 
 # 尝试导入 DAG + Liquid Fusion（可选依赖）
 try:
@@ -35,15 +33,12 @@ try:
     _HAS_LTC = True
 except ImportError:
     _HAS_LTC = False
-import os
 import re
 import time
-import hashlib
 import logging
 from collections import defaultdict
-from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Dict, List, Optional, Any, Tuple
+from dataclasses import dataclass
+from typing import Dict, List, Optional, Any
 
 logger = logging.getLogger("cosplay_context_adapter")
 
@@ -132,25 +127,11 @@ class CosplayContextAdapter:
 
     def _ensure_boundary(self):
         if self._boundary_detector is None and self.config.boundary_enabled:
-            try:
-                from lfm_boundary_detector import LfmBoundaryDetector, NLPPredicateExtractor, BoundaryDetectorConfig
-                _bc_kwargs = {}
-                if hasattr(BoundaryDetectorConfig, 'cp_drift'):
-                    _bc_kwargs['cp_window'] = self.config.boundary_window_size
-                    _bc_kwargs['merge_radius'] = self.config.boundary_merge_gap
-                _bc = BoundaryDetectorConfig(**_bc_kwargs)
-                self._boundary_detector = LfmBoundaryDetector(config=_bc)
-                self._nlp_extractor = NLPPredicateExtractor()
-            except Exception as e:
-                logger.warning(f"Boundary detector 加载失败: {e}")
+            logger.warning("Boundary detector 加载失败: lfm_boundary_detector 已移除")
 
     def _ensure_skill_bank(self):
         if self._skill_bank is None and self.config.contract_enabled:
-            try:
-                from lfm_skill_bank import get_skill_bank, LfmSkill
-                self._skill_bank = get_skill_bank()
-            except Exception as e:
-                logger.warning(f"Skill bank 加载失败: {e}")
+            logger.warning("Skill bank 加载失败: lfm_skill_bank 已移除")
 
     # ════════════════════════════════════════════════════════════
     # 1. Boundary-Aware Compression

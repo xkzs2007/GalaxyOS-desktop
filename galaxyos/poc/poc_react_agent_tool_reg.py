@@ -123,7 +123,7 @@ async def verify_tool_registration():
     # 验证8: Tool 基类
     print("\n[验证8] Tool 基类和 ToolCard")
     try:
-        from openjiuwen.core.foundation.tool.base import Tool, ToolCard
+        from openjiuwen.core.foundation.tool.base import ToolCard
         print("  ✅ Tool/ToolCard 可导入")
         print(f"     ToolCard 字段: {list(ToolCard.model_fields.keys())}")
         results['tool_base'] = True

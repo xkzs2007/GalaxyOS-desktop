@@ -6,14 +6,12 @@ Smart Memory Update - 智能记忆更新
 
 import json
 import sys
-import os
 from datetime import datetime
 from pathlib import Path
 
 # 添加脚本目录到路径
 
 # ── Centralized path resolution ──
-import os as _os
 import sys as _sys
 from galaxyos.shared.paths import workspace
 _ws_root = workspace()

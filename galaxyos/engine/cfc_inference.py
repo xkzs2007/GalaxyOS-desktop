@@ -17,15 +17,12 @@ Created: 2026-06-05
 """
 
 import os
-import json
-import math
 import logging
 from typing import Dict, List, Optional, Tuple, Set
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, asdict
 
 import torch
 import torch.nn as nn
-import numpy as np
 
 logger = logging.getLogger("cfc_inference")
 
@@ -956,7 +953,7 @@ if __name__ == "__main__":
 
     # 测试 4: 与预设对比
     print("4. 单条突触权重 vs 预设")
-    from services.ltc_synapse import PRESETS  # type: ignore[attr-defined]
+    from galaxyos.engine.ltc_synapse import PRESETS  # type: ignore[attr-defined]
     test_syn = {"source_id": "n0", "target_id": "n1",
                 "last_reinforced": "", "weight": 0.5}
     w_cfc = engine.get_weight_for_synapse(test_syn)

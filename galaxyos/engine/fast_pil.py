@@ -17,21 +17,19 @@ v2 方案: 独立的 pil_worker 子进程, stdin/stdout JSON-RPC 隔离通信。
 """
 
 import os
-import io
 import sys
 import json
 import time
 import base64
 import logging
-import hashlib
 import subprocess
 import threading
-from typing import Dict, List, Optional, Tuple
+from typing import Optional
 from collections import OrderedDict
 
 logger = logging.getLogger(__name__)
 
-PIL_WORKER_SCRIPT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "pil_worker.py")
+PIL_WORKER_SCRIPT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "pil_worker.py") if os.path.exists(os.path.join(os.path.dirname(os.path.abspath(__file__)), "pil_worker.py")) else None
 
 # ── Rust 原生扩展检测（3 级优先级） ──
 # 1. PyO3 编译的 Python 扩展（最优：零序列化开销，直接内存共享）
@@ -48,7 +46,7 @@ try:
     _backend_label = "shim (pure-Python)" if getattr(galaxyos_native, '_BACKEND', 'rust') == 'python' else "PyO3 (Rust)"
     logger.info(f"[fast-pil] using {_backend_label} galaxyos_native v{getattr(galaxyos_native, '__version__', '?')}")
 except ImportError:
-    pass
+    _try_galaxyos_native_module = None
 
 # 2. 独立二进制（stdin/stdout JSON-RPC，有序列化开销）
 def _find_rust_binary():

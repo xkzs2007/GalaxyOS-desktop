@@ -7,8 +7,6 @@
 import sqlite3
 import threading
 from contextlib import contextmanager
-from typing import Optional
-from pathlib import Path
 
 class ConnectionPool:
     """SQLite 连接池"""

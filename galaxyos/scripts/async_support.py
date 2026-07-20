@@ -6,7 +6,7 @@
 
 import aiosqlite
 import asyncio
-from typing import List, Optional, AsyncGenerator
+from typing import List
 from contextlib import asynccontextmanager
 
 class AsyncConnectionPool:

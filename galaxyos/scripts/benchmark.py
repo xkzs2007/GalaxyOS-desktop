@@ -6,8 +6,7 @@
 
 import time
 import sqlite3
-from pathlib import Path
-from typing import List, Callable
+from typing import Callable
 
 class PerformanceBenchmark:
     """性能基准测试"""

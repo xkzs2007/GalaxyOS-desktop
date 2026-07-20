@@ -18,7 +18,7 @@ import os
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from memory_reflector import MemoryReflector, ErrorType, Priority
+from memory_reflector import MemoryReflector
 
 
 class NaturalLanguageReflector:

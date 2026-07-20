@@ -81,8 +81,8 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-  build-tauri:
-    name: Build Tauri ${{ matrix.platform }}
+  build-native:
+    name: Build C++ Desktop ${{ matrix.platform }}
     needs: [build-wheel, build-docker]
     strategy:
       fail-fast: false
@@ -90,10 +90,8 @@ jobs:
         include:
           - platform: windows-latest
             use_container: false
-            args: ""
           - platform: ubuntu-24.04
             use_container: true
-            args: "--bundles deb"
     runs-on: ${{ matrix.platform }}
     container:
       image: ${{ matrix.use_container && 'ghcr.io/xkzs2007/galaxyos-desktop:latest' || '' }}
@@ -129,7 +127,7 @@ jobs:
 
       - name: Install curl (Linux container)
         if: runner.os == 'Linux'
-        run: apt-get update -qq && apt-get install -y -qq curl binutils
+        run: apt-get update -qq && apt-get install -y -qq curl binutils cmake build-essential
 
       - name: Download bge-small-zh ONNX model
         shell: bash
@@ -208,50 +206,51 @@ jobs:
           rm -f vendor/eui-neo/sdk/lib/libharfbuzz.a
           echo "Removed non-PIC libharfbuzz.a (using system libharfbuzz-dev instead)"
 
-      - name: Install Rust stable
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Rust cache
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: desktop-tauri
-
-      - name: Install Linux deps
+      - name: Install Linux build deps
         if: runner.os == 'Linux'
         run: |
           apt-get update -qq
-          apt-get install -y -qq libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libssl-dev libharfbuzz-dev
+          apt-get install -y -qq cmake build-essential libharfbuzz-dev libgl1-mesa-dev libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev
 
-      - name: Install tauri-cli
+      - name: CMake Configure
         shell: bash
-        run: cargo install tauri-cli --version "^2"
+        run: |
+          cmake -B desktop-native/build -S desktop-native
 
-      - name: Build Tauri app
-        working-directory: desktop-tauri
+      - name: CMake Build
         shell: bash
-        run: cargo tauri build ${{ matrix.args }}
-        env:
-          TAURI_SIGNING_PRIVATE_KEY: ""
-          EUI_NEO_ROOT: "${{ github.workspace }}/vendor/eui-neo"
+        run: |
+          cmake --build desktop-native/build --config Release
 
-      - name: Upload Tauri artifacts (Windows)
+      - name: CPack NSIS (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          cd desktop-native/build && cpack -G NSIS -C Release
+
+      - name: CPack DEB (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          cd desktop-native/build && cpack -G DEB
+
+      - name: Upload native artifacts (Windows)
         if: runner.os == 'Windows'
         uses: actions/upload-artifact@v4
         with:
-          name: tauri-windows
-          path: desktop-tauri/target/release/bundle/nsis/*.exe
+          name: native-windows
+          path: desktop-native/build/*.exe
 
-      - name: Upload Tauri artifacts (Linux)
+      - name: Upload native artifacts (Linux)
         if: runner.os == 'Linux'
         uses: actions/upload-artifact@v4
         with:
-          name: tauri-linux
-          path: |
-            desktop-tauri/target/release/bundle/deb/*.deb
+          name: native-linux
+          path: desktop-native/build/*.deb
 
 
   create-release:
-    needs: [build-wheel, build-docker, build-tauri]
+    needs: [build-wheel, build-docker, build-native]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -288,5 +287,5 @@ jobs:
             docker pull ghcr.io/xkzs2007/galaxyos-desktop:${{ github.ref_name }}
             ```
 
-            **Desktop (Tauri):**
+            **Desktop (Native C++):**
             Download the installer for your platform below.

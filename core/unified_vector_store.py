@@ -6,7 +6,7 @@
 本文件是【孤儿代码】—— 全工程 0 处 `from core.unified_vector_store` / `import core` 引用。
 真实统一接口在 galaxyos/engine/unified_vector_store.py（通过 services shim 暴露），
 core/ 这份是 100% 重复副本，会与 galaxyos 副本产生维护漂移。
-【建议】: 删除本文件，所有引用统一走 `from services.unified_vector_store import ...`。
+【建议】: 删除本文件，所有引用统一走 `from galaxyos.engine.unified_vector_store import ...`。
 【保留原因】: tests/test_unified_vector_store.py 仍可能通过 sys.path hack 访问，删除前请先迁移测试。
 
 整合 memory-tencentdb 和 llm-memory-integration 的向量检索能力。

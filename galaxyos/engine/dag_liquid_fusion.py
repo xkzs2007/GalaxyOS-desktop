@@ -23,9 +23,8 @@ Created: 2026-06-14
 import math
 import time
 import numpy as np
-from typing import Dict, List, Optional, Tuple, Any, Callable, Union
-from dataclasses import dataclass, field
-from enum import Enum
+from typing import Dict, List, Optional, Tuple, Any
+from dataclasses import dataclass
 
 
 # ============================================================================
@@ -90,15 +89,7 @@ class LTCConstantComputer:
 
     def _try_uds(self):
         self._uds_tried = True
-        try:
-            from galaxyos_native import lfm_ping, lfm_get_state
-            lfm_ping()
-            state = lfm_get_state()
-            if state.get("initialized"):
-                self._uds_last_embedding = np.array(state["embedding"], dtype=np.float32)
-            self._uds_ok = True
-        except Exception:
-            self._uds_ok = False
+        self._uds_ok = False
 
     def _ensure_initialized(self):
         if not self._initialized:
@@ -125,27 +116,6 @@ class LTCConstantComputer:
         UDS 可用时用 LFM embedding 变化量动态算 τ：
         变化大 → τ 小（快速压缩），变化小 → τ 大（保留更久）。
         """
-        if self._uds_ok:
-            try:
-                from galaxyos_native import lfm_get_state
-                state = lfm_get_state()
-                curr_emb = np.array(state.get("embedding", []), dtype=np.float32)
-                if len(curr_emb) > 0:
-                    if self._uds_last_embedding is not None and len(self._uds_last_embedding) == len(curr_emb):
-                        # embedding 变化量 → 信息密度
-                        delta = float(np.linalg.norm(curr_emb - self._uds_last_embedding))
-                        # 变化越大 τ 越小（越该压缩），变化越小 τ 越大（稳定保持）
-                        delta_norm = min(1.0, delta / 10.0)
-                        gate = max(0.1, 1.0 - delta_norm * 0.8)
-                    else:
-                        gate = 0.5
-                    self._uds_last_embedding = curr_emb
-
-                    tau = gate * (self.config.tau_max - self.config.tau_min) + self.config.tau_min
-                    tau *= (1.0 + importance * self.config.importance_boost)
-                    return float(max(self.config.tau_min, min(self.config.tau_max * 2.0, tau)))
-            except Exception:
-                pass
 
         # fallback: 原有随机权重
         self._ensure_initialized()

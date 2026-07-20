@@ -26,8 +26,7 @@ Created: 2026-06-14
 
 import math
 import logging
-from typing import Dict, List, Optional, Tuple, Any, Union
-from dataclasses import dataclass, field
+from typing import Optional, Tuple
 
 logger = logging.getLogger("liquid_ssm")
 
@@ -192,15 +191,8 @@ class LiquidSSM:
         self.b_out = np.zeros(output_dim, dtype=np.float32)
 
     def _try_uds(self):
-        """尝试连接 lfm_server UDS"""
         self._uds_tried = True
-        try:
-            from galaxyos_native import lfm_ping
-            lfm_ping()
-            self._uds_ok = True
-        except Exception as e:
-            self._uds_ok = False
-            logger.debug(f"LiquidSSM UDS 不可用: {e}, 使用 numpy fallback")
+        self._uds_ok = False
 
     # ---------- 工具函数 ----------
 
@@ -331,46 +323,7 @@ class LiquidSSM:
         return y_seq
 
     def _forward_uds(self, u_seq: np.ndarray) -> np.ndarray:
-        """UDS 后端：调 lfm_server update_state 演进状态"""
-        T = u_seq.shape[0]
-        y_seq = np.zeros((T, self.output_dim), dtype=np.float32)
-
-        try:
-            from galaxyos_native import lfm_update_state, lfm_get_state, lfm_reset_state
-
-            # 重置 LFM conv state
-            lfm_reset_state()
-
-            # 将 u_seq 投影为伪 token IDs，喂给 LFM
-            for t in range(T):
-                u = u_seq[t]
-                # 映射到 token ID
-                proj = (u * 50).astype(np.int32) % 8192
-                token_ids = proj.tolist()
-                if isinstance(token_ids, int):
-                    token_ids = [token_ids]
-
-                # 喂给 LFM update_state，让真实状态演进
-                lfm_update_state(token_ids[:16])
-
-                # 取当前 embedding 作为输出
-                state = lfm_get_state()
-                emb = np.array(state.get("embedding", np.zeros(2048)), dtype=np.float32)
-
-                # 投影到 output_dim
-                if len(emb) != self.output_dim:
-                    if not hasattr(self, '_uds_out_proj'):
-                        self._uds_out_proj = np.random.randn(self.output_dim, len(emb)).astype(np.float32) * 0.01
-                    y_seq[t] = self._uds_out_proj @ emb[:len(emb)]
-                else:
-                    y_seq[t] = emb[:self.output_dim]
-
-            return y_seq
-        except Exception as e:
-            logger.warning(f"LiquidSSM UDS forward 失败: {e}, 降级到 numpy")
-            return self._forward_numpy(self, self._mock_to_numpy(u_seq))
-
-        return y_seq
+        return np.zeros((u_seq.shape[0], self.output_dim), dtype=np.float32)
 
     def _mock_to_numpy(self, u_seq):
         return u_seq
@@ -640,4 +593,3 @@ if __name__ == "__main__":
 
         out = last_u[:2048] if len(last_u) >= 2048 else np.pad(last_u, (0, 2048 - len(last_u)))
         return out.astype(np.float32)
-

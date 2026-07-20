@@ -20,13 +20,9 @@ Version: 1.0.0
 Created: 2026-06-14
 """
 
-import os
 import math
-import time
-import json
 import logging
-from typing import Dict, List, Optional, Tuple, Callable, Any
-from dataclasses import dataclass, field
+from typing import List, Tuple, Callable
 
 logger = logging.getLogger("neural_ode")
 
@@ -477,7 +473,6 @@ class LTCNeuralODEWrapper:
 
 def test_ode_solver():
     """测试 ODE 求解器"""
-    from math import sin, cos
 
     # 测试函数：简单振荡 dy/dt = -y
     def f(y, t):
