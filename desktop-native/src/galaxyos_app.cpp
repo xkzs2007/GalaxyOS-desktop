@@ -31,7 +31,7 @@ struct SharedState {
 
 std::mutex g_state_mutex;
 SharedState g_shared;
-
+bool g_initialized = false;
 
 void on_sse_event(const galaxyos::SSEEvent& event) {
     auto& bus = galaxyos::NativeEventBus::instance();
@@ -109,11 +109,52 @@ void sync_from_shared(PageState& state) {
     g_shared.dirty = false;
 }
 
+void ensure_initialized() {
+    if (g_initialized) return;
+    g_initialized = true;
+
+    galaxyos::NativeLogger::instance().initialize(galaxyos::LogLevel::Info, "");
+    galaxyos::NativeLogger::instance().info("app", "GalaxyOS Desktop v0.3.0 starting");
+
+    galaxyos::NativeConfig::instance().load();
+    galaxyos::NativeEventBus::instance();
+
+    galaxyos::I18nBridge::instance().load_translations(
+        galaxyos::NativeConfig::instance().get_config_dir() + "/i18n");
+    galaxyos::I18nBridge::instance().set_locale(
+        galaxyos::NativeConfig::instance().get("locale"));
+
+    galaxyos::NativeProcessManager& pm = galaxyos::NativeProcessManager::instance();
+    pm.set_mcp_port(galaxyos::NativeConfig::instance().get_int("mcp_port", 8765));
+    pm.start();
+
+    galaxyos::NativeIPCChannel::instance().set_base_url(
+        "127.0.0.1",
+        galaxyos::NativeConfig::instance().get_int("mcp_port", 8765));
+
+    galaxyos::NativeSSEClient& sse = galaxyos::NativeSSEClient::instance();
+    sse.set_event_callback(on_sse_event);
+
+    if (!pm.wait_for_health(30)) {
+        galaxyos::NativeLogger::instance().warn("app",
+            "MCP Server health check failed, continuing in degraded mode");
+    } else {
+        {
+            std::lock_guard<std::mutex> lock(g_state_mutex);
+            g_shared.mcpReady = true;
+        }
+        sse.connect("http://127.0.0.1:" +
+            std::to_string(galaxyos::NativeConfig::instance().get_int("mcp_port", 8765)) +
+            "/events");
+    }
+
+    galaxyos::NativeLogger::instance().info("app", "Initialization complete");
+}
+
 void build_sidebar(eui::Ui& ui, float width, float height) {
     ui.column("sidebar")
         .width(width)
         .height(eui::SizeValue::fill())
-        .color(kSurface)
         .padding(16.0f)
         .gap(8.0f)
         .content([&] {
@@ -125,7 +166,7 @@ void build_sidebar(eui::Ui& ui, float width, float height) {
                 .build();
 
             ui.rect("divider")
-                .size(eui::SizeValue::fill(), 1.0f)
+                .size(eui::SizeValue::fill(), eui::SizeValue::fixed(1.0f))
                 .color(eui::Color{0.20f, 0.20f, 0.24f, 1.0f})
                 .build();
 
@@ -133,21 +174,21 @@ void build_sidebar(eui::Ui& ui, float width, float height) {
                 .text(galaxyos::I18nBridge::instance().translate("chat"))
                 .size(width - 32.0f, 36.0f)
                 .fontSize(14.0f)
-                .theme(theme::dark(), false)
+                .theme(components::theme::dark(), false)
                 .build();
 
             components::button(ui, "nav-tools")
                 .text(galaxyos::I18nBridge::instance().translate("tools"))
                 .size(width - 32.0f, 36.0f)
                 .fontSize(14.0f)
-                .theme(theme::dark(), false)
+                .theme(components::theme::dark(), false)
                 .build();
 
             components::button(ui, "nav-settings")
                 .text(galaxyos::I18nBridge::instance().translate("settings"))
                 .size(width - 32.0f, 36.0f)
                 .fontSize(14.0f)
-                .theme(theme::dark(), false)
+                .theme(components::theme::dark(), false)
                 .build();
         })
         .build();
@@ -165,7 +206,7 @@ void build_chat_area(eui::Ui& ui, float width, float height, PageState& state) {
         .content([&] {
             components::scrollView(ui, "messages-scroll")
                 .size(width - padding * 2.0f, chat_height)
-                .theme(theme::dark())
+                .theme(components::theme::dark())
                 .content([&](eui::Ui& scrollUi, float contentWidth, float) {
                     if (state.chatResponse.empty() && !state.isStreaming) {
                         scrollUi.text("placeholder")
@@ -179,7 +220,7 @@ void build_chat_area(eui::Ui& ui, float width, float height, PageState& state) {
                             .markdown(state.chatResponse)
                             .width(contentWidth)
                             .wrapContentHeight()
-                            .theme(theme::dark())
+                            .theme(components::theme::dark())
                             .build();
 #else
                         scrollUi.text("response")
@@ -195,7 +236,7 @@ void build_chat_area(eui::Ui& ui, float width, float height, PageState& state) {
                 .build();
 
             ui.row("input-row")
-                .size(eui::SizeValue::fill(), input_height)
+                .size(eui::SizeValue::fill(), eui::SizeValue::fixed(input_height))
                 .gap(8.0f)
                 .alignItems(eui::Align::CENTER)
                 .content([&] {
@@ -218,14 +259,14 @@ void build_chat_area(eui::Ui& ui, float width, float height, PageState& state) {
                             std::lock_guard<std::mutex> lock(g_state_mutex);
                             g_shared.chatInput = value;
                         })
-                        .theme(theme::dark())
+                        .theme(components::theme::dark())
                         .build();
 
                     components::button(ui, "send-btn")
                         .text(">")
                         .size(44.0f, 44.0f)
                         .fontSize(18.0f)
-                        .theme(theme::dark(), true)
+                        .theme(components::theme::dark(), true)
                         .onClick([&inputSignal]() {
                             {
                                 std::lock_guard<std::mutex> lock(g_state_mutex);
@@ -282,47 +323,9 @@ const DslAppConfig& dslAppConfig() {
     return config;
 }
 
-bool initialize(eui::window::Handle window) {
-    galaxyos::NativeLogger::instance().initialize(galaxyos::LogLevel::Info, "");
-    galaxyos::NativeLogger::instance().info("app", "GalaxyOS Desktop v0.3.0 starting");
-
-    galaxyos::NativeConfig::instance().load();
-    galaxyos::NativeEventBus::instance();
-
-    galaxyos::I18nBridge::instance().load_translations(
-        galaxyos::NativeConfig::instance().get_config_dir() + "/i18n");
-    galaxyos::I18nBridge::instance().set_locale(
-        galaxyos::NativeConfig::instance().get("locale"));
-
-    galaxyos::NativeProcessManager& pm = galaxyos::NativeProcessManager::instance();
-    pm.set_mcp_port(galaxyos::NativeConfig::instance().get_int("mcp_port", 8765));
-    pm.start();
-
-    galaxyos::NativeIPCChannel::instance().set_base_url(
-        "127.0.0.1",
-        galaxyos::NativeConfig::instance().get_int("mcp_port", 8765));
-
-    galaxyos::NativeSSEClient& sse = galaxyos::NativeSSEClient::instance();
-    sse.set_event_callback(on_sse_event);
-
-    if (!pm.wait_for_health(30)) {
-        galaxyos::NativeLogger::instance().warn("app",
-            "MCP Server health check failed, continuing in degraded mode");
-    } else {
-        {
-            std::lock_guard<std::mutex> lock(g_state_mutex);
-            g_shared.mcpReady = true;
-        }
-        sse.connect("http://127.0.0.1:" +
-            std::to_string(galaxyos::NativeConfig::instance().get_int("mcp_port", 8765)) +
-            "/events");
-    }
-
-    galaxyos::NativeLogger::instance().info("app", "Initialization complete");
-    return true;
-}
-
 void compose(eui::Ui& ui, const eui::Screen& screen) {
+    ensure_initialized();
+
     PageState& state = ui.state<PageState>("page");
     sync_from_shared(state);
 
@@ -347,18 +350,6 @@ void compose(eui::Ui& ui, const eui::Screen& screen) {
                 .build();
         })
         .build();
-}
-
-void shutdown() {
-    galaxyos::NativeLogger::instance().info("app", "Shutting down");
-
-    app::async::cancel("chat-send");
-
-    galaxyos::NativeProcessManager::instance().stop();
-    galaxyos::NativeSSEClient::instance().disconnect();
-    galaxyos::NativeConfig::instance().save();
-
-    galaxyos::NativeLogger::instance().info("app", "Shutdown complete");
 }
 
 } // namespace app
