@@ -33,6 +33,7 @@ target_include_directories(nlohmann_json INTERFACE
 
 # ── GalaxyOS Desktop executable ──────────────────────────────────────────────
 add_executable(galaxyos-desktop
+    ${EUI_APP_MAIN_SOURCE}
     src/galaxyos_app.cpp
     src/native_logger.cpp
     src/native_config.cpp
