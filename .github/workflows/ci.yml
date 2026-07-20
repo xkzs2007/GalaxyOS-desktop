@@ -169,19 +169,12 @@ jobs:
         run: |
           cp -r dist/galaxyos-mcp galaxyos-mcp-dist
 
-      - name: Download EUI-NEO SDK v0.5.2
+      - name: Checkout EUI-NEO source
         shell: bash
         run: |
-          curl -sLf "https://github.com/sudoevolve/EUI-NEO/releases/download/v0.5.2/EUI-NEO-v0.5.2-windows-x64-sdk.zip" -o eui-neo-sdk.zip
-          mkdir -p vendor/eui-neo/sdk
-          cd vendor/eui-neo/sdk && unzip -q ../../../eui-neo-sdk.zip
-          top_dir=$(find . -maxdepth 1 -type d ! -name '.' | head -1)
-          if [ -n "$top_dir" ] && [ ! -d "./lib" ] && [ -d "$top_dir/lib" ]; then
-            mv "$top_dir"/* . 2>/dev/null || true
-            rmdir "$top_dir" 2>/dev/null || true
-          fi
-          echo "EUI-NEO SDK extracted"
-          ls lib/ || { echo "ERROR: lib/ not found"; ls -la .; exit 1; }
+          git clone --depth 1 https://github.com/sudoevolve/EUI-NEO.git EUI-NEO
+          echo "EUI-NEO source checked out"
+          ls EUI-NEO/CMakeLists.txt || { echo "ERROR: EUI-NEO/CMakeLists.txt not found"; exit 1; }
 
       - name: Build C++ desktop shell
         shell: bash
