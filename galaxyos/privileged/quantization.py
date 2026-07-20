@@ -222,8 +222,8 @@ class ProductQuantizer:
         """
         self.n_subvectors = n_subvectors
         self.n_centroids = n_centroids
-        self.centroids = None  # (n_subvectors, n_centroids, sub_dim)
-        self.sub_dim = None
+        self.centroids: np.ndarray | None = None
+        self.sub_dim: int = 0
 
     def fit(self, vectors: np.ndarray, n_iter: int = 20):
         """

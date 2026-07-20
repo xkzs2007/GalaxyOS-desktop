@@ -46,7 +46,7 @@ def build_nuitka():
         "--user-package-configuration-file=nuitka-package-config.yml",
         f"--output-filename={output_filename}",
         "--output-dir=dist",
-        f"--cache-dir={cache_dir}",
+
         "--assume-yes-for-downloads",
         "--include-data-dir=galaxyos=galaxyos",
         "--include-data-dir=skills=skills",
@@ -57,7 +57,10 @@ def build_nuitka():
 
     print(f"[Nuitka] Building {torch_variant} variant...")
     print(f"[Nuitka] Command: {' '.join(cmd)}")
-    result = subprocess.run(cmd)
+    env = os.environ.copy()
+    env["NUITKA_CACHE_DIR"] = cache_dir
+
+    result = subprocess.run(cmd, env=env)
     if result.returncode != 0:
         print(f"[Nuitka] Build failed with return code {result.returncode}", file=sys.stderr)
         sys.exit(1)
