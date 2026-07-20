@@ -16,7 +16,7 @@
 
 1. **裸机 + pip cache**：使用 `actions/setup-python` 的 pip cache → 缓存命中率不稳定，仍需部分安装
 2. **混合模式**：Linux 用容器，Windows 用裸机 → 不一致，维护两套流程
-3. **beforeBuildCommand**：Tauri 内置构建前命令 → 不够灵活，无法处理复杂依赖
+3. **CMake execute_process**：CMake 内置构建前命令 → 可处理复杂依赖但需维护 CMake 脚本
 
 ## 理由
 
@@ -27,6 +27,6 @@
 
 ## 后果
 
-- 需要 Docker 镜像先行构建（build-docker → build-tauri 串行）
+- 需要 Docker 镜像先行构建（build-docker → build-native 串行）
 - 镜像更新需重新构建推送
-- 容器内 Rust 工具链需额外安装（不在镜像中）
+- 容器内 C++ 工具链需额外安装（CMake/编译器不在镜像中）

@@ -60,7 +60,7 @@ GalaxyOS 是一个**认知增强型 AI Agent 桌面引擎**（Cognitive-Enhanced
 | 层 | 名称 | 职责 |
 |----|------|------|
 | L1 | shared | 零依赖基础 (types, interfaces, constants, paths, sanitize) |
-| L2 | init | 基础设施 (bootstrap, install_wizard, path_resolver, deployment_profile) |
+| L2 | init | 基础设施 (bootstrap, deployment_profile, path_resolver) |
 | L3 | engine | 核心引擎 |
 | L4 | privileged | 高性能层 |
 | L5 | orchestration | 编排层 |

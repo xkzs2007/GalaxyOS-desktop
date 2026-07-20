@@ -5,11 +5,12 @@
 ## 环境搭建
 
 ```bash
-git clone https://cnb.cool/llm-memory-integrat/GalaxyOS.git
-cd GalaxyOS
+git clone https://github.com/xkzs2007/GalaxyOS-desktop.git
+cd GalaxyOS-desktop
 python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-pip install -e .
+pip install -r requirements-core.txt
+pip install "openjiuwen @ git+https://github.com/openJiuwen-ai/agent-core@v0.1.16"
+pip install onnxruntime
 pip install pytest pytest-cov ruff mypy
 
 # 配置 API Key
@@ -20,35 +21,30 @@ cp config/llm_config.example.json config/llm_config.json
 ## 开发工作流
 
 ```bash
-make test       # 跑全部测试 (137 用例)
-make coverage   # 测试 + 覆盖率 HTML 报告
-make lint       # ruff 代码检查
-make native     # 编译 Rust 扩展
-make ci         # lint + test 一键检查
+python -m pytest tests/ -x -q --tb=short  # 跑全部测试
+ruff check .                                # 代码检查
+python -m mypy galaxyos/ --config-file mypy.ini  # 类型检查
+
+# C++ 桌面壳构建（需先 checkout EUI-NEO 到项目根目录）
+cmake -B desktop-native/build -S desktop-native
+cmake --build desktop-native/build --config Release
 ```
 
 ## 项目结构
 
 ```
-extensions/galaxyos/   # OpenClaw 插件（主开发目录）
-  index.js                 # 主插件 — 9 钩子 / 15 工具 / 2 插槽
-  openclaw.plugin.json     # 插件契约
-  clawhub.json             # ClawHub 发布清单
-  scripts/                 # Python 运行时（~140 模块）
-    injection_scanner.py   #   Skill Bank 内容扫描器
-    lfm_skill_bank.py      #   LFM 技能库
-    multi_agent_orchestrator.py
-    dag_context_manager.py
-    claw_worker.py         #   主 Worker
-  native/                  # Rust 跨平台扩展
-galaxyos/               # 统一 Python 包
-  engine/                   # 引擎模块
-  privileged/               # 特权模块（ACP server 等）
-services/               # shim 层（转发到 galaxyos/privileged/）
-tests/                  # 测试 (37 文件, 137 用例)
-skills/                 # 技能库 (60+ 个)
+desktop-native/         # C++ 桌面壳（EUI-NEO GPU 直渲）
+  src/                    # C++ 源码（8 已实现模块 + 5 待实现）
+  include/                # C++ 头文件
+  third_party/            # cpp-httplib, nlohmann/json
+galaxyos/               # Python 核心包
+  kernel/                 # 认知内核（MCP Server + AgentCore Bridge + DSL Bridge）
+  engine/                 # 引擎模块（ONNX Embedding、检索、神经网络）
+  skill_infra/            # 技能基础设施
+skills/                 # 76 技能包（mattpocock/skills 格式）
+tests/                  # 测试
 config/                 # 配置文件
-scripts/                # 辅助脚本 + 安装��导
+scripts/                # 辅助脚本
 ```
 
 ## 提交规范
@@ -66,8 +62,8 @@ security: 安全相关
 ```
 
 提交前确保：
-- [ ] `make test` 全绿
-- [ ] `make lint` 无新增警告
+- [ ] `python -m pytest tests/ -x -q` 全绿
+- [ ] `ruff check .` 无新增警告
 - [ ] 新功能有对应测试
 
 ## 分支策略
@@ -82,22 +78,21 @@ fix/*    → Bug 修复
 
 版本号格式 `vMAJOR.MINOR.PATCH`，详见 `VERSIONING.md`。
 发布新版本时必须：
-1. 更新 `setup.py` 中的 version
+1. 更新 `pyproject.toml` 中的 version
 2. 更新 `CHANGELOG.md`
 3. 打 GPG signed tag (`git tag -s vx.y.z`)
 4. 推送 tag (`git push origin vx.y.z`)
 
-## 添加新服务模块
+## 添加新模块
 
-1. 在 `services/` 下创建 `your_module.py`
-2. 如果模块可选，在 `services/_imports.py` 添加降级导入
-3. 在 `tests/` 下创建 `test_your_module.py`
-4. 在 `services/__init__.py` 中注册导出
+1. 在 `galaxyos/engine/` 或 `galaxyos/kernel/` 下创建模块
+2. 在 `tests/` 下创建 `test_your_module.py`
+3. 更新 `requirements-core.txt`（如有新依赖）
 
 ## 需要帮助？
 
 - 查看 `README.md` 了解架构概览
-- 查看 `SKILL.md` 了解详细架构文档
+- 查看 `UBIQUITOUS_LANGUAGE.md` 了解术语定义
 - 查看 `docs/API.md` 了解 API 速查
 - 提 Issue 或 PR 讨论
 

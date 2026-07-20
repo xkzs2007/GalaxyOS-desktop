@@ -6,7 +6,7 @@
 
 ## 背景
 
-GalaxyOS 的 CI/CD 工作流需要在 Windows 和 Linux 双平台上构建 Tauri 桌面应用。此前每次 CI 都从头安装 Python 依赖（pip install），耗时 2-5 分钟，且 GHCR 上已有预装依赖的 Docker 镜像未被利用。
+GalaxyOS 的 CI/CD 工作流需要在 Windows 和 Linux 双平台上构建 C++ Desktop Shell 桌面应用（原为 Tauri 桌面应用，已废弃）。此前每次 CI 都从头安装 Python 依赖（pip install），耗时 2-5 分钟，且 GHCR 上已有预装依赖的 Docker 镜像未被利用。
 
 ## 决策
 
@@ -29,5 +29,5 @@ GalaxyOS 的 CI/CD 工作流需要在 Windows 和 Linux 双平台上构建 Tauri
 
 - 首次构建 Docker 镜像需 10-15 分钟
 - Windows 容器基于 Server Core，镜像较大（~3GB）
-- build-tauri Job 需要 `needs: build-docker` 串行依赖
+- build-native Job 需要 `needs: build-docker` 串行依赖
 - macOS 不支持容器，不在构建矩阵中

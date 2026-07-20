@@ -28,8 +28,7 @@ pip install -r requirements-heavy-cuda.txt
 # 启动 Python 内核
 GALAXYOS_MODE=desktop python -m galaxyos.kernel.mcp_server_entry
 
-# 安装向导（CI 非交互模式）
-python scripts/install_wizard.py --ci --target-dir models/embeddings
+# ONNX 模型下载（CI 工作流自动下载 onnx-community/bge-small-zh-v1.5-ONNX）
 
 # C++ 桌面壳构建（需先 checkout EUI-NEO 到项目根目录 EUI-NEO/）
 cmake -B desktop-native/build -S desktop-native

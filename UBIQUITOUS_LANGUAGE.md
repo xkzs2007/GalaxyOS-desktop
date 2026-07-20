@@ -65,17 +65,30 @@
 |------|------|-------------|
 | **TokUI** | GalaxyOS 统一回复格式化器 / DSL 渲染框架 | tokui |
 | **TokUI DSL** | TokUI 声明式 UI 描述语言，格式 `[type attrs]content[/type]` | — |
-| **EUI-NEO** | C++ 原生 UI 渲染框架，通过 FFI 集成到 Tauri | eui_neo |
+| **EUI-NEO** | C++ 原生 UI 渲染框架，通过 add_subdirectory 源码集成到 C++ Desktop Shell | eui_neo |
 | **DSLBridge** | TokUI DSL ↔ EUI-NEO DSL 双向转换引擎 | — |
 | **RenderChannel** | 渲染通道：eui_native / webview_dom / plain_text | — |
 | **RenderSurface** | EUI-NEO 渲染表面 | — |
 | **RenderChannelRouter** | 三级降级链路由器，降级不可逆 | — |
-| **SSE /agent-chat** | MCP Server SSE 端点，替代 Gateway WebSocket | — |
-| **SSE Sidecar** | SSE 事件推送中间件 (端口 5758) | — |
+| **SSE /agent-chat** | MCP Server SSE 端点，替代 Gateway WebSocket (端口 8765) | — |
 | **SpringAnimationEngine** | Apple 设计规范弹簧动画引擎 | — |
 | **RubberBandEffect** | Apple 设计规范橡皮筋回弹效果 | — |
 | **DirectManipulation** | Apple 设计规范直接操控手势 | — |
 | **MaterialDepth** | Apple 设计规范材质深度层次 | — |
+
+## C++ Desktop Shell
+
+| 术语 | 定义 | 应避免的别名 |
+|------|------|-------------|
+| **C++ Desktop Shell** | C++ 原生桌面壳层，基于 GLFW + EUI-NEO GPU 直渲 + CMake/CPack 打包 | Tauri 桌面壳, Rust 桌面壳 |
+| **NativeIPCChannel** | C++ Desktop Shell 中的 HTTP IPC 通道模块，基于 cpp-httplib | Tauri IPC |
+| **NativeProcessManager** | C++ Desktop Shell 中的 Python 子进程管理模块 | — |
+| **NativeEventBus** | C++ Desktop Shell 中的发布-订阅事件总线模块 | — |
+| **NativeSSEClient** | C++ Desktop Shell 中的 SSE 协议客户端模块（无锁 dispatch） | — |
+| **NativeLogger** | C++ Desktop Shell 中的 JSON 结构化日志模块 | — |
+| **NativeConfig** | C++ Desktop Shell 中的配置管理模块（JSON） | — |
+| **I18nBridge** | C++ Desktop Shell 中的 i18n 翻译桥接模块 | — |
+| **GalaxyOSApp** | EUI-NEO 应用入口、UI 构建、生命周期管理 | — |
 
 ## 记忆操作
 
@@ -112,6 +125,9 @@
 - **R-CCAM** 在 Retrieval 阶段调用 **Liquid Neural Memory** 检索和 **DAG Fusion** 组装
 - **Liquid Neural Memory** 通过 **dual_write** 与 openJiuwen 上下文双写
 - **TokUI** 通过 **DSLBridge** 转换为 **EUI-NEO** DSL，由 **RenderChannelRouter** 路由渲染通道
+- **EUI-NEO** 通过 add_subdirectory 源码集成到 **C++ Desktop Shell**，由 **GalaxyOSApp** 管理生命周期
+- **C++ Desktop Shell** 通过 **NativeIPCChannel** 与 Python **MCP Server** 通信，通过 **NativeSSEClient** 接收 SSE 流
+- **C++ Desktop Shell** 通过 **NativeProcessManager** 管理 Python 子进程启停和健康检查
 - **MCP Server** 提供 SSE **/agent-chat** 端点，替代原 Gateway WebSocket
 - **SpringAnimationEngine** 实现 Apple 设计规范的弹簧动画、橡皮筋、直接操控、材质深度
 
@@ -133,7 +149,7 @@
 
 - **"claw" 前缀**（`claw_recall` 等）来自历史品牌 OpenClaw，现统一归入 GalaxyOS 认知工具。运行时保持兼容，新工具不再使用 claw 前缀。
 - **"workspace"** 同时指 GalaxyOS 工作空间目录、openJiuwen Agent 的 workspace 参数、MCP 工具的 workspace_id——三者语义不同但共享同一标识符。
-- **"kernel"** 在 GalaxyOS 中指 `galaxyos/kernel/` 目录（认知内核），在 `claw_health` 中指 L1-L17 层，在 Tauri 降级中指 Python 内核进程。
+- **"kernel"** 在 GalaxyOS 中指 `galaxyos/kernel/` 目录（认知内核），在 `claw_health` 中指 L1-L17 层，在 C++ Desktop Shell 降级中指 Python 内核进程。
 - **"agent"** 同时指 openJiuwen DeepAgent、ReActAgent/WorkflowAgent、TokUI agent 组件——需根据上下文区分。
 - **"memory"** 同时指 Liquid Neural Memory 三层系统、MemoryScope.liquid_neural / agent_core、计算机内存——需根据上下文区分。
 - **"Engine"** 同时指 galaxyos/engine/ 目录、_FallbackReActEngine、ContextEngine、PlanningEngine、ReflectionEngine——需加限定词。
