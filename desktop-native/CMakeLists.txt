@@ -17,7 +17,9 @@ set(EUI_BUILD_APPS OFF CACHE BOOL "" FORCE)
 set(EUI_BUILD_USER_APPS OFF CACHE BOOL "" FORCE)
 set(EUI_BUILD_TEST_FIXTURES OFF CACHE BOOL "" FORCE)
 set(EUI_ENABLE_INSTALL OFF CACHE BOOL "" FORCE)
-add_subdirectory(${CMAKE_SOURCE_DIR}/../EUI-NEO ${CMAKE_BINARY_DIR}/eui-neo-build)
+set(EUI_NEO_SOURCE_DIR "${CMAKE_SOURCE_DIR}/../EUI-NEO")
+add_subdirectory(${EUI_NEO_SOURCE_DIR} ${CMAKE_BINARY_DIR}/eui-neo-build)
+
 
 # ── Header-only: cpp-httplib ────────────────────────────────────────────────
 add_library(cpp-httplib INTERFACE)
@@ -33,7 +35,7 @@ target_include_directories(nlohmann_json INTERFACE
 
 # ── GalaxyOS Desktop executable ──────────────────────────────────────────────
 add_executable(galaxyos-desktop
-    ${EUI_APP_MAIN_SOURCE}
+    ${EUI_NEO_SOURCE_DIR}/core/app/glfw_app_main.cpp
     src/galaxyos_app.cpp
     src/native_logger.cpp
     src/native_config.cpp
