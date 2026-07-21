@@ -32,8 +32,3 @@
         - "starlette"
       patterns:
         - "*.html"
-
-- module-name: "uvicorn"
-  data-files:
-    - dirs:
-        - "uvicorn"
