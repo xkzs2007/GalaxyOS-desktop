@@ -42,18 +42,46 @@ def build_nuitka():
     cmd = [
         sys.executable, "-m", "nuitka",
         "--standalone",
-
         "--user-package-configuration-file=nuitka-package-config.yml",
         f"--output-filename={output_filename}",
         "--output-dir=dist",
-
         "--assume-yes-for-downloads",
+        "--prefer-source-code",
+        "--module-parameter=torch-disable-jit=yes",
         "--include-data-dir=galaxyos=galaxyos",
         "--include-data-dir=skills=skills",
         "--include-data-dir=models=models",
         "--include-data-dir=galaxyos/translations=native_translations",
         "galaxyos/kernel/mcp_server_entry.py",
     ]
+
+    nofollow_modules = [
+        "faiss",
+        "faiss.swigfaiss",
+        "torch",
+        "torch.ao",
+        "torch._dynamo",
+        "transformers",
+        "tkinter",
+        "matplotlib",
+        "unittest",
+        "pandas",
+        "hnswlib",
+        "openjiuwen_studio",
+        "pythoncom",
+        "pywintypes",
+        "win32com",
+        "win32api",
+        "win32con",
+        "win32event",
+        "win32file",
+        "win32pipe",
+        "win32process",
+        "win32security",
+        "winerror",
+    ]
+    for mod in nofollow_modules:
+        cmd.append(f"--nofollow-import-to={mod}")
 
     print(f"[Nuitka] Building {torch_variant} variant...")
     print(f"[Nuitka] Command: {' '.join(cmd)}")
