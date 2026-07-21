@@ -81,7 +81,6 @@ def build_nuitka():
         "yarl",
         "frozenlist",
         "aiosignal",
-        "async_timeout",
         "attrs",
         "annotated_types",
         "typing_extensions",
@@ -99,7 +98,6 @@ def build_nuitka():
         "psutil",
         "ncps",
         "tokenizers",
-        "scikit_learn",
     ]
 
     cmd = [
@@ -122,6 +120,7 @@ def build_nuitka():
         "httptools",
         "uvloop",
         "winloop",
+        "async_timeout",
     ]
     for pkg in conditional_packages:
         try:
