@@ -4,36 +4,36 @@
 
 - module-name: "openjiuwen"
   data-files:
-    dirs:
-      - "openjiuwen"
-    patterns:
-      - "*.json"
-      - "*.yaml"
-      - "*.yml"
+    - dirs:
+        - "openjiuwen"
+      patterns:
+        - "*.json"
+        - "*.yaml"
+        - "*.yml"
 
 - module-name: "fastmcp"
   data-files:
-    dirs:
-      - "fastmcp"
-    patterns:
-      - "*.json"
-      - "*.html"
+    - dirs:
+        - "fastmcp"
+      patterns:
+        - "*.json"
+        - "*.html"
 
 - module-name: "mcp"
   data-files:
-    dirs:
-      - "mcp"
-    patterns:
-      - "*.json"
+    - dirs:
+        - "mcp"
+      patterns:
+        - "*.json"
 
 - module-name: "starlette"
   data-files:
-    dirs:
-      - "starlette"
-    patterns:
-      - "*.html"
+    - dirs:
+        - "starlette"
+      patterns:
+        - "*.html"
 
 - module-name: "uvicorn"
   data-files:
-    dirs:
-      - "uvicorn"
+    - dirs:
+        - "uvicorn"
