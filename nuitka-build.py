@@ -51,7 +51,7 @@ def build_nuitka():
         "--include-data-dir=galaxyos=galaxyos",
         "--include-data-dir=skills=skills",
         "--include-data-dir=models=models",
-        "--include-data-dir=galaxyos/shared/native_translations=native_translations",
+        "--include-data-dir=galaxyos/translations=native_translations",
         "galaxyos/kernel/mcp_server_entry.py",
     ]
 
