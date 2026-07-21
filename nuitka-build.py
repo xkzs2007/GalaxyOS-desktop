@@ -39,9 +39,13 @@ def build_nuitka():
     cache_dir = os.environ.get("NUITKA_CACHE_DIR", "nuitka-cache")
     output_filename = f"galaxyos-mcp-{torch_variant}"
 
+    cpu_count = os.cpu_count() or 1
+    nuitka_jobs = os.environ.get("NUITKA_JOBS", str(min(cpu_count, max(cpu_count - 2, 1))))
+
     cmd = [
         sys.executable, "-m", "nuitka",
         "--standalone",
+        f"--jobs={nuitka_jobs}",
         "--user-package-configuration-file=nuitka-package-config.yml",
         f"--output-filename={output_filename}",
         "--output-dir=dist",
