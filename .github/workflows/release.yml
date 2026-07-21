@@ -144,6 +144,23 @@ jobs:
         if: runner.os == 'Linux'
         run: apt-get update -qq && apt-get install -y -qq curl binutils cmake build-essential
 
+      - name: Install Python dependencies (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          pip install -r requirements-core.txt
+          pip install "openjiuwen @ git+https://github.com/openJiuwen-ai/agent-core@v0.1.16"
+          pip install "pymilvus>=2.6.2,<2.6.10"
+          pip install onnxruntime
+          if [ "${{ matrix.torch_variant }}" = "cuda" ]; then
+            pip install torch --index-url https://download.pytorch.org/whl/cu128
+            pip install onnxruntime-gpu
+          else
+            pip install torch --index-url https://download.pytorch.org/whl/cpu
+          fi
+          pip install faiss-cpu transformers pandas
+          pip install hnswlib==0.8.0
+
       - name: Download bge-small-zh ONNX model
         shell: bash
         run: |

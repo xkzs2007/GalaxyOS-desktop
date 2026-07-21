@@ -11,6 +11,7 @@ Environment variables:
   NUITKA_JOBS      - Parallel C compiler jobs (default: cpu_count-2)
 """
 
+import importlib
 import os
 import shutil
 import subprocess
@@ -66,7 +67,7 @@ def build_nuitka():
         "anyio",
         "sniffio",
         "h11",
-        "httptools",
+
         "dotenv",
         "click",
         "typer",
@@ -119,6 +120,18 @@ def build_nuitka():
 
     for pkg in vendor_packages:
         cmd.append(f"--include-package={pkg}")
+
+    conditional_packages = [
+        "httptools",
+        "uvloop",
+        "winloop",
+    ]
+    for pkg in conditional_packages:
+        try:
+            importlib.import_module(pkg)
+            cmd.append(f"--include-package={pkg}")
+        except ImportError:
+            pass
 
     nofollow_modules = [
         "faiss",

@@ -1,34 +1,6 @@
 # Nuitka package configuration for GalaxyOS
-# Replaces PyInstaller collect_all() declarations in galaxyos-mcp.spec
 # Usage: --user-package-configuration-file=nuitka-package-config.yml
-
-- module-name: "openjiuwen"
-  data-files:
-    - dirs:
-        - "openjiuwen"
-      patterns:
-        - "*.json"
-        - "*.yaml"
-        - "*.yml"
-
-- module-name: "fastmcp"
-  data-files:
-    - dirs:
-        - "fastmcp"
-      patterns:
-        - "*.json"
-        - "*.html"
-
-- module-name: "mcp"
-  data-files:
-    - dirs:
-        - "mcp"
-      patterns:
-        - "*.json"
-
-- module-name: "starlette"
-  data-files:
-    - dirs:
-        - "starlette"
-      patterns:
-        - "*.html"
+#
+# Note: openjiuwen, fastmcp, mcp, starlette are included via --include-package
+# in nuitka-build.py, so data-files declarations are not needed here.
+# Previously had data-files with checksum mismatches (Nuitka 4.x).
