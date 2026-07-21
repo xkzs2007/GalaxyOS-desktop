@@ -149,6 +149,13 @@ jobs:
         shell: bash
         run: pip install .
 
+      - name: Cache Nuitka compilation
+        uses: actions/cache@v4
+        with:
+          path: nuitka-cache
+          key: nuitka-${{ runner.os }}-py3.12-${{ hashFiles('galaxyos/**/*.py') }}
+          restore-keys: nuitka-${{ runner.os }}-py3.12-
+
       - name: Build with Nuitka (or PyInstaller fallback)
         shell: bash
         env:
@@ -156,13 +163,6 @@ jobs:
           PACKAGING_TOOL: nuitka
         run: |
           python nuitka-build.py
-
-      - name: Cache Nuitka compilation
-        uses: actions/cache@v4
-        with:
-          path: nuitka-cache
-          key: nuitka-${{ runner.os }}-py3.12-${{ hashFiles('galaxyos/**/*.py') }}
-          restore-keys: nuitka-${{ runner.os }}-py3.12-
 
       - name: Verify C extension imports
         shell: bash

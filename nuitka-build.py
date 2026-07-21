@@ -42,7 +42,7 @@ def build_nuitka():
     cmd = [
         sys.executable, "-m", "nuitka",
         "--standalone",
-        "--follow-imports",
+
         "--user-package-configuration-file=nuitka-package-config.yml",
         f"--output-filename={output_filename}",
         "--output-dir=dist",

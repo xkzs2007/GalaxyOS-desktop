@@ -115,8 +115,10 @@ def verify_onnx_models(dist_dir):
             failed += 1
             continue
         if os.path.exists(src):
-            src_md5 = hashlib.md5(open(src, "rb").read()).hexdigest()
-            dst_md5 = hashlib.md5(open(dst, "rb").read()).hexdigest()
+            with open(src, "rb") as f:
+                src_md5 = hashlib.md5(f.read()).hexdigest()
+            with open(dst, "rb") as f:
+                dst_md5 = hashlib.md5(f.read()).hexdigest()
             if src_md5 == dst_md5:
                 print(f"  PASS  {rel}: MD5 match")
                 passed += 1
@@ -170,7 +172,8 @@ def main():
     total_passed += p
     total_failed += f
 
-    exe_name = "galaxyos-mcp-cpu" if sys.platform == "linux" else "galaxyos-mcp-cpu.exe"
+    torch_variant = os.environ.get("TORCH_VARIANT", "cpu").lower()
+    exe_name = f"galaxyos-mcp-{torch_variant}" if sys.platform == "linux" else f"galaxyos-mcp-{torch_variant}.exe"
     exe_path = os.path.join(dist_dir, exe_name)
     if os.path.exists(exe_path):
         print(f"\n[3/3] MCP Server Startup")
