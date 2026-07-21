@@ -21,8 +21,12 @@ import logging
 from typing import Dict, List, Optional, Tuple, Set
 from dataclasses import dataclass, asdict
 
-import torch
-import torch.nn as nn
+try:
+    import torch
+    import torch.nn as nn
+    TORCH_AVAILABLE = True
+except ImportError:
+    TORCH_AVAILABLE = False
 
 logger = logging.getLogger("cfc_inference")
 
@@ -239,6 +243,8 @@ class NeuronStateManager:
     """
 
     def __init__(self, state_dim: int = 64, device: str = "cpu"):
+        if not TORCH_AVAILABLE:
+            raise ImportError("torch is required for NeuronStateManager")
         self.state_dim = state_dim
         self.device = torch.device(device)
         self.states: Dict[str, torch.Tensor] = {}
@@ -347,6 +353,9 @@ class CfCSynapseEngine(nn.Module):
         ncp_seed: int = 42,
     ):
         super().__init__()
+
+        if not TORCH_AVAILABLE:
+            raise ImportError("torch is required for CfCSynapseEngine")
 
         if not NCP_AVAILABLE:
             raise RuntimeError("ncps 未安装，无法创建 CfC 推理引擎")

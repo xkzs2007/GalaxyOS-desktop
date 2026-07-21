@@ -3,9 +3,13 @@ GraphSAGE Layer - 图采样聚合层
 参考论文: Inductive Representation Learning on Large Graphs (https://arxiv.org/abs/1706.02216)
 """
 
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
+try:
+    import torch
+    import torch.nn as nn
+    import torch.nn.functional as F
+    TORCH_AVAILABLE = True
+except ImportError:
+    TORCH_AVAILABLE = False
 from typing import Optional, Tuple, List
 import numpy as np
 
@@ -15,6 +19,8 @@ class MeanAggregator(nn.Module):
 
     def __init__(self, input_dim: int, output_dim: int, bias: bool = True):
         super().__init__()
+        if not TORCH_AVAILABLE:
+            raise ImportError("torch is required for MeanAggregator")
         self.input_dim = input_dim
         self.output_dim = output_dim
 
@@ -62,6 +68,8 @@ class LSTMAggregator(nn.Module):
 
     def __init__(self, input_dim: int, output_dim: int, hidden_dim: int = 128):
         super().__init__()
+        if not TORCH_AVAILABLE:
+            raise ImportError("torch is required for LSTMAggregator")
         self.input_dim = input_dim
         self.output_dim = output_dim
         self.hidden_dim = hidden_dim
@@ -113,12 +121,9 @@ class PoolingAggregator(nn.Module):
         pool_type: str = 'max'
     ):
         super().__init__()
-        self.input_dim = input_dim
-        self.output_dim = output_dim
-        self.hidden_dim = hidden_dim
-        self.pool_type = pool_type
-
-        self.fc1 = nn.Linear(input_dim, hidden_dim)
+        if not TORCH_AVAILABLE:
+            raise ImportError("torch is required for PoolingAggregator")
+        self.input_dim = input_dim = nn.Linear(input_dim, hidden_dim)
         self.fc2 = nn.Linear(hidden_dim, output_dim)
 
     def forward(
@@ -189,9 +194,9 @@ class GraphSAGELayer(nn.Module):
             normalize: 是否对输出进行 L2 归一化
         """
         super().__init__()
+        if not TORCH_AVAILABLE:
+            raise ImportError("torch is required for GraphSAGELayer")
         self.input_dim = input_dim
-        self.output_dim = output_dim
-        self.aggregator_type = aggregator_type
         self.dropout = dropout
         self.normalize = normalize
 
@@ -322,8 +327,9 @@ class GraphSAGE(nn.Module):
             num_samples_list: 每层采样的邻居数量
         """
         super().__init__()
+        if not TORCH_AVAILABLE:
+            raise ImportError("torch is required for GraphSAGE")
         self.input_dim = input_dim
-        self.hidden_dims = hidden_dims
         self.output_dim = output_dim
         self.num_layers = len(hidden_dims) + 1
 

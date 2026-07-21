@@ -29,7 +29,11 @@ import threading
 from typing import Dict, List, Optional, Any, Tuple, Union
 from dataclasses import dataclass, field, asdict
 
-import torch
+try:
+    import torch
+    TORCH_AVAILABLE = True
+except ImportError:
+    TORCH_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
@@ -107,16 +111,23 @@ class CognitiveQuery:
 class VectorOps:
     """基于 PyTorch 的向量运算（利用 torch 张量操作）"""
 
-    _DEVICE = torch.device('cpu')
+    _DEVICE = None
+
+    if TORCH_AVAILABLE:
+        _DEVICE = torch.device('cpu')
 
     @staticmethod
     def tensor(vec) -> torch.Tensor:
+        if not TORCH_AVAILABLE:
+            raise ImportError("torch is required for VectorOps.tensor")
         if isinstance(vec, torch.Tensor):
             return vec.detach().clone().to(dtype=torch.float32, device=VectorOps._DEVICE)
         return torch.tensor(vec, dtype=torch.float32, device=VectorOps._DEVICE)
 
     @staticmethod
     def tensors(vectors) -> torch.Tensor:
+        if not TORCH_AVAILABLE:
+            raise ImportError("torch is required for VectorOps.tensors")
         if isinstance(vectors, torch.Tensor):
             return vectors.detach().clone().to(dtype=torch.float32, device=VectorOps._DEVICE)
         return torch.tensor(vectors, dtype=torch.float32, device=VectorOps._DEVICE)
@@ -124,6 +135,8 @@ class VectorOps:
     @staticmethod
     def cosine_similarity(a, b) -> torch.Tensor:
         """余弦相似度 [0, 1]，支持 batch 计算"""
+        if not TORCH_AVAILABLE:
+            raise ImportError("torch is required for VectorOps.cosine_similarity")
         a_t = VectorOps.tensor(a)
         b_t = VectorOps.tensor(b)
         # 单向量 vs 单向量
@@ -145,6 +158,8 @@ class VectorOps:
     @staticmethod
     def euclidean_distance(a, b) -> torch.Tensor:
         """欧氏距离，支持 batch"""
+        if not TORCH_AVAILABLE:
+            raise ImportError("torch is required for VectorOps.euclidean_distance")
         a_t = VectorOps.tensor(a)
         b_t = VectorOps.tensor(b)
         if a_t.dim() == 1 and b_t.dim() == 1:
@@ -159,6 +174,8 @@ class VectorOps:
     @staticmethod
     def mean(vectors) -> torch.Tensor:
         """向量均值"""
+        if not TORCH_AVAILABLE:
+            raise ImportError("torch is required for VectorOps.mean")
         if not vectors:
             return torch.empty(0, device=VectorOps._DEVICE)
         vec_t = VectorOps.tensors(vectors)
@@ -167,6 +184,8 @@ class VectorOps:
     @staticmethod
     def spatial_similarity(a, b) -> torch.Tensor:
         """空间相似度 = 余弦相似度 × 高斯距离衰减"""
+        if not TORCH_AVAILABLE:
+            raise ImportError("torch is required for VectorOps.spatial_similarity")
         a_t = VectorOps.tensor(a)
         b_t = VectorOps.tensor(b)
 
@@ -185,6 +204,8 @@ class VectorOps:
         Returns:
             (N,) 张量
         """
+        if not TORCH_AVAILABLE:
+            raise ImportError("torch is required for VectorOps.batch_spatial_similarity")
         q = VectorOps.tensor(query_vec).flatten().unsqueeze(0)  # (1, dim)
         a = VectorOps.tensors(anchors_mat)                      # (N, dim)
 
@@ -200,6 +221,8 @@ class VectorOps:
         特征提取部分仍用 Python dict（纯字符串操作，不适合张量化），
         但投影计算改用 torch 向量化操作。
         """
+        if not TORCH_AVAILABLE:
+            raise ImportError("torch is required for VectorOps.randomized_projection")
         chars = text.lower().strip()
         features: Dict[str, Any] = {}
 
@@ -291,6 +314,8 @@ class AnchorHashMap:
 
     def _build_anchor_tensor(self) -> Tuple[torch.Tensor, List[SpatialAnchor]]:
         """将所有锚点向量组装为 (N, dim) 张量，用于 torch batch 计算"""
+        if not TORCH_AVAILABLE:
+            raise ImportError("torch is required for AnchorHashMap._build_anchor_tensor")
         anchors = list(self._anchors.values())
         if not anchors:
             return torch.empty(0, self.dim, device=VectorOps._DEVICE), []
@@ -309,6 +334,8 @@ class AnchorHashMap:
         使用 torch batch 相似度计算替代逐元素循环。
         先通过 LSH bucket 过滤候选集，再批量算空间相似度。
         """
+        if not TORCH_AVAILABLE:
+            raise ImportError("torch is required for AnchorHashMap.find_nearby")
         if not self._anchors:
             return []
 
@@ -411,6 +438,8 @@ class CognitiveMap:
     """
 
     def __init__(self, db_path: Optional[str] = None, dim: int = 256):
+        if not TORCH_AVAILABLE:
+            raise ImportError("torch is required for CognitiveMap")
         self.dim = dim
         self.db_path = db_path or os.path.expanduser(
             "~/.openclaw/workspace/cognitive_map.db")

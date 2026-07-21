@@ -3,9 +3,13 @@ Knowledge Graph GNN - 图神经网络增强的知识图谱
 整合 GraphSAGE 和 GAT 进行知识图谱表示学习
 """
 
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
+try:
+    import torch
+    import torch.nn as nn
+    import torch.nn.functional as F
+    TORCH_AVAILABLE = True
+except ImportError:
+    TORCH_AVAILABLE = False
 from typing import Dict, List, Optional, Tuple, Any
 import numpy as np
 
@@ -53,6 +57,8 @@ class KnowledgeGraphGNN(nn.Module):
             use_relation_embedding: 是否使用关系嵌入
         """
         super().__init__()
+        if not TORCH_AVAILABLE:
+            raise ImportError("torch is required for KnowledgeGraphGNN")
         self.embedding_dim = embedding_dim
         self.hidden_dim = hidden_dim
         self.num_layers = num_layers

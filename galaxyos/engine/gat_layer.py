@@ -18,9 +18,13 @@ GAT Layer - 图注意力层
 """
 import os
 
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
+try:
+    import torch
+    import torch.nn as nn
+    import torch.nn.functional as F
+    TORCH_AVAILABLE = True
+except ImportError:
+    TORCH_AVAILABLE = False
 from typing import Optional, Tuple, Union
 
 
@@ -128,6 +132,8 @@ class GraphAttentionLayer(nn.Module):
         bias: bool = True
     ):
         super().__init__()
+        if not TORCH_AVAILABLE:
+            raise ImportError("torch is required for GraphAttentionLayer")
         self.in_features = in_features
         self.out_features = out_features
         self.dropout = dropout
@@ -220,6 +226,8 @@ class SparseGraphAttentionLayer(nn.Module):
         bias: bool = True
     ):
         super().__init__()
+        if not TORCH_AVAILABLE:
+            raise ImportError("torch is required for SparseGraphAttentionLayer")
         self.in_features = in_features
         self.out_features = out_features
         self.dropout = dropout
@@ -326,6 +334,8 @@ class MultiHeadGraphAttentionLayer(nn.Module):
         backend: Optional[str] = None,
     ):
         super().__init__()
+        if not TORCH_AVAILABLE:
+            raise ImportError("torch is required for MultiHeadGraphAttentionLayer")
         self.in_features = in_features
         self.out_features = out_features
         self.num_heads = num_heads
@@ -463,11 +473,9 @@ class GATLayer(nn.Module):
         backend: Optional[str] = None,
     ):
         super().__init__()
+        if not TORCH_AVAILABLE:
+            raise ImportError("torch is required for GATLayer")
         self.in_features = in_features
-        self.out_features = out_features
-        self.num_heads = num_heads
-        self.concat = concat
-        self.residual = residual
         self.dropout = dropout
 
         self.multi_head = MultiHeadGraphAttentionLayer(
@@ -567,8 +575,9 @@ class GAT(nn.Module):
         backend: Optional[str] = None,
     ):
         super().__init__()
+        if not TORCH_AVAILABLE:
+            raise ImportError("torch is required for GAT")
         self.input_dim = input_dim
-        self.hidden_dim = hidden_dim
         self.output_dim = output_dim
         self.num_layers = num_layers
         self.mode = _parse_mode(mode) if mode is not None else _DEFAULT_MODE

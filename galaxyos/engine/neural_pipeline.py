@@ -27,7 +27,11 @@ import logging
 from typing import Dict, List, Optional
 from dataclasses import dataclass
 
-import torch
+try:
+    import torch
+    TORCH_AVAILABLE = True
+except ImportError:
+    TORCH_AVAILABLE = False
 from galaxyos.shared.paths import workspace
 
 logger = logging.getLogger("neural_pipeline")
@@ -140,6 +144,8 @@ class NeuralMemoryPipeline:
         use_database: bool = True,  # True=从记忆库加载，False=从 JSONL
     ):
         _import_deps()
+        if not TORCH_AVAILABLE:
+            raise ImportError("torch is required for NeuralMemoryPipeline")
         SynapseGraphBuilder_cls, _, _, _ = _GNN_BUILDER
         CfCSynapseEngine_cls, NCPTopology_cls, _ = _CFC_ENGINE
 
@@ -494,7 +500,7 @@ class NeuralMemoryPipeline:
 
     def _build_adj_from_synapses(self, n_nodes: int) -> torch.Tensor:
         """从缓存的突触列表构建邻接矩阵（含自环），用于 GAT 注意力可视化"""
-        import torch
+
         _adj = torch.eye(n_nodes)
         for s in self._cached_synapses:
             _src = self.graph.id_to_idx.get(s.get("source_id") or s.get("source", ""))

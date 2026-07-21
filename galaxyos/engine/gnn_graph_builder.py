@@ -20,7 +20,11 @@ import logging
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 
-import torch
+try:
+    import torch
+    TORCH_AVAILABLE = True
+except ImportError:
+    TORCH_AVAILABLE = False
 import numpy as np
 from galaxyos.shared.paths import workspace
 
@@ -103,6 +107,8 @@ class SynapseGraphBuilder:
     ):
         self.ws = workspace_path or workspace()
         self.feature_dim = feature_dim
+        if not TORCH_AVAILABLE:
+            raise ImportError("torch is required for SynapseGraphBuilder")
         self.device = torch.device(device)
         self._tokenizer = None  # 懒加载 jieba
 

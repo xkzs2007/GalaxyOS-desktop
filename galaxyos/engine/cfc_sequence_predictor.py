@@ -35,9 +35,13 @@ from datetime import datetime, timezone, timedelta
 from typing import Dict, List, Optional, Tuple, Deque, Any
 from dataclasses import dataclass, asdict
 
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
+try:
+    import torch
+    import torch.nn as nn
+    import torch.nn.functional as F
+    TORCH_AVAILABLE = True
+except ImportError:
+    TORCH_AVAILABLE = False
 import numpy as np
 
 logger = logging.getLogger("cfc_sequence_predictor")
@@ -244,6 +248,9 @@ class CfCSequencePredictor(nn.Module):
             device: 设备
         """
         super().__init__()
+
+        if not TORCH_AVAILABLE:
+            raise ImportError("torch is required for CfCSequencePredictor")
 
         if not NCP_AVAILABLE:
             raise RuntimeError(

@@ -22,7 +22,11 @@ from dataclasses import dataclass, asdict, field
 from enum import Enum
 import hashlib
 
-import torch
+try:
+    import torch
+    TORCH_AVAILABLE = True
+except ImportError:
+    TORCH_AVAILABLE = False
 from galaxyos.shared.paths import workspace
 
 _NLP_AVAILABLE = False
@@ -70,6 +74,8 @@ def _get_ltc_template() -> Optional[LTCCell]:
 
 def _build_ltc_cell_from_params(params_dict: dict) -> Optional[LTCCell]:
     """从序列化参数重建 LTCCell"""
+    if not TORCH_AVAILABLE:
+        raise ImportError("torch is required for _build_ltc_cell_from_params")
     if not _NCPS_AVAILABLE or not params_dict:
         return None
     template = _get_ltc_template()
@@ -162,6 +168,8 @@ class MemoryNeuron:
         - time_encoding = 1/(1+exp(days/30-5))  // 软阈值编码
         - 长期不用 → ODE 自然衰减
         """
+        if not TORCH_AVAILABLE:
+            raise ImportError("torch is required for MemoryNeuron.evaluate_state")
         if not self.ltc_cell_params:
             return self.potential
 
@@ -188,6 +196,8 @@ class MemoryNeuron:
         LTCCell 输入 = [strength, 0.0]
         使 h_t 上升，模拟长时程增强
         """
+        if not TORCH_AVAILABLE:
+            raise ImportError("torch is required for MemoryNeuron.apply_activation_signal")
         if not self.ltc_cell_params:
             self.potential = min(1.0, self.potential + strength * 0.1)
             self.ltc_hidden = self.potential

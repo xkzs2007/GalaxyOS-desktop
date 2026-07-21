@@ -3,9 +3,13 @@ Relation Predictor - 关系预测器
 基于 GNN 嵌入预测实体间的隐含关系
 """
 
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
+try:
+    import torch
+    import torch.nn as nn
+    import torch.nn.functional as F
+    TORCH_AVAILABLE = True
+except ImportError:
+    TORCH_AVAILABLE = False
 from typing import Dict, List, Optional, Tuple, Set
 
 from knowledge_graph_gnn import KnowledgeGraphGNN
@@ -38,6 +42,8 @@ class RelationPredictor(nn.Module):
             prediction_type: 预测器类型
         """
         super().__init__()
+        if not TORCH_AVAILABLE:
+            raise ImportError("torch is required for RelationPredictor")
         self.embedding_dim = embedding_dim
         self.hidden_dim = hidden_dim
         self.num_relations = num_relations
@@ -242,6 +248,8 @@ class KnowledgeGraphCompletion:
             prediction_type: 预测器类型
         """
         self.kg_gnn = kg_gnn
+        if not TORCH_AVAILABLE:
+            raise ImportError("torch is required for KnowledgeGraphCompletion")
         self.predictor = RelationPredictor(
             embedding_dim=kg_gnn.embedding_dim,
             hidden_dim=hidden_dim,
