@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
-"""GalaxyOS Nuitka build script.
+"""GalaxyOS Nuitka build script (vendor mode).
 
-Replaces PyInstaller (galaxyos-mcp.spec) as the primary packaging tool.
-Nuitka compiles Python to C++ then to native binary, with better C extension
-compatibility (torch, faiss, hnswlib, onnxruntime).
+Vendor mode: only compiles galaxyos/ itself to native code.
+Third-party packages are included as pre-compiled wheels (not compiled).
 
 Environment variables:
   TORCH_VARIANT    - "cpu" (default) or "cuda"
   PACKAGING_TOOL   - "nuitka" (default) or "pyinstaller" (fallback)
   NUITKA_CACHE_DIR - Nuitka compilation cache dir (default: nuitka-cache)
+  NUITKA_JOBS      - Parallel C compiler jobs (default: cpu_count-2)
 """
 
 import os
@@ -50,8 +50,12 @@ def build_nuitka():
         f"--output-filename={output_filename}",
         "--output-dir=dist",
         "--assume-yes-for-downloads",
-        "--prefer-source-code",
-        "--module-parameter=torch-disable-jit=yes",
+        "--include-package-data=fastmcp",
+        "--include-package-data=mcp",
+        "--include-package-data=starlette",
+        "--include-package-data=openjiuwen",
+        "--include-package-data=uvicorn",
+        "--include-package-data=onnxruntime",
         "--include-data-dir=galaxyos=galaxyos",
         "--include-data-dir=skills=skills",
         "--include-data-dir=models=models",
@@ -83,6 +87,51 @@ def build_nuitka():
         "win32process",
         "win32security",
         "winerror",
+        "fastmcp",
+        "mcp",
+        "starlette",
+        "uvicorn",
+        "openjiuwen",
+        "onnxruntime",
+        "sklearn",
+        "scipy",
+        "numpy",
+        "pydantic",
+        "httpx",
+        "aiohttp",
+        "orjson",
+        "openai",
+        "pdfminer",
+        "pypdfium2",
+        "urllib3",
+        "certifi",
+        "charset_normalizer",
+        "idna",
+        "anyio",
+        "sniffio",
+        "h11",
+        "httptools",
+        "python_dotenv",
+        "click",
+        "typer",
+        "rich",
+        "markdown_it",
+        "mdurl",
+        "pygments",
+        "mpmath",
+        "sympy",
+        "networkx",
+        "filetype",
+        "multidict",
+        "yarl",
+        "frozenlist",
+        "aiosignal",
+        "async_timeout",
+        "attrs",
+        "annotated_types",
+        "typing_extensions",
+        "packaging",
+        "pynacl",
     ]
     for mod in nofollow_modules:
         cmd.append(f"--nofollow-import-to={mod}")
