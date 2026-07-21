@@ -87,8 +87,7 @@ if(WIN32)
             DESTINATION python OPTIONAL)
     install(DIRECTORY ${CMAKE_BINARY_DIR}/../../models/embeddings/
             DESTINATION models/embeddings OPTIONAL)
-    install(DIRECTORY ${CMAKE_SOURCE_DIR}/resources/native_translations/
-            DESTINATION native_translations OPTIONAL)
+
 else()
     install(TARGETS galaxyos-desktop RUNTIME DESTINATION bin)
     install(DIRECTORY ${CMAKE_BINARY_DIR}/../../galaxyos-mcp-dist/
@@ -123,7 +122,7 @@ if(WIN32)
     set(CPACK_NSIS_HELP_LINK "https://github.com/xkzs2007/GalaxyOS-desktop")
     set(CPACK_NSIS_URL_INFO_ABOUT "https://github.com/xkzs2007/GalaxyOS-desktop")
     set(CPACK_NSIS_CONTACT "dev@galaxyos.ai")
-    set(CPACK_NSIS_MODIFY_PATH ON)
+    set(CPACK_NSIS_MODIFY_PATH OFF)
     set(CPACK_NSIS_ENABLE_UNINSTALL_BEFORE_INSTALL ON)
     set(CPACK_NSIS_MUI_FINISHPAGE_RUN "galaxyos-desktop.exe")
     set(CPACK_NSIS_MANIFEST_DPI_AWARE ON)
@@ -144,7 +143,7 @@ if(WIN32)
     set(CPACK_NSIS_EXTRA_PREINSTALL_COMMANDS
         "ExecWait 'taskkill /IM galaxyos-desktop.exe /F'"
     )
-    set(CPACK_NSIS_EXTRA_INSTALL_COMMANDS "")
+
     set(CPACK_NSIS_EXTRA_UNINSTALL_COMMANDS
         "ExecWait 'taskkill /IM galaxyos-desktop.exe /F'
          RMDir /r '$LOCALAPPDATA\\\\GalaxyOS\\\\logs'"
