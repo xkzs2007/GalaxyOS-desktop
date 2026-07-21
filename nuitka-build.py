@@ -67,7 +67,6 @@ def build_nuitka():
         "anyio",
         "sniffio",
         "h11",
-
         "dotenv",
         "click",
         "typer",
@@ -108,7 +107,6 @@ def build_nuitka():
         sys.executable, "-m", "nuitka",
         "--standalone",
         f"--jobs={nuitka_jobs}",
-        "--user-package-configuration-file=nuitka-package-config.yml",
         f"--output-filename={output_filename}",
         "--output-dir=dist",
         "--assume-yes-for-downloads",

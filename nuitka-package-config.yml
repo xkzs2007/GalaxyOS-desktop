@@ -1,6 +1,0 @@
-# Nuitka package configuration for GalaxyOS
-# Usage: --user-package-configuration-file=nuitka-package-config.yml
-#
-# Note: openjiuwen, fastmcp, mcp, starlette are included via --include-package
-# in nuitka-build.py, so data-files declarations are not needed here.
-# Previously had data-files with checksum mismatches (Nuitka 4.x).
