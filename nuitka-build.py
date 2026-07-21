@@ -77,7 +77,6 @@ def build_nuitka():
         "mpmath",
         "sympy",
         "networkx",
-        "filetype",
         "multidict",
         "yarl",
         "frozenlist",
