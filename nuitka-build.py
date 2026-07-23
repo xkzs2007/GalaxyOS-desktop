@@ -111,7 +111,7 @@ def build_nuitka():
         "typing_extensions",
         "packaging",
         "sse_starlette",
-        "pyzmq",
+        "zmq",  # pyzmq on PyPI, imports as zmq
         "requests",
         "PIL",
         "polars",
