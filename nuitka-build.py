@@ -1,8 +1,13 @@
 #!/usr/bin/env python3
 """GalaxyOS Nuitka build script (vendor mode).
 
-Vendor mode: only compiles galaxyos/ itself to native code.
-Third-party packages are included as pre-compiled wheels (not compiled).
+Vendor mode:
+  - galaxyos/ itself is compiled to native code.
+  - Light pure-Python packages are compiled via --include-package.
+  - Heavy C-extension packages (torch, faiss, transformers, pandas, hnswlib)
+    are vendored as pre-built data (--include-data-dir + --nofollow-import-to):
+    the entire site-packages directory is copied into dist without compilation,
+    and at runtime the Python interpreter loads them dynamically.
 
 Environment variables:
   TORCH_VARIANT    - "cpu" (default) or "cuda"
@@ -12,6 +17,7 @@ Environment variables:
 """
 
 import importlib
+import importlib.util
 import os
 import shutil
 import subprocess
@@ -35,6 +41,24 @@ def check_prerequisites():
         sys.exit(1)
 
 
+def _find_package_dir(pkg_name):
+    """Return (package_dir, package_basename) for a installed package, or None."""
+    try:
+        spec = importlib.util.find_spec(pkg_name)
+    except (ImportError, ValueError):
+        return None
+    if not spec:
+        return None
+    # Package is a directory (has submodule_search_locations)
+    if spec.submodule_search_locations:
+        pkg_dir = spec.submodule_search_locations[0]
+        return pkg_dir, os.path.basename(pkg_dir)
+    # Single-file module (.pyd / .so)
+    if spec.origin and os.path.isfile(spec.origin):
+        return spec.origin, os.path.basename(spec.origin)
+    return None
+
+
 def build_nuitka():
     torch_variant = os.environ.get("TORCH_VARIANT", "cpu").lower()
     cache_dir = os.environ.get("NUITKA_CACHE_DIR", "nuitka-cache")
@@ -43,7 +67,8 @@ def build_nuitka():
     cpu_count = os.cpu_count() or 1
     nuitka_jobs = os.environ.get("NUITKA_JOBS", str(min(cpu_count, max(cpu_count - 2, 1))))
 
-    vendor_packages = [
+    # ---- Light packages: compile with Nuitka ----
+    compile_packages = [
         "fastmcp",
         "mcp",
         "starlette",
@@ -85,7 +110,6 @@ def build_nuitka():
         "annotated_types",
         "typing_extensions",
         "packaging",
-        "pynacl",
         "sse_starlette",
         "pyzmq",
         "requests",
@@ -113,9 +137,10 @@ def build_nuitka():
         "galaxyos/kernel/mcp_server_entry.py",
     ]
 
-    for pkg in vendor_packages:
+    for pkg in compile_packages:
         cmd.append(f"--include-package={pkg}")
 
+    # Conditional packages (platform-specific)
     conditional_packages = [
         "httptools",
         "uvloop",
@@ -129,19 +154,41 @@ def build_nuitka():
         except ImportError:
             pass
 
-    nofollow_modules = [
-        "faiss",
-        "faiss.swigfaiss",
+    # ---- Heavy C-extension packages: vendor as data (no compilation) ----
+    # Copy the entire site-packages directory into dist so the standalone
+    # executable can import them at runtime.  --nofollow-import-to prevents
+    # Nuitka from trying to compile them (which would be extremely slow / OOM).
+    heavy_vendor_packages = [
         "torch",
-        "torch.ao",
-        "torch._dynamo",
+        "faiss",
         "transformers",
+        "pandas",
+        "hnswlib",
+    ]
+
+    for pkg in heavy_vendor_packages:
+        info = _find_package_dir(pkg)
+        if info is None:
+            print(f"[Nuitka] {pkg} not installed, skipping vendor")
+            continue
+        src_path, dest_name = info
+        if os.path.isdir(src_path):
+            cmd.append(f"--include-data-dir={src_path}={dest_name}")
+            cmd.append(f"--nofollow-import-to={pkg}")
+            print(f"[Nuitka] Vendoring {pkg}: {src_path}")
+        else:
+            # Single .pyd/.so file
+            cmd.append(f"--include-data-file={src_path}={dest_name}")
+            cmd.append(f"--nofollow-import-to={pkg}")
+            print(f"[Nuitka] Vendoring {pkg} (single file): {src_path}")
+
+    # ---- Modules to skip entirely (no compile, no include) ----
+    skip_modules = [
         "tkinter",
         "matplotlib",
         "unittest",
-        "pandas",
-        "hnswlib",
         "openjiuwen_studio",
+        # Windows-only modules that Nuitka should not follow
         "pythoncom",
         "pywintypes",
         "win32com",
@@ -154,7 +201,7 @@ def build_nuitka():
         "win32security",
         "winerror",
     ]
-    for mod in nofollow_modules:
+    for mod in skip_modules:
         cmd.append(f"--nofollow-import-to={mod}")
 
     print(f"[Nuitka] Building {torch_variant} variant...")
