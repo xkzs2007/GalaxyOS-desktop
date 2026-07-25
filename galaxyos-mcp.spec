@@ -5,6 +5,7 @@ mcp_datas, mcp_binaries, mcp_hiddenimports = collect_all('mcp')
 starlette_datas, starlette_binaries, starlette_hiddenimports = collect_all('starlette')
 uvicorn_datas, uvicorn_binaries, uvicorn_hiddenimports = collect_all('uvicorn')
 openjiuwen_datas, openjiuwen_binaries, openjiuwen_hiddenimports = collect_all('openjiuwen')
+pywin32_datas, pywin32_binaries, pywin32_hiddenimports = collect_all('win32api')
 
 a = Analysis(
     ['galaxyos/kernel/mcp_server_entry.py'],
@@ -15,6 +16,7 @@ a = Analysis(
         *starlette_binaries,
         *uvicorn_binaries,
         *openjiuwen_binaries,
+        *pywin32_binaries,
     ],
     datas=[
         ('galaxyos', 'galaxyos'),
@@ -25,6 +27,7 @@ a = Analysis(
         *starlette_datas,
         *uvicorn_datas,
         *openjiuwen_datas,
+        *pywin32_datas,
     ],
     hiddenimports=[
         'galaxyos.kernel.mcp_server',
@@ -63,11 +66,12 @@ a = Analysis(
         *starlette_hiddenimports,
         *uvicorn_hiddenimports,
         *openjiuwen_hiddenimports,
+        *pywin32_hiddenimports,
     ],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=['torch', 'transformers', 'faiss', 'hnswlib', 'pandas', 'tkinter', 'matplotlib', 'openjiuwen_studio', 'win32com', 'win32api', 'win32con', 'win32event', 'win32file', 'win32pipe', 'win32process', 'win32security', 'winerror'],
+    excludes=['torch', 'transformers', 'faiss', 'hnswlib', 'pandas', 'tkinter', 'matplotlib', 'openjiuwen_studio'],
     noarchive=False,
 )
 pyz = PYZ(a.pure)

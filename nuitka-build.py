@@ -108,15 +108,6 @@ EXCLUDE_PACKAGES = [
     "tests",
     "openjiuwen_studio",
 
-    "win32com",
-    "win32api",
-    "win32con",
-    "win32event",
-    "win32file",
-    "win32pipe",
-    "win32process",
-    "win32security",
-    "winerror",
 ]
 
 
