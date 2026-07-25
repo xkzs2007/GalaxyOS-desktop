@@ -153,8 +153,8 @@ jobs:
         uses: actions/cache@v4
         with:
           path: nuitka-cache
-          key: nuitka-${{ runner.os }}-py3.12-${{ hashFiles('galaxyos/**/*.py') }}
-          restore-keys: nuitka-${{ runner.os }}-py3.12-
+          key: nuitka-${{ runner.os }}-py3.12-cpu-${{ hashFiles('galaxyos/**/*.py', 'nuitka-build.py') }}
+          restore-keys: nuitka-${{ runner.os }}-py3.12-cpu-
 
       - name: Build with Nuitka (or PyInstaller fallback)
         shell: bash
@@ -164,10 +164,20 @@ jobs:
         run: |
           python nuitka-build.py
 
-      - name: Verify C extension imports
+      - name: Verify core imports (compiled)
         shell: bash
         run: |
-          galaxyos-mcp-dist/galaxyos-mcp-cpu.exe -c "import torch; import faiss; import hnswlib; import onnxruntime; import transformers; import pandas; print('All C extensions OK')"
+          galaxyos-mcp-dist/galaxyos-mcp-cpu.exe -c "import fastmcp; import mcp; import starlette; import uvicorn; import openjiuwen; import pydantic; print('Core (compiled) OK')"
+
+      - name: Verify heavy deps (vendored)
+        shell: bash
+        run: |
+          galaxyos-mcp-dist/galaxyos-mcp-cpu.exe -c "import torch; import faiss; import hnswlib; import onnxruntime; import transformers; import pandas; import scipy; import numpy; print('Heavy deps (vendored) OK')"
+
+      - name: Verify GalaxyOS modules
+        shell: bash
+        run: |
+          galaxyos-mcp-dist/galaxyos-mcp-cpu.exe -c "from galaxyos.kernel.mcp_server_entry import create_kernel; from galaxyos.kernel.agent_core_bridge import AgentCoreBridge; print('GalaxyOS modules OK')"
 
       - name: Verify native_translations packaged
         shell: bash
