@@ -164,20 +164,33 @@ jobs:
         run: |
           python nuitka-build.py
 
+      - name: Verify build output exists
+        shell: bash
+        run: |
+          if [ -f "galaxyos-mcp-dist/galaxyos-mcp-cpu.exe" ]; then
+            echo "EXE=galaxyos-mcp-dist/galaxyos-mcp-cpu.exe" >> $GITHUB_ENV
+          elif [ -f "galaxyos-mcp-dist/galaxyos-mcp.exe" ]; then
+            echo "EXE=galaxyos-mcp-dist/galaxyos-mcp.exe" >> $GITHUB_ENV
+          else
+            echo "ERROR: No executable found in galaxyos-mcp-dist/"
+            ls -la galaxyos-mcp-dist/ || echo "Directory does not exist"
+            exit 1
+          fi
+
       - name: Verify core imports (compiled)
         shell: bash
         run: |
-          galaxyos-mcp-dist/galaxyos-mcp-cpu.exe -c "import fastmcp; import mcp; import starlette; import uvicorn; import openjiuwen; import pydantic; print('Core (compiled) OK')"
+          ${{ env.EXE }} -c "import fastmcp; import mcp; import starlette; import uvicorn; import openjiuwen; import pydantic; print('Core (compiled) OK')"
 
       - name: Verify heavy deps (vendored)
         shell: bash
         run: |
-          galaxyos-mcp-dist/galaxyos-mcp-cpu.exe -c "import torch; import faiss; import hnswlib; import onnxruntime; import transformers; import pandas; import scipy; import numpy; print('Heavy deps (vendored) OK')"
+          ${{ env.EXE }} -c "import torch; import faiss; import hnswlib; import onnxruntime; import transformers; import pandas; import scipy; import numpy; print('Heavy deps (vendored) OK')"
 
       - name: Verify GalaxyOS modules
         shell: bash
         run: |
-          galaxyos-mcp-dist/galaxyos-mcp-cpu.exe -c "from galaxyos.kernel.mcp_server_entry import create_kernel; from galaxyos.kernel.agent_core_bridge import AgentCoreBridge; print('GalaxyOS modules OK')"
+          ${{ env.EXE }} -c "from galaxyos.kernel.mcp_server_entry import create_kernel; from galaxyos.kernel.agent_core_bridge import AgentCoreBridge; print('GalaxyOS modules OK')"
 
       - name: Verify native_translations packaged
         shell: bash

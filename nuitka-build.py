@@ -222,6 +222,7 @@ def build_nuitka():
 
 
 def build_pyinstaller():
+    torch_variant = os.environ.get("TORCH_VARIANT", "cpu").lower()
     print("[PyInstaller] Fallback build...")
     result = subprocess.run(
         [sys.executable, "-m", "PyInstaller", "galaxyos-mcp.spec", "--noconfirm"],
@@ -238,6 +239,13 @@ def build_pyinstaller():
     if os.path.exists(pyinstaller_dist):
         shutil.copytree(pyinstaller_dist, target_dist)
         print(f"[PyInstaller] Copied {pyinstaller_dist} -> {target_dist}")
+
+    # Rename exe to match Nuitka naming convention (galaxyos-mcp-{variant}.exe)
+    src_exe = os.path.join(target_dist, "galaxyos-mcp.exe")
+    dst_exe = os.path.join(target_dist, f"galaxyos-mcp-{torch_variant}.exe")
+    if os.path.exists(src_exe) and not os.path.exists(dst_exe):
+        os.rename(src_exe, dst_exe)
+        print(f"[PyInstaller] Renamed {src_exe} -> {dst_exe}")
 
     print(f"[PyInstaller] Build complete: {target_dist}/")
     return 0
