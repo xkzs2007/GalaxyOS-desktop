@@ -142,7 +142,7 @@ jobs:
 
       - name: Install curl (Linux container)
         if: runner.os == 'Linux'
-        run: apt-get update -qq && apt-get install -y -qq curl binutils cmake build-essential
+        run: apt-get update -qq && apt-get install -y -qq curl git binutils cmake build-essential
 
       - name: Install Python dependencies (Linux)
         if: runner.os == 'Linux'

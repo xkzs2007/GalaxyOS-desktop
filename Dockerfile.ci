@@ -9,7 +9,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     apt-get install -y -qq --no-install-recommends \
         python3-dev build-essential gcc g++ \
         libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev \
-        patchelf libssl-dev libharfbuzz-dev curl && \
+        patchelf libssl-dev libharfbuzz-dev curl git && \
     rm -rf /var/lib/apt/lists/*
 
 COPY --link requirements-core.txt /tmp/
