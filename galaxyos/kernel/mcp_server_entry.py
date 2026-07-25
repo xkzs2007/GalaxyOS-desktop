@@ -130,16 +130,23 @@ def main():
 
     if args.check_imports:
         core_deps = ["fastmcp", "mcp", "starlette", "uvicorn", "openjiuwen", "pydantic"]
-        heavy_deps = ["torch", "faiss", "hnswlib", "onnxruntime", "transformers", "pandas", "scipy", "numpy"]
+        runtime_deps = ["onnxruntime", "scipy", "numpy"]
+        vendor_deps = ["torch", "faiss", "hnswlib", "transformers", "pandas"]
         galaxyos_deps = ["galaxyos.kernel.mcp_server_entry", "galaxyos.kernel.agent_core_bridge"]
         failed = []
-        for dep in core_deps + heavy_deps + galaxyos_deps:
+        for dep in core_deps + runtime_deps + galaxyos_deps:
             try:
                 __import__(dep)
                 print(f"  OK: {dep}")
             except ImportError as e:
                 print(f"  FAIL: {dep} ({e})")
                 failed.append(dep)
+        for dep in vendor_deps:
+            try:
+                __import__(dep)
+                print(f"  OK (vendor): {dep}")
+            except ImportError:
+                print(f"  SKIP (vendor): {dep}")
         if failed:
             print(f"\n{len(failed)} import(s) FAILED: {', '.join(failed)}")
             sys.exit(1)

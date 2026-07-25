@@ -107,8 +107,7 @@ EXCLUDE_PACKAGES = [
     "test",
     "tests",
     "openjiuwen_studio",
-    "pythoncom",
-    "pywintypes",
+
     "win32com",
     "win32api",
     "win32con",
