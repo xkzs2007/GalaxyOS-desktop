@@ -124,7 +124,27 @@ def main():
     parser.add_argument("--transport", default="streamable_http", choices=["stdio", "sse", "streamable_http"])
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8765)
+    parser.add_argument("--check-imports", action="store_true",
+                        help="Verify all required dependencies can be imported, then exit")
     args = parser.parse_args()
+
+    if args.check_imports:
+        core_deps = ["fastmcp", "mcp", "starlette", "uvicorn", "openjiuwen", "pydantic"]
+        heavy_deps = ["torch", "faiss", "hnswlib", "onnxruntime", "transformers", "pandas", "scipy", "numpy"]
+        galaxyos_deps = ["galaxyos.kernel.mcp_server_entry", "galaxyos.kernel.agent_core_bridge"]
+        failed = []
+        for dep in core_deps + heavy_deps + galaxyos_deps:
+            try:
+                __import__(dep)
+                print(f"  OK: {dep}")
+            except ImportError as e:
+                print(f"  FAIL: {dep} ({e})")
+                failed.append(dep)
+        if failed:
+            print(f"\n{len(failed)} import(s) FAILED: {', '.join(failed)}")
+            sys.exit(1)
+        print("\nAll imports OK")
+        sys.exit(0)
 
     missing = check_dependencies()
     if missing:

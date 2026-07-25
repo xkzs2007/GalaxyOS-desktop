@@ -177,20 +177,10 @@ jobs:
             exit 1
           fi
 
-      - name: Verify core imports (compiled)
+      - name: Verify imports (all tiers)
         shell: bash
         run: |
-          ${{ env.EXE }} -c "import fastmcp; import mcp; import starlette; import uvicorn; import openjiuwen; import pydantic; print('Core (compiled) OK')"
-
-      - name: Verify heavy deps (vendored)
-        shell: bash
-        run: |
-          ${{ env.EXE }} -c "import torch; import faiss; import hnswlib; import onnxruntime; import transformers; import pandas; import scipy; import numpy; print('Heavy deps (vendored) OK')"
-
-      - name: Verify GalaxyOS modules
-        shell: bash
-        run: |
-          ${{ env.EXE }} -c "from galaxyos.kernel.mcp_server_entry import create_kernel; from galaxyos.kernel.agent_core_bridge import AgentCoreBridge; print('GalaxyOS modules OK')"
+          ${{ env.EXE }} --check-imports
 
       - name: Verify native_translations packaged
         shell: bash
