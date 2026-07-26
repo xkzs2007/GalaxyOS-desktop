@@ -214,7 +214,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           apt-get update -qq
-          apt-get install -y -qq cmake build-essential libharfbuzz-dev libgl1-mesa-dev libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev
+          apt-get install -y -qq cmake build-essential libharfbuzz-dev libgl1-mesa-dev libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev wayland-protocols wayland-scanner libwayland-dev
 
       - name: CMake Configure
         shell: bash
