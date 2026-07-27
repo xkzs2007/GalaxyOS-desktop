@@ -162,7 +162,8 @@ else()
     set(CPACK_DEBIAN_PACKAGE_SECTION "utils")
     set(CPACK_DEBIAN_PACKAGE_PRIORITY "optional")
     set(CPACK_DEBIAN_PACKAGE_HOMEPAGE "https://github.com/xkzs2007/GalaxyOS-desktop")
-    set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON)
+    set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS OFF)
+    set(CPACK_DEBIAN_PACKAGE_DEPENDS "libwayland-client0, libwayland-cursor0, libxkbcommon0, libcurl4, libgl1, libglfw3, libstdc++6, libc6")
     set(CPACK_DEBIAN_FILE_NAME "DEB-DEFAULT")
     set(CPACK_DEBIAN_PACKAGE_CONTROL_EXTRA
         "${CMAKE_SOURCE_DIR}/scripts/pre-install.sh;${CMAKE_SOURCE_DIR}/scripts/post-install.sh;${CMAKE_SOURCE_DIR}/scripts/pre-remove.sh;${CMAKE_SOURCE_DIR}/scripts/post-remove.sh"
