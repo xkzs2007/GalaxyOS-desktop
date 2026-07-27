@@ -54,6 +54,10 @@ target_include_directories(galaxyos-desktop PRIVATE
 # eui_neo_configure_app handles: link eui::neo, compile options, link options, copy assets
 eui_neo_configure_app(galaxyos-desktop)
 
+if(NOT MSVC)
+    target_compile_options(galaxyos-desktop PRIVATE -fexceptions)
+endif()
+
 target_link_libraries(galaxyos-desktop PRIVATE
     cpp-httplib
     nlohmann_json
