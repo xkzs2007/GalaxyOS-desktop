@@ -15,6 +15,12 @@
 #endif
 #include <windows.h>
 #include <psapi.h>
+#else
+#ifndef _DEFAULT_SOURCE
+#define _DEFAULT_SOURCE
+#endif
+#include <sys/stat.h>
+#include <sys/types.h>
 #endif
 
 namespace galaxyos {
