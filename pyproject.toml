@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "galaxyos"
-version = "0.3.1"
+version = "0.3.2"
 description = "GalaxyOS — 认知增强型 AI Agent 桌面引擎（EUI-NEO + C++ Desktop Shell）"
 readme = "README.md"
 license = "MIT"
