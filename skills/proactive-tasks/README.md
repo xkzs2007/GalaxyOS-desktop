@@ -1,8 +1,8 @@
 # Proactive Tasks v1.1.0 - ReadyforClawdHub
 
-**Status:** Ready for ClawdHub submission  
-**Version:** 1.1.0  
-**Last updated:** 2026-02-12  
+**Status:** Ready for ClawdHub submission
+**Version:** 1.1.0
+**Last updated:** 2026-02-12
 
 ## Overview
 
@@ -46,9 +46,9 @@ Proactive Tasks is a production-ready autonomous task management system for AI a
 
 ## Technical Details
 
-**Storage:** JSON (tasks.json)  
-**Scripts:** Python 3.7+  
-**Dependencies:** None (standard library only)  
+**Storage:** JSON (tasks.json)
+**Scripts:** Python 3.7+
+**Dependencies:** None (standard library only)
 
 ## Commands
 
@@ -195,8 +195,8 @@ python3 scripts/task_manager_phase1.py show-velocity <goal-id>
 - PHASE1-UPDATE.md — What's new
 - CLI_REFERENCE.md — All commands
 
-**Author:** Toki (toki@openclaw.ai)  
-**License:** MIT  
+**Author:** Toki (toki@openclaw.ai)
+**License:** MIT
 **Repository:** github.com/ImrKhn03/proactive-tasks (upcoming)
 
 ---

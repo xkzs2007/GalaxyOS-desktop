@@ -1,0 +1,23 @@
+{
+  "galaxy_pool.description": "GalaxyPool system runtime status query",
+  "claw_rccam_progress.description": "R-CCAM cognitive cycle real-time progress query",
+  "claw_recall.description": "Deep semantic memory retrieval (CRAG + GraphRAG + RAPTOR + Self-RAG + Liquid Neural Memory)",
+  "claw_lobster.description": "Lobster pipeline execution",
+  "claw_health.description": "System health check (17-layer architecture + Worker Tier + Memory System + R-CCAM + Agent runtime status)",
+  "claw_vector_info.description": "Vector computation capability query",
+  "claw_events.description": "Event log query (based on TKG temporal knowledge graph)",
+  "claw_store.description": "Memory storage (Liquid Neural Memory + DAG Context + agent-core context dual-write)",
+  "claw_verify.description": "Hallucination verification (10-fold cross-validation + multi-source evidence)",
+  "claw_rccam.description": "R-CCAM cognitive cycle (Retrieval→Cognition→Control→Action→Memory)",
+  "claw_save_memory.description": "Memory persistence (memory consolidation + Ebbinghaus forgetting curve)",
+  "claw_compile_skill.description": "Skill compilation (SkVM + COSPLAY skill self-evolution)",
+  "claw_asset_search.description": "KnowledgeAsset search (MemGAS-SkVM fusion system)",
+  "claw_asset_register.description": "KnowledgeAsset registration",
+  "claw_node_invoke.description": "Node peripheral invocation (camera/location/screen recording/health data)",
+  "skill_execute.description": "Skill execution (routed via AgentCoreBridge to ReActAgent/WorkflowAgent)",
+  "skill_install.description": "Skill installation (source + scope + workspace_id)",
+  "skill_discover.description": "Skill discovery (invocation_type + query + workspace_id)",
+  "skill_compile.description": "Skill compilation (skill_name + skill_content + workspace_id)",
+  "llm_call.description": "LLM call (routed via GalaxyOS LLM Router directly)",
+  "tokui_render.description": "TokUI structured UI rendering (generate DSL + SSE streaming push to frontend)"
+}

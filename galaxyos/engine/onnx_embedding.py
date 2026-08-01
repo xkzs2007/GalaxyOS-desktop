@@ -26,7 +26,12 @@
   - query embedding 实时计算，不做缓存
 """
 
-import os, json, logging, time, gc, numpy as np, threading
+import os
+import json
+import logging
+import time
+import numpy as np
+import threading
 
 logger = logging.getLogger("onnx_embedding")
 
@@ -46,15 +51,21 @@ _candidates.append(os.path.join(_cwd, "..", "models", "embeddings"))
 _candidates.append(os.path.expanduser("~/.openclaw/workspace/GalaxyOS/models/embeddings"))
 # GalaxyOS 运行时安装目录
 _candidates.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "models", "embeddings"))
+# Nuitka standalone: sys.executable points to {dist_dir}/galaxyos-mcp-{variant}.exe
+_candidates.append(os.path.join(os.path.dirname(sys.executable), "models", "embeddings"))
 
-_MODEL_DIR = ""
-for _c in _candidates:
-    _c = os.path.abspath(_c)
-    if os.path.isdir(_c) and os.path.exists(os.path.join(_c, "bge-small-zh.onnx")):
-        _MODEL_DIR = _c
-        break
-if not _MODEL_DIR:
-    _MODEL_DIR = _candidates[-1]  # fallback to user dir for error message
+def _find_model_dir():
+    for c in _candidates:
+        c = os.path.abspath(c)
+        if not os.path.isdir(c):
+            continue
+        if os.path.exists(os.path.join(c, "bge-small-zh.onnx")):
+            return c
+        if os.path.exists(os.path.join(c, "model.onnx")):
+            return c
+    return _candidates[-1]
+
+_MODEL_DIR = _find_model_dir()
 _CACHE_DIR = os.path.expanduser(
     "~/.openclaw/workspace/.neural_cache"
 )
@@ -104,10 +115,14 @@ class LocalEmbeddingService:
         # 降级到 bge ONNX
         onnx_path = os.path.join(_MODEL_DIR, "bge-small-zh.onnx")
         if not os.path.exists(onnx_path):
-            raise FileNotFoundError(
-                f"ONNX 模型不存在: {onnx_path}\n"
-                "请从 Modelscope 下载 BAAI/bge-small-zh-v1.5 后导出 ONNX"
-            )
+            onnx_alt = os.path.join(_MODEL_DIR, "model.onnx")
+            if os.path.exists(onnx_alt):
+                onnx_path = onnx_alt
+            else:
+                raise FileNotFoundError(
+                    f"ONNX 模型不存在: {_MODEL_DIR}/bge-small-zh.onnx 或 model.onnx\n"
+                    "请从 onnx-community/bge-small-zh-v1.5-ONNX 下载 ONNX 模型"
+                )
         import tokenizers
         tok_path = os.path.join(_MODEL_DIR, "tokenizer.json")
         if not os.path.exists(tok_path):
@@ -118,24 +133,13 @@ class LocalEmbeddingService:
         self._tok.enable_truncation(max_length=128)
         self._tok.enable_padding(length=128)
 
-        import onnxruntime as ort
-        import multiprocessing
+        import onnxruntime as ort  # type: ignore[import-not-found]
         so = ort.SessionOptions()
         so.enable_cpu_mem_arena = False
         so.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
-
-        # 动态线程数
-        phys_cores = multiprocessing.cpu_count() or 4
-        so.intra_op_num_threads = max(1, min(8, phys_cores // 2))
-        so.inter_op_num_threads = 1
-
-        # GPU 检测
-        available = ort.get_available_providers()
-        providers = ["CUDAExecutionProvider"] if "CUDAExecutionProvider" in available else ["CPUExecutionProvider"]
-
         self._sess = ort.InferenceSession(
             onnx_path, so,
-            providers=providers,
+            providers=['CPUExecutionProvider'],
         )
 
         self._load_cache()
@@ -146,33 +150,15 @@ class LocalEmbeddingService:
         self._initialized = True
 
     def _try_uds(self):
-        """尝试连接 LFM UDS backend。若 UDS socket 不存在则先 spawn lfm_server。"""
-        try:
-            from galaxyos_native import lfm_ping, lfm_embed_text, lfm_start
-            # 1. 检查 LFM binary 是否可用，如果可用但没有 running，自动 spawn
-            try:
-                lfm_start()
-            except Exception:
-                pass  # binary not found or already running — try ping anyway
-            # 2. ping
-            pong = lfm_ping()
-            if pong == "pong":
-                self._uds_backend = True
-                global _EMBEDDING_DIM
-                _EMBEDDING_DIM = 2048
-                logger.info("LFM UDS backend connected (2048-dim embedding)")
-                return True
-        except Exception:
-            pass
+
         self._uds_backend = False
-        logger.info("LFM UDS backend not available, using BGE ONNX (512-dim)")
         return False
 
     # ── ONNX 推理 ──
 
     def embed(self, texts: list) -> np.ndarray:
         """批量文本 → 归一化 embedding 矩阵
-        
+
         UDS 后端：调 lfm_embed_text（LFM 2048-dim）
         降级：bge ONNX（512-dim）
         """
@@ -180,10 +166,10 @@ class LocalEmbeddingService:
             return np.empty((0, _EMBEDDING_DIM), dtype=np.float32)
         if not self._initialized:
             self.initialize()
-        
+
         if self._uds_backend:
             return self._embed_uds(texts)
-        
+
         # bge ONNX 路径
         all_embs = []
         for i in range(0, len(texts), _BATCH_SIZE):
@@ -200,28 +186,9 @@ class LocalEmbeddingService:
             emb = emb / norms
             all_embs.append(emb)
         return np.vstack(all_embs).astype(np.float32)
-    
+
     def _embed_uds(self, texts: list) -> np.ndarray:
-        """UDS 后端：调 lfm_embed_text 拿 2048 维 embedding"""
-        from galaxyos_native import lfm_embed_text
-        
-        # 简单 tokenize：取前 128 个字符的 Unicode 码点做 token ID
-        # 实际 LFM 需要真实 tokenizer，但 embed_text 接受任意 int 序列
-        embs = []
-        for text in texts:
-            ids = [ord(c) % 65536 for c in text[:128]]
-            if not ids:
-                ids = [0]
-            emb = lfm_embed_text(ids)
-            emb_arr = np.array(emb, dtype=np.float32)
-            # 归一化
-            norm = np.linalg.norm(emb_arr)
-            if norm > 0:
-                emb_arr = emb_arr / norm
-            embs.append(emb_arr)
-        
-        result = np.stack(embs).astype(np.float32)
-        return result
+        return np.empty((0, _EMBEDDING_DIM), dtype=np.float32)
 
     def embed_query(self, text: str) -> np.ndarray:
         """单条文本 → 归一化 embedding"""

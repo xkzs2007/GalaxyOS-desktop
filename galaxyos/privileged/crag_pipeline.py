@@ -37,7 +37,6 @@ Reranking:
 - 完整 RAG Pipeline: 查询改写 → 混合检索 → 评估 → 纠正 → 重排 → 压缩 → 注入 → 生成 → 验证
 """
 
-import json
 import logging
 import time
 import numpy as np
@@ -770,7 +769,7 @@ class CRAGPipeline:
                             documents = self.reranker.rerank(
                                 query, documents + web_docs, top_k=self.rerank_top_k
                             )
-                            corrections.append(f"Web 搜索补充后重排")
+                            corrections.append("Web 搜索补充后重排")
                     except Exception:
                         pass
 

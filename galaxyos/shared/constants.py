@@ -17,8 +17,26 @@ from __future__ import annotations
 #  版本号 — 单一定义点
 # ═══════════════════════════════════════════════════════════════════
 
-__version__ = "8.1.1"  # synced from config.version
-VERSION_TUPLE = (8, 1, 1)
+def _read_version() -> str:
+    import importlib.metadata
+    try:
+        return importlib.metadata.version("galaxyos")
+    except importlib.metadata.PackageNotFoundError:
+        pass
+    try:
+        from pathlib import Path
+        v = (Path(__file__).resolve().parent.parent.parent / "pyproject.toml").read_text(encoding="utf-8")
+        for line in v.splitlines():
+            s = line.strip()
+            if s.startswith("version"):
+                return s.split("=", 1)[1].strip().strip('"').strip("'")
+    except Exception:
+        pass
+    return "0.0.0"
+
+__version__ = _read_version()
+GALAXYOS_VERSION = __version__
+VERSION_TUPLE = tuple(int(x) for x in __version__.split(".")[:3])
 VERSION_CODENAME = "Cognitive Nexus"  # synced from config.version
 
 VERSION_INFO = {
@@ -37,7 +55,7 @@ VERSION_INFO = {
 
 ARCHITECTURE_LAYERS = {
     "L1": "shared",       # 零依赖基础层 (types, interfaces, constants, paths, sanitize)
-    "L2": "init",         # 基础设施层 (bootstrap, install_wizard, path_resolver, deployment_profile)
+    "L2": "init",         # 基础设施层 (bootstrap, path_resolver, deployment_profile)
     "L3": "engine",       # 核心引擎层
     "L4": "privileged",   # 高性能层
     "L5": "orchestration",# 编排层
@@ -62,7 +80,7 @@ DEFAULT_MEMORY_LIMIT_MB = 0  # 0 = unlimited
 #  环境变量名
 # ═══════════════════════════════════════════════════════════════════
 
-ENV_OPENCLAW_HOME = "OPENCLAW_HOME"
+ENV_GALAXYOS_HOME = "GALAXYOS_HOME"
 ENV_WORKSPACE = "WORKSPACE"
 ENV_OPENCLAW_WORKSPACE = "OPENCLAW_WORKSPACE"
 ENV_GALAXYOS_VAR_DIR = "GALAXYOS_VAR_DIR"

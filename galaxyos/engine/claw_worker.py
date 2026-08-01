@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-claw_worker — 小艺 Claw 常驻 Python Worker 进程
+claw_worker — GalaxyOS 常驻 Python Worker 进程
 
 三通道 JSON-RPC 2.0:
   1. UDS socket:   ~/.openclaw/extensions/galaxyos/var/claw-worker.sock (主通道, fallback: claw-core/var)
@@ -27,15 +27,15 @@ import json
 import time
 import traceback
 import signal
-import contextlib
 import socket as _socket
 import struct
 import threading
-import selectors
+from typing import Dict, Any, List
+from galaxyos.shared.paths import galaxyos_home, workspace
 
 # ========== 路径初始化 ==========
 WORKSPACE = os.environ.get("OPENCLAW_WORKSPACE",
-    os.path.expanduser("~/.openclaw/workspace"))
+    workspace())
 
 # 自动检测 GalaxyOS 仓库路径（galaxyos/engine/ 或 extensions/galaxyos/dist/scripts/）
 _THIS_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -88,8 +88,8 @@ if os.path.isdir(_GALAXYOS_VENV_SITE):
     sys.path.insert(0, _GALAXYOS_VENV_SITE)
 
 # Legacy fallback: workspace skills path (backward compat)
-_LEGACY_CORE = os.path.join(WORKSPACE, "skills", "xiaoyi-claw-omega-final", "skills", "llm-memory-integration", "core")
-_LEGACY_SCRIPTS = os.path.join(WORKSPACE, "skills", "xiaoyi-claw-omega-final", "scripts")
+_LEGACY_CORE = os.path.join(WORKSPACE, "skills", "galaxyos-engine", "skills", "llm-memory-integration", "core")
+_LEGACY_SCRIPTS = os.path.join(WORKSPACE, "skills", "galaxyos-engine", "scripts")
 if os.path.isdir(_LEGACY_CORE):
     sys.path.insert(0, _LEGACY_CORE)
 if os.path.isdir(_LEGACY_SCRIPTS):
@@ -108,6 +108,9 @@ def _get_worker():
 
 # ═══ MN-RU 增量索引桥接（2407.07871 / 2404.13556）═══
 _RETRIEVAL_HUB_IMPORTED = False
+_MN_HNSW: Any = None
+_UPDATE_SESSION: Any = None
+_vector_api: Any = None
 def _ensure_retrieval_hub():
     """懒加载 retrieval_hub 中的 MN-RU 单例"""
     global _RETRIEVAL_HUB_IMPORTED
@@ -147,7 +150,7 @@ def _push_to_session_index(session_node: dict):
 # ========== 三通道路径 ==========
 # v7.0: 统一使用 galaxyos/var/ 路径（claw-core/var 仅作为 fallback）
 _OPENCLAW_HOME = os.path.expanduser(
-    os.environ.get("OPENCLAW_HOME", "~/.openclaw"))
+    galaxyos_home())
 _GALAXYOS_VAR = os.path.join(_OPENCLAW_HOME, "extensions", "galaxyos", "var")
 _CLAW_CORE_VAR = os.path.join(_OPENCLAW_HOME, "extensions", "claw-core", "var")
 
@@ -310,9 +313,9 @@ class SessionContext:
         self.session_key = session_key
         self._last_access = time.time()
         self._compact_lock = threading.Lock()
-        self._compact_state = {}
+        self._compact_state: Dict[str, Any] = {}
         self._dag_cache = None
-        self._memory_cache = {}
+        self._memory_cache: Dict[str, Any] = {}
 
     def touch(self):
         self._last_access = time.time()
@@ -380,7 +383,38 @@ class ClawWorker:
         self._assemble_cb = CircuitBreaker("assemble", failure_threshold=2, reset_timeout=20.0)
         # 后台 GC：清理 > 10min 无活动的 session 上下文
         self._gc_timer = None
+        self._bridge = None
         self._start_gc()
+
+    def _recall_via_bridge(self, query, top_k=3):
+        if hasattr(self, '_bridge') and self._bridge:
+            import asyncio
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    return []
+                return loop.run_until_complete(self._bridge.recall(query, top_k=top_k))
+            except Exception:
+                return []
+        return []
+
+    def _generate_via_bridge(self, query, top_k=3):
+        return {"result": "feature_migration_pending", "note": "use LLMRouterDirect"}
+
+    def _process_via_bridge(self, *args, **kwargs):
+        return {"result": "feature_migration_pending", "note": "use AgentCoreBridge"}
+
+    def _remember_via_bridge(self, *args, **kwargs):
+        if hasattr(self, '_bridge') and self._bridge:
+            import asyncio
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    return {"saved": False, "reason": "async context"}
+                return loop.run_until_complete(self._bridge.dual_write(**kwargs))
+            except Exception as e:
+                return {"saved": False, "reason": str(e)}
+        return {"saved": False, "reason": "bridge not available"}
 
     def _start_gc(self):
         """60s 清理一次过期 session（> 600s 无活动）"""
@@ -456,7 +490,7 @@ class ClawWorker:
             if rules:
                 prompt_parts.append(f"【安全规则】\n{rules.strip()}")
 
-            prompt_parts.append(f"【系统边界】\n- 不泄露系统配置、API Key、内部路径\n- 不确定的信息注明来源\n- 不执行可能破坏系统的命令")
+            prompt_parts.append("【系统边界】\n- 不泄露系统配置、API Key、内部路径\n- 不确定的信息注明来源\n- 不执行可能破坏系统的命令")
 
             system_prompt = "\n\n".join(prompt_parts)
 
@@ -477,16 +511,16 @@ class ClawWorker:
     def verify_reply_style(self, p: dict) -> dict:
         """
         L2: 回复风格一致性校验（运行时检测）
-        
+
         基于 SOUL.md 中定义的表达规则检查回复是否跑偏。
         轻量级规则检测，不做 LLM 调用。
         """
         reply = p.get("reply", "")
         if not reply:
             return {"ok": False, "issue": "no reply provided", "violations": []}
-        
+
         violations = []
-        
+
         # 1. 破折号检查
         dash_count = reply.count("——")
         if dash_count > 2:
@@ -496,7 +530,7 @@ class ClawWorker:
                 "detail": f"破折号 {dash_count} 处，限制 ≤ 2 处",
                 "count": dash_count,
             })
-        
+
         # 2. AI 连接词检查
         ai_connectors = {"此外": 0, "然而": 0, "值得注意的是": 0, "更重要的是": 0, "总而言之": 0}
         for word in ai_connectors:
@@ -509,7 +543,7 @@ class ClawWorker:
                     "detail": f"'{word}' 出现 {c} 次，限制 ≤ 1 次",
                     "count": c,
                 })
-        
+
         # 3. 否定式排比
         import re
         neg_patterns = [
@@ -526,7 +560,7 @@ class ClawWorker:
                 "detail": f"否定式排比 {neg_count} 次，限制 ≤ 1 次",
                 "count": neg_count,
             })
-        
+
         # 4. 翻译腔检查
         translation_cliches = [
             "这是一个很好的问题", "感谢你的反馈", "从我的角度来看",
@@ -540,7 +574,7 @@ class ClawWorker:
                     "detail": f"发现翻译腔：'{cliche}'",
                     "text": cliche,
                 })
-        
+
         # 5. 宣传性语言
         propaganda_words = ["深刻地", "意义深远", "不可或缺", "历史性的", "里程碑式的"]
         for pw in propaganda_words:
@@ -551,7 +585,7 @@ class ClawWorker:
                     "detail": f"宣传性语言：'{pw}'，建议替换为具体描述",
                     "text": pw,
                 })
-        
+
         # 6. 表格过度（超过3个表格可能太工整）
         table_count = reply.count("|---") + reply.count("| ---")
         if table_count > 3:
@@ -561,10 +595,10 @@ class ClawWorker:
                 "detail": f"发现 {table_count} 个表格，建议精简",
                 "count": table_count // 3,
             })
-        
+
         severity_map = {"error": 3, "warning": 2, "info": 1}
         max_severity = max((severity_map.get(v["severity"], 0) for v in violations), default=0)
-        
+
         return {
             "ok": len(violations) == 0,
             "violations": violations,
@@ -604,12 +638,12 @@ class ClawWorker:
                 from unified_entry import UnifiedEntry
                 # 只创建一次实例，后续复用
                 self._entry = UnifiedEntry()
-                # Inject RCI three-channel publish callbacks into XiaoYiClawLLM
+                # Inject RCI three-channel publish callbacks into AgentCoreBridge
                 _RCI_MARKER = "/tmp/rci_inject_marker"
                 try:
                     open(_RCI_MARKER, "w").write("pre-inject\n")
                     if not hasattr(self._entry, 'xiaoyi_claw') or self._entry.xiaoyi_claw is None:
-                        open(_RCI_MARKER, "a").write("xiaoyi_claw is None\n")
+                        open(_RCI_MARKER, "a").write("xiaoyi_claw is None (migrated to AgentCoreBridge)\n")
                     elif not hasattr(self._entry.xiaoyi_claw, 'set_rci_publisher'):
                         open(_RCI_MARKER, "a").write("NO set_rci_publisher!\n")
                         ty = type(self._entry.xiaoyi_claw)
@@ -634,22 +668,9 @@ class ClawWorker:
                     open(_RCI_MARKER, "a").write(_tb.format_exc() + "\n")
                 # 触发一次健康检查，让模块懒加载
                 self._entry.health_check()
-                
-                # 预加载 LFM2.5-1.2B-ONNX Q4（神经网络常驻, mmap 共享）
-                try:
-                    sys.stderr.write("[claw-worker] 预加载 LFM2.5-1.2B-ONNX Q4...\n")
-                    _t0 = time.time()
-                    from lfm_adaptive_operator import RealLFMNetwork
-                    _lfm = RealLFMNetwork()
-                    _lfm._ensure()
-                    _lfm.embed_text("预热")
-                    _t1 = time.time()
-                    self._lfm_preloaded = _lfm
-                    sys.stderr.write(f"[claw-worker] LFM2.5-1.2B-ONNX Q4 加载完成 ({_t1-_t0:.1f}s)\n")
-                except Exception as _e:
-                    sys.stderr.write(f"[claw-worker] LFM ONNX 预加载跳过: {_e}\n")
-                    self._lfm_preloaded = None
-                
+
+                self._lfm_preloaded = None
+
                 self._load_hardware()
                 self._load_time_ms = round((time.time() - t0) * 1000, 1)
             except Exception as e:
@@ -810,13 +831,14 @@ class ClawWorker:
             elif isinstance(messages, str):
                 content = messages
 
-            from rlm_env import RLMEnvironment
-            rlm = RLMEnvironment(content)
-            # 用 RLM 的 slice 函数递归分解
-            parts = rlm.auto_slice(max_chunk=300, overlap=30)
-            summarized = []
-            for chunk in parts[:5]:
-                summarized.append(chunk[:200])
+            chunk_size = 300
+            overlap = 30
+            parts = []
+            start = 0
+            while start < len(content):
+                parts.append(content[start:start + chunk_size])
+                start += chunk_size - overlap
+            summarized = [chunk[:200] for chunk in parts[:5]]
             return {"compressed": "\n".join(summarized), "parts": len(parts),
                     "original_len": len(content)}
         except Exception as e:
@@ -844,7 +866,7 @@ class ClawWorker:
             # ═══ quick 模式：只跑 IsREL（几百微秒），JS 用来决定是否要跑全量 ═══
             if mode == "quick":
                 try:
-                    from galaxy_pipeline import _phase_isrel
+                    from galaxyos.engine.galaxy_pipeline import _phase_isrel
                     _ctx: Dict[str, Any] = {}
                     _phase_isrel(query, session_id, top_k, result, _ctx, self)
                 except Exception:
@@ -854,9 +876,9 @@ class ClawWorker:
 
             # ═══ 声明式流水线执行（galaxy_pipeline.py 驱动）═══
             try:
-                from galaxy_pipeline import build_pipeline, run_pipeline
+                from galaxyos.engine.galaxy_pipeline import build_pipeline, run_pipeline
                 _pipeline = build_pipeline()
-                _ctx: Dict[str, Any] = {}
+                _ctx = {}  # type: ignore[no-redef]
                 run_pipeline(_pipeline, query, session_id, top_k, result, _ctx, self)
             except Exception as e:
                 result["pipeline_error"] = str(e)
@@ -891,7 +913,7 @@ class ClawWorker:
             try:
                 _dag = self._get_dag() if hasattr(self, '_get_dag') else None
                 if _dag:
-                    _caps = _dag.query_capability_nodes(limit=3, session_key='xiaoyi-claw-dag')
+                    _caps = _dag.query_capability_nodes(limit=3, session_key='galaxyos-dag')
                     if _caps:
                         _cap_lines = []
                         for _c in _caps:
@@ -965,8 +987,8 @@ class ClawWorker:
             sys.stderr.write(f"[claw-worker] MultiSourceCrossValidator import failed: {e}\n")
             # 降级到 enhanced_recall
             self._ensure()
-            if hasattr(self._entry.xiaoyi_claw, 'enhanced_recall'):
-                results = self._entry.xiaoyi_claw.enhanced_recall(claim, top_k=3)
+            results = self._recall_via_bridge(claim, top_k=3)
+            if results:
                 return {"claim": claim, "results": results, "success": True, "fallback": "cross_validator_not_available"}
             return {"claim": claim, "error": "verify not available", "success": False}
         except Exception as e:
@@ -979,10 +1001,12 @@ class ClawWorker:
         try:
             if not hasattr(self, '_vlm'):
                 from openai import OpenAI
-                VLM_API_KEY = "YOUR_VLM_API_KEY"
-                VLM_BASE_URL = "https://open.bigmodel.cn/api/paas/v4"
+                VLM_API_KEY = os.environ.get("VLM_API_KEY")
+                VLM_BASE_URL = os.environ.get("VLM_BASE_URL", "https://open.bigmodel.cn/api/paas/v4")
+                if not VLM_API_KEY:
+                    raise RuntimeError("VLM_API_KEY not configured. Set the VLM_API_KEY environment variable.")
                 self._vlm = OpenAI(api_key=VLM_API_KEY, base_url=VLM_BASE_URL)
-            
+
             resp = self._vlm.chat.completions.create(
                 model="glm-4v-plus",
                 messages=[{
@@ -1017,8 +1041,7 @@ class ClawWorker:
         query = p.get("query", "")
         try:
             entry = self._ensure_entry()
-            if entry.xiaoyi_claw:
-                return entry.xiaoyi_claw.fast_generate(query, top_k=3)
+            return self._generate_via_bridge(query, top_k=3)
         except Exception:
             pass
         return {"error": "不可用"}
@@ -1030,18 +1053,22 @@ class ClawWorker:
             return {"error": "缺少 query"}
         try:
             entry = self._ensure_entry()
-            from smart_processor import SmartProcessor
-            sp = SmartProcessor(
-                llm_flash=entry.xiaoyi_claw.llm_flash if entry.xiaoyi_claw else None,
-                llm_pro=entry.xiaoyi_claw.llm_pro if entry.xiaoyi_claw else None,
-                persona_context=p.get("persona", ""),
-            )
-            return sp.process(query, top_k=p.get("top_k", 5))
+            return {"error": "smart_processor 已移除"}
         except Exception as e:
             return {"error": str(e)}
 
     def forget(self, p: dict) -> dict:
         """智能遗忘"""
+        try:
+            from galaxyos.shared.audit import get_audit_logger, AuditEvent
+            get_audit_logger().log(AuditEvent(
+                operator="claw_worker",
+                action="forget",
+                scope=f"memory_id={p.get('memory_id', '')}",
+                result="pending",
+            ))
+        except Exception:
+            pass
         entry = self._ensure_entry()
         memory_id = p.get("memory_id", "")
         if entry.memory and hasattr(entry.memory, 'forget'):
@@ -1054,7 +1081,7 @@ class ClawWorker:
         key = p.get("key", "")
         value = p.get("value", "")
         if entry.xiaoyi_claw and hasattr(entry.xiaoyi_claw, 'learn_preference'):
-            return {"result": entry.xiaoyi_claw.learn_preference(key, value)}
+            return {"result": "feature_migration_pending", "note": "use AgentCoreBridge"}
         return {"error": "偏好学习不可用"}
 
     def learn_correction(self, p: dict) -> dict:
@@ -1063,7 +1090,7 @@ class ClawWorker:
         original = p.get("original", "")
         corrected = p.get("corrected", "")
         if entry.xiaoyi_claw and hasattr(entry.xiaoyi_claw, 'learn_correction'):
-            return {"result": entry.xiaoyi_claw.learn_correction(original, corrected)}
+            return {"result": "feature_migration_pending", "note": "use AgentCoreBridge"}
         return {"error": "纠正学习不可用"}
 
     def link_task_memory(self, p: dict) -> dict:
@@ -1073,7 +1100,7 @@ class ClawWorker:
         memory_id = p.get("memory_id", "")
         link_type = p.get("link_type", "related_to")
         if entry.xiaoyi_claw and hasattr(entry.xiaoyi_claw, 'link_task'):
-            return {"result": entry.xiaoyi_claw.link_task(task_id, memory_id, link_type)}
+            return {"result": "feature_migration_pending", "note": "use AgentCoreBridge"}
         return {"error": "任务关联不可用"}
 
     def remember(self, p: dict) -> dict:
@@ -1108,8 +1135,9 @@ class ClawWorker:
         entry = self._ensure_entry()
         image_source = p.get("image_source", "")
         try:
-            if hasattr(entry.xiaoyi_claw, 'ocr_image'):
+            if hasattr(entry, 'xiaoyi_claw') and entry.xiaoyi_claw and hasattr(entry.xiaoyi_claw, 'ocr_image'):
                 return entry.xiaoyi_claw.ocr_image(image_source)
+            return {"result": "feature_migration_pending", "note": "use AgentCoreBridge"}
             return {"success": False, "error": "ocr_image not available"}
         except Exception as e:
             return {"success": False, "error": str(e)}
@@ -1165,7 +1193,7 @@ class ClawWorker:
         self._ensure()
         session_key = p.get("sessionKey", "") or getattr(self, '_last_session_key', '')
         user_input = p.get("user_input", "")
-        
+
         # 没 session_key 时扫 DAG 找最新活跃 session
         if not session_key:
             try:
@@ -1190,16 +1218,26 @@ class ClawWorker:
                         session_key = _candidates[0][1]
             except Exception:
                 pass
-        
+
         if session_key and user_input:
             try:
                 dag = self._get_dag()
                 dag.add_message_with_scene(session_key, "user", user_input)
             except Exception:
                 pass
-        
-        if hasattr(self._entry.xiaoyi_claw, 'process'):
+
+        if hasattr(self._entry, 'xiaoyi_claw') and self._entry.xiaoyi_claw and hasattr(self._entry.xiaoyi_claw, 'process'):
             _result = self._entry.xiaoyi_claw.process(
+                user_input=user_input,
+                max_cycles=p.get("max_cycles", 1),
+                store_memory=p.get("store_memory", True),
+                has_image=p.get("has_image", False),
+                image_source=p.get("image_source"),
+                session_key=session_key,
+            )
+            self._last_rccam_ts = time.time()
+        else:
+            _result = self._process_via_bridge(
                 user_input=user_input,
                 max_cycles=p.get("max_cycles", 1),
                 store_memory=p.get("store_memory", True),
@@ -1244,7 +1282,7 @@ class ClawWorker:
 
     def vector_info(self, _p: dict) -> dict:
         """跨平台 SIMD 向量计算能力报告
-        
+
         返回当前平台的向量计算后端信息：
         - 架构 (AVX-512/AVX2/AVX/SSE/NEON/SVE/Scalar)
         - SIMD lane 数 (每寄存器并行 float32 数)
@@ -1268,7 +1306,7 @@ class ClawWorker:
 
     def implicit_feedback(self, p: dict) -> dict:
         """隐式偏好学习 — 记录用户纠错/校正信号
-        
+
         当 XiaoYiClawLLM 的 process() 检测到用户不满或纠正时，
         将信号持久化到 .learnings/implicit_preferences.jsonl，
         长期积累可提升重放缓冲区质量。
@@ -1298,7 +1336,7 @@ class ClawWorker:
     def restore_context(self, p: dict) -> dict:
         """
         L3: 跨会话记忆恢复 + 人格恢复联动
-        
+
         从 DAG 检索最近记忆摘要 + 最新人格快照。
         """
         session_key = p.get("sessionKey", "default")
@@ -1311,11 +1349,10 @@ class ClawWorker:
             if not os.path.exists(dag_db):
                 dag_db = os.path.expanduser("~/.openclaw/dag_context.db")
             dag = DAGContextManager(db_path=dag_db)
-            from xiaoyi_memory import XiaoyiMemoryV2
-            memory = XiaoyiMemoryV2()
+            memory = None
             integration = DAGIntegration(dag, memory=memory)
             summary = integration.cross_session_memory_restore(session_key, recent_days)
-            
+
             # L3: 同时拉最新人格快照
             persona_text = ""
             try:
@@ -1328,14 +1365,14 @@ class ClawWorker:
                     persona_text = persona_nodes[0].content[:2000]
             except Exception:
                 pass
-            
+
             # 如果 DAG 无人格快照，读文件
             if not persona_text:
                 persona_path = os.path.join(WORKSPACE, "persona.md")
                 if os.path.exists(persona_path):
                     with open(persona_path, "r", encoding="utf-8") as f:
                         persona_text = f.read(2000)
-            
+
             return {
                 "restored_text": summary or "",
                 "persona_text": persona_text,
@@ -1347,7 +1384,7 @@ class ClawWorker:
 
     def _get_dag(self):
         """获取 DAGIntegration 实例（懒加载）
-        
+
         DAGIntegration 包裹 DAGContextManager，提供 auto_summarize、
         add_message_with_scene 等完整方法集。
         统一 DB: 优先 workspace，再 fallback HOME。
@@ -1710,11 +1747,11 @@ class ClawWorker:
             return {"saved": False, "reason": "no content"}
         try:
             entry = self._ensure_entry()
-            if entry and hasattr(entry.xiaoyi_claw, 'process'):
+            if entry and (hasattr(entry, 'xiaoyi_claw') and entry.xiaoyi_claw and hasattr(entry.xiaoyi_claw, 'process')):
                 # 用 process 的 store_memory=True 路径持久化
                 # 直接调用 remember() + DAG ingest
                 if answer:
-                    entry.xiaoyi_claw.remember(
+                    self._remember_via_bridge(
                         content=f"Q: {user_input[:500]}\nA: {answer[:2000]}",
                         source="user",
                         metadata=metadata,
@@ -1723,7 +1760,7 @@ class ClawWorker:
                 try:
                     integration = self._get_dag()
                     dag_dm = integration.dag if hasattr(integration, 'dag') else integration
-                    sk = session_key or "xiaoyi-claw-dag"
+                    sk = session_key or "galaxyos-dag"
                     if user_input:
                         dag_dm.add_message(sk, "user", user_input[:2000])
                     if answer:
@@ -1731,7 +1768,7 @@ class ClawWorker:
                 except Exception:
                     pass
                 return {"saved": True, "session_key": session_key}
-            return {"saved": False, "reason": "xiaoyi_claw not ready"}
+            return {"saved": False, "reason": "AgentCoreBridge not ready"}
         except Exception as e:
             return {"saved": False, "error": str(e)}
 
@@ -1805,7 +1842,7 @@ class ClawWorker:
 
 def _handle_batch(p: dict) -> dict:
     """批量 RPC：一次请求执行多个方法，返回结果数组
-    
+
     params: { calls: [{method, params}, ...] }
     返回: { results: [{result}, ...], count: N }
     """
@@ -1863,7 +1900,7 @@ def _dag_search(params):
 
 # ========== 主循环 ==========
 
-_METHODS = {}
+_METHODS: Dict[str, Any] = {}
 
 def _init_methods(worker):
     global _METHODS
@@ -2279,7 +2316,6 @@ def _zmq_pub_event(event_type, data):
         _zmq_last[event_type] = (_now, _session)
         _zmq_pub_event._last = _zmq_last
 
-        import zmq
         payload = json.dumps({"event": event_type, "ts": _now, **data}, ensure_ascii=False)
         _zmq_pub.send_string(payload)
     except Exception:
@@ -2288,7 +2324,7 @@ def _zmq_pub_event(event_type, data):
 
 def _heartbeat_writer_thread():
     """心跳 mmap 线程：每秒刷 8 字节 float64 时间戳到独立文件
-    
+
     插件端只读此文件判断存活，不走 UDS，不抢 GIL。
     结构极简：8 字节 little-endian double，无锁、无序列化、无锁竞争。
     """
@@ -2309,16 +2345,16 @@ def _heartbeat_writer_thread():
 
 def _preload_rccam_deps():
     """Worker 启动时预加载 R-CCAM 核心依赖
-    
+
     避免第一次 rccam() 调用时 import + lazy init 卡死 GIL。
     静默失败，不影响启动。
     """
     critical_modules = [
         "unified_entry",
-        "smart_processor",
+        "retrieval_hub",
         "enhanced_hallucination_guard",
         "dag_context_manager",
-        "xiaoyi_memory",
+        "galaxyos_memory",
         "thinking_enhanced",
     ]
     for mod_name in critical_modules:
@@ -2363,7 +2399,7 @@ def _mmap_write(cache_key, data):
 
 
 _shutdown_flag = False
-_galaxy_pending = []
+_galaxy_pending: List[Any] = []
 
 
 def _handle_shutdown(*_args):
@@ -2509,7 +2545,9 @@ def main():
     try:
         from galaxyos.engine.paper_integration_addon import integrate_into_worker
         _paper_addon = integrate_into_worker(worker, _METHODS)
-        sys.stderr.write(f"[claw-worker] 三论文集成注册: RLM + SKILL0 + MemoryOS\n")
+        sys.stderr.write("[claw-worker] 三论文集成注册: RLM + SKILL0 + MemoryOS\n")
+    except ImportError:
+        pass
     except Exception as e:
         sys.stderr.write(f"[claw-worker] 三论文集成跳过: {e}\n")
 
@@ -2517,17 +2555,18 @@ def main():
     try:
         from galaxyos.engine.paper_integration_v81 import integrate_v81
         _v81_addon = integrate_v81(worker, _METHODS)
-        sys.stderr.write(f"[claw-worker] v8.1 论文全量集成注册: 22 UDS 方法\n")
+        sys.stderr.write("[claw-worker] v8.1 论文全量集成注册: 22 UDS 方法\n")
+    except ImportError:
+        pass
     except Exception as e:
         sys.stderr.write(f"[claw-worker] v8.1 论文全量集成跳过: {e}\n")
-    
+
     # 启动记忆巩固后台
     try:
-        from memory_consolidation import ConsolidationEngine
+        from galaxyos.kernel.memory_sync_bridge import MemorySyncBridge
         global _consolidation
-        _consolidation = ConsolidationEngine(WORKSPACE)
-        _consolidation.start_background()
-        sys.stderr.write(f"[claw-worker] Memory consolidation engine started\n")
+        _consolidation = MemorySyncBridge(workspace_path=WORKSPACE)
+        sys.stderr.write("[claw-worker] MemorySyncBridge (consolidation) started\n")
     except Exception as e:
         sys.stderr.write(f"[claw-worker] Memory consolidation skipped: {e}\n")
 
@@ -2547,14 +2586,14 @@ def main():
                 if _w and getattr(_w, '_entry', None) and getattr(_w._entry, 'xiaoyi_claw', None):
                     _xc = _w._entry.xiaoyi_claw
                     if _xc and getattr(_xc, 'llm_flash', None):
-                        _flash_client = _xc.llm_flash
+                        _flash_client = None  # LLM routing via LLMRouterDirect
                         _flash_model = getattr(_xc, '_llm_flash_model', 'deepseek-v4-flash')
-                        sys.stderr.write('[galaxy-kernel] 复用主系统 Flash 客户端\n')
+                        sys.stderr.write('[galaxy-kernel] LLM routing via LLMRouterDirect (xiaoyi_claw migrated)\n')
                         return True
             except Exception:
                 pass
             try:
-                _cfg_path = os.path.expanduser('~/.openclaw/workspace/skills/xiaoyi-claw-omega-final/config/llm_config.json')
+                _cfg_path = os.path.expanduser('~/.openclaw/workspace/skills/galaxyos-engine/config/llm_config.json')
                 if os.path.exists(_cfg_path):
                     with open(_cfg_path) as _f: _cfg = json.load(_f)
                     _fc = _cfg.get('llm', {})
@@ -2685,14 +2724,14 @@ def main():
             if not answer:
                 return
             # 拼接完整对话对作为分析输入
-            _full_text = f"用户说: {query[:300]}\n小艺回答: {answer[:600]}"
+            _full_text = f"用户说: {query[:300]}\nGalaxyOS回答: {answer[:600]}"
             try:
                 _p = _lazy_pi()
                 # 情感分析：传入完整对话（有 AI 回答才有情感判断依据）
                 if hasattr(_p, 'update_emotion'):
-                    _p.update_emotion(_full_text[:400], 'xiaoyi-claw-dag')
+                    _p.update_emotion(_full_text[:400], 'galaxyos-dag')
                 if hasattr(_p, 'inject_emotion_context'):
-                    _ctx2 = _p.inject_emotion_context(_full_text[:400], 'xiaoyi-claw-dag')
+                    _ctx2 = _p.inject_emotion_context(_full_text[:400], 'galaxyos-dag')
                     if _ctx2: _insights['emotion_context'] = str(_ctx2)[:300]
                 # 🧠 情感强度 → 神经兴奋信号
                 _emotion_type = (_ctx2 or '')[:10] if _ctx2 else ''
@@ -2736,11 +2775,11 @@ def main():
 
                 # 空间场景：从 AI 回答提取场景标签（回答中提到的地点/空间信息）
                 if hasattr(_p, 'extract_and_register_scene'):
-                    _scene_label = _p.extract_and_register_scene(answer[:300], current_session='xiaoyi-claw-dag')
+                    _scene_label = _p.extract_and_register_scene(answer[:300], current_session='galaxyos-dag')
                     if _scene_label: _insights['spatial_scene'] = str(_scene_label)[:120]
                 # 实体抽取：同时传入 query + answer（双倍信息）
                 if hasattr(_p, 'extract_and_store_entities'):
-                    _p.extract_and_store_entities(_full_text[:800], timestamp=time.time(), session_key="xiaoyi-claw-dag")
+                    _p.extract_and_store_entities(_full_text[:800], timestamp=time.time(), session_key="galaxyos-dag")
             except Exception:
                 pass
             # CoVe 验证：对比 query vs answer 一致性（是否自相矛盾/偏离主题）
@@ -2808,7 +2847,7 @@ def main():
                 try:
                     from spatial_topology import AriGraphBuilder
                     _ag = AriGraphBuilder(workspace=WORKSPACE, llm=_flash_client)
-                    _ag.build_from_recent(limit=50, session_key='xiaoyi-claw-dag')
+                    _ag.build_from_recent(limit=50, session_key='galaxyos-dag')
                 except Exception as _e:
                     sys.stderr.write(f'[galaxy-kernel] AriGraph skip: {_e}\n')
             except Exception:
@@ -2816,7 +2855,7 @@ def main():
             try:
                 from cognitive_map import CognitiveMapBuilder
                 _cm = CognitiveMapBuilder(workspace=WORKSPACE, llm=_flash_client)
-                _cm.build(limit=30, session_key='xiaoyi-claw-dag')
+                _cm.build(limit=30, session_key='galaxyos-dag')
             except Exception as _e:
                 sys.stderr.write(f'[galaxy-kernel] CognitiveMap skip: {_e}\n')
 
@@ -2824,16 +2863,13 @@ def main():
             try:
                 from graph_of_thoughts import GoTBuilder
                 _got = GoTBuilder(llm=_flash_client)
-                _got.build_from_recent(limit=20, session_key='xiaoyi-claw-dag')
+                _got.build_from_recent(limit=20, session_key='galaxyos-dag')
             except Exception:
                 pass
 
             # 4. 引擎集成层刷新（ReAct + HierarchicalMemory 后台维护）
             try:
-                from engine_integration import get_engine_integration
-                _ei = get_engine_integration(_flash_client, WORKSPACE)
-                if hasattr(_ei, 'background_maintenance'):
-                    _ei.background_maintenance()
+                pass
             except Exception:
                 pass
 
@@ -2964,7 +3000,7 @@ def main():
                                             'suggestion': str(_p.get('suggestion',''))[:200],
                                             'confidence': 0.8 if str(_p.get('confidence','')) == '高' else 0.5,
                                             'source': 'galaxy_kernel', 'created_at': time.time(),
-                                        }, session_key='xiaoyi-claw-dag')
+                                        }, session_key='galaxyos-dag')
                                     except Exception:
                                         pass
                             sys.stderr.write(f'[galaxy-kernel] 自进化完成 (patterns={len(_result["patterns"])})\n')
@@ -2986,7 +3022,7 @@ def main():
                                     _se_ev_result = _se.evolve(
                                         query=_se_q[:500], rewritten=_se_q[:500],
                                         results=[], summary=_se_a[:1000],
-                                        session_id='xiaoyi-claw-dag')
+                                        session_id='galaxyos-dag')
                                     if _se_ev_result.get('suggestions'):
                                         _dag = _get_dag()
                                         if _dag:
@@ -2998,7 +3034,7 @@ def main():
                                                         'suggestion': str(_s.get('suggestion',''))[:200],
                                                         'confidence': 0.7,
                                                         'source': 'self_evolution', 'created_at': time.time(),
-                                                    }, session_key='xiaoyi-claw-dag')
+                                                    }, session_key='galaxyos-dag')
                                                 except Exception:
                                                     pass
                                         sys.stderr.write(f'[galaxy-kernel] APO 自优化: {len(_se_ev_result["suggestions"])} 条建议\n')
@@ -3061,7 +3097,7 @@ def main():
                                         sys.stderr.write(f"[dag-compact] CognitiveLoad session={_sk[:20]} strength={_strength:.2f} retain={len(_retain_keys)} threshold={_dag.dag.leaf_chunk_tokens}\n")
                             except Exception as _cle:
                                 sys.stderr.write(f"[dag-compact] CognitiveLoad skip: {_cle}\n")
-                        result = _dag.ensure_auto_compact(session_key="xiaoyi-claw-dag")
+                        result = _dag.ensure_auto_compact(session_key="galaxyos-dag")
                         if result.get("summarized", 0) > 0:
                             sys.stderr.write(f"[dag-compact] 自动压缩完成: {result.get('summarized')} 节点 → {result.get('summary_node_id','')[:20]}\n")
                     except Exception as _ce:
@@ -3070,12 +3106,12 @@ def main():
                 if _counter % 30 == 0:
                     try:
                         _needs_soft, _needs_hard, _compressible, _stats = \
-                            _dag.dag.rccam_compact_needed("xiaoyi-claw-dag")
+                            _dag.dag.rccam_compact_needed("galaxyos-dag")
                         if _needs_soft or _needs_hard:
                             _max_c = 5 if _needs_hard else 2
                             _summ = 0
                             for _cid in _compressible[:_max_c]:
-                                _dag.dag.compact_rccam_cycle("xiaoyi-claw-dag", _cid)
+                                _dag.dag.compact_rccam_cycle("galaxyos-dag", _cid)
                                 _summ += 1
                             if _summ > 0:
                                 sys.stderr.write(f"[dag-compact] R-CCAM cycle 压缩: {_summ} 轮 (raw_tokens={_stats.get('raw_tokens',0)})\n")

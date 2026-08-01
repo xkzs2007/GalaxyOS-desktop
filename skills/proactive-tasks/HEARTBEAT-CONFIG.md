@@ -31,8 +31,8 @@ Heartbeat is a periodic "check-in" that batches multiple background tasks togeth
 
 2. **send-heartbeat.sh** sends this message to your OpenClaw session:
 ```
-💓 Heartbeat check: Read HEARTBEAT.md if it exists (workspace context). 
-Follow it strictly. Do not infer or repeat old tasks from prior chats. 
+💓 Heartbeat check: Read HEARTBEAT.md if it exists (workspace context).
+Follow it strictly. Do not infer or repeat old tasks from prior chats.
 If nothing needs attention, reply HEARTBEAT_OK.
 ```
 
@@ -60,7 +60,7 @@ if "Heartbeat check:" in message:
         result = run_next_task()
         if not result:
             break
-    
+
     if nothing_done:
         reply("HEARTBEAT_OK")
     else:
@@ -69,11 +69,11 @@ if "Heartbeat check:" in message:
 
 ### Why Heartbeat Works Best
 
-✅ **Batch checks together** - One message handles email + calendar + tasks + proactive work  
-✅ **Natural breaks** - Every 30 min is a natural checkpoint  
-✅ **Minimal overhead** - If nothing to do, just "HEARTBEAT_OK"  
-✅ **Full context** - You're in your main session, can make decisions  
-✅ **Human-friendly** - You still control when/how often you check  
+✅ **Batch checks together** - One message handles email + calendar + tasks + proactive work
+✅ **Natural breaks** - Every 30 min is a natural checkpoint
+✅ **Minimal overhead** - If nothing to do, just "HEARTBEAT_OK"
+✅ **Full context** - You're in your main session, can make decisions
+✅ **Human-friendly** - You still control when/how often you check
 
 ---
 
@@ -83,7 +83,7 @@ For work that should never interrupt your main session:
 
 ### Pattern 1: Isolated agentTurn (Background Subprocess)
 
-**When:** Weekly velocity reports, auto-cleanup, metadata updates  
+**When:** Weekly velocity reports, auto-cleanup, metadata updates
 **How:** Run agent in isolated subprocess, no main session context
 
 ```bash
@@ -104,7 +104,7 @@ log_to_memory_file(f"velocity-{week}.md", weekly_velocity)
 
 ### Pattern 2: Scheduled systemEvent (Exact Time Critical)
 
-**When:** Daily reminders at specific time ("9:00 AM sharp")  
+**When:** Daily reminders at specific time ("9:00 AM sharp")
 **How:** Send systemEvent to main session at precise time
 
 ```bash

@@ -1,0 +1,665 @@
+"""
+AgentCoreBridge — OpenJiuwen agent-core 集成桥接层
+
+核心职责：
+  - 通过 openjiuwen.harness.create_deep_agent() 创建 DeepAgent 实例
+  - 注入 GalaxyOS 认知增强工具到 Agent 工具列表
+  - 集成 Rails 行为护栏和 PermissionEngine 安全审批
+  - Agent 类型自动选择：ReActAgent vs WorkflowAgent
+  - 技能执行请求分发
+  - 保留 GalaxyOS 自研 ReActEngine 作为 fallback
+"""
+
+from __future__ import annotations
+
+import logging
+from enum import Enum
+from typing import Any, Dict, List, Optional
+
+logger = logging.getLogger(__name__)
+
+
+class AgentType(str, Enum):
+    REACT = "react"
+    WORKFLOW = "workflow"
+    AUTO = "auto"
+
+
+REACT_SKILLS = {
+    "grill-me", "grill-with-docs", "diagnosing-bugs",
+    "wayfinder", "research", "ask-matt",
+}
+
+WORKFLOW_SKILLS = {
+    "implement", "tdd", "code-review", "triage",
+    "to-spec", "to-tickets", "prototype",
+}
+
+COGNITIVE_TOOL_NAMES = frozenset({
+    "galaxy_pool", "claw_rccam_progress", "claw_recall", "claw_lobster",
+    "claw_health", "claw_vector_info", "claw_events", "claw_store",
+    "claw_verify", "claw_rccam", "claw_save_memory", "claw_compile_skill",
+    "claw_asset_search", "claw_asset_register", "claw_node_invoke",
+    "tokui_render",
+})
+
+
+class AgentCoreBridge:
+    def __init__(self, config: Optional[Dict[str, Any]] = None):
+        self._config = config or {}
+        self._agents: Dict[str, Any] = {}
+        self._tools: List[Any] = []
+        self._cognitive_tools_injected = False
+        self._running = False
+        self._fallback_engine = None
+        self._deep_agent = None
+        self._rails: List[Any] = []
+        self._permission_engine = None
+        self._openjiuwen_available = False
+        self._intelli_router = None
+        self._sessions: Dict[str, Any] = {}
+        self._integration_config_manager = None
+
+    async def initialize(self) -> None:
+        self._running = True
+
+        try:
+            from galaxyos.kernel.integration_config_manager import IntegrationConfigManager
+            self._integration_config_manager = IntegrationConfigManager()
+            integration_config = self._integration_config_manager.load()
+            if integration_config.locale:
+                self._config["locale"] = integration_config.locale
+            if integration_config.sse_enabled is not None:
+                self._config["sse_enabled"] = integration_config.sse_enabled
+            logger.info("IntegrationConfigManager loaded successfully")
+        except Exception as e:
+            logger.warning(f"IntegrationConfigManager load failed: {e}")
+
+        try:
+            from openjiuwen.harness.factory import create_deep_agent
+            from openjiuwen.harness.deep_agent import DeepAgent
+            from openjiuwen.core.foundation.llm.model import Model
+            from openjiuwen.core.foundation.llm.model_client_config import ModelClientConfig
+            from openjiuwen.core.foundation.llm.model_request_config import ModelRequestConfig
+            from openjiuwen.harness.rails import (
+                SecurityRail, SysOperationRail, AskUserRail,
+                ConfirmInterruptRail, SkillUseRail, TaskPlanningRail,
+            )
+            from openjiuwen.harness.security.factory import build_permission_interrupt_rail
+
+            self._create_deep_agent = create_deep_agent
+            self._DeepAgent = DeepAgent
+            self._Model = Model
+            self._ModelClientConfig = ModelClientConfig
+            self._ModelRequestConfig = ModelRequestConfig
+            self._SecurityRail = SecurityRail
+            self._SysOperationRail = SysOperationRail
+            self._AskUserRail = AskUserRail
+            self._ConfirmInterruptRail = ConfirmInterruptRail
+            self._SkillUseRail = SkillUseRail
+            self._TaskPlanningRail = TaskPlanningRail
+            self._build_permission_interrupt_rail = build_permission_interrupt_rail
+            self._openjiuwen_available = True
+
+            self._configure_rails()
+            self._configure_permission_engine()
+            self._configure_intelli_router()
+
+            logger.info("OpenJiuwen agent-core integrated successfully")
+        except ImportError as e:
+            logger.warning(f"openjiuwen agent-core not available ({e}), using fallback engine")
+            self._fallback_engine = _FallbackReActEngine()
+
+    def _configure_rails(self) -> None:
+        if not self._openjiuwen_available:
+            return
+
+        self._rails = [
+            self._SecurityRail(),
+            self._SysOperationRail(),
+            self._AskUserRail(),
+            self._ConfirmInterruptRail(
+                tool_names=["bash", "write_file", "edit_file", "shell_run"]
+            ),
+        ]
+
+        skills_dir = self._config.get("skills_dir")
+        if skills_dir:
+            self._rails.append(self._SkillUseRail(skills_dir=[skills_dir]))
+
+        try:
+            self._rails.append(self._TaskPlanningRail())
+        except Exception as e:
+            logger.debug(f"TaskPlanningRail not available: {e}")
+
+        logger.info(f"Configured {len(self._rails)} Rails: {[type(r).__name__ for r in self._rails]}")
+
+    def _configure_permission_engine(self) -> None:
+        if not self._openjiuwen_available:
+            return
+
+        try:
+            from openjiuwen.harness.security.models import PermissionsSection
+            from openjiuwen.harness.security.host import ToolPermissionHost
+
+            perms_config = self._config.get("permissions", {})
+            permissions_section = PermissionsSection(**perms_config) if perms_config else PermissionsSection()
+
+            host = ToolPermissionHost(
+                resolve_workspace_dir=lambda: self._config.get("workspace", "./"),
+                tool_permission_checks_active=lambda: True,
+            )
+
+            self._permission_engine = self._build_permission_interrupt_rail(
+                permissions=permissions_section,
+                host=host,
+                workspace_root=self._config.get("workspace_root"),
+            )
+            logger.info("PermissionEngine configured with ToolPermissionHost")
+        except ImportError as e:
+            logger.warning(f"PermissionEngine imports failed: {e}, trying simple config")
+            try:
+                self._permission_engine = self._build_permission_interrupt_rail()
+                logger.info("PermissionEngine configured (simple mode)")
+            except Exception as e2:
+                logger.warning(f"PermissionEngine configuration failed: {e2}")
+        except Exception as e:
+            logger.warning(f"PermissionEngine configuration failed: {e}")
+
+    def _configure_intelli_router(self) -> None:
+        if not self._openjiuwen_available:
+            return
+
+        try:
+            from openjiuwen.core.foundation.llm.intelli_router import IntelliRouter
+            from openjiuwen.core.foundation.llm.intelli_router_config import IntelliRouterConfig
+
+            router_config = self._config.get("intelli_router", {})
+            if router_config:
+                self._intelli_router = IntelliRouter(IntelliRouterConfig(**router_config))
+            else:
+                self._intelli_router = IntelliRouter()
+
+            logger.info("IntelliRouter configured successfully")
+        except ImportError as e:
+            logger.warning(f"IntelliRouter imports failed ({e}), falling back to hardcoded Model config")
+            self._intelli_router = None
+        except Exception as e:
+            logger.warning(f"IntelliRouter configuration failed ({e}), falling back to hardcoded Model config")
+            self._intelli_router = None
+
+    async def get_or_create_session(self, workspace_id: str) -> Any:
+        if workspace_id in self._sessions:
+            return self._sessions[workspace_id]
+
+        try:
+            from openjiuwen.core.foundation.session import Session
+            from openjiuwen.core.foundation.checkpointer import SQLiteCheckpointer
+
+            session = await Session.create(
+                session_id=f"galaxyos:{workspace_id}",
+                checkpointer=SQLiteCheckpointer(),
+            )
+            self._sessions[workspace_id] = session
+            logger.info(f"Session created for workspace {workspace_id}")
+            return session
+        except ImportError as e:
+            logger.warning(f"Session imports failed ({e}), using stateless mode")
+            return None
+        except Exception as e:
+            logger.warning(f"Session creation failed for {workspace_id}: {e}")
+            return None
+
+    async def create_agent(
+        self,
+        provider: str = "",
+        api_key: str = "",
+        api_base: str = "",
+        model_name: str = "",
+        workspace: str = "./",
+        language: str = "cn",
+        restrict_to_work_dir: bool = True,
+        enable_task_loop: bool = True,
+        max_iterations: int = 30,
+    ) -> Any:
+        if not self._openjiuwen_available:
+            logger.warning("Cannot create DeepAgent: openjiuwen not available")
+            return None
+
+        try:
+            resolved_provider = provider or self._config.get("provider", "")
+            resolved_model = model_name or self._config.get("model", "")
+
+            if self._intelli_router is not None:
+                try:
+                    model = self._intelli_router.get_model(resolved_provider, resolved_model)
+                    logger.info(f"IntelliRouter resolved model for provider={resolved_provider}, model={resolved_model}")
+                except Exception as e:
+                    logger.warning(f"IntelliRouter.get_model failed ({e}), falling back to hardcoded Model")
+                    model = self._Model(
+                        model_client_config=self._ModelClientConfig(
+                            client_provider=resolved_provider,
+                            api_key=api_key or self._config.get("api_key", ""),
+                            api_base=api_base or self._config.get("api_base", ""),
+                        ),
+                        model_config=self._ModelRequestConfig(
+                            model=resolved_model,
+                        ),
+                    )
+            else:
+                model = self._Model(
+                    model_client_config=self._ModelClientConfig(
+                        client_provider=resolved_provider,
+                        api_key=api_key or self._config.get("api_key", ""),
+                        api_base=api_base or self._config.get("api_base", ""),
+                    ),
+                    model_config=self._ModelRequestConfig(
+                        model=resolved_model,
+                    ),
+                )
+
+            session = await self.get_or_create_session(workspace)
+
+            agent = self._create_deep_agent(
+                model=model,
+                workspace=workspace,
+                rails=self._rails or None,
+                enable_task_loop=enable_task_loop,
+                max_iterations=max_iterations,
+                language=language,
+                restrict_to_work_dir=restrict_to_work_dir,
+            )
+
+            if session is not None and hasattr(agent, 'session'):
+                try:
+                    agent.session = session
+                    logger.info(f"Agent bound to session for workspace {workspace}")
+                except Exception as e:
+                    logger.warning(f"Failed to bind session to agent: {e}")
+
+            self._deep_agent = agent
+            logger.info("DeepAgent created successfully")
+
+            if self._tools and hasattr(agent, 'ability_manager'):
+                for card, tool_instance in self._tools:
+                    try:
+                        agent.ability_manager.add_ability(card, tool_instance)
+                        logger.debug(f"Injected tool {card.name} into new DeepAgent via add_ability")
+                    except Exception as e:
+                        logger.warning(f"add_ability failed for {card.name} on new agent: {e}")
+                        try:
+                            agent.ability_manager.add(card)
+                        except Exception as e2:
+                            logger.warning(f"add() also failed for {card.name}: {e2}")
+
+            return agent
+        except Exception as e:
+            logger.error(f"Failed to create DeepAgent: {e}")
+            return None
+
+    async def inject_cognitive_tools(self, mcp_server=None) -> Dict[str, Any]:
+        if self._cognitive_tools_injected:
+            return {"status": "already_injected", "tools": len(COGNITIVE_TOOL_NAMES)}
+
+        injected = []
+        failed = []
+
+        if self._openjiuwen_available:
+            try:
+                from openjiuwen.core.foundation.tool.base import ToolCard
+                from openjiuwen.core.foundation.tool.function.function import LocalFunction
+
+                for tool_name in COGNITIVE_TOOL_NAMES:
+                    try:
+                        card = ToolCard(
+                            name=tool_name,
+                            description=f"GalaxyOS cognitive tool: {tool_name}",
+                            input_params=self._build_tool_schema(tool_name),
+                            stateless=True,
+                        )
+                        tool_instance = LocalFunction(
+                            card=card,
+                            func=self._make_cognitive_handler(tool_name, mcp_server),
+                        )
+                        self._tools.append((card, tool_instance))
+                        injected.append(tool_name)
+                    except Exception as e:
+                        logger.warning(f"Failed to inject cognitive tool {tool_name}: {e}")
+                        failed.append(tool_name)
+
+                agent = self._deep_agent
+                if agent and hasattr(agent, 'ability_manager'):
+                    for card, tool_instance in self._tools:
+                        try:
+                            agent.ability_manager.add_ability(card, tool_instance)
+                            logger.debug(f"Registered cognitive tool {card.name} via add_ability")
+                        except Exception as e:
+                            logger.warning(f"add_ability failed for {card.name}: {e}, falling back to add()")
+                            try:
+                                agent.ability_manager.add(card)
+                            except Exception as e2:
+                                logger.warning(f"add() also failed for {card.name}: {e2}")
+            except ImportError as e:
+                logger.warning(f"openjiuwen tool classes not available ({e}), skipping tool registration")
+                for tool_name in COGNITIVE_TOOL_NAMES:
+                    injected.append(tool_name)
+        else:
+            for tool_name in COGNITIVE_TOOL_NAMES:
+                injected.append(tool_name)
+
+        self._cognitive_tools_injected = True
+
+        return {
+            "status": "injected",
+            "injected": injected,
+            "failed": failed,
+            "total": len(COGNITIVE_TOOL_NAMES),
+        }
+
+    @staticmethod
+    def _build_tool_schema(tool_name: str) -> Dict[str, Any]:
+        schemas = {
+            "galaxy_pool": {"type": "object", "properties": {"query": {"type": "string", "description": "Search query for knowledge pool"}}, "required": ["query"]},
+            "claw_rccam_progress": {"type": "object", "properties": {"session_id": {"type": "string"}}, "required": ["session_id"]},
+            "claw_recall": {"type": "object", "properties": {"query": {"type": "string"}, "top_k": {"type": "integer", "default": 5}}, "required": ["query"]},
+            "claw_lobster": {"type": "object", "properties": {"content": {"type": "string"}}, "required": ["content"]},
+            "claw_health": {"type": "object", "properties": {}},
+            "claw_vector_info": {"type": "object", "properties": {"collection": {"type": "string"}}, "required": ["collection"]},
+            "claw_events": {"type": "object", "properties": {"filter": {"type": "string"}}, "required": []},
+            "claw_store": {"type": "object", "properties": {"key": {"type": "string"}, "value": {"type": "string"}}, "required": ["key", "value"]},
+            "claw_verify": {"type": "object", "properties": {"claim": {"type": "string"}}, "required": ["claim"]},
+            "claw_rccam": {"type": "object", "properties": {"task": {"type": "string"}}, "required": ["task"]},
+            "claw_save_memory": {"type": "object", "properties": {"content": {"type": "string"}, "tags": {"type": "array", "items": {"type": "string"}}}, "required": ["content"]},
+            "claw_compile_skill": {"type": "object", "properties": {"skill_name": {"type": "string"}, "skill_data": {"type": "object"}}, "required": ["skill_name"]},
+            "claw_asset_search": {"type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"]},
+            "claw_asset_register": {"type": "object", "properties": {"asset_type": {"type": "string"}, "metadata": {"type": "object"}}, "required": ["asset_type"]},
+            "claw_node_invoke": {"type": "object", "properties": {"node_id": {"type": "string"}, "inputs": {"type": "object"}}, "required": ["node_id"]},
+            "tokui_render": {"type": "object", "properties": {"dsl": {"type": "string"}, "target": {"type": "string", "default": "webview"}}, "required": ["dsl"]},
+        }
+        return schemas.get(tool_name, {"type": "object", "properties": {}})
+
+    @staticmethod
+    def _make_cognitive_handler(tool_name: str, mcp_server=None):
+        async def _handler(**kwargs):
+            if mcp_server and hasattr(mcp_server, 'call_tool'):
+                try:
+                    result = await mcp_server.call_tool(tool_name, kwargs)
+                    return result
+                except Exception as e:
+                    return f"Error calling {tool_name} via MCP: {e}"
+            return f"GalaxyOS cognitive tool {tool_name} executed with args: {kwargs}"
+
+        _handler.__name__ = f"_cognitive_{tool_name}"
+        return _handler
+
+    async def _check_rails(self, skill_name: str, parameters: Dict[str, Any]) -> Dict[str, Any]:
+        if not self._openjiuwen_available or not self._rails:
+            return {"allowed": True}
+
+        security_check_available = False
+        try:
+            from openjiuwen.harness.rails.security.base_security_rail import SecurityCheckContext
+            security_check_available = True
+
+            for rail in self._rails:
+                if hasattr(rail, 'run_security_check'):
+                    try:
+                        ctx = SecurityCheckContext(
+                            tool_name=skill_name,
+                            parameters=parameters,
+                        )
+                        decision = await rail.run_security_check(ctx)
+                        if hasattr(decision, 'allow') and not decision.allow:
+                            return {"allowed": False, "reason": f"Blocked by {type(rail).__name__}: {getattr(decision, 'reason', '')}"}
+                    except Exception as e:
+                        logger.debug(f"Rail {type(rail).__name__} run_security_check failed: {e}")
+        except ImportError:
+            pass
+
+        if not security_check_available:
+            dangerous_patterns = ["rm -rf", "format", "del /s", "shutdown", "reboot"]
+            param_str = str(parameters).lower()
+            for pattern in dangerous_patterns:
+                if pattern in param_str:
+                    return {"allowed": False, "reason": f"Blocked by SecurityRail: dangerous pattern '{pattern}' detected"}
+
+        return {"allowed": True}
+
+    async def _check_permission(self, skill_name: str, parameters: Dict[str, Any]) -> Dict[str, Any]:
+        if not self._permission_engine:
+            return {"approved": True}
+
+        shell_tools = {"bash", "shell_run", "write_file", "edit_file"}
+        if skill_name in shell_tools:
+            try:
+                from openjiuwen.harness.security.shell_ast import parse_shell_for_permission
+                command = parameters.get("command", parameters.get("content", ""))
+                if command:
+                    parse_result = parse_shell_for_permission(command)
+                    if parse_result.kind == "too_complex":
+                        return {"approved": False, "status": "blocked_by_permission", "reason": "HITL required"}
+            except ImportError:
+                pass
+
+            confirm_rail = None
+            for rail in self._rails:
+                if type(rail).__name__ == "ConfirmInterruptRail":
+                    confirm_rail = rail
+                    break
+
+            if confirm_rail and hasattr(confirm_rail, "interrupt"):
+                try:
+                    await confirm_rail.interrupt(
+                        tool_name=skill_name,
+                        parameters=parameters,
+                    )
+                    return {"approved": True, "status": "confirmed"}
+                except Exception as e:
+                    logger.warning(f"ConfirmInterruptRail interrupt failed: {e}")
+                    return {"approved": False, "status": "awaiting_permission", "reason": "HITL confirmation required"}
+
+            return {"approved": True, "reason": "Requires HITL confirmation via ConfirmInterruptRail"}
+
+        return {"approved": True}
+
+    def select_agent_type(self, skill_name: str) -> AgentType:
+        if skill_name in REACT_SKILLS:
+            return AgentType.REACT
+        if skill_name in WORKFLOW_SKILLS:
+            return AgentType.WORKFLOW
+        return AgentType.REACT
+
+    async def execute_skill(
+        self,
+        skill_name: str,
+        parameters: Dict[str, Any],
+        workspace_id: Optional[str] = None,
+        agent_type: AgentType = AgentType.AUTO,
+    ) -> Dict[str, Any]:
+        if agent_type == AgentType.AUTO:
+            agent_type = self.select_agent_type(skill_name)
+
+        rails_result = await self._check_rails(skill_name, parameters)
+        if not rails_result.get("allowed", True):
+            return {"status": "blocked_by_rails", "reason": rails_result.get("reason", ""), "skill_name": skill_name}
+
+        perm_result = await self._check_permission(skill_name, parameters)
+        if not perm_result.get("approved", True):
+            return {"status": "blocked_by_permission", "reason": perm_result.get("reason", ""), "skill_name": skill_name}
+
+        if self._fallback_engine and not self._openjiuwen_available:
+            return await self._fallback_engine.execute(
+                skill_name=skill_name,
+                parameters=parameters,
+                workspace_id=workspace_id,
+                agent_type=agent_type,
+            )
+
+        if self._deep_agent and self._openjiuwen_available:
+            try:
+                agent = self._deep_agent
+                if hasattr(agent, 'chat'):
+                    message = parameters.get("step", parameters.get("query", str(parameters)))
+                    chunks = []
+                    async for chunk in agent.chat(workspace_id=workspace_id or "default", message=message):
+                        if isinstance(chunk, str):
+                            chunks.append(chunk)
+                        elif isinstance(chunk, dict):
+                            content = chunk.get("content", chunk.get("text", ""))
+                            if content:
+                                chunks.append(content)
+
+                    final_output = "".join(chunks)
+                    return {
+                        "skill_name": skill_name,
+                        "agent_type": agent_type.value,
+                        "status": "completed",
+                        "parameters": parameters,
+                        "workspace_id": workspace_id,
+                        "cognitive_enhancement": self._cognitive_tools_injected,
+                        "rails_active": len(self._rails),
+                        "permission_engine_active": self._permission_engine is not None,
+                        "final_output": final_output,
+                        "chunk_count": len(chunks),
+                    }
+                elif hasattr(agent, 'run'):
+                    result = await agent.run(message=parameters.get("step", str(parameters)))
+                    return {
+                        "skill_name": skill_name,
+                        "agent_type": agent_type.value,
+                        "status": "completed",
+                        "parameters": parameters,
+                        "workspace_id": workspace_id,
+                        "cognitive_enhancement": self._cognitive_tools_injected,
+                        "rails_active": len(self._rails),
+                        "permission_engine_active": self._permission_engine is not None,
+                        "final_output": str(result) if result else "",
+                    }
+            except Exception as e:
+                logger.error(f"DeepAgent execution failed for {skill_name}: {e}")
+                return {
+                    "skill_name": skill_name,
+                    "agent_type": agent_type.value,
+                    "status": "failed",
+                    "parameters": parameters,
+                    "workspace_id": workspace_id,
+                    "error": str(e),
+                }
+
+        return {
+            "skill_name": skill_name,
+            "agent_type": agent_type.value,
+            "status": "dispatched_to_deep_agent",
+            "parameters": parameters,
+            "workspace_id": workspace_id,
+            "cognitive_enhancement": self._cognitive_tools_injected,
+            "rails_active": len(self._rails),
+            "permission_engine_active": self._permission_engine is not None,
+        }
+
+    def list_builtin_tools(self) -> List[Dict[str, str]]:
+        if not self._openjiuwen_available:
+            return []
+
+        try:
+            from openjiuwen.harness.tools import SessionToolkit
+            toolkit = SessionToolkit()
+            return [{"name": t.name, "description": getattr(t, "description", "")} for t in toolkit.tools()]
+        except Exception:
+            return []
+
+    def register_skill_as_tool(self, skill_name: str, skill_description: str, step_handler=None) -> Any:
+        try:
+            from openjiuwen.core.foundation.tool.base import ToolCard
+            from openjiuwen.core.foundation.tool.function.function import LocalFunction
+
+            card = ToolCard(
+                name=f"skill_{skill_name}",
+                description=skill_description,
+                input_params={
+                    "type": "object",
+                    "properties": {
+                        "query": {"type": "string", "description": f"Input for skill {skill_name}"},
+                    },
+                    "required": ["query"],
+                },
+                stateless=True,
+            )
+
+            async def _skill_handler(query: str, **kwargs):
+                if step_handler:
+                    return await step_handler(query, **kwargs)
+                return f"Skill {skill_name} executed"
+
+            _skill_handler.__name__ = f"_skill_{skill_name}"
+            tool_instance = LocalFunction(card=card, func=_skill_handler)
+
+            self._tools.append((card, tool_instance))
+
+            agent = self._deep_agent
+            if agent and hasattr(agent, 'ability_manager'):
+                try:
+                    agent.ability_manager.add_ability(card, tool_instance)
+                    logger.info(f"Registered skill tool skill_{skill_name} via add_ability")
+                except Exception as e:
+                    logger.warning(f"add_ability failed for skill_{skill_name}: {e}, falling back to add()")
+                    try:
+                        agent.ability_manager.add(card)
+                    except Exception as e2:
+                        logger.warning(f"add() also failed for skill_{skill_name}: {e2}")
+
+            return tool_instance
+        except ImportError:
+            logger.warning("openjiuwen not available, skill tool registration skipped")
+            return None
+
+    async def suspend_execution(self, skill_name: str, checkpoint: Dict[str, Any]) -> None:
+        pass
+
+    async def resume_execution(self, skill_name: str, checkpoint: Dict[str, Any]) -> Dict[str, Any]:
+        return {"skill_name": skill_name, "status": "resumed", "checkpoint": checkpoint}
+
+    async def shutdown(self) -> None:
+        self._running = False
+        self._agents.clear()
+        self._sessions.clear()
+        self._cognitive_tools_injected = False
+        self._deep_agent = None
+
+    def _create_llm_agent_available(self) -> bool:
+        return self._openjiuwen_available
+
+    def get_stats(self) -> Dict[str, Any]:
+        return {
+            "running": self._running,
+            "openjiuwen_available": self._openjiuwen_available,
+            "cognitive_tools_injected": self._cognitive_tools_injected,
+            "cognitive_tool_count": len(COGNITIVE_TOOL_NAMES),
+            "registered_tools": len(self._tools),
+            "agents": len(self._agents),
+            "rails_count": len(self._rails),
+            "rails": [type(r).__name__ for r in self._rails],
+            "permission_engine_active": self._permission_engine is not None,
+            "fallback_active": self._fallback_engine is not None,
+            "deep_agent_created": self._deep_agent is not None,
+            "intelli_router_active": self._intelli_router is not None,
+            "sessions_count": len(self._sessions),
+        }
+
+
+class _FallbackReActEngine:
+    async def execute(
+        self,
+        skill_name: str,
+        parameters: Dict[str, Any],
+        workspace_id: Optional[str] = None,
+        agent_type: AgentType = AgentType.REACT,
+    ) -> Dict[str, Any]:
+        return {
+            "skill_name": skill_name,
+            "agent_type": agent_type.value,
+            "status": "executed_via_fallback",
+            "parameters": parameters,
+            "workspace_id": workspace_id,
+            "engine": "galaxyos_fallback_react",
+        }

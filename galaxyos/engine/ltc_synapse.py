@@ -6,17 +6,14 @@ LTC Synapse — 液态时间常数突触
   每条突触学一对 (t_a, t_b, ff1, ff2)
   权重由 sigmoid( t_a * days_unused + t_b ) 动态插值
 
-Author: 小艺 Claw
+Author: GalaxyOS
 Version: 1.0.0
 Created: 2026-06-05
 """
 
 import math
-import json
-import time
 import logging
-from typing import Dict, List, Optional, Tuple
-from dataclasses import dataclass, field, asdict
+from typing import Dict, List
 
 logger = logging.getLogger("ltc_synapse")
 
@@ -49,7 +46,7 @@ def _days_since(timestamp_str: str) -> float:
 class LTCConfig:
     """
     一条突触的 LTC 参数组合
-    
+
     公式:
         time_gate = sigmoid(t_a * days + t_b)
         weight = ff1 * (1 - time_gate) + time_gate * ff2
@@ -126,9 +123,9 @@ PRESETS = {
 class LTCBatchOptimizer:
     """
     PyTorch 批量优化器
-    
+
     对一批突触的使用记录进行训练，优化每条突触的 (t_a, t_b, ff1, ff2)。
-    
+
     训练目标:
         1. 高使用频率的突触 → ff1 高（最近用强度高），t_a 适中
         2. 长期不用的突触 → ff2 低（稳定状态弱）
@@ -144,14 +141,14 @@ class LTCBatchOptimizer:
     def fit(self, synapses_data: List[dict]) -> List[LTCConfig]:
         """
         训练一批突触
-        
+
         Args:
             synapses_data: 每条突触的 dict，包含
                 - days: float, 距上次使用天数
                 - recent_uses: int, 近期使用次数
                 - total_uses: int, 总使用次数
                 - current_weight: float, 当前权重
-        
+
         Returns:
             [LTCConfig, ...] 训练后的参数
         """

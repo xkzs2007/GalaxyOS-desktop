@@ -16,7 +16,7 @@
 - 不阻塞主线程，异步执行
 - 只更新 small adapter（~1M params），不动 2.2B LFM 主模型
 
-Author: 小艺 Claw
+Author: GalaxyOS
 Version: 1.0.0
 Created: 2026-06-15
 """
@@ -25,11 +25,11 @@ import json
 import math
 import os
 import random
-import time
 import numpy as np
-from typing import Dict, List, Optional, Tuple, Any
+from typing import Dict, List, Optional, Any
 from pathlib import Path
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
+from galaxyos.shared.paths import workspace
 
 
 class DreamDrivenLearner:
@@ -39,8 +39,8 @@ class DreamDrivenLearner:
     使用睡眠梦境碎片的对比学习来在线更新 adapter。
     """
 
-    def __init__(self, workspace_path: str = None):
-        self.workspace_path = Path(workspace_path or os.path.expanduser("~/.openclaw/workspace"))
+    def __init__(self, workspace_path: Optional[str] = None):
+        self.workspace_path = Path(workspace_path or workspace())
         self.learn_path = self.workspace_path / ".learnings" / "dream_learning"
 
         # 持久化
@@ -52,14 +52,8 @@ class DreamDrivenLearner:
             if not p.exists():
                 p.touch()
 
-        # LFM embedding 引擎
         self._lfm = None
-        try:
-            from lfm_adaptive_operator import RealLFMNetwork
-            self._lfm_cls = RealLFMNetwork
-            self._lfm_available = True
-        except ImportError:
-            self._lfm_available = False
+        self._lfm_available = False
 
         # Adapter 参数: (2048, 2048) 线性变换矩阵
         # 从零初始化为近单位阵（对角占优）
@@ -185,6 +179,7 @@ class DreamDrivenLearner:
         if not self._ensure_lfm():
             return None
 
+        assert self._lfm is not None
         embs = []
         for t in texts:
             try:
@@ -198,6 +193,7 @@ class DreamDrivenLearner:
 
         X = np.stack(embs, axis=0)  # (N, 2048)
         # Adapter 前向：Z = X @ W^T
+        assert self.adapter_W is not None
         Z = X.astype(np.float32) @ self.adapter_W.T.astype(np.float32)
         # L2 归一化
         norms = np.linalg.norm(Z, axis=1, keepdims=True)
@@ -327,6 +323,7 @@ class DreamDrivenLearner:
                     train_pairs += 1
 
                     # 积累梯度
+                    assert self.adapter_W is not None
                     grad = self._contrastive_gradient(a_emb, p_emb, neg_embs,
                                                        self.adapter_W)
                     grad_accum += grad
@@ -337,6 +334,7 @@ class DreamDrivenLearner:
         # 应用梯度更新
         avg_loss = total_loss / train_pairs
         lr = self.learning_rate * max(0.5, 1.0 - self.train_count / 500.0)  # 衰减
+        assert self.adapter_W is not None
         self.adapter_W = self.adapter_W - lr * grad_accum / train_pairs
 
         # Frobenius 范数约束（防止 W 爆炸）
@@ -358,7 +356,7 @@ class DreamDrivenLearner:
     # ── 外部入口 ──
 
     def learn_from_dreams(self, dream_log_path: str,
-                           current_cycle: int = None) -> Dict[str, Any]:
+                           current_cycle: Optional[int] = None) -> Dict[str, Any]:
         """
         入口：从梦境日志执行一次学习
 
@@ -409,6 +407,8 @@ class DreamDrivenLearner:
         """
         if not self._ensure_lfm():
             return None
+        assert self._lfm is not None
+        assert self.adapter_W is not None
         try:
             emb = self._lfm.embed_text(text[:512])
             if emb is not None and len(emb) == 2048:
@@ -442,7 +442,7 @@ class DreamDrivenLearner:
 _LEARNER: Optional[DreamDrivenLearner] = None
 
 
-def get_learner(workspace_path: str = None) -> DreamDrivenLearner:
+def get_learner(workspace_path: Optional[str] = None) -> DreamDrivenLearner:
     """获取/创建全局梦境学习器"""
     global _LEARNER
     if _LEARNER is None:
@@ -450,13 +450,13 @@ def get_learner(workspace_path: str = None) -> DreamDrivenLearner:
     return _LEARNER
 
 
-def learn_from_dreams(dream_log_path: str = None,
-                       workspace_path: str = None,
-                       current_cycle: int = None) -> Dict:
+def learn_from_dreams(dream_log_path: Optional[str] = None,
+                       workspace_path: Optional[str] = None,
+                       current_cycle: Optional[int] = None) -> Dict:
     """快速执行梦境学习"""
     if dream_log_path is None:
         dream_log_path = os.path.join(
-            workspace_path or os.path.expanduser("~/.openclaw/workspace"),
+            workspace_path or workspace(),
             "memory/dreaming/dream_log.jsonl"
         )
     learner = get_learner(workspace_path)

@@ -9,7 +9,7 @@ neural_pipeline.py 期望的三个接口：
   SynapseGATEncoder     — GAT 编码器
   SynapseGraphSAGEEncoder — GraphSAGE 编码器
 
-Author: 小艺 Claw
+Author: GalaxyOS
 Created: 2026-06-06
 """
 
@@ -18,10 +18,15 @@ import os
 import re
 import logging
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple, Any
+from typing import Dict, List, Optional, Tuple
 
-import torch
+try:
+    import torch
+    TORCH_AVAILABLE = True
+except ImportError:
+    TORCH_AVAILABLE = False
 import numpy as np
+from galaxyos.shared.paths import workspace
 
 logger = logging.getLogger("gnn_graph_builder")
 
@@ -100,8 +105,10 @@ class SynapseGraphBuilder:
         feature_dim: int = 64,
         device: str = "cpu",
     ):
-        self.ws = workspace_path or os.path.expanduser("~/.openclaw/workspace")
+        self.ws = workspace_path or workspace()
         self.feature_dim = feature_dim
+        if not TORCH_AVAILABLE:
+            raise ImportError("torch is required for SynapseGraphBuilder")
         self.device = torch.device(device)
         self._tokenizer = None  # 懒加载 jieba
 
@@ -265,7 +272,7 @@ class SynapseGraphBuilder:
                 path = alt
             else:
                 # 从 existing ConsolidationEngine 路径尝试
-                alt2 = os.path.join(self.ws, "skills/xiaoyi-claw-omega-final/skills/llm-memory-integration/.learnings/synapse_network/neurons.jsonl")
+                alt2 = os.path.join(self.ws, "skills/galaxyos-engine/skills/llm-memory-integration/.learnings/synapse_network/neurons.jsonl")
                 if os.path.exists(alt2):
                     path = alt2
                 else:
@@ -289,7 +296,7 @@ class SynapseGraphBuilder:
             if os.path.exists(alt):
                 path = alt
             else:
-                alt2 = os.path.join(self.ws, "skills/xiaoyi-claw-omega-final/skills/llm-memory-integration/.learnings/synapse_network/synapses.jsonl")
+                alt2 = os.path.join(self.ws, "skills/galaxyos-engine/skills/llm-memory-integration/.learnings/synapse_network/synapses.jsonl")
                 if os.path.exists(alt2):
                     path = alt2
                 else:

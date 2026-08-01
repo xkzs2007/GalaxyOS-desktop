@@ -1,11 +1,11 @@
 ---
 type: idea
-title: 
+title:
 category:     # business, product, project, random, etc.
 status:       # seed, exploring, validating, building, parked, dead
-created_on: 
+created_on:
 tags: []
-last_updated: 
+last_updated:
 ---
 
 ## The Idea
@@ -18,12 +18,12 @@ last_updated:
 
 ## Open Questions
 
-- 
+-
 
 ## Next Steps
 
-- 
+-
 
 ## Notes
 
-- 
+-

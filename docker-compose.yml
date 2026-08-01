@@ -1,0 +1,47 @@
+version: "3.8"
+
+services:
+  gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile.gateway
+    ports:
+      - "3000:3000"
+    environment:
+      - PILOTDECK_KERNEL_TRANSPORT=sse
+      - PILOTDECK_KERNEL_HOST=kernel
+      - PILOTDECK_KERNEL_PORT=8765
+    depends_on:
+      kernel:
+        condition: service_healthy
+    volumes:
+      - pilotdeck-workspace:/root/.pilotdeck
+
+  kernel:
+    build:
+      context: .
+      dockerfile: Dockerfile.kernel
+    environment:
+      - GALAXYOS_MCP_TRANSPORT=sse
+      - GALAXYOS_MCP_PORT=8765
+      - GALAXYOS_MCP_HOST=0.0.0.0
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; s=socket.socket(); s.connect(('localhost',8765)); s.close()"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    volumes:
+      - pilotdeck-workspace:/root/.pilotdeck
+
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-data:/root/.ollama
+    profiles:
+      - local-model
+
+volumes:
+  pilotdeck-workspace:
+  ollama-data:

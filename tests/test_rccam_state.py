@@ -7,7 +7,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import pytest
 import time
-from services.rccam_state import PhaseState
+from galaxyos.engine.rccam_state import PhaseState
 
 
 class TestPhaseState:

@@ -14,26 +14,21 @@ TitansNeuralMemory — 在线神经记忆模块
 - 替代/补充 ConsolidationEngine 的被动等待 → 主动在线更新
 - 记忆向量持续追踪系统状态，不做批量固化
 
-Author: 小艺 Claw
+Author: GalaxyOS
 Version: 1.0.0
 Created: 2026-06-15
 """
 
 import json
 import math
-import os
 import time
 import numpy as np
-from typing import Dict, List, Optional, Tuple, Any
+from typing import Dict, List, Optional, Any
 from pathlib import Path
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
+from galaxyos.shared.paths import workspace
 
-# ── 尝试加载 LFM embedding ──
-try:
-    from lfm_adaptive_operator import RealLFMNetwork
-    _LFM_AVAILABLE = True
-except ImportError:
-    _LFM_AVAILABLE = False
+_LFM_AVAILABLE = False
 
 
 class TitansNeuralMemory:
@@ -51,7 +46,7 @@ class TitansNeuralMemory:
     """
 
     def __init__(self, workspace_path: str = None):
-        self.workspace_path = Path(workspace_path or os.path.expanduser("~/.openclaw/workspace"))
+        self.workspace_path = Path(workspace_path or workspace())
         self.memory_path = self.workspace_path / ".learnings" / "titans_memory"
 
         # 持久化路径

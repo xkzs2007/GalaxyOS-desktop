@@ -19,15 +19,14 @@ Liquid SSM — 液体状态空间模型 (Mamba 选择机制 + LTC 连续时间�
   - 需要精细时序控制的场景
   - 与 LGTC 和 Neural ODE 互补
 
-Author: 小艺 Claw
+Author: GalaxyOS
 Version: 1.0.0
 Created: 2026-06-14
 """
 
 import math
 import logging
-from typing import Dict, List, Optional, Tuple, Any, Union
-from dataclasses import dataclass, field
+from typing import Optional, Tuple
 
 logger = logging.getLogger("liquid_ssm")
 
@@ -73,12 +72,12 @@ class LiquidSSM:
         self.tau_min = tau_min
         self.tau_max = tau_max
         self.use_selective = use_selective
-        
+
         # 尝试连接 UDS lfm_server
         self._uds_ok = False
         self._uds_tried = False
         self._try_uds()
-        
+
         if not self._uds_ok:
             # ===== SSM 参数 (多通道) =====
             self.A = -np.random.uniform(0.1, 2.0, (n_channels, state_dim)).astype(np.float32)
@@ -134,8 +133,8 @@ class LiquidSSM:
             self.w_out = np.random.uniform(-limit_out, limit_out,
                                             (output_dim, state_dim * n_channels)).astype(np.float32)
             self.b_out = np.zeros(output_dim, dtype=np.float32)
-            logger.info(f"LiquidSSM 使用 UDS 后端 (lfm_server state)")
-    
+            logger.info("LiquidSSM 使用 UDS 后端 (lfm_server state)")
+
 
         # A 矩阵 (对角线): [n_channels, state_dim]
         self.A = -np.random.uniform(0.1, 2.0, (n_channels, state_dim)).astype(np.float32)
@@ -192,15 +191,8 @@ class LiquidSSM:
         self.b_out = np.zeros(output_dim, dtype=np.float32)
 
     def _try_uds(self):
-        """尝试连接 lfm_server UDS"""
         self._uds_tried = True
-        try:
-            from galaxyos_native import lfm_ping
-            lfm_ping()
-            self._uds_ok = True
-        except Exception as e:
-            self._uds_ok = False
-            logger.debug(f"LiquidSSM UDS 不可用: {e}, 使用 numpy fallback")
+        self._uds_ok = False
 
     # ---------- 工具函数 ----------
 
@@ -216,13 +208,13 @@ class LiquidSSM:
 
     def _compute_tau(self, h: np.ndarray, u: np.ndarray) -> np.ndarray:
         """计算 LTC 时间常数
-        
+
         τ_c = sigmoid(W_τh @ h_c + W_τx @ u + b_τ) * (τ_max - τ_min) + τ_min
-        
+
         Args:
             h: [n_channels, state_dim]
             u: [input_dim]
-        
+
         Returns:
             tau: [n_channels, 1]
         """
@@ -235,14 +227,14 @@ class LiquidSSM:
     def _ssm_dynamics(self, h: np.ndarray, u: np.ndarray,
                       B_mat: np.ndarray) -> np.ndarray:
         """SSM 线性动力学
-        
+
         dh_ssm/dt = A * h + B * u
-        
+
         Args:
             h: [n_channels, state_dim]
             u: [input_dim]
             B_mat: [n_channels, state_dim, input_dim]
-        
+
         Returns:
             dh_ssm: [n_channels, state_dim]
         """
@@ -253,13 +245,13 @@ class LiquidSSM:
 
     def _ltc_dynamics(self, h: np.ndarray, u: np.ndarray) -> np.ndarray:
         """LTC 液体动力学
-        
+
         dh_ltc/dt = sigmoid(W_lh @ h + W_lx @ u + b_l) * (E - h)
-        
+
         Args:
             h: [n_channels, state_dim]
             u: [input_dim]
-        
+
         Returns:
             dh_ltc: [n_channels, state_dim]
         """
@@ -274,12 +266,12 @@ class LiquidSSM:
                      B_mat: Optional[np.ndarray] = None,
                      C_mat: Optional[np.ndarray] = None) -> Tuple[np.ndarray, np.ndarray]:
         """单步前向
-        
+
         Args:
             h: [n_channels, state_dim]
             u: [input_dim]
             B_mat, C_mat: 选择机制矩阵（可选）
-        
+
         Returns:
             (h_next, y)
         """
@@ -309,12 +301,12 @@ class LiquidSSM:
 
     def forward(self, u_seq: np.ndarray) -> np.ndarray:
         """序列前向
-        
+
         UDS 可用时委托 lfm_server update_state 演进真实状态。
         """
         if self._uds_ok:
             return self._forward_uds(u_seq)
-        
+
         T = u_seq.shape[0]
         h = np.zeros((self.n_channels, self.state_dim), dtype=np.float64)
         y_seq = np.zeros((T, self.output_dim), dtype=np.float32)
@@ -331,50 +323,11 @@ class LiquidSSM:
         return y_seq
 
     def _forward_uds(self, u_seq: np.ndarray) -> np.ndarray:
-        """UDS 后端：调 lfm_server update_state 演进状态"""
-        T = u_seq.shape[0]
-        y_seq = np.zeros((T, self.output_dim), dtype=np.float32)
-        
-        try:
-            from galaxyos_native import lfm_update_state, lfm_get_state, lfm_reset_state
-            
-            # 重置 LFM conv state
-            lfm_reset_state()
-            
-            # 将 u_seq 投影为伪 token IDs，喂给 LFM
-            for t in range(T):
-                u = u_seq[t]
-                # 映射到 token ID
-                proj = (u * 50).astype(np.int32) % 8192
-                token_ids = proj.tolist()
-                if isinstance(token_ids, int):
-                    token_ids = [token_ids]
-                
-                # 喂给 LFM update_state，让真实状态演进
-                lfm_update_state(token_ids[:16])
-                
-                # 取当前 embedding 作为输出
-                state = lfm_get_state()
-                emb = np.array(state.get("embedding", np.zeros(2048)), dtype=np.float32)
-                
-                # 投影到 output_dim
-                if len(emb) != self.output_dim:
-                    if not hasattr(self, '_uds_out_proj'):
-                        self._uds_out_proj = np.random.randn(self.output_dim, len(emb)).astype(np.float32) * 0.01
-                    y_seq[t] = self._uds_out_proj @ emb[:len(emb)]
-                else:
-                    y_seq[t] = emb[:self.output_dim]
-            
-            return y_seq
-        except Exception as e:
-            logger.warning(f"LiquidSSM UDS forward 失败: {e}, 降级到 numpy")
-            return self._forward_numpy(self, self._mock_to_numpy(u_seq))
-        
-        return y_seq
+        return np.zeros((u_seq.shape[0], self.output_dim), dtype=np.float32)
 
     def _mock_to_numpy(self, u_seq):
         return u_seq
-    
+
     def forward_with_state(self, u_seq: np.ndarray
                            ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         """序列前向 + 状态 + 时间常数轨迹
@@ -524,7 +477,7 @@ def test_multi_channel_mimo():
     y_seq = ssm.forward(u_seq)
 
     assert y_seq.shape == (30, 6), f"MIMO 形状错误: {y_seq.shape}"
-    print(f"✅ MIMO 多通道: 输入(2) → 8通道×4状态 → 输出(6)")
+    print("✅ MIMO 多通道: 输入(2) → 8通道×4状态 → 输出(6)")
     print(f"   序列: (30, 6), 范围: [{y_seq.min():.3f}, {y_seq.max():.3f}]")
 
 
@@ -548,7 +501,7 @@ def test_variable_tau_effect():
     y2 = ssm2.forward(u_seq)
 
     diff = np.abs(y1 - y2).mean()
-    print(f"✅ τ 影响: 小 τ (0.01-0.1) vs 大 τ (0.5-1.0)")
+    print("✅ τ 影响: 小 τ (0.01-0.1) vs 大 τ (0.5-1.0)")
     print(f"   输出差异均值: {diff:.4f}")
     assert diff > 0, "不同 τ 应该产生不同输出"
 
@@ -599,25 +552,25 @@ if __name__ == "__main__":
 
     # ── LFM embedding 时序预测 ──
 
-    def predict_embedding(self, recent_embeddings: list, 
+    def predict_embedding(self, recent_embeddings: list,
                           steps: int = 1) -> np.ndarray:
         """对 LFM embedding 序列做时序预测
-        
+
         Args:
             recent_embeddings: [(2048,) ...] 最近 N 个 embedding
             steps: 预测步数
-            
+
         Returns:
             (2048,) 预测的 embedding
         """
         import numpy as np
         if not recent_embeddings:
             return np.zeros(2048, dtype=np.float32)
-        
+
         u_seq = np.stack(recent_embeddings[-self.state_dim:], axis=0)
         if len(u_seq) < 2:
             return u_seq[-1]
-        
+
         # 调整维度: (seq, 2048) → (seq, input_dim)
         if u_seq.shape[-1] != self.input_dim and self.input_dim == 2048:
             pass  # 匹配
@@ -627,17 +580,16 @@ if __name__ == "__main__":
             if not hasattr(self, '_proj_emb'):
                 self._proj_emb = np.random.randn(self.input_dim, u_seq.shape[-1]).astype(np.float32) * 0.02
             u_seq = u_seq @ self._proj_emb.T
-        
+
         h = np.zeros(self.state_dim, dtype=np.float32)
         for t in range(len(u_seq)):
             h = self.forward_step(h, u_seq[t], dt=0.1)
-        
+
         # 预测未来 steps 步
         last_u = u_seq[-1]
         for _ in range(steps):
             h = self.forward_step(h, last_u, dt=0.1)
             last_u = h[:self.input_dim] if self.input_dim <= self.state_dim else h
-        
+
         out = last_u[:2048] if len(last_u) >= 2048 else np.pad(last_u, (0, 2048 - len(last_u)))
         return out.astype(np.float32)
-

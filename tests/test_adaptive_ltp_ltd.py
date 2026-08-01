@@ -8,7 +8,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 import math
 import pytest
 from datetime import datetime, timedelta
-from services.adaptive_ltp_ltd import (
+from galaxyos.engine.adaptive_ltp_ltd import (
     AdaptiveLTP_LTD, SynapseState, LTP_LTDParams,
 )
 

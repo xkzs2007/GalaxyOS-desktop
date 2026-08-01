@@ -1,14 +1,14 @@
 ---
 type: tech
-name: 
+name:
 category:     # laptop, phone, gadget, software, accessory, etc.
-brand: 
-model: 
+brand:
+model:
 owned: false
-purchased_on: 
-price: 
+purchased_on:
+price:
 tags: []
-last_updated: 
+last_updated:
 ---
 
 ## Overview
@@ -17,12 +17,12 @@ last_updated:
 
 ## Specs
 
-- 
+-
 
 ## Gotchas / Quirks
 
-- 
+-
 
 ## Notes
 
-- 
+-

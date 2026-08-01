@@ -4,6 +4,8 @@
 自动备份系统配置和数据
 """
 
+import os
+import sys
 import json
 import shutil
 import logging

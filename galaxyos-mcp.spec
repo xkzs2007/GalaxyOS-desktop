@@ -1,0 +1,97 @@
+from PyInstaller.utils.hooks import collect_all
+
+fastmcp_datas, fastmcp_binaries, fastmcp_hiddenimports = collect_all('fastmcp')
+mcp_datas, mcp_binaries, mcp_hiddenimports = collect_all('mcp')
+starlette_datas, starlette_binaries, starlette_hiddenimports = collect_all('starlette')
+uvicorn_datas, uvicorn_binaries, uvicorn_hiddenimports = collect_all('uvicorn')
+openjiuwen_datas, openjiuwen_binaries, openjiuwen_hiddenimports = collect_all('openjiuwen')
+pywin32_datas, pywin32_binaries, pywin32_hiddenimports = collect_all('win32api')
+
+a = Analysis(
+    ['galaxyos/kernel/mcp_server_entry.py'],
+    pathex=[],
+    binaries=[
+        *fastmcp_binaries,
+        *mcp_binaries,
+        *starlette_binaries,
+        *uvicorn_binaries,
+        *openjiuwen_binaries,
+        *pywin32_binaries,
+    ],
+    datas=[
+        ('galaxyos', 'galaxyos'),
+        ('skills', 'skills'),
+        ('models', 'models'),
+        *fastmcp_datas,
+        *mcp_datas,
+        *starlette_datas,
+        *uvicorn_datas,
+        *openjiuwen_datas,
+        *pywin32_datas,
+    ],
+    hiddenimports=[
+        'galaxyos.kernel.mcp_server',
+        'galaxyos.kernel.mcp_client',
+        'galaxyos.kernel.liquid_memory_adapter',
+        'galaxyos.kernel.dag_context_fusion',
+        'galaxyos.kernel.memory_sync_bridge',
+        'galaxyos.kernel.rccam_injector',
+        'galaxyos.kernel.agent_core_bridge',
+        'galaxyos.kernel.tokui_builder',
+        'galaxyos.kernel.tokui_streamer',
+        'galaxyos.kernel.skill_executor',
+        'galaxyos.kernel.dual_runtime_manager',
+        'galaxyos.kernel.galaxyos_extension',
+        'galaxyos.kernel.workflow_hook_dispatcher',
+        'galaxyos.kernel.integration_config_manager',
+        'galaxyos.kernel.i18n_manager',
+        'galaxyos.kernel.dsl_bridge',
+        'galaxyos.kernel.rccam_rail',
+        'galaxyos.shared.constants',
+        'galaxyos.shared.paths',
+        'galaxyos.shared.audit',
+        'galaxyos.shared.fusion_guard',
+        'galaxyos.harness.agent',
+        'galaxyos.harness.workspace',
+        'numpy',
+        'scipy',
+        'pydantic',
+        'httpx',
+        'aiohttp',
+        'orjson',
+        'openai',
+        'onnxruntime',
+        *fastmcp_hiddenimports,
+        *mcp_hiddenimports,
+        *starlette_hiddenimports,
+        *uvicorn_hiddenimports,
+        *openjiuwen_hiddenimports,
+        *pywin32_hiddenimports,
+    ],
+    hookspath=[],
+    hooksconfig={},
+    runtime_hooks=[],
+    excludes=['torch', 'transformers', 'faiss', 'hnswlib', 'pandas', 'tkinter', 'matplotlib', 'openjiuwen_studio'],
+    noarchive=False,
+)
+pyz = PYZ(a.pure)
+exe = EXE(
+    pyz,
+    a.scripts,
+    [],
+    exclude_binaries=True,
+    name='galaxyos-mcp',
+    debug=False,
+    bootloader_ignore_signals=False,
+    strip=False,
+    upx=True,
+    console=True,
+)
+coll = COLLECT(
+    exe,
+    a.binaries,
+    a.datas,
+    strip=False,
+    upx=True,
+    name='galaxyos-mcp',
+)

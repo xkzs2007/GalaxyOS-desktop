@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GalaxyOS Desktop</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #0f0c29, #1a1040, #24243e);
+            color: #e0e0e0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            overflow: hidden;
+        }
+        .logo {
+            width: 80px; height: 80px;
+            border-radius: 20px;
+            background: linear-gradient(135deg, #1e3a5f, #3a1e5f);
+            display: flex; align-items: center; justify-content: center;
+            font-size: 36px; font-weight: bold; color: #8ec5fc;
+            margin-bottom: 24px;
+            box-shadow: 0 0 40px rgba(142, 197, 252, 0.2);
+        }
+        h1 { font-size: 24px; font-weight: 600; margin-bottom: 8px; }
+        .subtitle { color: #888; font-size: 14px; margin-bottom: 32px; }
+        .status {
+            padding: 10px 20px;
+            border-radius: 8px;
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(255,255,255,0.1);
+            font-size: 13px;
+            min-width: 300px;
+            text-align: center;
+        }
+        .status.loading { color: #8ec5fc; }
+        .status.ready { color: #4ade80; }
+        .status.error { color: #f87171; }
+        .spinner {
+            display: inline-block; width: 14px; height: 14px;
+            border: 2px solid rgba(142,197,252,0.3);
+            border-top-color: #8ec5fc;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            vertical-align: middle; margin-right: 8px;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+    </style>
+</head>
+<body>
+    <div class="logo">G</div>
+    <h1>GalaxyOS Desktop</h1>
+    <p class="subtitle">认知增强型桌面 AI Agent</p>
+    <div id="status" class="status loading">
+        <span class="spinner"></span>正在连接后端服务...
+    </div>
+    <script>
+        const studioBackendUrl = 'http://localhost:8000';
+        const studioFrontendUrl = 'http://localhost:3000';
+        const galaxyosUrl = 'http://localhost:8765';
+        const statusEl = document.getElementById('status');
+
+        async function checkHealth(url) {
+            try {
+                const r = await fetch(url + '/health', { signal: AbortSignal.timeout(3000) });
+                return r.ok;
+            } catch { return false; }
+        }
+
+        async function checkStudioHealth() {
+            try {
+                const r = await fetch(studioBackendUrl + '/api/health', { signal: AbortSignal.timeout(3000) });
+                return r.ok;
+            } catch { return false; }
+        }
+
+        async function connect() {
+            for (let i = 0; i < 60; i++) {
+                const galaxyosOk = await checkHealth(galaxyosUrl);
+                const studioOk = await checkStudioHealth();
+                const frontendOk = await checkHealth(studioFrontendUrl);
+
+                if (frontendOk && studioOk) {
+                    statusEl.className = 'status ready';
+                    statusEl.innerHTML = 'Studio 就绪，正在跳转...';
+                    setTimeout(() => {
+                        const url = new URL(studioFrontendUrl);
+                        url.searchParams.set('galaxyos_mode', 'true');
+                        window.location.href = url.toString();
+                    }, 500);
+                    return;
+                }
+
+                if (galaxyosOk && studioOk && !frontendOk) {
+                    statusEl.className = 'status ready';
+                    statusEl.innerHTML = '后端就绪，Studio 前端启动中...';
+                } else if (galaxyosOk) {
+                    statusEl.className = 'status loading';
+                    statusEl.innerHTML = '<span class="spinner"></span>MCP 就绪，等待 Studio 后端...';
+                } else {
+                    statusEl.className = 'status loading';
+                    statusEl.innerHTML = '<span class="spinner"></span>正在启动 GalaxyOS 认知引擎...';
+                }
+
+                await new Promise(r => setTimeout(r, 2000));
+            }
+
+            const galaxyosOk = await checkHealth(galaxyosUrl);
+            if (galaxyosOk) {
+                statusEl.className = 'status ready';
+                statusEl.innerHTML = 'GalaxyOS MCP 就绪（Studio 未检测到）';
+            } else {
+                statusEl.className = 'status error';
+                statusEl.innerHTML = '无法连接后端服务，请检查安装。';
+            }
+        }
+        connect();
+    </script>
+</body>
+</html>

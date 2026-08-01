@@ -1,7 +1,7 @@
 """测试 rag_optimizer — RAG 查询优化"""
 import sys; sys.path.insert(0, '.')
 import pytest
-from services.rag_optimizer import (
+from galaxyos.privileged.rag_optimizer import (
     QueryExpander, Reranker, MultiQueryFusion,
     RAGQueryOptimizer, HyDEQueryRewriter,
 )

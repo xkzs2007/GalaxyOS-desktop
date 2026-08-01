@@ -1,0 +1,23 @@
+{
+  "version": "1.0",
+  "integrations": {
+    "eui_neo": {
+      "native_render_enabled": false,
+      "eui_render_backend": "auto",
+      "eui_window_backend": "auto",
+      "fallback_chain": ["eui_native", "webview_dom", "plain_text"],
+      "eui_neo_lib_path": ""
+    },
+    "tokui_chat": {
+      "chat_frontend": "swarm",
+      "sse_enabled": true,
+      "cognitive_panel_visible": true,
+      "tokui_chat_path": ""
+    },
+    "i18n": {
+      "locale": "zh",
+      "supported_locales": ["zh", "en"],
+      "locale_detection": true
+    }
+  }
+}

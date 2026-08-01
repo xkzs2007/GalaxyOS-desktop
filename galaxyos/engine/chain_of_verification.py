@@ -20,14 +20,14 @@ Chain-of-Verification (CoVe) + Self-Refine 自验证引擎
   - CoVe 是"动态"校验（生成→验证→修正的迭代过程）
   - 两者互补: 静态 10 重检测作为第一道防线，CoVe 作为第二道
 
-Author: 小艺 Claw
+Author: GalaxyOS
 """
 
 import json
 import re
 import time
 import logging
-from typing import List, Dict, Optional, Any, Tuple
+from typing import List, Dict, Optional
 from dataclasses import dataclass, field
 
 logger = logging.getLogger(__name__)

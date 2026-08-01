@@ -1,0 +1,61 @@
+
+ARG TARGETPLATFORM
+
+# ============ Linux amd64 ============
+FROM python:3.12-slim-bookworm AS build-deps-linux-amd64
+ARG TARGETPLATFORM
+
+RUN apt-get update -qq && \
+    apt-get install -y -qq --no-install-recommends \
+
+        patchelf libssl-dev libharfbuzz-dev build-essential \
+        python3-dev git curl && \
+    rm -rf /var/lib/apt/lists/*
+
+COPY --link requirements-core.txt /tmp/
+RUN pip install --no-cache-dir -r /tmp/requirements-core.txt
+
+RUN pip install --no-cache-dir "openjiuwen @ git+https://github.com/openJiuwen-ai/agent-core@v0.1.16" "pymilvus>=2.6.2,<2.6.10" onnxruntime pyinstaller
+
+RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu && \
+    pip install --no-cache-dir faiss-cpu transformers pandas hnswlib==0.8.0
+
+
+RUN mkdir -p /app/models/embeddings && \
+    HF_MIRROR="https://hf-mirror.com/onnx-community/bge-small-zh-v1.5-ONNX/resolve/main" && \
+    HF_OFFICIAL="https://huggingface.co/onnx-community/bge-small-zh-v1.5-ONNX/resolve/main" && \
+    for f in onnx/model.onnx onnx/model.onnx_data tokenizer.json; do \
+        dest="/app/models/embeddings/$(basename $f)" && \
+        curl -sLf --retry 3 --retry-delay 5 --max-time 120 \
+            "${HF_MIRROR}/${f}" -o "$dest" || \
+        curl -sLf --retry 3 --retry-delay 5 --max-time 120 \
+            "${HF_OFFICIAL}/${f}" -o "$dest"; \
+    done
+
+COPY --link galaxyos/ /app/galaxyos/
+COPY --link skills/ /app/skills/
+COPY --link pyproject.toml README.md /app/
+
+RUN cd /app && pip install --no-cache-dir .
+
+FROM python:3.12-slim-bookworm AS runtime-linux-amd64
+
+RUN apt-get update -qq && \
+    apt-get install -y -qq --no-install-recommends \
+
+        libssl3 libharfbuzz0b libgcc-s1 && \
+    rm -rf /var/lib/apt/lists/*
+
+COPY --from=build-deps-linux-amd64 /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
+COPY --from=build-deps-linux-amd64 /usr/local/bin /usr/local/bin
+COPY --from=build-deps-linux-amd64 /app /app
+
+
+RUN useradd --create-home --shell /bin/bash galaxyos
+USER galaxyos
+
+WORKDIR /app
+
+LABEL org.opencontainers.image.title="GalaxyOS Desktop Build Environment"
+LABEL org.opencontainers.image.description="GalaxyOS CI/CD build environment with Python 3.12 and all dependencies"
+LABEL org.opencontainers.image.source="https://github.com/xkzs2007/GalaxyOS-desktop"

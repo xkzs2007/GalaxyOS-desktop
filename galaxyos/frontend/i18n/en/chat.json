@@ -1,0 +1,9 @@
+{
+  "input_placeholder": "Type a message...",
+  "send": "Send",
+  "thinking": "Thinking...",
+  "error_send": "Send failed",
+  "new_chat": "New Chat",
+  "history": "History",
+  "no_history": "No history"
+}

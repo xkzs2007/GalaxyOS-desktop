@@ -11,6 +11,7 @@ repos:
       - id: check-json
       - id: check-added-large-files
         args: ['--maxkb=500']
+        exclude: '^desktop-native/third_party/'
       - id: detect-private-key
       - id: check-merge-conflict
 
@@ -18,9 +19,30 @@ repos:
     rev: v0.11.0
     hooks:
       - id: ruff
-        args: [--fix, --select=E,F,W, --ignore=E501,E402]
+        args: [--fix]
 
-  - repo: https://github.com/gitleaks/gitleaks
-    rev: v8.24.0
+  - repo: local
     hooks:
       - id: gitleaks
+        name: gitleaks (detect secrets)
+        entry: gitleaks detect --no-git --verbose --source
+        language: system
+        types: [text]
+        pass_filenames: true
+
+  - repo: local
+    hooks:
+      - id: mypy
+        name: mypy type check
+        entry: python -m mypy galaxyos/ --config-file mypy.ini
+        language: system
+        types: [python]
+        pass_filenames: false
+
+      - id: pytest
+        name: pytest
+        entry: python -m pytest tests/ -x -q --tb=short
+        language: system
+        types: [python]
+        pass_filenames: false
+        stages: [pre-push]

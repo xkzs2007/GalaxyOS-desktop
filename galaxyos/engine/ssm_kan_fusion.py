@@ -25,15 +25,14 @@ KAN 的 B-spline 基函数可以捕捉：
   - 替代标准 SSM 的线性投影
   - 与其他模块（KAN+LTC 融合、KAN+NeuralODE）互补
 
-Author: 小艺 Claw
+Author: GalaxyOS
 Version: 1.0.0
 Created: 2026-06-14
 """
 
 import math
 import logging
-from typing import Dict, List, Optional, Tuple, Any, Union
-from dataclasses import dataclass, field
+from typing import Tuple
 
 logger = logging.getLogger("ssm_kan")
 
@@ -46,7 +45,7 @@ except ImportError:
     import sys
     from pathlib import Path
     sys.path.insert(0, str(Path(__file__).parent))
-    from kan_network import KANNetwork, KANLinear, _bspline_basis, _create_uniform_knots
+    from kan_network import KANNetwork
 
 
 # ==================== SSM + KAN 状态更新 ====================
@@ -104,11 +103,11 @@ class KANStateUpdate:
 
     def forward(self, h: np.ndarray, u: np.ndarray) -> np.ndarray:
         """计算状态更新
-        
+
         Args:
             h: 当前状态 [state_dim]
             u: 当前输入 [input_dim]
-        
+
         Returns:
             h_next: 新状态 [state_dim]
         """
@@ -143,7 +142,7 @@ class KANStateUpdate:
 class KANProjection:
     """
     KAN 投影层 — 替代线性投影
-    
+
     用于 SSM 的选择机制中替代 B(u) 和 C(u) 的线性投影：
         B_kan(u) = KAN_B(u)  — 输入依赖的状态投影
         C_kan(u) = KAN_C(u)  — 输入依赖的输出投影
@@ -178,10 +177,10 @@ class KANProjection:
 
     def forward(self, u: np.ndarray) -> np.ndarray:
         """投影
-        
+
         Args:
             u: 输入 [input_dim]
-        
+
         Returns:
             投影输出 [proj_dim]
         """
@@ -217,11 +216,11 @@ class KANBMatrixProjection:
 
     def forward(self, u: np.ndarray, h: np.ndarray) -> np.ndarray:
         """生成 B 矩阵
-        
+
         Args:
             u: 输入 [input_dim]
             h: 当前状态 [state_dim]
-        
+
         Returns:
             B: [state_dim, input_dim]
         """
@@ -329,11 +328,11 @@ class SSMWithKAN:
 
     def forward_step(self, h: np.ndarray, u: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         """单步前向
-        
+
         Args:
             h: [n_channels, state_dim]
             u: [input_dim]
-        
+
         Returns:
             (h_next, y)
         """
@@ -380,10 +379,10 @@ class SSMWithKAN:
 
     def forward(self, u_seq: np.ndarray) -> np.ndarray:
         """序列前向
-        
+
         Args:
             u_seq: [T, input_dim]
-        
+
         Returns:
             y_seq: [T, output_dim]
         """
@@ -400,7 +399,7 @@ class SSMWithKAN:
     def forward_with_state(self, u_seq: np.ndarray
                            ) -> Tuple[np.ndarray, np.ndarray]:
         """序列前向 + 状态
-        
+
         Returns:
             (y_seq, h_seq)
         """

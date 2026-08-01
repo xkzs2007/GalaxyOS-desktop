@@ -2309,7 +2309,7 @@ class CppToolchain:
                     res = self._install_conda_package('meson')
                     results[comp] = {'pip': results[comp], 'conda': res}
                     if res['status'] != 'success':
-                        errors.append(f"meson 安装失败: pip 和 conda 均失败")
+                        errors.append("meson 安装失败: pip 和 conda 均失败")
                 else:
                     self._compiler_cache.clear()
 
@@ -2322,7 +2322,7 @@ class CppToolchain:
                     res = self._install_conda_package('ninja')
                     results[comp] = {'pip': results[comp], 'conda': res}
                     if res['status'] != 'success':
-                        errors.append(f"ninja 安装失败: pip 和 conda 均失败")
+                        errors.append("ninja 安装失败: pip 和 conda 均失败")
                 else:
                     self._compiler_cache.clear()
 
@@ -2961,7 +2961,7 @@ class CppToolchain:
 
         # 策略3: 安装便携编译器 + 从源码编译
         if not self.has_compiler_toolchain:
-            logger.info(f"[策略3] 安装便携编译器后从源码编译")
+            logger.info("[策略3] 安装便携编译器后从源码编译")
             compiler_result = self.setup_portable_compiler()
             if compiler_result['status'] != 'failed':
                 # 重新尝试 pip install（现在有编译器了）

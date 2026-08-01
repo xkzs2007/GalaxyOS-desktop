@@ -13,8 +13,9 @@ from pathlib import Path
 # 路径配置（v3.0.0 公私分离：优先使用环境变量）
 
 # ── Centralized path resolution ──
-import os as _os, sys as _sys
-_ws_root = _os.environ.get("OPENCLAW_WORKSPACE", _os.path.expanduser("~/.openclaw/workspace"))
+import sys as _sys
+from galaxyos.shared.paths import workspace
+_ws_root = workspace()
 for _p in [_ws_root, "/workspace"]:
     if _p not in _sys.path:
         _sys.path.insert(0, _p)

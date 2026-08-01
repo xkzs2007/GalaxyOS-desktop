@@ -6,7 +6,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import pytest
-from services.context_compressor import (
+from galaxyos.privileged.context_compressor import (
     RuleBasedCompressor, ContextCompressor,
     LLMCompressor, CompressionResult,
 )

@@ -1,0 +1,12 @@
+{
+  "title": "设置",
+  "general": "通用",
+  "language": "语言",
+  "native_render": "原生渲染",
+  "native_render_enabled": "已启用",
+  "native_render_disabled": "未启用",
+  "theme": "主题",
+  "theme_light": "浅色",
+  "theme_dark": "深色",
+  "about": "关于"
+}

@@ -63,7 +63,7 @@ export function generateIdePage(config = {}) {
       padding: 0;
       box-sizing: border-box;
     }
-    
+
     :root {
       --bg-primary: #1e1e1e;
       --bg-secondary: #252526;
@@ -82,7 +82,7 @@ export function generateIdePage(config = {}) {
       --scrollbar-bg: #1e1e1e;
       --scrollbar-thumb: #424242;
     }
-    
+
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       background: var(--bg-primary);
@@ -90,13 +90,13 @@ export function generateIdePage(config = {}) {
       height: 100vh;
       overflow: hidden;
     }
-    
+
     #app {
       display: flex;
       flex-direction: column;
       height: 100vh;
     }
-    
+
     /* Header / Toolbar */
     #toolbar {
       display: flex;
@@ -107,19 +107,19 @@ export function generateIdePage(config = {}) {
       border-bottom: 1px solid var(--border-color);
       height: 42px;
     }
-    
+
     #toolbar .logo {
       font-weight: 600;
       color: var(--accent);
       font-size: 14px;
     }
-    
+
     #toolbar .separator {
       width: 1px;
       height: 20px;
       background: var(--border-color);
     }
-    
+
     .toolbar-btn {
       background: transparent;
       border: none;
@@ -132,17 +132,17 @@ export function generateIdePage(config = {}) {
       align-items: center;
       gap: 6px;
     }
-    
+
     .toolbar-btn:hover {
       background: var(--bg-hover);
       color: var(--text-primary);
     }
-    
+
     .toolbar-btn.active {
       background: var(--bg-active);
       color: var(--text-primary);
     }
-    
+
     #workspace-path {
       margin-left: auto;
       font-size: 12px;
@@ -159,18 +159,18 @@ export function generateIdePage(config = {}) {
       min-width: 72px;
       text-align: right;
     }
-    
+
     #save-status.saving { color: var(--warning); }
     #save-status.saved { color: var(--success); }
     #save-status.error { color: var(--error); }
-    
+
     /* Main Layout */
     #main {
       display: flex;
       flex: 1;
       overflow: hidden;
     }
-    
+
     /* Sidebar */
     #sidebar {
       width: 260px;
@@ -182,13 +182,13 @@ export function generateIdePage(config = {}) {
       flex-direction: column;
       overflow: hidden;
     }
-    
+
     #sidebar.collapsed {
       width: 0;
       min-width: 0;
       border-right: none;
     }
-    
+
     #sidebar-header {
       display: flex;
       align-items: center;
@@ -201,7 +201,7 @@ export function generateIdePage(config = {}) {
       color: var(--text-secondary);
       border-bottom: 1px solid var(--border-color);
     }
-    
+
     #sidebar-header button {
       background: transparent;
       border: none;
@@ -210,18 +210,18 @@ export function generateIdePage(config = {}) {
       padding: 4px;
       border-radius: 4px;
     }
-    
+
     #sidebar-header button:hover {
       background: var(--bg-hover);
       color: var(--text-primary);
     }
-    
+
     /* File Search */
     #file-search-container {
       padding: 8px 12px;
       border-bottom: 1px solid var(--border-color);
     }
-    
+
     #file-search {
       width: 100%;
       padding: 6px 10px;
@@ -232,15 +232,15 @@ export function generateIdePage(config = {}) {
       font-size: 12px;
       outline: none;
     }
-    
+
     #file-search:focus {
       border-color: var(--accent);
     }
-    
+
     #file-search::placeholder {
       color: var(--text-muted);
     }
-    
+
     #open-editors {
       border-bottom: 1px solid var(--border-color);
       max-height: 180px;
@@ -317,7 +317,7 @@ export function generateIdePage(config = {}) {
       overflow-y: auto;
       padding: 8px 0;
     }
-    
+
     .tree-item {
       display: flex;
       align-items: center;
@@ -327,19 +327,19 @@ export function generateIdePage(config = {}) {
       color: var(--text-primary);
       user-select: none;
     }
-    
+
     .tree-item:hover {
       background: var(--bg-hover);
     }
-    
+
     .tree-item.selected {
       background: var(--bg-active);
     }
-    
+
     .tree-item.directory {
       color: var(--text-secondary);
     }
-    
+
     .tree-item .icon {
       width: 16px;
       height: 16px;
@@ -348,13 +348,13 @@ export function generateIdePage(config = {}) {
       font-size: 14px;
       text-align: center;
     }
-    
+
     .tree-item .name {
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
     }
-    
+
     .tree-item .chevron {
       width: 16px;
       margin-right: 2px;
@@ -362,30 +362,30 @@ export function generateIdePage(config = {}) {
       color: var(--text-muted);
       transition: transform 0.15s;
     }
-    
+
     .tree-item .chevron.expanded {
       transform: rotate(90deg);
     }
-    
+
     .tree-children {
       display: none;
     }
-    
+
     .tree-children.expanded {
       display: block;
     }
-    
+
     /* Resize Handle */
     #resize-handle {
       width: 4px;
       cursor: col-resize;
       background: transparent;
     }
-    
+
     #resize-handle:hover {
       background: var(--accent);
     }
-    
+
     /* Editor Area */
     #editor-area {
       flex: 1;
@@ -394,7 +394,7 @@ export function generateIdePage(config = {}) {
       overflow: hidden;
       min-width: 320px;
     }
-    
+
     /* Tab Bar */
     #tab-bar {
       display: flex;
@@ -404,11 +404,11 @@ export function generateIdePage(config = {}) {
       height: 36px;
       overflow-x: auto;
     }
-    
+
     #tab-bar::-webkit-scrollbar {
       height: 3px;
     }
-    
+
     .tab {
       display: flex;
       align-items: center;
@@ -423,23 +423,23 @@ export function generateIdePage(config = {}) {
       cursor: pointer;
       white-space: nowrap;
     }
-    
+
     .tab:hover {
       background: var(--bg-hover);
     }
-    
+
     .tab.active {
       background: var(--bg-primary);
       color: var(--text-primary);
       border-bottom: 1px solid var(--bg-primary);
       margin-bottom: -1px;
     }
-    
+
     .tab.modified .tab-name::after {
       content: " •";
       color: var(--warning);
     }
-    
+
     .tab .close-btn {
       background: transparent;
       border: none;
@@ -451,25 +451,25 @@ export function generateIdePage(config = {}) {
       line-height: 1;
       visibility: hidden;
     }
-    
+
     .tab:hover .close-btn,
     .tab.active .close-btn {
       visibility: visible;
     }
-    
+
     .tab .close-btn:hover {
       background: var(--bg-active);
       color: var(--text-primary);
     }
-    
+
     .tab.dragging {
       opacity: 0.5;
     }
-    
+
     .tab.drag-over {
       border-left: 2px solid var(--accent);
     }
-    
+
     /* Tab scroll buttons */
     .tab-scroll-btn {
       background: var(--bg-tertiary);
@@ -480,23 +480,23 @@ export function generateIdePage(config = {}) {
       height: 100%;
       font-size: 14px;
     }
-    
+
     .tab-scroll-btn:hover {
       background: var(--bg-hover);
       color: var(--text-primary);
     }
-    
+
     .tab-scroll-btn:disabled {
       opacity: 0.3;
       cursor: default;
     }
-    
+
     /* Editor Container */
     #editor-container {
       flex: 1;
       overflow: hidden;
     }
-    
+
     /* Welcome Screen */
     #welcome {
       display: flex;
@@ -507,25 +507,25 @@ export function generateIdePage(config = {}) {
       color: var(--text-muted);
       font-size: 14px;
     }
-    
+
     #welcome h2 {
       font-size: 24px;
       font-weight: 400;
       margin-bottom: 16px;
       color: var(--text-secondary);
     }
-    
+
     #welcome .shortcuts {
       margin-top: 24px;
       text-align: left;
     }
-    
+
     #welcome .shortcut {
       display: flex;
       gap: 12px;
       margin: 8px 0;
     }
-    
+
     #welcome kbd {
       background: var(--bg-tertiary);
       padding: 2px 8px;
@@ -535,7 +535,7 @@ export function generateIdePage(config = {}) {
       min-width: 80px;
       text-align: center;
     }
-    
+
     /* Loading Overlay */
     #loading {
       position: fixed;
@@ -546,11 +546,11 @@ export function generateIdePage(config = {}) {
       justify-content: center;
       z-index: 1000;
     }
-    
+
     #loading.hidden {
       display: none;
     }
-    
+
     .spinner {
       width: 40px;
       height: 40px;
@@ -559,11 +559,11 @@ export function generateIdePage(config = {}) {
       border-radius: 50%;
       animation: spin 1s linear infinite;
     }
-    
+
     @keyframes spin {
       to { transform: rotate(360deg); }
     }
-    
+
     /* Context Menu */
     #context-menu {
       position: fixed;
@@ -576,11 +576,11 @@ export function generateIdePage(config = {}) {
       z-index: 1000;
       display: none;
     }
-    
+
     #context-menu.visible {
       display: block;
     }
-    
+
     .context-item {
       padding: 6px 12px;
       font-size: 13px;
@@ -589,43 +589,43 @@ export function generateIdePage(config = {}) {
       align-items: center;
       gap: 8px;
     }
-    
+
     .context-item:hover {
       background: var(--bg-hover);
     }
-    
+
     .context-separator {
       height: 1px;
       background: var(--border-color);
       margin: 4px 0;
     }
-    
+
     /* Scrollbar styling */
     ::-webkit-scrollbar {
       width: 10px;
       height: 10px;
     }
-    
+
     ::-webkit-scrollbar-track {
       background: var(--scrollbar-bg);
     }
-    
+
     ::-webkit-scrollbar-thumb {
       background: var(--scrollbar-thumb);
       border-radius: 5px;
     }
-    
+
     ::-webkit-scrollbar-thumb:hover {
       background: #555;
     }
-    
+
   </style>
 </head>
 <body>
   <div id="loading">
     <div class="spinner"></div>
   </div>
-  
+
   <div id="app">
     <div id="toolbar">
       <span class="logo">⚡ Better Gateway IDE</span>
@@ -645,7 +645,7 @@ export function generateIdePage(config = {}) {
       <span id="workspace-path" title="Current workspace folder">/</span>
       <span id="save-status"></span>
     </div>
-    
+
     <div id="main">
       <div id="sidebar">
         <div id="sidebar-header">
@@ -661,9 +661,9 @@ export function generateIdePage(config = {}) {
         </div>
         <div id="file-tree"></div>
       </div>
-      
+
       <div id="resize-handle"></div>
-      
+
       <div id="editor-area">
         <div id="tab-bar"></div>
         <div id="editor-container">
@@ -682,7 +682,7 @@ export function generateIdePage(config = {}) {
 
     </div>
   </div>
-  
+
   <div id="context-menu">
     <div class="context-item" data-action="new-file">📄 New File</div>
     <div class="context-item" data-action="new-folder">📁 New Folder</div>
@@ -695,7 +695,7 @@ export function generateIdePage(config = {}) {
     // Configuration
     const API_BASE = '/better-gateway/api/files';
     const EXTENSION_MAP = ${JSON.stringify(EXTENSION_TO_LANGUAGE)};
-    
+
     // State
     const state = {
       files: [],
@@ -707,7 +707,7 @@ export function generateIdePage(config = {}) {
       unsavedChanges: new Map(), // path -> true
       workspaceRoot: '/',
     };
-    
+
     // DOM Elements
     const elements = {
       loading: document.getElementById('loading'),
@@ -722,12 +722,12 @@ export function generateIdePage(config = {}) {
       contextMenu: document.getElementById('context-menu'),
       fileSearch: document.getElementById('file-search'),
     };
-    
+
     // Search state
     let searchQuery = '';
-    
+
     // ==================== File API ====================
-    
+
     function normalizeWorkspaceRoot(path) {
       if (!path || path === '/' || path === '.') return '/';
       let normalized = String(path).trim().split(String.fromCharCode(92)).join('/');
@@ -771,14 +771,14 @@ export function generateIdePage(config = {}) {
       const data = await res.json();
       return data.files;
     }
-    
+
     async function readFile(path) {
       const res = await fetch(\`\${API_BASE}/read?path=\${encodeURIComponent(path)}\`);
       if (!res.ok) throw new Error('Failed to read file');
       const data = await res.json();
       return data.content;
     }
-    
+
     async function writeFile(path, content) {
       const res = await fetch(\`\${API_BASE}/write\`, {
         method: 'POST',
@@ -788,7 +788,7 @@ export function generateIdePage(config = {}) {
       if (!res.ok) throw new Error('Failed to write file');
       return res.json();
     }
-    
+
     async function deleteFile(path) {
       const res = await fetch(\`\${API_BASE}?path=\${encodeURIComponent(path)}\`, {
         method: 'DELETE',
@@ -796,7 +796,7 @@ export function generateIdePage(config = {}) {
       if (!res.ok) throw new Error('Failed to delete file');
       return res.json();
     }
-    
+
     async function createDirectory(path) {
       const res = await fetch(\`\${API_BASE}/mkdir\`, {
         method: 'POST',
@@ -806,20 +806,20 @@ export function generateIdePage(config = {}) {
       if (!res.ok) throw new Error('Failed to create directory');
       return res.json();
     }
-    
+
     // ==================== File Tree ====================
-    
+
     function buildTree(files) {
       const root = { name: '', children: {}, type: 'directory' };
-      
+
       for (const file of files) {
         const parts = file.path.split('/').filter(Boolean);
         let current = root;
-        
+
         for (let i = 0; i < parts.length; i++) {
           const part = parts[i];
           const isLast = i === parts.length - 1;
-          
+
           if (!current.children[part]) {
             current.children[part] = {
               name: part,
@@ -833,10 +833,10 @@ export function generateIdePage(config = {}) {
           current = current.children[part];
         }
       }
-      
+
       return root;
     }
-    
+
     function sortTreeChildren(children) {
       return Object.values(children).sort((a, b) => {
         // Directories first
@@ -847,7 +847,7 @@ export function generateIdePage(config = {}) {
         return a.name.localeCompare(b.name);
       });
     }
-    
+
     function getFileIcon(name, type) {
       if (type === 'directory') return '📁';
       const ext = name.split('.').pop()?.toLowerCase();
@@ -861,13 +861,13 @@ export function generateIdePage(config = {}) {
       };
       return icons[ext] || '📄';
     }
-    
+
     function matchesSearch(name, path) {
       if (!searchQuery) return true;
       const query = searchQuery.toLowerCase();
       return name.toLowerCase().includes(query) || path.toLowerCase().includes(query);
     }
-    
+
     function hasMatchingDescendants(node) {
       if (!searchQuery) return true;
       if (matchesSearch(node.name, node.path)) return true;
@@ -876,7 +876,7 @@ export function generateIdePage(config = {}) {
       }
       return false;
     }
-    
+
     function highlightMatch(text) {
       if (!searchQuery) return text;
       const query = searchQuery.toLowerCase();
@@ -884,26 +884,26 @@ export function generateIdePage(config = {}) {
       if (idx === -1) return text;
       return text.slice(0, idx) + '<mark style="background: var(--accent); color: var(--bg-primary); padding: 0 2px; border-radius: 2px;">' + text.slice(idx, idx + query.length) + '</mark>' + text.slice(idx + query.length);
     }
-    
+
     function renderTree(node, container, depth = 0) {
       const sorted = sortTreeChildren(node.children);
-      
+
       for (const child of sorted) {
         // Skip items that don't match search (unless they have matching descendants)
         if (searchQuery && !hasMatchingDescendants(child)) {
           continue;
         }
-        
+
         const item = document.createElement('div');
         item.className = 'tree-item' + (child.type === 'directory' ? ' directory' : '');
         item.style.paddingLeft = (12 + depth * 16) + 'px';
         item.dataset.path = child.path;
         item.dataset.type = child.type;
-        
+
         // Auto-expand directories when searching
         const isExpanded = searchQuery ? true : state.expandedDirs.has(child.path);
         const displayName = highlightMatch(child.name);
-        
+
         if (child.type === 'directory') {
           item.innerHTML = \`
             <span class="chevron \${isExpanded ? 'expanded' : ''}">▶</span>
@@ -916,13 +916,13 @@ export function generateIdePage(config = {}) {
             <span class="name">\${displayName}</span>
           \`;
         }
-        
+
         container.appendChild(item);
-        
+
         // Add click handlers
         item.addEventListener('click', () => handleTreeItemClick(child));
         item.addEventListener('contextmenu', (e) => showContextMenu(e, child));
-        
+
         // Render children if directory and expanded
         if (child.type === 'directory' && Object.keys(child.children).length > 0) {
           const childContainer = document.createElement('div');
@@ -932,7 +932,7 @@ export function generateIdePage(config = {}) {
         }
       }
     }
-    
+
     function handleTreeItemClick(node) {
       if (node.type === 'directory') {
         // Toggle expanded state
@@ -946,7 +946,7 @@ export function generateIdePage(config = {}) {
         openFile(node.path);
       }
     }
-    
+
     async function refreshFileTree() {
       try {
         state.files = await fetchFiles(getWorkspaceApiPath());
@@ -979,7 +979,7 @@ export function generateIdePage(config = {}) {
         }
       }
     }
-    
+
     function updateTreeSelection() {
       document.querySelectorAll('.tree-item').forEach(item => {
         item.classList.toggle('selected', item.dataset.path === state.activeTab);
@@ -1030,16 +1030,16 @@ export function generateIdePage(config = {}) {
       updateWorkspacePathLabel();
       await refreshFileTree();
     }
-    
+
     function renderOpenEditors() {
       const container = elements.openEditors;
       container.innerHTML = '';
-      
+
       const header = document.createElement('div');
       header.id = 'open-editors-header';
       header.textContent = 'Open Editors';
       container.appendChild(header);
-      
+
       if (state.openTabs.length === 0) {
         const empty = document.createElement('div');
         empty.className = 'open-editor-empty';
@@ -1048,9 +1048,9 @@ export function generateIdePage(config = {}) {
         container.appendChild(empty);
         return;
       }
-      
+
       container.classList.remove('empty');
-      
+
       for (const path of state.openTabs) {
         const item = document.createElement('div');
         item.className = 'open-editor-item' + (path === state.activeTab ? ' active' : '');
@@ -1058,47 +1058,47 @@ export function generateIdePage(config = {}) {
         const name = path.split('/').pop();
         const icon = getFileIcon(name, 'file');
         const modifiedDot = state.unsavedChanges.has(path) ? ' •' : '';
-        
+
         item.innerHTML =
           '<span class="icon">' + icon + '</span>' +
           '<span class="name" title="' + path + '">' + name + modifiedDot + '</span>' +
           '<button class="close" title="Close">×</button>';
-        
+
         item.addEventListener('click', () => switchToTab(path));
         item.querySelector('.close').addEventListener('click', (e) => {
           e.stopPropagation();
           closeTab(path);
         });
-        
+
         container.appendChild(item);
       }
     }
-    
+
     // ==================== Tabs ====================
-    
+
     // Tab drag state
     let draggedTab = null;
-    
+
     function renderTabs() {
       elements.tabBar.innerHTML = '';
       renderOpenEditors();
-      
+
       for (const path of state.openTabs) {
         const tab = document.createElement('button');
         tab.className = 'tab' + (path === state.activeTab ? ' active' : '');
         tab.draggable = true;
         tab.dataset.path = path;
-        
+
         if (state.unsavedChanges.has(path)) {
           tab.classList.add('modified');
         }
-        
+
         const name = path.split('/').pop();
         tab.innerHTML = \`
           <span class="tab-name">\${name}</span>
           <span class="close-btn" title="Close (Ctrl+W)">×</span>
         \`;
-        
+
         // Click handlers
         tab.addEventListener('click', (e) => {
           if (e.target.classList.contains('close-btn')) {
@@ -1107,7 +1107,7 @@ export function generateIdePage(config = {}) {
             switchToTab(path);
           }
         });
-        
+
         // Middle-click to close
         tab.addEventListener('auxclick', (e) => {
           if (e.button === 1) { // Middle button
@@ -1115,31 +1115,31 @@ export function generateIdePage(config = {}) {
             closeTab(path);
           }
         });
-        
+
         // Drag and drop for tab reordering
         tab.addEventListener('dragstart', (e) => {
           draggedTab = path;
           tab.classList.add('dragging');
           e.dataTransfer.effectAllowed = 'move';
         });
-        
+
         tab.addEventListener('dragend', () => {
           tab.classList.remove('dragging');
           draggedTab = null;
           document.querySelectorAll('.tab.drag-over').forEach(t => t.classList.remove('drag-over'));
         });
-        
+
         tab.addEventListener('dragover', (e) => {
           e.preventDefault();
           if (draggedTab && draggedTab !== path) {
             tab.classList.add('drag-over');
           }
         });
-        
+
         tab.addEventListener('dragleave', () => {
           tab.classList.remove('drag-over');
         });
-        
+
         tab.addEventListener('drop', (e) => {
           e.preventDefault();
           tab.classList.remove('drag-over');
@@ -1154,27 +1154,27 @@ export function generateIdePage(config = {}) {
             }
           }
         });
-        
+
         elements.tabBar.appendChild(tab);
       }
     }
-    
+
     async function openFile(path) {
       // Check if already open
       if (!state.openTabs.includes(path)) {
         state.openTabs.push(path);
       }
-      
+
       // Switch to tab
       await switchToTab(path);
     }
-    
+
     async function switchToTab(path) {
       state.activeTab = path;
-      
+
       // Hide welcome screen
       elements.welcome.style.display = 'none';
-      
+
       // Get or create model
       let model = state.models.get(path);
       if (!model) {
@@ -1182,10 +1182,10 @@ export function generateIdePage(config = {}) {
           const content = await readFile(path);
           const ext = path.split('.').pop()?.toLowerCase() || '';
           const language = EXTENSION_MAP[ext] || 'plaintext';
-          
+
           model = monaco.editor.createModel(content, language, monaco.Uri.parse('file:///' + path));
           state.models.set(path, model);
-          
+
           // Track changes
           model.onDidChangeContent(() => {
             if (!state.unsavedChanges.has(path)) {
@@ -1198,11 +1198,11 @@ export function generateIdePage(config = {}) {
           return;
         }
       }
-      
+
       state.editor.setModel(model);
       renderTabs();
       updateTreeSelection();
-      
+
       // Restore view state if we have it
       try {
         const viewState = localStorage.getItem('viewState:' + path);
@@ -1213,30 +1213,30 @@ export function generateIdePage(config = {}) {
         // Corrupted view state in localStorage; ignore and start fresh
       }
     }
-    
+
     function closeTab(path) {
       const idx = state.openTabs.indexOf(path);
       if (idx === -1) return;
-      
+
       // Check for unsaved changes
       if (state.unsavedChanges.has(path)) {
         if (!confirm(\`"\${path.split('/').pop()}" has unsaved changes. Close anyway?\`)) {
           return;
         }
       }
-      
+
       // Remove from tabs
       state.openTabs.splice(idx, 1);
-      
+
       // Dispose model
       const model = state.models.get(path);
       if (model) {
         model.dispose();
         state.models.delete(path);
       }
-      
+
       state.unsavedChanges.delete(path);
-      
+
       // Switch to another tab or show welcome
       if (state.activeTab === path) {
         if (state.openTabs.length > 0) {
@@ -1248,21 +1248,21 @@ export function generateIdePage(config = {}) {
           elements.welcome.style.display = 'flex';
         }
       }
-      
+
       renderTabs();
     }
-    
+
     // ==================== Save ====================
-    
+
     async function saveCurrentFile() {
       if (!state.activeTab) return;
-      
+
       const model = state.models.get(state.activeTab);
       if (!model) return;
-      
+
       elements.saveStatus.textContent = 'Saving...';
       elements.saveStatus.className = 'saving';
-      
+
       try {
         await writeFile(state.activeTab, model.getValue());
         state.unsavedChanges.delete(state.activeTab);
@@ -1279,11 +1279,11 @@ export function generateIdePage(config = {}) {
         console.error('Save failed:', err);
       }
     }
-    
+
     // ==================== Context Menu ====================
-    
+
     let contextMenuTarget = null;
-    
+
     function showContextMenu(e, node) {
       e.preventDefault();
       contextMenuTarget = node;
@@ -1291,18 +1291,18 @@ export function generateIdePage(config = {}) {
       elements.contextMenu.style.top = e.clientY + 'px';
       elements.contextMenu.classList.add('visible');
     }
-    
+
     function hideContextMenu() {
       elements.contextMenu.classList.remove('visible');
       contextMenuTarget = null;
     }
-    
+
     async function handleContextAction(action) {
       if (!contextMenuTarget) return;
-      
+
       const target = contextMenuTarget;
       hideContextMenu();
-      
+
       switch (action) {
         case 'new-file': {
           const name = prompt('New file name:');
@@ -1341,26 +1341,26 @@ export function generateIdePage(config = {}) {
         }
       }
     }
-    
+
     // ==================== Keyboard Shortcuts ====================
-    
+
     function setupKeyboardShortcuts() {
       document.addEventListener('keydown', (e) => {
         // Use Cmd on Mac, Ctrl on Windows/Linux
         const modKey = e.metaKey || e.ctrlKey;
-        
+
         // Cmd/Ctrl+S - Save
         if (modKey && e.key === 's') {
           e.preventDefault();
           saveCurrentFile();
         }
-        
+
         // Cmd/Ctrl+B - Toggle sidebar
         if (modKey && e.key === 'b') {
           e.preventDefault();
           elements.sidebar.classList.toggle('collapsed');
         }
-        
+
         // Cmd/Ctrl+W - Close tab
         if (modKey && e.key === 'w') {
           e.preventDefault();
@@ -1368,7 +1368,7 @@ export function generateIdePage(config = {}) {
             closeTab(state.activeTab);
           }
         }
-        
+
         // Ctrl+L - Toggle chat sidebar (forward to parent frame)
         // Ctrl only, NOT Cmd — Cmd+L is browser "focus URL bar"
         if (e.ctrlKey && !e.metaKey && e.key === 'l') {
@@ -1386,7 +1386,7 @@ export function generateIdePage(config = {}) {
           elements.fileSearch.select();
         }
 
-        
+
         // Cmd/Ctrl+Tab - Next tab
         if (modKey && e.key === 'Tab' && !e.shiftKey) {
           e.preventDefault();
@@ -1396,7 +1396,7 @@ export function generateIdePage(config = {}) {
             switchToTab(state.openTabs[nextIdx]);
           }
         }
-        
+
         // Cmd/Ctrl+Shift+Tab - Previous tab
         if (modKey && e.shiftKey && e.key === 'Tab') {
           e.preventDefault();
@@ -1406,7 +1406,7 @@ export function generateIdePage(config = {}) {
             switchToTab(state.openTabs[prevIdx]);
           }
         }
-        
+
         // Escape - Hide context menu and clear search
         if (e.key === 'Escape') {
           hideContextMenu();
@@ -1419,13 +1419,13 @@ export function generateIdePage(config = {}) {
         }
       });
     }
-    
+
     function setupFileSearch() {
       elements.fileSearch.addEventListener('input', (e) => {
         searchQuery = e.target.value;
         refreshFileTree();
       });
-      
+
       elements.fileSearch.addEventListener('keydown', (e) => {
         // Enter key opens first matching file
         if (e.key === 'Enter' && searchQuery) {
@@ -1439,18 +1439,18 @@ export function generateIdePage(config = {}) {
         }
       });
     }
-    
+
     // ==================== Resize Handle ====================
-    
+
     function setupResizeHandle() {
       const handle = document.getElementById('resize-handle');
       let isResizing = false;
-      
+
       handle.addEventListener('mousedown', () => {
         isResizing = true;
         document.body.style.cursor = 'col-resize';
       });
-      
+
       document.addEventListener('mousemove', (e) => {
         if (!isResizing) return;
         const newWidth = e.clientX;
@@ -1458,13 +1458,13 @@ export function generateIdePage(config = {}) {
           elements.sidebar.style.width = newWidth + 'px';
         }
       });
-      
+
       document.addEventListener('mouseup', () => {
         isResizing = false;
         document.body.style.cursor = '';
       });
     }
-    
+
     // ==================== Initialize ====================
 
     function showInitError(message) {
@@ -1475,7 +1475,7 @@ export function generateIdePage(config = {}) {
         + '<button onclick="location.reload()" style="background:var(--accent);color:#fff;border:none;padding:8px 20px;border-radius:6px;cursor:pointer;font-size:13px;">Retry</button>'
         + '</div>';
     }
-    
+
     function showLoadingError(message) {
       elements.loading.classList.remove('hidden');
       elements.loading.innerHTML = '<div style="max-width:560px;color:#ddd;font:13px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;padding:16px 20px;text-align:center">'
@@ -1621,7 +1621,7 @@ export function generateIdePage(config = {}) {
           cursorBlinking: 'smooth',
           smoothScrolling: true,
         });
-        
+
         // Save view state on switch
         state.editor.onDidChangeCursorPosition(() => {
           if (state.activeTab) {
@@ -1631,7 +1631,7 @@ export function generateIdePage(config = {}) {
             } catch (_e) { /* localStorage full or unavailable */ }
           }
         });
-        
+
         const savedWorkspaceRoot = localStorage.getItem('workspaceRoot');
         state.workspaceRoot = normalizeWorkspaceRoot(savedWorkspaceRoot || '/');
         updateWorkspacePathLabel();
@@ -1640,13 +1640,13 @@ export function generateIdePage(config = {}) {
         setupKeyboardShortcuts();
         setupResizeHandle();
         setupFileSearch();
-        
+
         // Context menu handlers
         elements.contextMenu.querySelectorAll('.context-item').forEach(item => {
           item.addEventListener('click', () => handleContextAction(item.dataset.action));
         });
         document.addEventListener('click', hideContextMenu);
-        
+
         // Toolbar buttons
         document.getElementById('toggle-sidebar').addEventListener('click', () => {
           elements.sidebar.classList.toggle('collapsed');
@@ -1672,7 +1672,7 @@ export function generateIdePage(config = {}) {
         document.getElementById('refresh-btn').addEventListener('click', async () => {
           await refreshFileTree();
         });
-        
+
         // Load file tree in background (don't block IDE render)
         refreshFileTree().catch(err => {
           console.error('Initial file tree load failed:', err);
@@ -1705,7 +1705,7 @@ export function generateIdePage(config = {}) {
           state.openTabs = [];
           state.activeTab = null;
         }
-        
+
         // Save tabs on change
         const saveTabs = () => {
           try {
@@ -1716,7 +1716,7 @@ export function generateIdePage(config = {}) {
         };
         setInterval(saveTabs, 5000);
         window.addEventListener('beforeunload', saveTabs);
-        
+
       } catch (err) {
         console.error('[IDE] Initialization failed:', err);
         clearTimeout(initTimeout);
@@ -1726,7 +1726,7 @@ export function generateIdePage(config = {}) {
       clearTimeout(initTimeout);
       console.log('[IDE] Initialization complete');
     }
-    
+
     init();
   </script>
 </body>

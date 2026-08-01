@@ -50,18 +50,18 @@ def show_status():
     print("=" * 50)
     print("渐进式启用状态")
     print("=" * 50)
-    
+
     for stage_id, stage in config.get("stages", {}).items():
         status = "✅ 启用" if stage.get("enabled") else "❌ 禁用"
         print(f"\n{stage_id}: {stage['name']}")
         print(f"  状态: {status}")
         print(f"  模块: {', '.join(stage['modules'])}")
         print(f"  说明: {stage['description']}")
-    
+
     print("\n" + "=" * 50)
     print("优化配置")
     print("=" * 50)
-    
+
     for opt_name, opt in config.get("optimizations", {}).items():
         print(f"\n{opt_name}:")
         print(f"  {opt.get('description', '')}")
@@ -80,13 +80,13 @@ def enable_all():
 def main():
     """Main."""
     import sys
-    
+
     if len(sys.argv) < 2:
         show_status()
         return
-    
+
     cmd = sys.argv[1]
-    
+
     if cmd == "enable":
         if len(sys.argv) > 2:
             enable_stage(sys.argv[2])

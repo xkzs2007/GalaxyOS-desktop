@@ -6,7 +6,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import pytest
-from services.unified_cache import UnifiedCache
+from galaxyos.privileged.unified_cache import UnifiedCache
 
 
 class TestUnifiedCacheMemoryBackend:
@@ -56,7 +56,7 @@ class TestUnifiedCacheMemoryBackend:
         assert cache.backend_name == "memory"
 
     def test_backend_property(self, cache):
-        from services.unified_cache import _MemoryCacheBackend
+        from galaxyos.privileged.unified_cache import _MemoryCacheBackend
         assert isinstance(cache.backend, _MemoryCacheBackend)
 
     def test_fifo_eviction(self, cache):

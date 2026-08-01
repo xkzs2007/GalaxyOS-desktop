@@ -1,65 +1,103 @@
-"""Workspace — Agent's execution context.
-
-A Workspace bundles everything an Agent needs at runtime:
-  - file sandbox (workspace_dir)
-  - tool registry (registry)
-  - memory backend (memory)
-  - skill graph (skills)
-  - LLM client (llm)
-  - session (id, created_at, metadata)
-
-Mirrors openJiuwen's Workspace abstraction but simpler — GalaxyOS
-runs single-agent in single-process for now.
 """
+GalaxyOS Harness — Workspace 工作空间管理
+
+管理工作空间路径和状态，使用 galaxyos.shared.paths 获取路径。
+"""
+
 from __future__ import annotations
 
 import logging
-import time
-import uuid
-from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Any, Dict, List, Optional
+import os
+from typing import Optional
 
-log = logging.getLogger("galaxyos.harness.workspace")
+from galaxyos.shared.paths import galaxyos_home, workspace as _default_workspace
+
+logger = logging.getLogger("galaxyos.harness.workspace")
 
 
-@dataclass
 class Workspace:
-    """The execution context for a GalaxyOS DeepAgent.
+    """工作空间管理
 
-    Constructed automatically by ``create_galaxy_agent()``. Most
-    users won't instantiate this directly.
+    管理工作空间路径和状态，使用 galaxyos.shared.paths 获取路径。
+
+    Args:
+        root: 工作空间根路径，默认使用 galaxyos.shared.paths.workspace()
     """
-    workspace_dir: Path
-    tools: Dict[str, Any] = field(default_factory=dict)
-    memory: Any = None
-    skills: Any = None
-    llm: Any = None
-    session_id: str = field(default_factory=lambda: str(uuid.uuid4()))
-    created_at: float = field(default_factory=time.time)
-    metadata: Dict[str, Any] = field(default_factory=dict)
 
-    def info(self) -> Dict[str, Any]:
-        """Snapshot of workspace state (for /sse/health or debugging)."""
+    def __init__(self, root: Optional[str] = None) -> None:
+        self._root = root or _default_workspace()
+        self._initialized = False
+        self._ensure_dirs()
+
+    @property
+    def root(self) -> str:
+        return self._root
+
+    @property
+    def is_initialized(self) -> bool:
+        return self._initialized
+
+    @property
+    def data_dir(self) -> str:
+        return os.path.join(self._root, "data")
+
+    @property
+    def config_dir(self) -> str:
+        return os.path.join(self._root, "config")
+
+    @property
+    def models_dir(self) -> str:
+        return os.path.join(self._root, "models")
+
+    @property
+    def cache_dir(self) -> str:
+        return os.path.join(self._root, "cache")
+
+    @property
+    def memory_dir(self) -> str:
+        return os.path.join(self._root, "memory")
+
+    @property
+    def logs_dir(self) -> str:
+        return os.path.join(self._root, "logs")
+
+    @property
+    def skills_dir(self) -> str:
+        return os.path.join(self._root, "skills")
+
+    @property
+    def home(self) -> str:
+        """GalaxyOS 根目录（等同于 galaxyos_home()）"""
+        return galaxyos_home()
+
+    def _ensure_dirs(self) -> None:
+        """确保工作空间核心目录存在"""
+        for d in (
+            self.data_dir,
+            self.config_dir,
+            self.models_dir,
+            self.cache_dir,
+            self.memory_dir,
+            self.logs_dir,
+            self.skills_dir,
+        ):
+            os.makedirs(d, exist_ok=True)
+        self._initialized = True
+        logger.debug("Workspace 目录已就绪: %s", self._root)
+
+    def status(self) -> dict:
+        """返回工作空间状态摘要"""
         return {
-            "workspace_dir": str(self.workspace_dir),
-            "session_id": self.session_id,
-            "tools": list(self.tools.keys()),
-            "memory_backend": type(self.memory).__name__ if self.memory else None,
-            "skill_count": (
-                len(self.skills.nodes) if self.skills
-                and hasattr(self.skills, "nodes") else 0
-            ),
-            "llm": type(self.llm).__name__ if self.llm else None,
-            "created_at": self.created_at,
-            "age_seconds": time.time() - self.created_at,
+            "root": self._root,
+            "home": self.home,
+            "initialized": self._initialized,
+            "dirs": {
+                "data": os.path.isdir(self.data_dir),
+                "config": os.path.isdir(self.config_dir),
+                "models": os.path.isdir(self.models_dir),
+                "cache": os.path.isdir(self.cache_dir),
+                "memory": os.path.isdir(self.memory_dir),
+                "logs": os.path.isdir(self.logs_dir),
+                "skills": os.path.isdir(self.skills_dir),
+            },
         }
-
-    def ensure_dirs(self) -> None:
-        """Create workspace skeleton (executed + skills + memory)."""
-        wd = Path(self.workspace_dir)
-        for sub in ("executions", "skills", "memory"):
-            (wd / sub).mkdir(parents=True, exist_ok=True)
-
-
-__all__ = ["Workspace"]

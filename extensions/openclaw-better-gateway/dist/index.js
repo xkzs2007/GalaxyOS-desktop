@@ -91,7 +91,7 @@ function generateLandingPage(config, gatewayHost) {
 <body>
   <h1>🔌 Better Gateway</h1>
   <p>Auto-reconnect enhancement for OpenClaw Gateway UI</p>
-  
+
   <h2>Features</h2>
   <div class="feature">Automatic WebSocket reconnection on disconnect</div>
   <div class="feature">Visual connection status indicator</div>
@@ -105,11 +105,11 @@ function generateLandingPage(config, gatewayHost) {
   <h2>Option 1: Bookmarklet</h2>
   <p>Drag this to your bookmarks bar, then click it when on the Gateway UI:</p>
   <p><a class="bookmarklet" href="${bookmarklet}">⚡ Better Gateway</a></p>
-  
+
   <h2>Option 2: Console Injection</h2>
   <p>Open DevTools (F12) on the Gateway UI and paste:</p>
   <pre>fetch('/better-gateway/inject.js').then(r=>r.text()).then(eval)</pre>
-  
+
   <h2>Option 3: Userscript (Tampermonkey)</h2>
   <p>Create a new userscript with:</p>
   <pre>// ==UserScript==
@@ -157,10 +157,10 @@ DELETE /better-gateway/api/files?path=/test.md</pre>
 
   <h2>Script URL</h2>
   <p><code>/better-gateway/inject.js</code></p>
-  
+
   <hr style="margin: 40px 0; border-color: #333;">
   <p style="color: #666; font-size: 0.85em;">
-    <a href="https://github.com/ThisIsJeron/openclaw-better-gateway" style="color: #00d4ff;">GitHub</a> · 
+    <a href="https://github.com/ThisIsJeron/openclaw-better-gateway" style="color: #00d4ff;">GitHub</a> ·
     Config: reconnect=${config.reconnectIntervalMs}ms, maxAttempts=${config.maxReconnectAttempts}
   </p>
 </body>

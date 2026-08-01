@@ -7,80 +7,46 @@ on:
     branches: [main, master]
   workflow_dispatch:
 
-# v9.4-adapted lint workflow.
-#
-# Drops `mypy` against `extensions/galaxyos/scripts/` (that dir
-# was removed in v9.0). Keeps ruff + a per-Python-version compile
-# check.
 jobs:
   ruff:
-    name: ruff
     runs-on: ubuntu-latest
-    # Don't block PRs / releases on ruff. The repo has 21k+
-    # historical style violations in legacy/ services/ galaxyos/engine/
-    # that we're not going to fix in one pass. Ruff runs as an
-    # informational check; the annotation count is visible in the
-    # Actions UI but won't fail the workflow.
-    continue-on-error: true
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
-      - name: Run Ruff (informational, non-blocking)
+      - name: Run Ruff
         uses: astral-sh/ruff-action@v3
         with:
-          # Scan the whole repo but exclude generated/build dirs.
-          # The `--exit-zero` style behavior comes from
-          # continue-on-error above; ruff still prints all
-          # violations as GH annotations (capped at 10 by GH UI).
-          args: check --select=E,F,W --ignore=E501,E402 --exit-zero --exclude=node_modules,target,prebuilt,release,dist,build
+          args: check --select=F821,F823 galaxyos/kernel/ galaxyos/harness/ galaxyos/shared/
 
-  mypy-core:
-    name: mypy (services + engine, best-effort)
+  mypy:
     runs-on: ubuntu-latest
-    # Don't block PRs / releases on mypy. The repo has 40+ historical
-    # type errors in galaxyos/engine/ (None assignments to ndarray,
-    # missing type annotations, PEP 484 implicit Optional, etc.)
-    # that are out of scope for the desktop release pipeline.
-    # mypy runs as an informational check; annotations are visible
-    # in the Actions UI but won't fail the workflow.
-    continue-on-error: true
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-          cache: pip
-          cache-dependency-path: requirements-core.txt
 
-      - name: Install deps (core only)
+      - name: Install deps
         run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements-core.txt
           pip install mypy
+          pip install -r requirements-core.txt
 
       - name: Run mypy
-        # Best-effort: legacy code has many untyped signatures; we
-        # surface them but don't fail the build (matches
-        # .cnb.yml `lint` job's `--ignore-missing-imports` setting).
-        run: |
-          mypy services/ galaxyos/engine/ \
-            --ignore-missing-imports --no-error-summary --follow-imports=silent
-        continue-on-error: true
+        run: mypy services/ galaxyos/engine/ extensions/galaxyos/scripts/ --ignore-missing-imports --no-error-summary
+        continue-on-error: true  # mypy 渐进式：先不拦，但报告问题
 
   python-compat:
-    name: python-compat ${{ matrix.python-version }}
     runs-on: ubuntu-latest
     strategy:
-      fail-fast: false
       matrix:
         python-version: ["3.11", "3.12"]
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
@@ -93,7 +59,7 @@ jobs:
           import py_compile, os, sys
           problems = []
           for root, dirs, files in os.walk('.'):
-              dirs[:] = [d for d in dirs if d not in ('node_modules', '.git', '__pycache__', 'target', 'prebuilt', 'release', 'dist', 'build')]
+              dirs[:] = [d for d in dirs if d not in ('node_modules', '.git', '__pycache__', 'target', 'prebuilt', '.pnpm-store')]
               for f in files:
                   if f.endswith('.py'):
                       path = os.path.join(root, f)

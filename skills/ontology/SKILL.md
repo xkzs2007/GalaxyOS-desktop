@@ -113,7 +113,7 @@ types:
   Task:
     required: [title, status]
     status_enum: [open, in_progress, blocked, done]
-  
+
   Event:
     required: [title, start]
     validate: "end >= start if end exists"
@@ -127,7 +127,7 @@ relations:
     from_types: [Project, Task]
     to_types: [Person]
     cardinality: many_to_one
-  
+
   blocks:
     from_types: [Task]
     to_types: [Task]
@@ -175,7 +175,7 @@ Log ontology mutations as causal actions:
 # When creating/updating entities, also log to causal action log
 action = {
     "action": "create_entity",
-    "domain": "ontology", 
+    "domain": "ontology",
     "context": {"type": "Task", "project": "proj_001"},
     "outcome": "created"
 }

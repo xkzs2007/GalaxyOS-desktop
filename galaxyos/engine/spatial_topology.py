@@ -12,7 +12,7 @@ This module implements SpatialTopologyGraph:
 - 导航记忆：记录和检索用户在场景间的移动
 - 空间检索：在当前场景附近找关联记忆
 - 拓扑推断：根据实体推断用户所在场景
-- 别名消歧：xiaoyi → 小艺
+- 别名消歧：xiaoyi → GalaxyOS
 - SQLite 持久化，线程安全
 """
 
@@ -23,8 +23,9 @@ import logging
 import sqlite3
 import threading
 import re
-from typing import Dict, List, Optional, Any, Tuple
+from typing import Dict, List, Optional, Any
 from dataclasses import dataclass, field, asdict
+from galaxyos.shared.paths import workspace
 
 logger = logging.getLogger(__name__)
 
@@ -104,10 +105,10 @@ RELATION_FAR = "far_from"
 
 # 默认别名映射（用户可在 register_scene 时指定更多）
 DEFAULT_ALIAS_MAP = {
-    "xiaoyi": "小艺",
-    "claw": "小艺 Claw",
-    "agent": "小艺 Claw",
-    "ai": "小艺 Claw",
+    "xiaoyi": "GalaxyOS",
+    "claw": "GalaxyOS",
+    "agent": "GalaxyOS",
+    "ai": "GalaxyOS",
 }
 
 
@@ -115,7 +116,7 @@ DEFAULT_ALIAS_MAP = {
 # 默认数据库路径
 # ============================================================================
 
-DEFAULT_DB_DIR = os.path.expanduser("~/.openclaw/workspace")
+DEFAULT_DB_DIR = workspace()
 DEFAULT_DB_PATH = os.path.join(DEFAULT_DB_DIR, "spatial_topology.db")
 
 

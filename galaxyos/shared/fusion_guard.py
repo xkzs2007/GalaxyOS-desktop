@@ -45,9 +45,9 @@ import ast
 import datetime
 import sys
 import threading
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Sequence, TypeVar
+from typing import Callable, TypeVar
 
 # ---------------------------------------------------------------------------
 # 冲突白名单 — 设计允许的冲突，scan_fusion_conflicts() 将跳过它们

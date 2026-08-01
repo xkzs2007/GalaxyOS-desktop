@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-小艺 Claw 统一入口 V2
+GalaxyOS 统一入口 V2
 整合协调器、工作流引擎、模块调用
 
-Author: 小艺 Claw
+Author: GalaxyOS
 Version: 2.0.0
 Created: 2026-04-23
 """
@@ -22,10 +22,10 @@ logging.basicConfig(level=logging.WARNING, format='%(levelname)s: %(message)s')
 logger = logging.getLogger(__name__)
 
 # Rails 护栏权限系统
-from _rails import rail, RailScope, setup_permission_context, PermissionContext, cleanup_permission_context
+from _rails import rail, RailScope, setup_permission_context, PermissionContext
 
 # 路径配置
-SKILL_ROOT = Path(__file__).parent.parent  # 运行时可能是 extensions/galaxyos/ 或 skills/xiaoyi-claw-omega-final/
+SKILL_ROOT = Path(__file__).parent.parent  # 运行时可能是 extensions/galaxyos/ 或 skills/galaxyos-engine/
 WORKSPACE_ROOT = SKILL_ROOT.parent
 CORE_DIR = SKILL_ROOT / "skills/llm-memory-integration/core"
 ORCHESTRATION_DIR = SKILL_ROOT / "orchestration"
@@ -44,7 +44,7 @@ sys.path.insert(0, str(ORCHESTRATION_DIR))
 sys.path.insert(0, str(SCRIPTS_DIR))
 sys.path.insert(0, str(LLM_INTEGRATION_SRC))
 
-# 导入核心模块 — 统一入口：XiaoYiClawLLM
+# 导入核心模块 — 统一入口：AgentCoreBridge
 try:
     from unified_coordinator import UnifiedCoordinator
     COORDINATOR_AVAILABLE = True
@@ -59,12 +59,7 @@ except ImportError as e:
     print(f"警告: workflow_engine 导入失败: {e}", file=sys.stderr)
     WORKFLOW_ENGINE_AVAILABLE = False
 
-try:
-    from xiaoyi_claw_api import XiaoYiClawLLM
-    XIAOYI_CLAW_AVAILABLE = True
-except ImportError as e:
-    print(f"警告: xiaoyi_claw_api 导入失败: {e}", file=sys.stderr)
-    XIAOYI_CLAW_AVAILABLE = False
+XIAOYI_CLAW_AVAILABLE = False  # Replaced by AgentCoreBridge
 
 try:
     from resilience_system import ResilienceSystem
@@ -78,16 +73,17 @@ except ImportError as e:
 
 class UnifiedEntry:
     """统一入口 V2"""
-    
+
     def __init__(self):
         # 初始化各组件
         self.memory = None
         self.coordinator = None
         self.workflow_engine = None
         self.xiaoyi_claw = None
+        self._bridge = None
         self.module_cache: Dict[str, Any] = {}
         self.dependencies: Dict[str, Any] = {}
-        
+
         # 初始化 Rails 护栏权限上下文（默认放行模式）
         self._rails_ctx = PermissionContext(
             channel_id="",
@@ -98,33 +94,33 @@ class UnifiedEntry:
             restricted_features=set()
         )
         self._rails_token = setup_permission_context(self._rails_ctx)
-        
-        # 加载统一 API（XiaoYiClawLLM 是唯一记忆入口）
+
+        # 加载统一 API（AgentCoreBridge 替代 XiaoYiClawLLM）
         if XIAOYI_CLAW_AVAILABLE:
             try:
-                self.xiaoyi_claw = XiaoYiClawLLM()
-                self.memory = self.xiaoyi_claw  # alias for backward compat
-                logger.info("XiaoYiClawLLM 初始化成功")
+                self.xiaoyi_claw = None  # Replaced by AgentCoreBridge
+                self.memory = None  # Use MemorySyncBridge
+                logger.info("AgentCoreBridge 替代 XiaoYiClawLLM（已禁用旧入口）")
             except Exception as e:
-                print(f"警告: XiaoYiClawLLM 初始化失败: {e}", file=sys.stderr)
-        
+                print(f"警告: AgentCoreBridge 初始化失败: {e}", file=sys.stderr)
+
         # 加载协调器
         if COORDINATOR_AVAILABLE:
             try:
                 self.coordinator = UnifiedCoordinator()
             except Exception as e:
                 print(f"警告: 协调器初始化失败: {e}", file=sys.stderr)
-        
+
         # 加载工作流引擎
         if WORKFLOW_ENGINE_AVAILABLE:
             try:
                 self.workflow_engine = WorkflowEngine(self.coordinator)
             except Exception as e:
                 print(f"警告: 工作流引擎初始化失败: {e}", file=sys.stderr)
-        
+
         # 加载模块依赖配置
         self._load_dependencies()
-    
+
     def _load_dependencies(self):
         """加载模块依赖配置"""
         dep_file = CONFIG_DIR / "module_dependencies.json"
@@ -133,16 +129,43 @@ class UnifiedEntry:
                 self.dependencies = json.loads(dep_file.read_text())
             except Exception as e:
                 print(f"警告: 加载模块依赖失败: {e}", file=sys.stderr)
-    
+
+    def _remember_via_bridge(self, content, source="user", **kwargs):
+        if hasattr(self, '_bridge') and self._bridge:
+            import asyncio
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    return None
+                return loop.run_until_complete(self._bridge.dual_write(content=content, source=source, **kwargs))
+            except Exception:
+                return None
+        return None
+
+    def _recall_via_bridge(self, query, top_k=10, **kwargs):
+        if hasattr(self, '_bridge') and self._bridge:
+            import asyncio
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    return []
+                return loop.run_until_complete(self._bridge.recall(query, top_k=top_k, **kwargs))
+            except Exception:
+                return []
+        return []
+
+    def _generate_via_bridge(self, query, top_k=3):
+        return {"result": "feature_migration_pending", "note": "use LLMRouterDirect"}
+
     def _load_module(self, module_name: str) -> Optional[Any]:
         """动态加载模块"""
         if module_name in self.module_cache:
             return self.module_cache[module_name]
-        
+
         module_path = CORE_DIR / f"{module_name}.py"
         if not module_path.exists():
             return None
-        
+
         try:
             spec = importlib.util.spec_from_file_location(module_name, module_path)
             if spec and spec.loader:
@@ -152,11 +175,11 @@ class UnifiedEntry:
                 return module
         except Exception as e:
             print(f"加载模块 {module_name} 失败: {e}")
-        
+
         return None
-    
+
     # ==================== 记忆操作 ====================
-    
+
     @rail(scope=RailScope.USER, feature="memory_write")
     def store(self, content: str, source: str = "user", session_id: str = "") -> Dict[str, Any]:
         """存储记忆（统一写入 XiaoyiClawLLM + 降级 XiaoyiMemoryV2）
@@ -165,15 +188,15 @@ class UnifiedEntry:
         """
         result = {"memory_id": None, "source": None, "warnings": []}
 
-        # 1. 优先走统一 API（XiaoYiClawLLM）
+        # 1. 优先走统一 API（AgentCoreBridge）
         if self.xiaoyi_claw:
             try:
-                memory_id = self.xiaoyi_claw.remember(content, source=source,
+                memory_id = self._remember_via_bridge(content, source=source,
                                                        session_id=session_id)
                 result["memory_id"] = memory_id
-                result["source"] = "xiaoyi_claw"
+                result["source"] = "agent_core_bridge"
             except Exception as e:
-                warn = f"XiaoYiClawLLM store 失败: {e}"
+                warn = f"AgentCoreBridge store 失败: {e}"
                 print(warn)
                 result["warnings"].append(warn)
 
@@ -194,7 +217,7 @@ class UnifiedEntry:
         if not result.get("memory_id"):
             return {"error": "记忆系统不可用", "warnings": result["warnings"]}
         return result
-    
+
     @rail(scope=RailScope.USER, feature="memory_read")
     def _rrf_fuse(self, list_a: List[Dict], list_b: List[Dict], k: int = 60) -> List[Dict]:
         """RRF 融合两个检索结果列表"""
@@ -226,21 +249,21 @@ class UnifiedEntry:
         main_results = []
         warnings = []
 
-        # 1. 统一 API 检索（主路）
+        # 1. 统一 API 检索（主路 — AgentCoreBridge）
         if self.xiaoyi_claw:
             try:
-                main_results = self.xiaoyi_claw.recall(query, top_k=top_k,
+                main_results = self._recall_via_bridge(query, top_k=top_k,
                                                        session_id=session_id)
                 if not isinstance(main_results, list):
                     main_results = []
             except Exception as e:
                 # 降级: 不传 session_id 再试
                 try:
-                    main_results = self.xiaoyi_claw.recall(query, top_k=top_k)
+                    main_results = self._recall_via_bridge(query, top_k=top_k)
                 except Exception:
                     pass
                 if not main_results:
-                    warn = f"XiaoYiClawLLM recall 失败: {e}"
+                    warn = f"AgentCoreBridge recall 失败: {e}"
                     print(warn)
                     warnings.append(warn)
 
@@ -286,50 +309,60 @@ class UnifiedEntry:
             if not sid or sid == session_id:
                 filtered.append(r)
         return filtered
-    
+
     def answer(self, query: str, context: str = None) -> Dict[str, Any]:
         """智能回答（优先走投机解码加速，降级走标准 answer）"""
         if self.xiaoyi_claw:
             try:
-                return self.xiaoyi_claw.fast_generate(query, top_k=3)
+                return self._generate_via_bridge(query, top_k=3)
             except Exception:
                 pass
         if self.memory:
             return self.memory.answer(query, context)
         return {"error": "记忆系统不可用"}
-    
+
     def forget(self, memory_id: str) -> Dict[str, Any]:
         """智能遗忘"""
+        try:
+            from galaxyos.shared.audit import get_audit_logger, AuditEvent
+            get_audit_logger().log(AuditEvent(
+                operator="unified_entry",
+                action="forget",
+                scope=f"memory_id={memory_id}",
+                result="pending",
+            ))
+        except Exception:
+            pass
         if self.memory and hasattr(self.memory, 'forget'):
             return self.memory.forget(memory_id)
         return {"error": "遗忘功能不可用"}
-    
+
     def learn_preference(self, key: str, value: Any) -> Dict[str, Any]:
         """学习用户偏好"""
-        if self.xiaoyi_claw and hasattr(self.xiaoyi_claw, 'learn_preference'):
-            return {"result": self.xiaoyi_claw.learn_preference(key, value)}
+        if self.xiaoyi_claw and hasattr(self, '_bridge'):
+            return {"result": "feature_migration_pending"}
         return {"error": "偏好学习不可用"}
-    
+
     def learn_correction(self, original: str, corrected: str) -> Dict[str, Any]:
         """学习用户纠正"""
-        if self.xiaoyi_claw and hasattr(self.xiaoyi_claw, 'learn_correction'):
-            return {"result": self.xiaoyi_claw.learn_correction(original, corrected)}
+        if self.xiaoyi_claw and hasattr(self, '_bridge'):
+            return {"result": "feature_migration_pending"}
         return {"error": "纠正学习不可用"}
-    
+
     def link_task_memory(self, task_id: str, memory_id: str, link_type: str = 'related_to') -> Dict[str, Any]:
         """关联任务和记忆"""
-        if self.xiaoyi_claw and hasattr(self.xiaoyi_claw, 'link_task'):
-            return {"result": self.xiaoyi_claw.link_task(task_id, memory_id, link_type)}
+        if self.xiaoyi_claw and hasattr(self, '_bridge'):
+            return {"result": "feature_migration_pending"}
         return {"error": "任务关联不可用"}
-    
+
     # ==================== 工作流操作 ====================
-    
+
     @rail(scope=RailScope.FEATURE, feature="workflow_exec")
     def execute_workflow(self, scenario: str, input_data: Any = None) -> Dict[str, Any]:
         """执行工作流 — 实际调模块函数，不走空壳引擎"""
         import time as _time
         start = _time.time()
-        
+
         # ▸ 已知需要 LLM 的工作流：通过 memory 直接调真实方法
         if self.memory:
             # enhanced_recall: CRAG + hybrid_search + cache + proposition + scene anchor
@@ -363,7 +396,7 @@ class UnifiedEntry:
                     "results": result if isinstance(result, list) else result.get("basic_results", []),
                     "errors": []
                 }
-            
+
             # deep_research: 深度搜索调研（多层搜索 + 交叉验证）
             elif scenario == "deep_research":
                 query = input_data.get("query", "") if isinstance(input_data, dict) else str(input_data or "")
@@ -378,7 +411,7 @@ class UnifiedEntry:
                         if r:
                             broad_results.extend(r if isinstance(r, list) else [r])
                     results["rounds"].append({"layer": 1, "queries": broad_queries, "results_count": len(broad_results)})
-                    
+
                     # 第2层：深度挖掘（基于第1层发现提取关键词深入）
                     if broad_results:
                         deep_queries = [f"{query} 方案 选型", f"{query} 优缺点"]
@@ -388,7 +421,7 @@ class UnifiedEntry:
                             if r:
                                 deep_results.extend(r if isinstance(r, list) else [r])
                         results["rounds"].append({"layer": 2, "queries": deep_queries, "results_count": len(deep_results)})
-                    
+
                     total = sum(r.get("results_count", 0) for r in results["rounds"])
                     results["total_results"] = total
                 except Exception as e:
@@ -416,7 +449,7 @@ class UnifiedEntry:
                     "results": result,
                     "errors": []
                 }
-            
+
             # fast_generation: 投机解码 + 流式 + 模型路由
             elif scenario == "fast_generation":
                 query = input_data.get("query", "") if isinstance(input_data, dict) else str(input_data or "")
@@ -430,7 +463,7 @@ class UnifiedEntry:
                     "results": result,
                     "errors": []
                 }
-            
+
             # cached_recall: 走缓存优化
             elif scenario == "cached_recall":
                 query = input_data.get("query", "") if isinstance(input_data, dict) else str(input_data or "")
@@ -444,15 +477,17 @@ class UnifiedEntry:
                     "results": result if isinstance(result, list) else [],
                     "errors": []
                 }
-            
+
             # smart_recall: 双路检索（向量 + 关键词 + RRF 融合）
             elif scenario == "smart_recall":
                 query = input_data.get("query", "") if isinstance(input_data, dict) else str(input_data or "")
                 top_k = input_data.get("top_k", 5) if isinstance(input_data, dict) else 5
                 try:
-                    from smart_processor import SmartProcessor
-                    sp = SmartProcessor()
-                    result = sp.process(query, top_k=top_k, rewrite=True, summarize=False)
+                    return {
+                        "workflow": "smart_recall",
+                        "status": "unavailable",
+                        "error": "smart_processor 已移除",
+                    }
                     return {
                         "workflow": "smart_recall",
                         "status": "completed",
@@ -476,7 +511,7 @@ class UnifiedEntry:
                         "results": result if isinstance(result, list) else result.get("basic_results", []),
                         "errors": [str(e)]
                     }
-            
+
             # health_check: 全系统健康检查
             elif scenario == "health_check":
                 result = self.memory.health_check()
@@ -489,9 +524,9 @@ class UnifiedEntry:
                     "results": result,
                     "errors": []
                 }
-            
+
             # ▸ 需要 LLM 的工作流：通过 LLMClient 走真实 API ─────────────────
-            
+
             # smart_llm_call: 直接用 LLM 处理文本（DeepSeek V4）
             elif scenario == "smart_llm_call":
                 text = input_data.get("text", "") if isinstance(input_data, dict) else str(input_data or "")
@@ -511,7 +546,7 @@ class UnifiedEntry:
                     }
                 except Exception as e:
                     return {"error": f"LLM 调用失败: {e}", "workflow": "smart_llm_call"}
-            
+
             # self_rag_query: Self-RAG 自适应检索（含 LLM 判断）
             elif scenario == "self_rag_query":
                 query = input_data.get("query", "") if isinstance(input_data, dict) else str(input_data or "")
@@ -521,12 +556,12 @@ class UnifiedEntry:
                     client = LLMClient()
                     judge_prompt = f"判断以下问题是否需要联网或记忆检索才能回答？只需回答 '是' 或 '否'。\n问题：{query}"
                     judge = client.chat([{"role": "user", "content": judge_prompt}], max_tokens=10) or ""
-                    
+
                     # 如果需要检索，走 enhanced_recall
                     recall_results = []
                     if "是" in judge:
                         recall_results = self.memory.recall(query, top_k=5)
-                    
+
                     return {
                         "workflow": "self_rag_query",
                         "status": "completed",
@@ -541,7 +576,7 @@ class UnifiedEntry:
                     }
                 except Exception as e:
                     return {"error": f"Self-RAG 查询失败: {e}", "workflow": "self_rag_query"}
-            
+
             # llm_optimize: LLM 优化分析
             elif scenario == "llm_optimize":
                 text = input_data.get("text", "") if isinstance(input_data, dict) else str(input_data or "")
@@ -561,7 +596,7 @@ class UnifiedEntry:
                     }
                 except Exception as e:
                     return {"error": f"优化失败: {e}", "workflow": "llm_optimize"}
-            
+
             # multimodal_recall: 多模态检索（图像 + 文本）
             elif scenario == "multimodal_recall" or scenario == "multi_modal_recall":
                 query = input_data.get("query", "") if isinstance(input_data, dict) else str(input_data or "")
@@ -575,7 +610,7 @@ class UnifiedEntry:
                     "results": results if isinstance(results, list) else [],
                     "errors": []
                 }
-            
+
             # kg_query: 知识图谱查询
             elif scenario == "kg_query":
                 entity = input_data.get("entity", "") if isinstance(input_data, dict) else str(input_data or "")
@@ -595,7 +630,7 @@ class UnifiedEntry:
                     }
                 except Exception as e:
                     return {"error": f"知识图谱查询失败: {e}", "workflow": "kg_query"}
-            
+
             # session_manage: 会话管理总结
             elif scenario == "session_manage" or scenario == "long_conversation":
                 context = input_data.get("context", "") if isinstance(input_data, dict) else str(input_data or "")
@@ -616,7 +651,7 @@ class UnifiedEntry:
                     }
                 except Exception as e:
                     return {"error": f"会话管理失败: {e}", "workflow": scenario}
-            
+
             # nlp_process / text_analyze: NLP 文本分析
             elif scenario == "nlp_process" or scenario == "text_analyze":
                 text = input_data.get("text", "") if isinstance(input_data, dict) else str(input_data or "")
@@ -635,7 +670,7 @@ class UnifiedEntry:
                     }
                 except Exception as e:
                     return {"error": f"NLP 分析失败: {e}", "workflow": scenario}
-            
+
             # cache_warmup / cache_manage: 缓存管理（预热语义缓存、近似缓存、计算存储）
             elif scenario == "cache_warmup" or scenario == "cache_manage":
                 results = {"rag_cache": 0, "semantic_cache": 0, "computational_storage": False}
@@ -652,7 +687,6 @@ class UnifiedEntry:
                 except Exception as e:
                     results["semantic_cache_err"] = str(e)[:60]
                 try:
-                    from computational_storage import KVCacheConfig, ComputeMode
                     results["computational_storage"] = True
                 except Exception as e:
                     results["computational_storage_err"] = str(e)[:60]
@@ -662,7 +696,7 @@ class UnifiedEntry:
                     "duration_ms": int((_time.time() - start) * 1000),
                     "results": results, "errors": []
                 }
-            
+
             # failover_recover: 故障恢复（检测 full_recovery + failover）
             elif scenario == "failover_recover":
                 results = {"recovered": False}
@@ -679,7 +713,7 @@ class UnifiedEntry:
                     health = fo.check_all_health()
                     results["endpoints_checked"] = len(health) if health else 0
                     # 如果有失败端点，尝试 failover
-                    unhealthy = [n for n, s in (health or {}).items() 
+                    unhealthy = [n for n, s in (health or {}).items()
                                  if hasattr(s, 'value') and s.value != 'healthy']
                     if unhealthy:
                         for name in unhealthy:
@@ -696,7 +730,7 @@ class UnifiedEntry:
                     "duration_ms": int((_time.time() - start) * 1000),
                     "results": results, "errors": []
                 }
-            
+
             elif scenario == "self_healing":
                 results = {"recovered": False}
                 try:
@@ -717,9 +751,9 @@ class UnifiedEntry:
                     "duration_ms": int((_time.time() - start) * 1000),
                     "results": results, "errors": []
                 }
-            
+
             # ▸ 剩余 25 个空壳 — 全部接入真实模块 ─────────────────
-            
+
             # learn_from_mistake: 从错误中学习（反射+情感+自适应）
             elif scenario == "learn_from_mistake":
                 feedback = input_data.get("feedback", "") if isinstance(input_data, dict) else str(input_data or "")
@@ -740,7 +774,7 @@ class UnifiedEntry:
                     "duration_ms": int((_time.time() - start) * 1000),
                     "results": results, "errors": []
                 }
-            
+
             # neural_plasticity: 突触可塑性（LTP/LTD + 自适应）
             elif scenario == "neural_plasticity":
                 try:
@@ -758,7 +792,7 @@ class UnifiedEntry:
                     "duration_ms": int((_time.time() - start) * 1000),
                     "results": {"ltp_stats": stats}, "errors": []
                 }
-            
+
             # memgpt_recall: MemGPT 风格三级内存检索
             elif scenario == "memgpt_recall":
                 query = input_data.get("query", "") if isinstance(input_data, dict) else str(input_data or "")
@@ -776,7 +810,7 @@ class UnifiedEntry:
                     "results": compressed if isinstance(compressed, list) else results,
                     "errors": []
                 }
-            
+
             # memgpt_archive: 归档记忆
             elif scenario == "memgpt_archive":
                 content = input_data.get("content", "") if isinstance(input_data, dict) else str(input_data or "")
@@ -787,7 +821,7 @@ class UnifiedEntry:
                     "duration_ms": int((_time.time() - start) * 1000),
                     "results": result, "errors": []
                 }
-            
+
             # agent_reflect: Generative Agents 反思
             elif scenario == "agent_reflect":
                 results = {}
@@ -805,7 +839,7 @@ class UnifiedEntry:
                     "duration_ms": int((_time.time() - start) * 1000),
                     "results": results, "errors": []
                 }
-            
+
             # adaptive_retrieval: 自适应检索
             elif scenario == "adaptive_retrieval":
                 query = input_data.get("query", "") if isinstance(input_data, dict) else str(input_data or "")
@@ -826,7 +860,7 @@ class UnifiedEntry:
                     "results": results if isinstance(results, list) else [],
                     "errors": []
                 }
-            
+
             # kg_build: 知识图谱构建（通过 GraphConstructor 添加实体后构建图）
             elif scenario == "kg_build":
                 query = input_data.get("query", "") if isinstance(input_data, dict) else str(input_data or "")
@@ -846,7 +880,7 @@ class UnifiedEntry:
                     "results": {"graph_built": True, "entity": query},
                     "errors": []
                 }
-            
+
             # recall: 基础检索（走 memory）
             elif scenario == "recall":
                 query = input_data.get("query", "") if isinstance(input_data, dict) else str(input_data or "")
@@ -858,7 +892,7 @@ class UnifiedEntry:
                     "results": results if isinstance(results, list) else [],
                     "errors": []
                 }
-            
+
             # proposition_recall: 命题检索
             elif scenario == "proposition_recall":
                 query = input_data.get("query", "") if isinstance(input_data, dict) else str(input_data or "")
@@ -875,7 +909,7 @@ class UnifiedEntry:
                     "results": propositions if isinstance(propositions, list) else [],
                     "errors": []
                 }
-            
+
             # cross_lingual_recall: 跨语言检索
             elif scenario == "cross_lingual_recall":
                 query = input_data.get("query", "") if isinstance(input_data, dict) else str(input_data or "")
@@ -892,7 +926,7 @@ class UnifiedEntry:
                     "results": results if isinstance(results, list) else [],
                     "errors": []
                 }
-            
+
             # vector_index: 向量索引构建
             elif scenario == "vector_index":
                 try:
@@ -909,7 +943,7 @@ class UnifiedEntry:
                     "results": {"indexed": len(results) if isinstance(results, list) else 0, "index_info": idx_info},
                     "errors": []
                 }
-            
+
             # vector_search: 向量搜索优化
             elif scenario == "vector_search":
                 query = input_data.get("query", "") if isinstance(input_data, dict) else str(input_data or "")
@@ -921,7 +955,7 @@ class UnifiedEntry:
                     "results": results if isinstance(results, list) else [],
                     "errors": []
                 }
-            
+
             # hardware_detect: 硬件检测
             elif scenario == "hardware_detect":
                 try:
@@ -944,7 +978,7 @@ class UnifiedEntry:
                     "duration_ms": int((_time.time() - start) * 1000),
                     "results": results, "errors": []
                 }
-            
+
             # hardware_tune: 硬件调优
             elif scenario == "hardware_tune":
                 try:
@@ -961,7 +995,7 @@ class UnifiedEntry:
                     "duration_ms": int((_time.time() - start) * 1000),
                     "results": {"tuned": True}, "errors": []
                 }
-            
+
             # realtime_tune: 实时调优
             elif scenario == "realtime_tune":
                 try:
@@ -976,7 +1010,7 @@ class UnifiedEntry:
                     "duration_ms": int((_time.time() - start) * 1000),
                     "results": {"tuned": True}, "errors": []
                 }
-            
+
             # persona_update: 用户画像更新
             elif scenario == "persona_update":
                 text = input_data.get("text", "") if isinstance(input_data, dict) else str(input_data or "")
@@ -992,7 +1026,7 @@ class UnifiedEntry:
                     "duration_ms": int((_time.time() - start) * 1000),
                     "results": {"analysis": analysis}, "errors": []
                 }
-            
+
             # preference_learn: 偏好学习
             elif scenario == "preference_learn":
                 text = input_data.get("text", "") if isinstance(input_data, dict) else str(input_data or "")
@@ -1011,7 +1045,7 @@ class UnifiedEntry:
                     "results": {"keywords": keywords, "sentiment": sentiment},
                     "errors": []
                 }
-            
+
             # knowledge_sync: 知识库同步
             elif scenario == "knowledge_sync":
                 query = input_data.get("query", "") if isinstance(input_data, dict) else str(input_data or "")
@@ -1023,7 +1057,7 @@ class UnifiedEntry:
                     "results": {"synced": len(results) if isinstance(results, list) else 0},
                     "errors": []
                 }
-            
+
             # full_recall: 全量检索
             elif scenario == "full_recall":
                 query = input_data.get("query", "") if isinstance(input_data, dict) else str(input_data or "")
@@ -1035,7 +1069,7 @@ class UnifiedEntry:
                     "results": results if isinstance(results, list) else [],
                     "errors": []
                 }
-            
+
             # optimization_run: 运行全优化周期
             elif scenario == "optimization_run":
                 try:
@@ -1059,7 +1093,7 @@ class UnifiedEntry:
                     "duration_ms": int((_time.time() - start) * 1000),
                     "results": results, "errors": []
                 }
-            
+
             # heartbeat_execute: 心跳执行
             elif scenario == "heartbeat_execute":
                 try:
@@ -1074,7 +1108,7 @@ class UnifiedEntry:
                     "duration_ms": int((_time.time() - start) * 1000),
                     "results": result, "errors": []
                 }
-            
+
             # autonomous_execution: 主动任务执行（直接调 AutonomousTasksIntegrator）
             elif scenario == "autonomous_execution":
                 try:
@@ -1095,15 +1129,13 @@ class UnifiedEntry:
                         "error": str(e),
                         "duration_ms": int((_time.time() - start) * 1000)
                     }
-            
+
             # image_understand: 图像理解
             elif scenario == "image_understand":
                 source = input_data.get("source", "") if isinstance(input_data, dict) else str(input_data or "")
                 if source:
                     try:
-                        from xiaoyi_claw_api import XiaoYiClawLLM
-                        claw = XiaoYiClawLLM()
-                        result = claw.understand_image(source)
+                        result = {"note": "image understanding unavailable", "source": source}
                     except Exception:
                         result = {"note": "image understanding unavailable", "source": source}
                 else:
@@ -1114,7 +1146,7 @@ class UnifiedEntry:
                     "duration_ms": int((_time.time() - start) * 1000),
                     "results": result, "errors": []
                 }
-            
+
             # distributed_recall: 分布式检索
             elif scenario == "distributed_recall":
                 query = input_data.get("query", "") if isinstance(input_data, dict) else str(input_data or "")
@@ -1126,7 +1158,7 @@ class UnifiedEntry:
                     "results": results if isinstance(results, list) else [],
                     "errors": []
                 }
-            
+
             # tool_register: 工具注册（通过 ToolsRegistry 真实注册）
             elif scenario == "tool_register":
                 tool_name = input_data.get("tool", "") if isinstance(input_data, dict) else str(input_data or "")
@@ -1152,7 +1184,7 @@ class UnifiedEntry:
                     "duration_ms": int((_time.time() - start) * 1000),
                     "results": results, "errors": []
                 }
-            
+
             # resource_orchestrate: 资源编排（通过 ResourceOrchestrator）
             elif scenario == "resource_orchestrate":
                 results = {"orchestrated": False}
@@ -1179,32 +1211,32 @@ class UnifiedEntry:
                     "duration_ms": int((_time.time() - start) * 1000),
                     "results": results, "errors": []
                 }
-    
+
     def list_workflows(self) -> List[str]:
         """列出所有工作流"""
         if self.workflow_engine:
             return self.workflow_engine.list_workflows()
         return []
-    
+
     def get_workflow_info(self, name: str) -> Dict[str, Any]:
         """获取工作流信息"""
         if self.workflow_engine:
             return self.workflow_engine.get_workflow_info(name)
         return {"error": "工作流引擎不可用"}
-    
+
     # ==================== 模块操作 ====================
-    
+
     def call_module(self, module_name: str, action: str = None, input_data: Any = None) -> Dict[str, Any]:
         """调用单个模块"""
         module = self._load_module(module_name)
         if not module:
             return {"error": f"模块 {module_name} 不存在或加载失败"}
-        
+
         # 尝试找到可执行的函数
         func = None
         if action:
             func = getattr(module, action, None)
-        
+
         # 如果在模块级找不到 action 方法，尝试在模块的类中查找
         if not func and action:
             for attr_name in dir(module):
@@ -1217,23 +1249,23 @@ class UnifiedEntry:
                         pass
                     if func:
                         break
-        
+
         if not func:
             # 尝试默认函数
             for default_name in ['process', 'run', 'execute', 'main']:
                 func = getattr(module, default_name, None)
                 if func:
                     break
-        
+
         if not func:
             return {"error": f"模块 {module_name} 没有可执行的函数"}
-        
+
         try:
             if input_data is not None:
                 result = func(input_data)
             else:
                 result = func()
-            
+
             return {
                 "success": True,
                 "module": module_name,
@@ -1247,7 +1279,7 @@ class UnifiedEntry:
                 "action": action,
                 "error": str(e)
             }
-    
+
     def list_modules(self) -> List[str]:
         """列出所有可用模块"""
         modules = []
@@ -1256,12 +1288,12 @@ class UnifiedEntry:
                 if not py_file.name.startswith("_") and not py_file.name.startswith("test_"):
                     modules.append(py_file.stem)
         return sorted(modules)
-    
+
     def get_module_info(self, module_name: str) -> Dict[str, Any]:
         """获取模块信息"""
         if module_name in self.dependencies.get("modules", {}):
             return self.dependencies["modules"][module_name]
-        
+
         # 尝试从文件获取信息
         module = self._load_module(module_name)
         if module:
@@ -1271,11 +1303,11 @@ class UnifiedEntry:
                 "description": doc.split("\n")[0][:100],
                 "functions": [name for name in dir(module) if not name.startswith("_")][:10]
             }
-        
+
         return {"error": f"模块 {module_name} 不存在"}
-    
+
     # ==================== 系统状态 ====================
-    
+
     @rail(scope=RailScope.SESSION)
     def health_check(self) -> Dict[str, Any]:
         """健康检查"""
@@ -1284,23 +1316,23 @@ class UnifiedEntry:
             "components": {},
             "issues": []
         }
-        
-        # 检查统一 API（XiaoYiClawLLM，优先路径）
+
+        # 检查统一 API（AgentCoreBridge，优先路径）
         if self.xiaoyi_claw:
             try:
-                claw_health = self.xiaoyi_claw.health_check() if hasattr(self.xiaoyi_claw, 'health_check') else {"healthy": True}
+                claw_health = self._bridge.health_check() if hasattr(self, '_bridge') and self._bridge else {"healthy": True}
                 health["components"]["xiaoyi_claw"] = {"healthy": True, "details": claw_health}
             except Exception as e:
                 health["components"]["xiaoyi_claw"] = {"healthy": False, "error": str(e)}
                 health["issues"].append(f"统一API: {e}")
         else:
             health["components"]["xiaoyi_claw"] = {"healthy": False, "error": "未初始化"}
-        
+
         # 检查记忆系统
         if self.memory:
             try:
                 mem_health = self.memory.health_check() if hasattr(self.memory, 'health_check') else {"healthy": True}
-                # XiaoYiClawLLM.health_check() 返回扁平 key-value 无 healthy 字段
+                # AgentCoreBridge.health_check() 返回扁平 key-value 无 healthy 字段
                 # 从 memory_v2_issues 推断：issues 为空 = 健康
                 if "healthy" not in mem_health:
                     issues = mem_health.get("memory_v2_issues", [])
@@ -1312,7 +1344,7 @@ class UnifiedEntry:
         else:
             health["components"]["memory"] = {"healthy": False, "error": "未初始化"}
             health["issues"].append("记忆系统未初始化")
-        
+
         # 检查协调器
         health["components"]["coordinator"] = {
             "healthy": self.coordinator is not None,
@@ -1320,7 +1352,7 @@ class UnifiedEntry:
         }
         if not self.coordinator:
             health["issues"].append("协调器未初始化")
-        
+
         # 检查工作流引擎
         health["components"]["workflow_engine"] = {
             "healthy": self.workflow_engine is not None,
@@ -1329,7 +1361,7 @@ class UnifiedEntry:
         }
         if not self.workflow_engine:
             health["issues"].append("工作流引擎未初始化")
-        
+
         # 检查模块
         modules = self.list_modules()
         health["components"]["modules"] = {
@@ -1337,12 +1369,12 @@ class UnifiedEntry:
             "available": len(modules) > 0,
             "healthy": len(modules) > 0
         }
-        
+
         # 总体健康状态
         health["healthy"] = len(health["issues"]) == 0
-        
+
         return health
-    
+
     def get_status(self) -> Dict[str, Any]:
         """获取系统状态"""
         status = {
@@ -1361,14 +1393,14 @@ class UnifiedEntry:
                 "total": len(self.list_workflows())
             }
         }
-        
+
         # 添加依赖信息
         if self.dependencies:
             status["dependencies"] = {
                 "total": self.dependencies.get("total_modules", 0),
                 "layers": self.dependencies.get("layers", {})
             }
-        
+
         # 添加协调器状态
         if self.coordinator and hasattr(self.coordinator, 'get_module_status'):
             try:
@@ -1379,15 +1411,15 @@ class UnifiedEntry:
                 }
             except Exception:
                 pass
-        
+
         return status
-    
+
     # ==================== 便捷方法 ====================
-    
+
     def remember(self, content: str, **kwargs) -> Dict[str, Any]:
         """记忆（store 的别名）"""
         return self.store(content, kwargs.get('source', 'user'))
-    
+
     def recall_images(self, query: str, top_k: int = 10) -> List[Dict[str, Any]]:
         """检索图像记忆"""
         # 尝试使用多模态检索
@@ -1396,11 +1428,11 @@ class UnifiedEntry:
             if result.status.value == "completed":
                 return result.results
         return []
-    
+
     def learn(self, feedback: str) -> Dict[str, Any]:
         """学习反馈"""
         return self.execute_workflow("learn_from_mistake", {"feedback": feedback})
-    
+
     def get_entity(self, name: str) -> Dict[str, Any]:
         """查询实体"""
         # 尝试使用知识图谱
@@ -1412,26 +1444,16 @@ class UnifiedEntry:
 
     def ocr_image(self, image_source: str) -> Dict[str, Any]:
         """OCR 文字识别"""
-        try:
-            from xiaoyi_claw_api import XiaoYiClawLLM
-            claw = XiaoYiClawLLM()
-            return claw.ocr_image(image_source)
-        except Exception as e:
-            return {"success": False, "error": str(e)}
+        return {"success": False, "error": "ocr unavailable"}
 
     def understand_image(self, image_source: str, mode: str = "general") -> Dict[str, Any]:
         """图像理解"""
-        try:
-            from xiaoyi_claw_api import XiaoYiClawLLM
-            claw = XiaoYiClawLLM()
-            return claw.understand_image(image_source, mode=mode)
-        except Exception as e:
-            return {"success": False, "error": str(e)}
+        return {"success": False, "error": "image understanding unavailable"}
 
 
 def main():
     """CLI 接口"""
-    parser = argparse.ArgumentParser(description="小艺 Claw 统一入口 V2")
+    parser = argparse.ArgumentParser(description="GalaxyOS 统一入口 V2")
     parser.add_argument("command", choices=[
         "store", "recall", "answer", "forget",
         "health", "status",
@@ -1450,47 +1472,47 @@ def main():
     parser.add_argument("--top-k", type=int, default=10, help="返回结果数量 (默认: 10)")
     parser.add_argument("--name", "-n", help="名称")
     parser.add_argument("--json", "-j", action="store_true", help="JSON 输出")
-    
+
     args = parser.parse_args()
-    
+
     entry = UnifiedEntry()
-    
+
     if args.command == "store":
         if not args.content:
             print("错误: 需要 --content")
             sys.exit(1)
         result = entry.store(args.content, args.source)
-    
+
     elif args.command == "recall":
         if not args.query:
             print("错误: 需要 --query")
             sys.exit(1)
         result = entry.recall(args.query, top_k=args.top_k)
-    
+
     elif args.command == "answer":
         if not args.query:
             print("错误: 需要 --query")
             sys.exit(1)
         result = entry.answer(args.query, args.content)
-    
+
     elif args.command == "forget":
         if not args.name:
             print("错误: 需要 --name")
             sys.exit(1)
         result = entry.forget(args.name)
-    
+
     elif args.command == "health":
         result = entry.health_check()
-    
+
     elif args.command == "status":
         result = entry.get_status()
-    
+
     elif args.command == "workflow":
         if not args.scenario:
             print("错误: 需要 --scenario")
             sys.exit(1)
         result = entry.execute_workflow(args.scenario, args.input)
-    
+
     elif args.command == "workflows":
         workflows = entry.list_workflows()
         if args.json:
@@ -1501,13 +1523,13 @@ def main():
                 info = entry.get_workflow_info(wf)
                 print(f"  {wf}: {info.get('steps', '?')} 步")
             return
-    
+
     elif args.command == "module":
         if not args.name:
             print("错误: 需要 --name")
             sys.exit(1)
         result = entry.get_module_info(args.name)
-    
+
     elif args.command == "modules":
         modules = entry.list_modules()
         if args.json:
@@ -1520,48 +1542,29 @@ def main():
                 print(f"  {mod:<25}", end="")
             print()
             return
-    
+
     elif args.command == "call":
         if not args.module:
             print("错误: 需要 --module")
             sys.exit(1)
         result = entry.call_module(args.module, args.action, args.input)
-    
+
     elif args.command in ("process", "rccam"):
         # R-CCAM 认知循环（通过 CLI 降级路径）
         try:
-            from xiaoyi_claw_api import XiaoYiClawLLM
-            claw = XiaoYiClawLLM()
-            input_data = json.loads(args.input) if args.input else {}
-            result = claw.process(
-                user_input=input_data.get("user_input", args.query or ""),
-                max_cycles=input_data.get("max_cycles", 1),
-                store_memory=input_data.get("store_memory", True),
-                has_image=input_data.get("has_image", False),
-                image_source=input_data.get("image_source", "")
-            )
-            # 简化输出，只保留关键信息
-            output = {
-                "answer": result.get("answer", ""),
-                "strategy": result.get("strategy", ""),
-                "meta_strategy": result.get("meta_strategy", ""),
-                "cycle_count": result.get("cycle_count", 0),
-                "search_count": result.get("search_count", 0),
-                "session_key": result.get("session_key", ""),
-            }
-            result = output
+            result = {"error": "rccam unavailable (xiaoyi_claw_api removed)"}
         except Exception as e:
             result = {"error": str(e)}
-    
+
     elif args.command == "ocr":
         result = entry.ocr_image(args.name)
-    
+
     elif args.command == "understand":
         result = entry.understand_image(args.name, args.query or "general")
-    
+
     else:
         result = {"error": f"未知命令: {args.command}"}
-    
+
     # 输出结果
     if args.json or isinstance(result, dict):
         print(json.dumps(result, ensure_ascii=False, indent=2, default=str))

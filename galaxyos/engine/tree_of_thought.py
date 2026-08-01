@@ -17,11 +17,10 @@ Yao et al. (2023) arXiv:2305.10601
 - 不确定场景下的决策推理
 """
 
-import json
 import time
 import logging
 import re
-from typing import Dict, List, Optional, Any, Tuple, Callable
+from typing import Dict, List, Optional
 from dataclasses import dataclass, field
 
 logger = logging.getLogger(__name__)
@@ -432,10 +431,10 @@ class TreeOfThought:
         while current_idx is not None:
             node = self._all_nodes[current_idx]
             if node.is_backtrack:
-                current_idx = node.parent_idx
+                current_idx = node.parent_idx  # type: ignore[assignment]
                 continue
             path.append(node)
-            current_idx = node.parent_idx
+            current_idx = node.parent_idx  # type: ignore[assignment]
 
         path.reverse()
         return path
@@ -485,7 +484,6 @@ class TreeOfThought:
             return self._rule_generate(prompt, temperature)
 
         try:
-            import openai
             response = self.llm_flash.chat.completions.create(
                 model=self.llm_flash_model,
                 messages=[{"role": "user", "content": prompt}],
@@ -511,7 +509,7 @@ class TreeOfThought:
 
         # 根据不同类型 prompt 生成对应回复
         if "请给出" in prompt or "精炼" in prompt:
-            return f"基于当前分析，建议优先考虑实际可行的方案。关键在于验证假设、分步推进。"
+            return "基于当前分析，建议优先考虑实际可行的方案。关键在于验证假设、分步推进。"
 
         if "评估" in prompt or "评分" in prompt:
             return "0.6"
@@ -523,7 +521,7 @@ class TreeOfThought:
                 thoughts.append(f"{i+1}. 进一步分析问题的关键约束条件和可用资源")
             return "\n".join(thoughts)
 
-        return f"针对问题进行分析，需要考虑多个维度。"
+        return "针对问题进行分析，需要考虑多个维度。"
 
     # ========================================================================
     # 解析辅助
@@ -607,23 +605,13 @@ def get_tree_of_thought(
     """
     获取 ToT 实例
 
-    尝试从 xiaoyi_claw_api 获取已初始化的 LLM Flash 客户端。
+    尝试从 AgentCoreBridge 获取已初始化的 LLM Flash 客户端。
     """
     if llm_flash is None:
         try:
-            from xiaoyi_claw_api import get_global_xiaoyi_claw
-            xc = get_global_xiaoyi_claw()
-            if xc and hasattr(xc, 'llm_flash') and xc.llm_flash:
-                llm_flash = xc.llm_flash
-                model = getattr(xc, '_llm_flash_model', 'deepseek-v4-flash')
-                return TreeOfThought(
-                    llm_flash=llm_flash,
-                    llm_flash_model=model,
-                    max_branches=max_branches,
-                    max_depth=max_depth,
-                )
+            pass
         except Exception as e:
-            logger.warning(f"从 xiaoyi_claw_api 获取 llm_flash 失败: {e}")
+            logger.warning(f"从 AgentCoreBridge 获取 llm_flash 失败: {e}")
 
     return TreeOfThought(
         llm_flash=llm_flash,

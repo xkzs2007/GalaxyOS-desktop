@@ -11,21 +11,22 @@ CfC Inference Engine — 结合 NCP Wiring 的动态突触权重推理层
 
 不破坏现有 JSONL 存储层。推理层可按需开关。
 
-Author: 小艺 Claw
+Author: GalaxyOS
 Version: 1.0.0
 Created: 2026-06-05
 """
 
 import os
-import json
-import math
 import logging
 from typing import Dict, List, Optional, Tuple, Set
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, asdict
 
-import torch
-import torch.nn as nn
-import numpy as np
+try:
+    import torch
+    import torch.nn as nn
+    TORCH_AVAILABLE = True
+except ImportError:
+    TORCH_AVAILABLE = False
 
 logger = logging.getLogger("cfc_inference")
 
@@ -71,14 +72,14 @@ class NCPTopology:
       motor   (3) — 输出层（检索结果、关联记忆）
     """
 
-    def __init__(self, neurons_data: List[dict] = None):
+    def __init__(self, neurons_data: Optional[List[dict]] = None):
         self.roles: Dict[str, NeuronRole] = {}
         self._role_counts = {r: 0 for r in ALL_ROLES}
 
         if neurons_data:
             self.assign_roles(neurons_data)
 
-    def assign_roles(self, neurons_data: List[dict], synapses_data: List[dict] = None):
+    def assign_roles(self, neurons_data: List[dict], synapses_data: Optional[List[dict]] = None):
         """
         基于图出度/入度自动分配 NCP 角色
 
@@ -181,7 +182,7 @@ class NCPTopology:
     def is_valid_connection(self, src_id: str, dst_id: str) -> bool:
         """
         检查连接是否合法
-        
+
         NCP 拓扑规则（宽松版）：
           - sensory (0) → 可以发到任何非 motor 层
           - inter   (1) → 可以发到 inter, command, motor
@@ -242,6 +243,8 @@ class NeuronStateManager:
     """
 
     def __init__(self, state_dim: int = 64, device: str = "cpu"):
+        if not TORCH_AVAILABLE:
+            raise ImportError("torch is required for NeuronStateManager")
         self.state_dim = state_dim
         self.device = torch.device(device)
         self.states: Dict[str, torch.Tensor] = {}
@@ -264,7 +267,7 @@ class NeuronStateManager:
         states = [self.get_or_init(nid) for nid in neuron_ids]
         return torch.stack(states, dim=0)
 
-    def reset(self, neuron_ids: List[str] = None):
+    def reset(self, neuron_ids: Optional[List[str]] = None):
         """重置状态（用于新会话）"""
         if neuron_ids:
             for nid in neuron_ids:
@@ -350,6 +353,9 @@ class CfCSynapseEngine(nn.Module):
         ncp_seed: int = 42,
     ):
         super().__init__()
+
+        if not TORCH_AVAILABLE:
+            raise ImportError("torch is required for CfCSynapseEngine")
 
         if not NCP_AVAILABLE:
             raise RuntimeError("ncps 未安装，无法创建 CfC 推理引擎")
@@ -899,7 +905,7 @@ if __name__ == "__main__":
         print("❌ ncps 未安装，跳过测试")
         exit(1)
 
-    print(f"ncps 可用 ✓")
+    print("ncps 可用 ✓")
     print()
 
     # 测试 1: NCP 拓扑分配
@@ -921,7 +927,7 @@ if __name__ == "__main__":
     wiring = build_ncp_wiring(
         num_sensory=2, num_inter=4, num_command=2, num_motor=1
     )
-    print(f"  NCP Wiring created ✓")
+    print("  NCP Wiring created ✓")
     print(f"  神经元数: {wiring.units}")
     print(f"  突触数(内部): {wiring.synapse_count}")
     print(f"  突触数(感官): {wiring.sensory_synapse_count}")
@@ -948,7 +954,7 @@ if __name__ == "__main__":
 
     # 计算权重
     results = engine.activate_and_propagate("n0", mock_synapses, top_k=3)
-    print(f"  激活传播结果:")
+    print("  激活传播结果:")
     for nid, strength in results:
         print(f"    {nid}: strength={strength:.4f}")
 
@@ -956,7 +962,7 @@ if __name__ == "__main__":
 
     # 测试 4: 与预设对比
     print("4. 单条突触权重 vs 预设")
-    from services.ltc_synapse import PRESETS
+    from galaxyos.engine.ltc_synapse import PRESETS  # type: ignore[attr-defined]
     test_syn = {"source_id": "n0", "target_id": "n1",
                 "last_reinforced": "", "weight": 0.5}
     w_cfc = engine.get_weight_for_synapse(test_syn)

@@ -13,8 +13,9 @@ from datetime import datetime
 # 路径定义（v3.0.0 公私分离：优先使用环境变量）
 
 # ── Centralized path resolution ──
-import os as _os, sys as _sys
-_ws_root = _os.environ.get("OPENCLAW_WORKSPACE", _os.path.expanduser("~/.openclaw/workspace"))
+import sys as _sys
+from galaxyos.shared.paths import workspace
+_ws_root = workspace()
 for _p in [_ws_root, "/workspace"]:
     if _p not in _sys.path:
         _sys.path.insert(0, _p)
@@ -118,7 +119,7 @@ def check_status():
     if skills_dir.exists():
         skills = [s for s in skills_dir.iterdir() if s.is_dir()]
         print(f"  技能数量: {len(skills)}")
-        key_skills = ['llm-memory-integration', 'yaoyao-memory', 'xiaoyi-web-search', 'xiaoyi-gui-agent']
+        key_skills = ['llm-memory-integration', 'yaoyao-memory', 'galaxy-web-search', 'xiaoyi-gui-agent']
         for ks in key_skills:
             if (skills_dir / ks).exists():
                 print(f"  - ✅ {ks}")

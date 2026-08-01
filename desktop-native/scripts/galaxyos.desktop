@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=GalaxyOS
+Comment=Cognitive AI Agent Desktop Engine
+Exec=/usr/bin/galaxyos-desktop
+Icon=galaxyos
+Terminal=false
+Categories=Utility;Office;
+StartupWMClass=GalaxyOS

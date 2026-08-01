@@ -1,0 +1,11 @@
+{
+  "tokui_unknown_component": "组件 {component_type} 不可用，降级为纯文本显示",
+  "tokui_render_timeout": "回复生成超时，显示部分结果",
+  "tokui_handler_unregistered": "事件处理器未注册，跳过回调",
+  "eui_neo_init_failure": "EUI-NEO 初始化失败，降级为 WebView 渲染",
+  "eui_neo_surface_crash": "原生渲染表面崩溃，自动重建",
+  "eui_neo_ffi_timeout": "FFI 调用超时，降级为 WebView 渲染",
+  "dsl_bridge_failure": "DSL Bridge 转换失败，跳过不支持组件",
+  "sse_disconnected": "SSE 连接断开，降级为 WebSocket 承载",
+  "chat_frontend_fallback": "聊天前端加载失败，回退到 JiuwenSwarm ChatPanel"
+}

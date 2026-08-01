@@ -1,0 +1,12 @@
+{
+  "title": "Settings",
+  "general": "General",
+  "language": "Language",
+  "native_render": "Native Render",
+  "native_render_enabled": "Enabled",
+  "native_render_disabled": "Disabled",
+  "theme": "Theme",
+  "theme_light": "Light",
+  "theme_dark": "Dark",
+  "about": "About"
+}

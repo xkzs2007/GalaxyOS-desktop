@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 """emotion_tracker — 轻量情感追踪，paper_integration 依赖"""
-import json, os, time, logging
-from collections import defaultdict, deque
+import json
+import os
+import time
+import logging
+from collections import deque
 
 logger = logging.getLogger('emotion_tracker')
 

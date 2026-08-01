@@ -25,7 +25,7 @@ Analyze this scientific image or diagram. Provide:
 5. Scientific context and significance
 Be precise, technical, and detailed.
     """.strip(),
-    
+
     'presentation': """
 Describe this presentation slide image. Include:
 1. Main visual elements and their arrangement
@@ -34,7 +34,7 @@ Describe this presentation slide image. Include:
 4. Visual hierarchy and emphasis
 Keep the description clear and informative.
     """.strip(),
-    
+
     'general': """
 Describe this image in detail. Include:
 1. Main subjects and objects
@@ -44,7 +44,7 @@ Describe this image in detail. Include:
 5. Overall context and purpose
 Be comprehensive and accurate.
     """.strip(),
-    
+
     'data_viz': """
 Analyze this data visualization. Provide:
 1. Type of chart/graph (bar, line, scatter, pie, etc.)
@@ -54,7 +54,7 @@ Analyze this data visualization. Provide:
 5. Statistical insights
 Focus on quantitative accuracy.
     """.strip(),
-    
+
     'medical': """
 Describe this medical image. Include:
 1. Type of medical imaging (X-ray, MRI, CT, microscopy, etc.)
@@ -77,7 +77,7 @@ def convert_with_ai(
 ) -> bool:
     """
     Convert a file to Markdown with AI image descriptions.
-    
+
     Args:
         input_file: Path to input file
         output_file: Path to output Markdown file
@@ -85,7 +85,7 @@ def convert_with_ai(
         model: Model name (default: anthropic/claude-opus-4.5)
         prompt_type: Type of prompt to use
         custom_prompt: Custom prompt (overrides prompt_type)
-        
+
     Returns:
         True if successful, False otherwise
     """
@@ -95,27 +95,27 @@ def convert_with_ai(
             api_key=api_key,
             base_url="https://openrouter.ai/api/v1"
         )
-        
+
         # Select prompt
         if custom_prompt:
             prompt = custom_prompt
         else:
             prompt = PROMPTS.get(prompt_type, PROMPTS['general'])
-        
+
         print(f"Using model: {model}")
         print(f"Prompt type: {prompt_type if not custom_prompt else 'custom'}")
         print(f"Converting: {input_file}")
-        
+
         # Create MarkItDown with AI support
         md = MarkItDown(
             llm_client=client,
             llm_model=model,
             llm_prompt=prompt
         )
-        
+
         # Convert file
         result = md.convert(str(input_file))
-        
+
         # Create output with metadata
         content = f"# {result.title or input_file.stem}\n\n"
         content += f"**Source**: {input_file.name}\n"
@@ -124,14 +124,14 @@ def convert_with_ai(
         content += f"**Prompt Type**: {prompt_type if not custom_prompt else 'custom'}\n\n"
         content += "---\n\n"
         content += result.text_content
-        
+
         # Write output
         output_file.parent.mkdir(parents=True, exist_ok=True)
         output_file.write_text(content, encoding='utf-8')
-        
+
         print(f"✓ Successfully converted to: {output_file}")
         return True
-        
+
     except Exception as e:
         print(f"✗ Error: {str(e)}", file=sys.stderr)
         return False
@@ -152,13 +152,13 @@ Available prompt types:
 Examples:
   # Convert a scientific paper
   python convert_with_ai.py paper.pdf output.md --prompt-type scientific
-  
+
   # Convert a presentation with custom model
   python convert_with_ai.py slides.pptx slides.md --model anthropic/claude-opus-4.5 --prompt-type presentation
-  
+
   # Use custom prompt with advanced vision model
   python convert_with_ai.py diagram.png diagram.md --model anthropic/claude-opus-4.5 --custom-prompt "Describe this technical diagram"
-  
+
   # Set API key via environment variable
   export OPENROUTER_API_KEY="sk-or-v1-..."
   python convert_with_ai.py image.jpg image.md
@@ -171,7 +171,7 @@ Popular Models (use with --model):
   google/gemini-3-pro-preview   - Gemini Pro Vision
         """
     )
-    
+
     parser.add_argument('input', type=Path, help='Input file')
     parser.add_argument('output', type=Path, help='Output Markdown file')
     parser.add_argument(
@@ -198,9 +198,9 @@ Popular Models (use with --model):
         action='store_true',
         help='List available prompt types and exit'
     )
-    
+
     args = parser.parse_args()
-    
+
     # List prompts and exit
     if args.list_prompts:
         print("Available prompt types:\n")
@@ -209,19 +209,19 @@ Popular Models (use with --model):
             print(prompt)
             print("\n" + "="*60 + "\n")
         sys.exit(0)
-    
+
     # Get API key
     api_key = args.api_key or os.environ.get('OPENROUTER_API_KEY')
     if not api_key:
         print("Error: OpenRouter API key required. Set OPENROUTER_API_KEY environment variable or use --api-key")
         print("Get your API key at: https://openrouter.ai/keys")
         sys.exit(1)
-    
+
     # Validate input file
     if not args.input.exists():
         print(f"Error: Input file '{args.input}' does not exist")
         sys.exit(1)
-    
+
     # Convert file
     success = convert_with_ai(
         input_file=args.input,
@@ -231,7 +231,7 @@ Popular Models (use with --model):
         prompt_type=args.prompt_type,
         custom_prompt=args.custom_prompt
     )
-    
+
     sys.exit(0 if success else 1)
 
 

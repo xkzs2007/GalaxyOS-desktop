@@ -22,7 +22,7 @@
   - 记录每次记忆激活事件
   - 训练后可用于实时预测
 
-Author: 小艺 Claw
+Author: GalaxyOS
 Version: 1.0.0
 Created: 2026-06-06
 """
@@ -30,15 +30,18 @@ Created: 2026-06-06
 import json
 import math
 import logging
-import random
 from collections import deque, defaultdict
-from datetime import datetime, timezone
-from typing import Dict, List, Optional, Tuple, Deque
-from dataclasses import dataclass, field, asdict
+from datetime import datetime, timezone, timedelta
+from typing import Dict, List, Optional, Tuple, Deque, Any
+from dataclasses import dataclass, asdict
 
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
+try:
+    import torch
+    import torch.nn as nn
+    import torch.nn.functional as F
+    TORCH_AVAILABLE = True
+except ImportError:
+    TORCH_AVAILABLE = False
 import numpy as np
 
 logger = logging.getLogger("cfc_sequence_predictor")
@@ -246,6 +249,9 @@ class CfCSequencePredictor(nn.Module):
         """
         super().__init__()
 
+        if not TORCH_AVAILABLE:
+            raise ImportError("torch is required for CfCSequencePredictor")
+
         if not NCP_AVAILABLE:
             raise RuntimeError(
                 "ncps 未安装。请安装: pip install ncps"
@@ -314,7 +320,7 @@ class CfCSequencePredictor(nn.Module):
         )
 
         # 训练状态
-        self._training_history: Dict[str, list] = {
+        self._training_history: Dict[str, Any] = {
             "loss": [],
             "cosine_sim": [],
             "epoch": 0,
@@ -643,7 +649,7 @@ class CfCSequencePredictor(nn.Module):
 
         if verbose:
             print(f"{'='*60}")
-            print(f"CfC 序列预测器训练")
+            print("CfC 序列预测器训练")
             print(f"  训练样本: {len(train_idx)}, 验证样本: {len(val_idx)}")
             print(f"  序列长度: {self.seq_len}, Embedding 维度: {self.input_dim}")
             print(f"  Epochs: {epochs}, LR: {lr}, Batch: {batch_size}")
@@ -769,7 +775,7 @@ class CfCSequencePredictor(nn.Module):
         Returns:
             训练历史
         """
-        full_history = {"loss": [], "cosine_sim": []}
+        full_history: Dict[str, List[Any]] = {"loss": [], "cosine_sim": []}
 
         for i, batch in enumerate(activation_sequences_batches):
             if verbose:
@@ -1121,7 +1127,7 @@ def generate_synthetic_training_data(
                 mid = rng.choice(cluster_mids)
             else:
                 mid = rng.choice(all_mids)
-                current_cluster = memory_clusters.get(mid)
+                current_cluster = memory_clusters.get(mid) or 0
 
             seq.append(mid)
 
@@ -1176,7 +1182,7 @@ def _test_record_and_predict(predictor: CfCSequencePredictor):
     # 带 timespans 预测
     predicted2 = predictor.predict_next(recent, timespans=[1.0, 0.8, 1.2, 0.5, 1.5])
     assert len(predicted2) == 16
-    print(f"  ✓ 带 timespans 预测正常")
+    print("  ✓ 带 timespans 预测正常")
 
 
 def _test_recommend(predictor: CfCSequencePredictor):
@@ -1308,7 +1314,7 @@ def _test_synthetic_data():
     # 检查 embedding 维度
     for mid, emb in embeddings.items():
         assert len(emb) == 16, f"embedding 维度错误: {mid}"
-    print(f"  ✓ 所有 embedding 维度正确")
+    print("  ✓ 所有 embedding 维度正确")
 
 
 def _test_save_load(tmp_path: str = "/tmp/cfc_seq_test.json"):
@@ -1365,21 +1371,21 @@ def _test_empty_and_edge():
     # 空序列预测
     empty_pred = predictor.predict_next([])
     assert all(v == 0.0 for v in empty_pred)
-    print(f"  ✓ 空序列预测返回零向量")
+    print("  ✓ 空序列预测返回零向量")
 
     # 短序列预测
     short_pred = predictor.predict_next([[1.0] * 16] * 2)
     assert len(short_pred) == 16
-    print(f"  ✓ 短序列预测正常")
+    print("  ✓ 短序列预测正常")
 
     # 空推荐
     empty_recs = predictor.recommend(top_k=3)
     assert empty_recs == []
-    print(f"  ✓ 空推荐返回空列表")
+    print("  ✓ 空推荐返回空列表")
 
     # 空训练
     history = predictor.train_on_history([], {}, epochs=5)
-    print(f"  ✓ 空训练不崩溃")
+    print("  ✓ 空训练不崩溃")
 
 
 def main():

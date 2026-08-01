@@ -9,14 +9,15 @@ import sqlite3
 from typing import Dict, List, Optional
 
 
-import os as _os, sys as _sys
-_ws_root = _os.environ.get("OPENCLAW_WORKSPACE", _os.path.expanduser("~/.openclaw/workspace"))
+import sys as _sys
+from galaxyos.shared.paths import workspace
+_ws_root = workspace()
 for _p in [_ws_root, "/workspace"]:
     if _p not in _sys.path:
         _sys.path.insert(0, _p)
 import path_resolver
 def get_xiaoyi_claw(config: Optional[Dict] = None):
-    """获取小艺 Claw 实例（单例）"""
+    """获取GalaxyOS 实例（单例）"""
     from .xiaoyi_claw_api import XiaoYiClawLLM
 
     global _instance
@@ -56,11 +57,10 @@ def learn(feedback: Dict) -> bool:
 # ── RCI 异步批评函数 ──
 def _rci_async_criticism(self, state):
     """Background thread: run criticism/consistency, publish via mmap + ZMQ"""
-    import time as _t
     import struct as _s
     import tempfile as _tf
 
-    _rci_session = getattr(self, '_kv_session_id', 'xiaoyi-claw-main')
+    _rci_session = getattr(self, '_kv_session_id', 'galaxyos-main')
     _rci_results = {
         "session_id": _rci_session,
         "rounds": [{"rci": 1, "scores": {"faithfulness": 5, "relevance": 7,

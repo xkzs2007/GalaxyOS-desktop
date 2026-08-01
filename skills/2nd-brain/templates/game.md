@@ -1,15 +1,15 @@
 ---
 type: game
-title: 
+title:
 platform: []    # PC, PS5, Switch, etc.
 genre: []
 status:         # not-started, playing, completed, abandoned, 100%
-hours_played: 
+hours_played:
 rating:         # 1-10 or descriptive
-started_on: 
-completed_on: 
+started_on:
+completed_on:
 tags: []
-last_updated: 
+last_updated:
 ---
 
 ## Overview
@@ -22,8 +22,8 @@ last_updated:
 
 ## Progress / Notes
 
-- 
+-
 
 ## Memorable Moments
 
-- 
+-

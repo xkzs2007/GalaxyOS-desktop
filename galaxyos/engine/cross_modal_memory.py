@@ -6,7 +6,7 @@
 实现跨模态的语义检索和记忆绑定。
 
 架构：
-- 快速桥接路径：xiaoyi-image-understanding → caption → LFM embed_text
+- 快速桥接路径：OpenJiuwen multimodal tool → caption → LFM embed_text
 - 原生视觉路径：LFMWithVision VisualPatchEmbedding → 2048 dim
 - 统一 embedding 存储：所有模态输出(2048,)向量
 
@@ -15,25 +15,18 @@
 - memory_recall() 时文本/图像混合检索
 - Titans 神经记忆模块可接收跨模态输入
 
-Author: 小艺 Claw
+Author: GalaxyOS
 Version: 1.0.0
 Created: 2026-06-15
 """
 
 import json
-import math
-import os
 import numpy as np
-from typing import Dict, List, Optional, Tuple, Any
+from typing import List, Optional
 from pathlib import Path
-from datetime import datetime, timezone
+from galaxyos.shared.paths import workspace
 
-# ── LFM embedding 引擎 ──
-try:
-    from lfm_adaptive_operator import RealLFMNetwork
-    _LFM_AVAILABLE = True
-except ImportError:
-    _LFM_AVAILABLE = False
+_LFM_AVAILABLE = False
 
 
 class CrossModalMemoryBinder:
@@ -44,8 +37,8 @@ class CrossModalMemoryBinder:
     输出均为 2048-dim 向量（LFM 空间）。
     """
 
-    def __init__(self, workspace_path: str = None):
-        self.workspace_path = Path(workspace_path or os.path.expanduser("~/.openclaw/workspace"))
+    def __init__(self, workspace_path: Optional[str] = None):
+        self.workspace_path = Path(workspace_path or workspace())
         self.bind_path = self.workspace_path / ".learnings" / "cross_modal"
         self.bind_path.mkdir(parents=True, exist_ok=True)
 
@@ -77,6 +70,7 @@ class CrossModalMemoryBinder:
         """
         if not self._ensure_lfm():
             return self._fallback_embedding(text)
+        assert self._lfm is not None
         try:
             emb = self._lfm.embed_text(text[:512])
             if emb is not None and emb.shape == (self.embed_dim,):
@@ -101,23 +95,10 @@ class CrossModalMemoryBinder:
     # ── 原生视觉 embedding（LFMWithVision） ──
 
     def _ensure_vision(self):
-        """懒加载 LFMWithVision 视觉模型"""
         if self._vision_model_loaded:
             return self._vision_model is not None
         self._vision_model_loaded = True
-        try:
-            from lfm_adaptive_operator import LFMWithVision
-            # 使用与 LFM 对齐的维度
-            self._vision_model = LFMWithVision(
-                hidden_dim=512,
-                num_heads=8,
-                patch_size=16,
-                num_layers=8,
-                weight_rank=8,
-            )
-            return True
-        except Exception:
-            return False
+        return False
 
     def image_to_embedding(self, image: np.ndarray) -> Optional[np.ndarray]:
         """
@@ -155,6 +136,7 @@ class CrossModalMemoryBinder:
                         pass
 
             # 用视觉 encoder 生成 token
+            assert self._vision_model is not None
             vis_tokens = self._vision_model.visual_embed.forward(img)
             # mean pooling → 2048 dim（与 LFM 空间对齐需要线性投影）
             pooled = np.mean(vis_tokens, axis=0)  # (hidden_dim,)
@@ -175,13 +157,13 @@ class CrossModalMemoryBinder:
         """
         图像描述 → 2048-dim（桥接路径）
 
-        先用 xiaoyi-image-understanding 生成 caption，
+        先用 OpenJiuwen multimodal tool 生成 caption，
         再通过 LFM embed_text 编码 caption。
 
         这是快速桥接方案，不需要加载视觉模型。
 
         Args:
-            caption: 图像文本描述（来自 xiaoyi-image-understanding）
+            caption: 图像文本描述（来自 OpenJiuwen multimodal tool）
 
         Returns:
             (2048,) float32 向量
@@ -234,9 +216,9 @@ class CrossModalMemoryBinder:
             return np.zeros(self.embed_dim, dtype=np.float32)
         if weights is None:
             weights = [1.0 / len(embeddings)] * len(embeddings)
-        weights = np.array(weights, dtype=np.float32)
-        weights = weights / weights.sum()
-        result = sum(w * emb for w, emb in zip(weights, embeddings))
+        w_arr = np.array(weights, dtype=np.float32)
+        w_arr = w_arr / w_arr.sum()
+        result = sum(w * emb for w, emb in zip(w_arr, embeddings))
         norm = np.linalg.norm(result)
         if norm > 0:
             result = result / norm
@@ -263,7 +245,7 @@ class CrossModalMemoryBinder:
 
 _BINDER: Optional[CrossModalMemoryBinder] = None
 
-def get_binder(workspace_path: str = None) -> CrossModalMemoryBinder:
+def get_binder(workspace_path: Optional[str] = None) -> CrossModalMemoryBinder:
     """获取/创建全局跨模态绑定器"""
     global _BINDER
     if _BINDER is None:
@@ -316,19 +298,19 @@ if __name__ == "__main__":
 
     # ── Engram 感知 embedding ──
 
-    def text_to_embedding_with_engram(self, text: str, 
+    def text_to_embedding_with_engram(self, text: str,
                                        engram_memory=None) -> np.ndarray:
         """文本→embedding，优先用 Engram 命中
-        
+
         Args:
             text: 输入文本
             engram_memory: EngramMemory 实例
-            
+
         Returns:
             (2048,) 向量
         """
         import numpy as np
-        
+
         # Engram 查找
         if engram_memory is not None:
             try:
@@ -337,20 +319,20 @@ if __name__ == "__main__":
                     return engram_emb.astype(np.float32)
             except Exception:
                 pass
-        
+
         # 降级到 LFM
         return self.text_to_embedding(text) or self._fallback_embedding(text)
-    
-    def blend_embeddings(self, lfm_emb: np.ndarray, 
+
+    def blend_embeddings(self, lfm_emb: np.ndarray,
                           engram_emb: np.ndarray,
                           alpha: float = 0.5) -> np.ndarray:
         """加权融合 LFM + Engram 的 embedding
-        
+
         Args:
             lfm_emb: (2048,) LFM embedding
             engram_emb: (2048,) Engram embedding
             alpha: LFM 权重 [0,1]
-            
+
         Returns:
             (2048,) 融合向量
         """
@@ -362,4 +344,3 @@ if __name__ == "__main__":
         if norm > 0:
             blended = blended / norm * 2048  # 保持 norm 约 2048
         return blended.astype(np.float32)
-

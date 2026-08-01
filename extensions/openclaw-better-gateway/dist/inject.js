@@ -94,7 +94,7 @@
     const style = styles[state] || styles.disconnected;
     indicator.style.background = style.background;
     indicator.style.color = style.color;
-    
+
     const displayMessage = message + (style.clickHint || "");
     indicator.innerHTML = `<span style="margin-right: 6px;">${style.icon}</span>${displayMessage}`;
     indicator.title = "Click to refresh page";
@@ -376,7 +376,7 @@
       if (!frame) return;
       const container = frame.parentElement;
       if (!container) return;
-      
+
       const containerRect = container.getBoundingClientRect();
       const newWidth = e.clientX - containerRect.left;
       const minWidth = 300;
@@ -483,19 +483,19 @@
       main.style.width = "";
       main.style.minWidth = "";
       main.style.overflow = "";
-      
+
       if (chatNav) chatNav.classList.add("active");
       if (ideNav) ideNav.classList.remove("active");
       if (cliNav) cliNav.classList.remove("active");
       if (chatToggleButton) chatToggleButton.style.display = "none";
-      
+
     } else if (mode === 'ide') {
       // IDE only — IDE fullscreen
       hideFrames();
       showFrameFullscreen(ideFrame);
       splitHandle.style.display = "none";
       main.style.display = "none";
-      
+
       if (chatNav) chatNav.classList.remove("active");
       if (ideNav) ideNav.classList.add("active");
       if (cliNav) cliNav.classList.remove("active");
@@ -504,7 +504,7 @@
         chatToggleButton.textContent = "←";
         chatToggleButton.title = "Show Chat Sidebar (Cmd/Ctrl+L)";
       }
-      
+
     } else if (mode === 'split') {
       // Split view: IDE (left) | handle | Chat (right)
       hideFrames();
@@ -515,7 +515,7 @@
       main.style.width = "";
       main.style.minWidth = "320px";
       main.style.overflow = "auto";
-      
+
       if (chatNav) chatNav.classList.add("active");
       if (ideNav) ideNav.classList.add("active");
       if (cliNav) cliNav.classList.remove("active");
@@ -531,7 +531,7 @@
       showFrameFullscreen(cliFrame);
       splitHandle.style.display = "none";
       main.style.display = "none";
-      
+
       if (chatNav) chatNav.classList.remove("active");
       if (ideNav) ideNav.classList.remove("active");
       if (cliNav) cliNav.classList.add("active");
@@ -551,7 +551,7 @@
       main.style.width = "";
       main.style.minWidth = "320px";
       main.style.overflow = "auto";
-      
+
       if (chatNav) chatNav.classList.add("active");
       if (ideNav) ideNav.classList.remove("active");
       if (cliNav) cliNav.classList.add("active");
@@ -716,7 +716,7 @@
         || navItem.id === "better-gateway-cli-nav") {
         return;
       }
-      
+
       navItem.addEventListener("click", function () {
         if (ideViewActive) {
           // Restore original content before navigation
@@ -749,7 +749,7 @@
     // Retry a few times with increasing delays (handles SPAs)
     var retryDelays = [100, 300, 500, 1000, 2000];
     var retryIndex = 0;
-    
+
     function retryInjection() {
       if (injectIdeNavItem()) return;
       if (retryIndex < retryDelays.length) {

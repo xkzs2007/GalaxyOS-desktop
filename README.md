@@ -1,328 +1,196 @@
-# 🌌 GalaxyOS — 独立 Agent APP 框架
+# GalaxyOS Desktop
 
-> 为 LLM 提供记忆、检索、推理、验证、自进化的全套认知能力，**自带桌面端 Agent 应用**
+> 认知增强型桌面 AI Agent — EUI-NEO C++ 原生渲染 + GalaxyOS 认知引擎
 >
-> **v9.4** · MultiSlotRouter 5-slot optional（LLM 必填，其余可选）· 脱离 OpenClaw 独立运行
+> **v0.3.0** · EUI-NEO 迁移版
 
 ---
 
-## 🖥️ GalaxyOS Desktop（独立桌面 Agent APP）
+## 总览
 
-类似 ZCode / Codex 的桌面端 AI 体验，开箱即用：
+GalaxyOS Desktop 将 **GalaxyOS 认知增强引擎**（17 层架构 + 液态神经记忆 + R-CCAM + DAG 上下文）通过 **C++ 原生桌面壳**交付，使用 **EUI-NEO C++ DSL** 原生 GPU 直渲替代 React WebView，配合 **openJiuwen agent-core** 作为桌面 Agent 运行时。
 
-```
-desktop-shell/
-├── python/
-│   ├── galaxyos_sidecar.py   # SidecarHandlers (zmq + SSE 双传输)
-│   ├── llm_providers.py      # MultiSlotRouter (11 provider / 5 slot)
-│   └── tokui_dsl.py          # 流式 UI DSL (21 builder)
-├── renderer/
-│   ├── index.html            # 3 栏 ZCode 布局
-│   ├── renderer.js           # SSE 消费者 + 消息操作
-│   └── model_picker.js       # 4 组 provider 目录（主流/本地/自定义/离线）
-├── src/                      # Electron 主进程 (TypeScript)
-└── package.json
-```
-
-**功能**：3 栏布局 · TokUI 流式 AI 气泡 · Agent 工具（shell/read/write/grep/diff）· 69 skills 搜索+调用 · 多会话持久化 · 多 LLM 切换 · MeMo 3-stage 全局记忆 · Agent-as-a-Router C-A-F 路由 · 键盘快捷键 · Diff view · 设置面板（5 tab：通用/LLM/Embedding/Rerank/VLM）
-
-**快速启动**：
-```bash
-cd desktop-shell
-python -c "import sys; sys.path.insert(0,'python'); import asyncio; \
-  from galaxyos_sidecar import main_async; asyncio.run(main_async())"
-# 浏览器打开 http://127.0.0.1:8080
-```
-
-详见 [`desktop-shell/README.md`](desktop-shell/README.md) 和 [`docs/superpowers/specs/2026-06-29-galaxyos-desktop-design.md`](docs/superpowers/specs/2026-06-29-galaxyos-desktop-design.md)
-
----
-
-## 🐍 GalaxyOS Harness（Python 库）
-
-GalaxyOS v9.0 起成为**独立 Python Agent 框架**——`create_galaxy_agent()` 入口对标 openJiuwen 的 `create_deep_agent()`：
-
-```python
-from galaxyos.harness import create_galaxy_agent
-
-agent = create_galaxy_agent(
-    name="assistant",
-    model="lfm2.5-1.2b-instruct",   # 或 "anthropic/claude-3-5-sonnet"
-    memory="vector",                 # vector | liquid | mock
-    skill_graph=True,
-)
-result = await agent.run("列出我的技能")
-print(result["result"])
-```
-
-**5 大件**（harness 视角）：
-
-| 组件 | 模块 | 说明 |
+| 层级 | 框架 | 职责 |
 |------|------|------|
-| 1. Agent Loop | `harness.deep_agent.DeepAgent` | async 优先，TaskLoopEvent 三件套 |
-| 2. Tool Registry | `harness.desktop_shell_compat.tools` | 6 工具：shell/read/write/grep/diff/list |
-| 3. LLM Client | `harness.workspace.llm` | 可注入；MultiSlotRouter 路由 |
-| 4. Memory System | `harness.workspace.memory` | vector + liquid + mock 三选一 |
-| 5. SkillGraph | `harness.workspace.skills` | 69 节点 / 278 边的技能图 |
-
-`SidecarBackend`（`harness/sidecar_bridge.py`）桥接 DeepAgent ↔ SidecarHandlers，让 harness 跑桌面端同一套 76 skills 栈。
-
----
+| **桌面框架** | C++ Native (GLFW + CPack) | 跨平台桌面壳 + HTTP IPC + 原生窗口 + NSIS/DEB 打包 |
+| **原生渲染** | EUI-NEO C++ DSL | GPU 直渲 + 弹簧动画 + 材质深度 + 三级降级 |
+| **认知增强层** | GalaxyOS v8.6.0 | 17 层架构 + 液态神经记忆 + R-CCAM + DAG 上下文 + 76 技能包 |
+| **Agent 运行时** | openJiuwen agent-core | DeepAgent + ReActAgent + 安全护栏 + 工作流引擎 |
+| **连接协议** | MCP (streamable_http) + SSE /agent-chat | 20 个工具 + 流式认知面板 |
+| **流式渲染** | TokUI (@jboltai/tokui) | DSL 流式推送 + 6 自定义认知组件 + MCP Server SSE |
 
 ## 核心能力
 
 | 能力 | 说明 |
 |------|------|
-| **液态神经记忆** | LTC 突触 + CfC 推理 + NCP 神经电路 + 仿生遗忘曲线 |
-| **DAG 上下文** | SQLite 持久化 + 摘要节点回溯 + 时间衰减排序 |
-| **SkillGraph 自演化** | 69 节点 278 边有向图 + 邻接检索 + GRPO 优化 |
-| **LFM 技能库** | 5 维评分（质量/复用/合约/一致/探索）+ 合并·拆分·精修·淘汰 |
-| **R-CCAM 认知循环** | Retrieval→Cognition→Control→Action→Memory 五阶段 |
-| **MeMo 3-stage** | Grounding → Entity → Answer 全局记忆协议 |
-| **ACRouter C-A-F** | Agent-as-a-Router：复杂度感知分发 |
-| **MultiSlotRouter** | 11 provider × 5 slot（LLM 必填，其余可选） |
-| **TokUI DSL** | 21 builder 流式 UI 协议（SSE `data: {tokui: "..."}`） |
-| **Harness + Sidecar** | 同进程双形态：Python 库 / 桌面 APP |
-
----
+| **液态神经记忆** | LTC 突触 + CfC 推理 + NCP 神经电路 + 仿生遗忘曲线 + 三层记忆架构 |
+| **DAG 上下文** | SQLite 持久化 + 摘要节点回溯 + 时间衰减排序 + 上下文融合层 |
+| **R-CCAM 认知循环** | Retrieval→Cognition→Control→Action→Memory 五阶段 + TokUI 进度渲染 |
+| **COSPLAY 自演化** | 从执行轨迹学习技能合约 → ProtoSkill → 成熟 Skill |
+| **76 技能包** | mattpocock/skills 格式 + SkillExecutor 驱动 + 状态机管理 |
+| **MultiAgent 协同** | 5 角色 + 公告板 + Judge 蒸馏 + 交叉验证 |
+| **防幻觉 10 重检测** | Self-RAG / CRAG / CoVe + 10 重验证链 |
+| **MCP 工具协议** | 20 个工具（15 核心 + 4 技能管理 + 1 LLM 路由）+ policy 声明 |
+| **EUI-NEO 原生渲染** | C++ GPU 直渲 + 弹簧物理动画 + 直接操控 + 材质深度 + 橡皮筋效果 |
+| **三级渲染降级** | eui_native → webview_dom → plain_text，降级不可逆 |
+| **TokUI 流式渲染** | DSL 分片推送 + MCP Server SSE + 6 自定义认知面板 + 容错降级 |
 
 ## 快速开始
 
 ```bash
-# 1. 克隆 + 装依赖
-git clone https://cnb.cool/llm-memory-integrat/GalaxyOS.git
-cd GalaxyOS
-pip install -r requirements.txt
+# 1. 克隆
+git clone https://github.com/xkzs2007/GalaxyOS-desktop.git
+cd GalaxyOS-desktop
 
-# 2. 跑 Python 库
-python3.12 -c "
-from galaxyos.harness import create_galaxy_agent
-import asyncio
-agent = create_galaxy_agent(name='demo', model='mock-1')
-print(asyncio.run(agent.run('hi')))
-"
+# 2. Python 依赖
+pip install -r requirements-core.txt
+pip install "openjiuwen @ git+https://github.com/openJiuwen-ai/agent-core@v0.1.16"
+pip install onnxruntime
 
-# 3. 跑桌面端（另一个终端）
-cd desktop-shell && python python/galaxyos_sidecar.py
-# 浏览器打开 http://127.0.0.1:8080
+# 3. 重型依赖（可选，有 GPU 用 CUDA 版）
+pip install torch --index-url https://download.pytorch.org/whl/cpu
+pip install -r requirements-heavy-cpu.txt
+# 或 CUDA: pip install -r requirements-heavy-cuda.txt
+
+# 4. 下载 ONNX 模型（CI 工作流自动下载，见 .github/workflows/）
+# 手动下载: 从 onnx-community/bge-small-zh-v1.5-ONNX 获取 model.onnx + tokenizer.json
+
+# 5. 桌面模式启动
+GALAXYOS_MODE=desktop python -m galaxyos.kernel.mcp_server_entry
 ```
-
-> v9.2 起支持 LLM provider 简写：`create_galaxy_agent(model="anthropic/claude-3-5-sonnet")` 直接走 Anthropic 端点。
-
----
-
-## LLM Provider 配置（v9.2–v9.4）
-
-GalaxyOS **不绑定任何远端 LLM**。`MultiSlotRouter` 管理 5 个独立 slot：
-
-| Slot | 必填？ | 典型用途 | 未配置时回退 |
-|------|--------|----------|------------|
-| `llm` | ✅ 必填 | 主对话推理 | 无（必须配置） |
-| `llm_pro` | ❌ 可选 | 复杂任务升级 | `llm` slot |
-| `embedding` | ❌ 可选 | 向量检索 | BoW 检索（`ac_router.py`） |
-| `rerank` | ❌ 可选 | 检索重排 | 原始 top-k |
-| `vlm` | ❌ 可选 | 图片 OCR / 多模态 | "VLM 未配置" 提示 |
-
-**11 个支持的 provider**（`MAINSTREAM_PROVIDERS` 目录）：
-
-| 类别 | Provider | 默认模型 |
-|------|----------|----------|
-| 主流 | OpenAI / DeepSeek / Qwen DashScope / Anthropic / Google Gemini | 各自旗舰 |
-| 托管 | SiliconFlow / OpenRouter | 多模型聚合 |
-| 本地 | Ollama / vLLM | 开源 LLM |
-| 自定义 | Custom (OpenAI 兼容) | 用户填 |
-| 离线 | Mock | mock-1（脱机回声） |
-
-**配置方式**：Settings 4 tab（LLM/Embedding/Rerank/VLM）+ 启用复选框，**不勾 = 走本地 fallback**。
-
-详见 `desktop-shell/python/llm_providers.py` + `docs/API.md`。
-
----
 
 ## 架构
 
 ```
-┌──────────────────────────────────────────────────────────────────┐
-│                   GalaxyOS v9.4 — 两大入口                        │
-├──────────────────────────────────────────────────────────────────┤
-│                                                                  │
-│  ┌────────────────────────┐    ┌─────────────────────────────┐  │
-│  │   Harness (Python lib)  │    │   Desktop Shell (Electron)  │  │
-│  │  create_galaxy_agent() │    │  3 栏 ZCode 布局            │  │
-│  │  DeepAgent + Workspace │    │  renderer + SidecarHandlers │  │
-│  │  + TaskLoopEvent       │    │  (zmq + SSE 双传输)         │  │
-│  └────────────┬───────────┘    └────────────┬────────────────┘  │
-│               │                              │                   │
-│               └──────────────┬───────────────┘                   │
-│                              ▼                                   │
-│  ┌──────────────────────────────────────────────────────────┐  │
-│  │              galaxyos/ — 核心运行时                         │  │
-│  ├──────────────────────────────────────────────────────────┤  │
-│  │  harness/         DeepAgent / Workspace / TaskLoop        │  │
-│  │  engine/          MeMo 3-stage + R-CCAM 5 阶段            │  │
-│  │  orchestration/   ACRouter C-A-F + SkillGraph            │  │
-│  │  privileged/      ACP 调试端点（可选）                     │  │
-│  │  scripts/         install_wizard / skill_version_check    │  │
-│  └──────────────────────────────────────────────────────────┘  │
-│                              │                                   │
-│                              ▼                                   │
-│  ┌──────────────────────────────────────────────────────────┐  │
-│  │              services/ — 检索/记忆/认知层                   │  │
-│  │  retrieval_hub / hybrid_search / unified_vector_store     │  │
-│  │  crag / rag_optimizer / memory_consolidation              │  │
-│  │  cognitive_map / chain_of_verification / hallucination    │  │
-│  └──────────────────────────────────────────────────────────┘  │
-│                              │                                   │
-│                              ▼                                   │
-│  ┌──────────────────────────────────────────────────────────┐  │
-│  │              skills/ — 69 节点 278 边技能图                 │  │
-│  │  skill-creator / proactive-tasks / find-skills / ...      │  │
-│  └──────────────────────────────────────────────────────────┘  │
-│                              │                                   │
-│                              ▼                                   │
-│  ┌──────────────────────────────────────────────────────────┐  │
-│  │              LLM Providers — 11 provider × 5 slot          │  │
-│  │  OpenAI / Anthropic / DeepSeek / Qwen / Gemini /          │  │
-│  │  SiliconFlow / OpenRouter / Ollama / vLLM / Custom / Mock │  │
-│  └──────────────────────────────────────────────────────────┘  │
-└──────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│                    C++ Native Desktop Shell                      │
+│  (GLFW + EUI-NEO GPU Rendering + CPack NSIS/DEB)               │
+└──────────────────────────┬──────────────────────────────────────┘
+                           │ HTTP IPC + SSE /agent-chat
+                           ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                GalaxyOS Desktop Agent v0.3.0                     │
+├─────────────────────────────────────────────────────────────────┤
+│  MCP Server (20 tools)          │  Render Channel Router        │
+│  ├─ 15 core tools               │  ├─ eui_native (EUI-NEO)     │
+│  ├─ 4 skill tools               │  ├─ webview_dom (fallback)   │
+│  └─ llm_call                    │  └─ plain_text (last resort)  │
+│                                  │                                │
+│  Spring Animation Engine         │  SSE Client                   │
+│  ├─ 弹簧物理模型                │  ├─ /agent-chat SSE endpoint  │
+│  ├─ 中断性动画                  │  ├─ TokUI DSL stream          │
+│  └─ 橡皮筋效果                  │  └─ Cognitive panels          │
+│                                  │                                │
+│  AgentCore Bridge               │  Cognitive Core               │
+│  ├─ openJiuwen agent-core       │  ├─ LiquidMemoryAdapter       │
+│  ├─ DeepAgent / ReActAgent      │  ├─ DAGContextFusion          │
+│  └─ Security Rails              │  ├─ RCCAMInjector             │
+│                                  │  ├─ MemorySyncBridge          │
+│                                  │  └─ DualRuntimeManager        │
+└─────────────────────────────────────────────────────────────────┘
+                           │
+                           ▼
+┌─────────────────────────────────────────────────────────────────┐
+│              GalaxyOS Engine v0.3.0 — 8 大子系统                   │
+│  1. 液态神经核心  2. DAG 上下文  3. COSPLAY 适配  4. ONNX 嵌入引擎   │
+│  5. R-CCAM 循环   6. MultiAgent  7. 防幻觉检测   8. MCP 工具协议     │
+└─────────────────────────────────────────────────────────────────┘
 ```
-
----
-
-## R-CCAM 5 阶段
-
-```
-Retrieval → Cognition → Control → Action → Memory
-    │            │          │         │        │
-    ▼            ▼          ▼         ▼        ▼
-  检索候选    推理分析    路由决策    工具执行    写回记忆
-  (BGE/BoW)  (LLM)    (ACRouter)  (shell/IO)   (vector+engram)
-```
-
-每阶段通过 `PhaseState` 对象传递（`services/rccam_state.py`），从 God Object 模式提取。
-
----
 
 ## 目录结构
 
 ```
-GalaxyOS/
-├── galaxyos/                    # 核心 Python 包
-│   ├── harness/                 # DeepAgent + Workspace + TaskLoop + sidecar_bridge
-│   ├── engine/                  # MeMo + R-CCAM + SkillGraph + ACRouter
-│   ├── orchestration/           # 跨模块编排
-│   ├── privileged/              # 调试端点（ACP server）
-│   ├── scripts/                 # install_wizard / skill_version_check
-│   └── shared/                  # 公共工具
-├── desktop-shell/               # 桌面端 Agent APP
-│   ├── python/                  # sidecar + LLM providers + TokUI DSL
-│   ├── renderer/                # HTML/JS 前端
-│   ├── src/                     # Electron 主进程
-│   └── package.json
-├── services/                    # 检索/记忆/认知层模块
-│   ├── retrieval_hub.py
-│   ├── hybrid_search.py
-│   ├── crag.py / crag_pipeline.py
-│   ├── memory_consolidation.py
-│   ├── cognitive_map.py
-│   ├── chain_of_verification.py
-│   ├── enhanced_hallucination_guard.py
-│   ├── rccam_state.py
-│   └── ...
-├── skills/                      # 69 节点技能图（含 skill-creator / proactive-tasks / find-skills）
-├── legacy/                      # 旧版 OpenClaw 实现（保留历史，不推荐使用）
-├── models/                      # 预训练模型（LFM ONNX 等）
-├── data/                        # 持久化数据（向量库 / 记忆）
-├── extensions/                  # 第三方扩展（cli-anything 等）
-├── docs/                        # API 速查 / 设计文档 / 论文路线图
-├── tests/                       # 单元测试
-├── bin/                         # 命令行工具
-├── core/                        # 核心抽象
-├── governance/                  # 治理规则
-├── patches/                     # 补丁脚本
-├── backups/                     # 备份
-├── conftest.py                  # pytest 路径注入
-├── pyproject.toml
-├── requirements.txt / requirements-core.txt / requirements-heavy.txt
-├── Makefile
-├── CHANGELOG.md
-├── CONTRIBUTING.md
-├── docs/API.md                  # 完整 API 速查
-└── VERSION
+GalaxyOS-desktop/
+├── desktop-native/                # C++ 桌面壳（EUI-NEO GPU 直渲）
+│   ├── src/                       # C++ 源码
+│   │   ├── galaxyos_native_app.cpp # 主入口、生命周期
+│   │   ├── native_window_manager.cpp # GLFW 窗口管理
+│   │   ├── native_render_engine.cpp # EUI-NEO 渲染引擎
+│   │   ├── native_event_bus.cpp    # 发布-订阅事件总线
+│   │   ├── native_ipc_channel.cpp  # HTTP IPC 通道
+│   │   ├── native_sse_client.cpp   # SSE 协议客户端
+│   │   ├── native_process_manager.cpp # Python 子进程管理
+│   │   ├── eui_neo_ffi_wrapper.cpp # EUI-NEO FFI 安全包装
+│   │   ├── dsl_mapping_table.cpp   # TokUI→EUI-NEO 映射
+│   │   ├── i18n_bridge.cpp         # i18n 翻译桥接
+│   │   └── native_tray_icon.cpp    # 系统托盘（Win32）
+│   ├── include/                   # C++ 头文件
+│   └── third_party/               # cpp-httplib, nlohmann/json
+├── vendor/eui-neo/sdk/            # EUI-NEO C++ SDK
+│   ├── include/eui_neo_bridge.h   # C 接口头文件
+│   └── src/eui_neo_bridge.cpp     # C++ 桥接实现
+├── galaxyos/
+│   ├── kernel/                    # 核心内核模块
+│   │   ├── mcp_server_entry.py    # MCP Server 入口 + SSE /agent-chat
+│   │   ├── agent_core_bridge.py   # AgentCore 桥接
+│   │   ├── dsl_bridge.py          # DSL 组件映射
+│   │   └── render_channel_router.py # 渲染降级路由
+│   ├── engine/                    # 引擎模块
+│   │   ├── onnx_embedding.py      # 本地 ONNX Embedding 服务
+│   │   └── ...                    # 其他引擎模块
+│   └── skill_infra/               # 技能基础设施
+├── skills/                        # 76 技能包
+├── .github/workflows/             # CI/CD 工作流
+├── Dockerfile.buildkit            # BuildKit 多阶段构建
+├── Dockerfile.kernel              # 服务部署镜像（CPU/CUDA）
+├── requirements-heavy-cpu.txt     # 重型依赖（CPU-only）
+├── requirements-heavy-cuda.txt    # 重型依赖（CUDA）
+└── pyproject.toml
 ```
 
----
+## 安全模型
+
+4 层防护：
+
+1. **工具策略** — 20 工具全部声明 channels/roles/rateLimit
+2. **openJiuwen Rails** — PermissionEngine 安全审批 + 行为约束
+3. **Channel 感知** — 群聊场景记忆写入降级为只读
+4. **结构化 Session Key** — `workspace:channel:userId` 隔离
+
+## 跨平台
+
+- **桌面**：Windows (NSIS/CPack) / Linux (DEB/CPack)
+- **Python**：Windows (winloop) / Linux (uvloop)
+- **C++ 桌面壳**：Linux/Windows × x64（GLFW + EUI-NEO GPU 直渲）
+- **渲染降级**：EUI-NEO GPU → WebView DOM → 纯文本
 
 ## 版本历史
 
-### v9.4 (2026-06-30) — MultiSlotRouter 5-slot optional
+### v0.3.0 (2026-07-18) — EUI-NEO 迁移版
 
-- MultiSlotRouter 新增 `vlm` slot，扩到 5 个独立槽
-- 每个 slot 默认 `enabled=False`，调用方按需启用
-- `is_enabled()` / `disable_slot()` 新 API
-- Settings UI 4 tab 加"启用"复选框，LLM 默认开，其余默认关
-- sidecar `set_config` 区分"主动禁用"vs"保持现状"，未传 slot 不再 reset
-- 只有 `llm` slot 变化时才重建 Executive（embedding/rerank/vlm 切换不打断 LLM 流）
-- +10 MultiSlotRouter 测试 + 9 sidecar set_config 测试（70/70 v9.x 测试通过）
-- 删根目录 `SKILL.md`（OpenClaw 阶段残留，v9 不再需要）
+**EUI-NEO 原生渲染替代 React WebView**：C++ GPU 直渲 + 弹簧物理动画 + 三级降级链
 
-### v9.3 (2026-06-29) — TokUI DSL 扩展 + 4-tab 设置
+**双进程架构**：C++ 原生桌面壳 + MCP Server（移除 JiuwenSwarm Gateway/AgentServer）
 
-- `tokui_dsl.py` 从 6 builder 扩到 21（progress / upd / callout / stat / code / tag / source / quick-reply / suggestion / latency / diff / artifact / welcome / tool-result / loop-progress / plan-step with step_id）
-- Settings UI 加 4 tab（LLM / Embedding / Rerank / VLM）+ provider 目录
-- plan-step 加 `[upd id:plan_step_N status:success]` 翻转协议
-- httpx.MockTransport 测试验证 Bearer / x-api-key / SSE 解析
+**SSE 通信**：/agent-chat SSE 端点替代 Gateway WebSocket
 
-### v9.2 (2026-06-29) — Multi-provider LLM layer
+**CI/CD 统一构建**：CMake + CPack + BuildKit 多阶段 + GHCR 容器
 
-- 11 provider 支持（OpenAI / DeepSeek / Qwen / Anthropic / Google / SiliconFlow / OpenRouter / Ollama / vLLM / Custom / Mock）
-- 纯 httpx 实现（无 SDK 依赖）
-- MultiSlotRouter 4 slot（llm / llm_pro / embedding / rerank）
-- 前端 Model picker 4 组目录（主流 / 本地 / 自定义 / 离线）
-- 34 unit test（provider 路由 / 多 slot / mock transport / Anthropic 协议）
+**FFI 安全修复**：C++ 异常捕获 + malloc 替代悬垂指针 + eui_neo_free_response
 
-### v9.1 (2026-06-29) — SidecarBackend 桥接
+### v0.2.0 (2026-07-17) — JiuwenSwarm 集成版
 
-- `harness/sidecar_bridge.py::SidecarBackend` in-process 桥接 DeepAgent ↔ SidecarHandlers
-- `ProviderBackendWrapper` 包装任意 LLMBackend 让 DeepAgent.run() 走 httpx
-- 17 harness sidecar bridge 测试
+JiuwenSwarm 替换 Agent Studio + MCP 工具精简 + 生命周期钩子重构
 
-### v9.0 (2026-06-29) — 独立 Agent APP 框架
+### v0.1.4 (2026-07-11) — Desktop Agent 首发版
 
-- 砍 OpenClaw 包袱，独立 Python 包
-- `galaxyos.harness` 顶层入口（对标 openJiuwen `create_deep_agent`）
-- DeepAgent / Workspace / TaskLoopEvent 三件套
-- SidecarHandlers 30+ RPC 方法复用
-- 桌面端双形态（harness lib + desktop-shell app）
-
-### v8.6.0 (2026-06-28) — OpenClaw 深度集成（历史）
-
-> v8.6.0 是 GalaxyOS 与 OpenClaw 集成的最后一个版本。v9.0 起 GalaxyOS 独立运行，**不再依赖 OpenClaw gateway / slots / hooks**。如需旧集成方式，代码仍在 `legacy/openclaw/`。
-
----
+Agent Studio 平台集成 + 认知增强内核 + TokUI 流式富 UI
 
 ## 生态
 
-- **[docs/API.md](docs/API.md)** — 完整 API 速查
-- **[docs/paper-roadmap.md](docs/paper-roadmap.md)** — 论文路线图（R-CCAM / MeMo / COSPLAY）
-- **[docs/superpowers/](docs/superpowers/)** — 设计文档 + 评审记录
-- **[CONTRIBUTING.md](CONTRIBUTING.md)** — 贡献指南
-- **[CHANGELOG.md](CHANGELOG.md)** — 完整变更日志
-- **[galaxyos/harness/](galaxyos/harness/)** — harness API docstring
+- **[openJiuwen agent-core](https://github.com/openJiuwen-ai/agent-core)** — Agent 运行时 SDK（v0.1.16+）
+- **[EUI-NEO](https://github.com/sudoevolve/EUI-NEO)** — C++ GPU 直渲 UI 框架
+- **[TokUI](https://www.npmjs.com/package/@jboltai/tokui)** — 零依赖流式 UI 框架
 
----
 
 ## 开发
 
-| 命令 | 说明 |
+| 资源 | 说明 |
 |------|------|
-| `make test` | 运行单元测试 |
-| `python3.12 -m galaxyos.scripts.install_wizard --check` | 自检 |
-| `cd desktop-shell && python python/galaxyos_sidecar.py` | 启动桌面端 sidecar |
-| `cd desktop-shell && python -m http.server 8080` | 启动前端 |
-
----
+| [CHANGELOG.md](CHANGELOG.md) | 版本变更记录 |
+| [CONTEXT.md](CONTEXT.md) | 领域上下文文档 |
+| [UBIQUITOUS_LANGUAGE.md](UBIQUITOUS_LANGUAGE.md) | 统一语言词汇表 |
+| [docs/adr/](docs/adr/) | 架构决策记录 |
 
 ## 许可证
 

@@ -7,7 +7,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import pytest
 import time
-from services.auto_tuner import AutoTuner
+from galaxyos.privileged.auto_tuner import AutoTuner
 
 
 class TestAutoTuner:

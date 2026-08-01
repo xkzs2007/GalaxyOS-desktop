@@ -15,12 +15,12 @@ vMAJOR.MINOR.PATCH
 | 级别 | 触发条件 | 例子 |
 |------|---------|------|
 | **MAJOR** | 架构层重构、破坏性 API 变更、底层存储 Schema 不兼容 | 引入新引擎、删除已公开接口 |
-| **MINOR** | 新增模块/功能/技能，向后兼容 | 新 services 模块、新工具注册 |
+| **MINOR** | 新增模块/功能/技能，向后兼容 | 新 engine 模块、新 MCP 工具 |
 | **PATCH** | Bug 修复、性能优化、文档补漏 | 死锁修复、import 错误修正 |
 
 ## 必须同步更新的文件
 
-1. `setup.py` 中 `version="x.y.z"`
+1. `pyproject.toml` 中 `version="x.y.z"`
 2. `CHANGELOG.md` 中追加对应版本条目
 3. Git tag 打 `vx.y.z`（GPG signed）
 

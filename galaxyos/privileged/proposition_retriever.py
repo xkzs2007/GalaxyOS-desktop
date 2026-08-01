@@ -284,14 +284,14 @@ class PropositionRetriever:
         for doc, doc_id in zip(documents, doc_ids):
             # 提取命题
             propositions = self.extractor.extract(doc, doc_id=doc_id)
-            
+
             # 内存保护: 如果超过上限，丢弃最旧的命题
             if len(self._propositions) + len(propositions) > self.max_propositions:
                 excess = len(self._propositions) + len(propositions) - self.max_propositions
                 self._propositions = self._propositions[excess:]
                 self._prop_embeddings = self._prop_embeddings[excess:]
                 logger.warning(f"命题索引超过上限 {self.max_propositions}，已淘汰 {excess} 条旧命题")
-            
+
             self._propositions.extend(propositions)
             self.stats['total_docs'] += 1
             self.stats['total_propositions'] += len(propositions)

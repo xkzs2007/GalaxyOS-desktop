@@ -7,7 +7,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import pytest
 import numpy as np
-from services.ann_selector import ANNSelector
+from galaxyos.privileged.ann_selector import ANNSelector
 
 
 class TestANNSelector:

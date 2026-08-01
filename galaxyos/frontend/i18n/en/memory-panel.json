@@ -1,0 +1,14 @@
+{
+  "title": "Liquid Neural Memory",
+  "consolidating": "Consolidating",
+  "consolidated": "Consolidated",
+  "idle": "Idle",
+  "all": "All",
+  "search_placeholder": "Search memories...",
+  "search_button": "Search",
+  "memory_count": "{{count}} memories",
+  "pinned": "Pinned",
+  "no_memories": "No memories",
+  "memory_search": "Memory Search",
+  "no_results": "No matching memories found"
+}

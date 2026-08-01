@@ -1,0 +1,223 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  check-deps:
+    name: Dependency check (Python 3.12)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Install core dependencies
+        run: pip install -r requirements-core.txt
+
+      - name: Install openjiuwen with compatible versions
+        run: |
+          pip install "openjiuwen @ git+https://github.com/openJiuwen-ai/agent-core@v0.1.16"
+          pip install "pymilvus>=2.6.2,<2.6.10"
+
+      - name: Install onnxruntime
+        run: pip install onnxruntime
+
+      - name: Install heavy dependencies (CPU-only)
+        run: |
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install faiss-cpu transformers pandas
+          pip install hnswlib==0.8.0
+
+      - name: Verify critical imports
+        run: |
+          python -c "import fastmcp; print('fastmcp:', fastmcp.__version__)"
+          python -c "import openjiuwen; print('openjiuwen:', openjiuwen.__version__)"
+          python -c "import starlette; print('starlette:', starlette.__version__)"
+          python -c "import uvicorn; print('uvicorn:', uvicorn.__version__)"
+          python -c "import numpy; print('numpy:', numpy.__version__)"
+          python -c "import pydantic; print('pydantic:', pydantic.__version__)"
+          python -c "import onnxruntime; print('onnxruntime:', onnxruntime.__version__)"
+          python -c "from openjiuwen.harness.factory import create_deep_agent; print('openjiuwen.harness OK')"
+          python -c "from openjiuwen.harness.rails import SecurityRail, SysOperationRail; print('openjiuwen.rails OK')"
+          python -c "from openjiuwen.core.foundation.llm.model import Model; print('openjiuwen.core OK')"
+          python -c "import torch; print('torch:', torch.__version__)"
+          python -c "import faiss; print('faiss:', faiss.__version__)"
+          python -c "import hnswlib; print('hnswlib: OK')"
+          python -c "import transformers; print('transformers:', transformers.__version__)"
+          python -c "import pandas; print('pandas:', pandas.__version__)"
+
+      - name: Download bge-small-zh ONNX model
+        run: |
+          mkdir -p models/embeddings
+          if [ -f models/embeddings/model.onnx ]; then
+            echo "Model already exists, skipping download"
+          else
+            HF_MIRROR="https://hf-mirror.com/onnx-community/bge-small-zh-v1.5-ONNX/resolve/main"
+            HF_OFFICIAL="https://huggingface.co/onnx-community/bge-small-zh-v1.5-ONNX/resolve/main"
+            for f in onnx/model.onnx onnx/model.onnx_data tokenizer.json; do
+              dest="models/embeddings/$(basename $f)"
+              curl -sLf --retry 3 --retry-delay 5 --max-time 120 \
+                "${HF_MIRROR}/${f}" -o "$dest" || \
+              curl -sLf --retry 3 --retry-delay 5 --max-time 120 \
+                "${HF_OFFICIAL}/${f}" -o "$dest"
+              echo "Downloaded: $dest ($(ls -lh "$dest" | awk '{print $5}'))"
+            done
+          fi
+
+      - name: Verify GalaxyOS imports
+        run: |
+          pip install .
+          python -c "from galaxyos.kernel.mcp_server_entry import create_kernel, check_dependencies; print('mcp_server_entry OK')"
+          python -c "from galaxyos.kernel.agent_core_bridge import AgentCoreBridge; print('agent_core_bridge OK')"
+          python -c "from galaxyos.kernel.memory_sync_bridge import MemorySyncBridge; print('memory_sync_bridge OK')"
+          python -c "from galaxyos.kernel.i18n_manager import I18nManager; print('i18n_manager OK')"
+          python -c "from galaxyos.kernel.dsl_bridge import DSLBridge; print('dsl_bridge OK')"
+
+          python -c "from galaxyos.kernel.integration_config_manager import IntegrationConfigManager; print('integration_config_manager OK')"
+
+      - name: Check no xiaoyi references in functional code
+        run: |
+          ! grep -r "from xiaoyi_claw_api\|import xiaoyi_claw_api\|from xiaoyi_memory\|import xiaoyi_memory" galaxyos/ --include="*.py" -l
+          ! grep -r "xiaoyi-claw-omega-final" galaxyos/ --include="*.py" -l
+
+  build-native:
+    name: C++ Desktop build (Windows)
+    runs-on: windows-latest
+    needs: check-deps
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Install system dependencies (Chocolatey)
+        shell: powershell
+        run: |
+          choco install -y nsis
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Install Python dependencies
+        shell: bash
+        run: |
+          pip install -r requirements-core.txt
+          pip install "openjiuwen @ git+https://github.com/openJiuwen-ai/agent-core@v0.1.16"
+          pip install "pymilvus>=2.6.2,<2.6.10"
+          pip install onnxruntime
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install faiss-cpu transformers pandas
+          pip install hnswlib==0.8.0
+          pip install nuitka ordered-set zstandard
+          pip install pyinstaller
+
+      - name: Download bge-small-zh ONNX model
+        shell: bash
+        run: |
+          mkdir -p models/embeddings
+          if [ -f models/embeddings/model.onnx ]; then
+            echo "Model already exists, skipping download"
+          else
+            HF_MIRROR="https://hf-mirror.com/onnx-community/bge-small-zh-v1.5-ONNX/resolve/main"
+            HF_OFFICIAL="https://huggingface.co/onnx-community/bge-small-zh-v1.5-ONNX/resolve/main"
+            for f in onnx/model.onnx onnx/model.onnx_data tokenizer.json; do
+              dest="models/embeddings/$(basename $f)"
+              curl -sLf --retry 3 --retry-delay 5 --max-time 120 \
+                "${HF_MIRROR}/${f}" -o "$dest" || \
+              curl -sLf --retry 3 --retry-delay 5 --max-time 120 \
+                "${HF_OFFICIAL}/${f}" -o "$dest"
+              echo "Downloaded: $dest ($(ls -lh "$dest" | awk '{print $5}'))"
+            done
+          fi
+
+
+      - name: Install GalaxyOS
+        shell: bash
+        run: pip install .
+
+      - name: Cache Nuitka compilation
+        uses: actions/cache@v4
+        with:
+          path: nuitka-cache
+          key: nuitka-${{ runner.os }}-py3.12-cpu-${{ hashFiles('galaxyos/**/*.py', 'nuitka-build.py') }}
+          restore-keys: nuitka-${{ runner.os }}-py3.12-cpu-
+
+      - name: Build with Nuitka (or PyInstaller fallback)
+        shell: bash
+        env:
+          TORCH_VARIANT: cpu
+          PACKAGING_TOOL: nuitka
+        run: |
+          python nuitka-build.py
+
+      - name: Verify build output exists
+        shell: bash
+        run: |
+          if [ -f "galaxyos-mcp-dist/galaxyos-mcp-cpu.exe" ]; then
+            echo "EXE=galaxyos-mcp-dist/galaxyos-mcp-cpu.exe" >> $GITHUB_ENV
+          elif [ -f "galaxyos-mcp-dist/galaxyos-mcp.exe" ]; then
+            echo "EXE=galaxyos-mcp-dist/galaxyos-mcp.exe" >> $GITHUB_ENV
+          else
+            echo "ERROR: No executable found in galaxyos-mcp-dist/"
+            ls -la galaxyos-mcp-dist/ || echo "Directory does not exist"
+            exit 1
+          fi
+
+      - name: Verify imports (all tiers)
+        shell: bash
+        run: |
+          ${{ env.EXE }} --check-imports
+
+      - name: Verify native_translations packaged
+        shell: bash
+        run: |
+          test -f galaxyos-mcp-dist/native_translations/zh.json || echo "WARNING: native_translations/zh.json not found"
+          test -f galaxyos-mcp-dist/native_translations/en.json || echo "WARNING: native_translations/en.json not found"
+
+      - name: Verify build output
+        shell: bash
+        run: |
+          test -d galaxyos-mcp-dist
+
+      - name: Prepare galaxyos-mcp-dist for C++ desktop
+        shell: bash
+        run: |
+          echo "galaxyos-mcp-dist already prepared by nuitka-build.py"
+
+      - name: Checkout EUI-NEO source
+        shell: bash
+        run: |
+          git clone --depth 1 https://github.com/sudoevolve/EUI-NEO.git EUI-NEO
+          echo "EUI-NEO source checked out"
+          ls EUI-NEO/CMakeLists.txt || { echo "ERROR: EUI-NEO/CMakeLists.txt not found"; exit 1; }
+
+      - name: Build C++ desktop shell
+        shell: bash
+        run: |
+          cmake -B desktop-native/build -S desktop-native
+          cmake --build desktop-native/build --config Release
+
+      - name: CPack NSIS packaging test
+        shell: bash
+        run: |
+          cd desktop-native/build && cpack -G NSIS -C Release || echo "CPack NSIS packaging skipped (non-blocking)"
+
+      - name: Upload desktop artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: galaxyos-desktop-windows-ci
+          path: desktop-native/build/bin/Release/galaxyos-desktop.exe

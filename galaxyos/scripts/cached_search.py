@@ -4,13 +4,13 @@ import sys
 import json
 import hashlib
 import sqlite3
-from pathlib import Path
 from datetime import datetime, timedelta
 
 
 # ── Centralized path resolution ──
-import os as _os, sys as _sys
-_ws_root = _os.environ.get("OPENCLAW_WORKSPACE", _os.path.expanduser("~/.openclaw/workspace"))
+import sys as _sys
+from galaxyos.shared.paths import workspace
+_ws_root = workspace()
 for _p in [_ws_root, "/workspace"]:
     if _p not in _sys.path:
         _sys.path.insert(0, _p)
@@ -40,30 +40,29 @@ def set_cache(key, results):
 
 def search_direct(query):
     """直接搜索（使用 sqlite3 连接）"""
-    from pathlib import Path
-    
+
     VECTORS_DB = path_resolver.VECTORS_DB
-    
+
     if not VECTORS_DB.exists():
         return []
-    
+
     try:
         conn = sqlite3.connect(str(VECTORS_DB))
         cursor = conn.cursor()
-        
+
         # FTS 搜索
         cursor.execute("""
-            SELECT record_id, content, type, scene_name 
-            FROM l1_fts 
-            WHERE l1_fts MATCH ? 
-            ORDER BY rank 
+            SELECT record_id, content, type, scene_name
+            FROM l1_fts
+            WHERE l1_fts MATCH ?
+            ORDER BY rank
             LIMIT 10
         """, (query,))
-        
+
         results = []
         for row in cursor.fetchall():
             results.append(f"[{row[2]}] {row[1][:80]}...")
-        
+
         conn.close()
         return results
     except Exception as e:
@@ -74,9 +73,9 @@ def main():
     if not query:
         print("用法: cached_search.py '查询'")
         sys.exit(1)
-    
+
     key = get_cache_key(query)
-    
+
     # 检查缓存
     cached = get_cached(key)
     if cached:
@@ -84,15 +83,15 @@ def main():
         for r in cached[:5]:
             print(f"  - {r}")
         return
-    
+
     # 执行搜索
     print(f"搜索: {query}")
     results = search_direct(query)
-    
+
     if results:
         for r in results:
             print(f"  - {r}")
-        
+
         # 缓存结果
         set_cache(key, results)
     else:

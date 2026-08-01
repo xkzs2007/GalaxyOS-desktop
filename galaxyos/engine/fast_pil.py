@@ -17,21 +17,19 @@ v2 方案: 独立的 pil_worker 子进程, stdin/stdout JSON-RPC 隔离通信。
 """
 
 import os
-import io
 import sys
 import json
 import time
 import base64
 import logging
-import hashlib
 import subprocess
 import threading
-from typing import Dict, List, Optional, Tuple
+from typing import Optional
 from collections import OrderedDict
 
 logger = logging.getLogger(__name__)
 
-PIL_WORKER_SCRIPT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "pil_worker.py")
+PIL_WORKER_SCRIPT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "pil_worker.py") if os.path.exists(os.path.join(os.path.dirname(os.path.abspath(__file__)), "pil_worker.py")) else None
 
 # ── Rust 原生扩展检测（3 级优先级） ──
 # 1. PyO3 编译的 Python 扩展（最优：零序列化开销，直接内存共享）
@@ -48,7 +46,7 @@ try:
     _backend_label = "shim (pure-Python)" if getattr(galaxyos_native, '_BACKEND', 'rust') == 'python' else "PyO3 (Rust)"
     logger.info(f"[fast-pil] using {_backend_label} galaxyos_native v{getattr(galaxyos_native, '__version__', '?')}")
 except ImportError:
-    pass
+    _try_galaxyos_native_module = None
 
 # 2. 独立二进制（stdin/stdout JSON-RPC，有序列化开销）
 def _find_rust_binary():
@@ -348,15 +346,10 @@ class PilWorkerProcess:
 class FastPIL:
     """PIL 图像处理加速器 — 独立子进程, 零 GIL 竞争"""
 
-    def __init__(self, cache_size: int = 50, max_workers: int = 2):
+    def __init__(self, cache_size: int = 50):
         self.cache = LRUCache(maxsize=cache_size)
         self._worker = None  # 懒初始化
         self._stats = {"cache_hit": 0, "requests": 0, "errors": 0}
-        # max_workers: caller 提示的并发请求数。pil_worker 是单子进程,
-        # 但 caller 端可以用 ThreadPoolExecutor 同时发多个请求,让
-        # pil_worker 在子进程内排队处理。FastPIL 暴露 process_many()
-        # 给 caller 一次性发 N 个请求并 join,这里存一下配置。
-        self._max_workers = max(1, int(max_workers))
 
     def _get_worker(self):
         if self._worker is None:
@@ -448,16 +441,8 @@ class FastPIL:
 # ── 全局实例 ──
 _instance = None
 
-def get_fast_pil(max_workers: int = 2) -> FastPIL:
-    """Get the global FastPIL singleton.
-
-    Args:
-        max_workers: caller-side concurrency hint (used by FastPIL to
-            configure its internal ThreadPoolExecutor for
-            `process_many()`). Defaults to 2 to match the historic
-            call site in xiaoyi_claw_api.py.
-    """
+def get_fast_pil() -> FastPIL:
     global _instance
     if _instance is None:
-        _instance = FastPIL(max_workers=max_workers)
+        _instance = FastPIL()
     return _instance

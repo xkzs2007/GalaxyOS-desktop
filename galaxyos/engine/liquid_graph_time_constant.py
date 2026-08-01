@@ -17,18 +17,15 @@ LGTC — Liquid-Graph Time-Constant Network
   2. 节点更新：dh_v/dt = σ(W_h h_v + W_m m_v + b) * (E - h_v) / τ_v
   3. 时间常数：τ_v = σ(W_τ h_v + W_τm m_v + b_τ) * (τ_max - τ_min) + τ_min
 
-Author: 小艺 Claw
+Author: GalaxyOS
 Version: 1.0.0
 Created: 2026-06-14
 """
 
-import os
 import math
-import time
-import json
 import logging
-from typing import Dict, List, Optional, Tuple, Any, Callable, Union
-from dataclasses import dataclass, field
+from typing import List, Optional, Tuple
+from dataclasses import dataclass
 
 logger = logging.getLogger("lgtc")
 
@@ -238,12 +235,12 @@ class LiquidGraphLayer:
                 neighbor_idx: np.ndarray,
                 neighbor_mask: np.ndarray) -> np.ndarray:
         """一步更新
-        
+
         Args:
             features: 节点特征 [num_nodes, dim_in]
             neighbor_idx: 邻居索引 [num_nodes, num_samples]
             neighbor_mask: 邻居掩码 [num_nodes, num_samples]
-        
+
         Returns:
             新特征 [num_nodes, dim_out]
         """

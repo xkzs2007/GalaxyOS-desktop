@@ -126,7 +126,7 @@ class KunpengDetector:
 
                 # 检测厂商（文本 + ARM implementer 编号）
                 cpuinfo_lower = cpuinfo.lower()
-                
+
                 # 检测 CPU implementer（ARM 官方厂商 ID）
                 implementer_to_vendor = {
                     '0x48': ('Huawei Kunpeng', 'HiSilicon'),  # 海思/鲲鹏
@@ -144,7 +144,7 @@ class KunpengDetector:
                                     info['is_kunpeng'] = True
                                     info['is_hisilicon'] = True
                                 break
-                
+
                 # 文本匹配（兜底）
                 if not info['is_kunpeng']:
                     if 'kunpeng' in cpuinfo_lower or 'hisi' in cpuinfo_lower:

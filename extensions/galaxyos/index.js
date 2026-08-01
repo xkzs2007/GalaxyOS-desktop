@@ -23,6 +23,8 @@ import { createRequire as _createRequire } from "node:module";
 // ESM 兼容垫片: index.js 是 "type":"module" 的 ESM, 但 zeromq 是 CJS,
 // 用 createRequire 显式构造 CJS loader
 const _cjsRequire = _createRequire(import.meta.url);
+import { galaxyosHome, openclawHome } from "./paths.js";
+import { createHost } from "./launcher.js";
 
 const TAG = "[galaxyos]";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -30,45 +32,28 @@ const WORKER_SCRIPT = path.join(__dirname, "scripts", "claw_worker.py");
 const PIL_WORKER_SCRIPT = path.join(__dirname, "scripts", "pil_worker.py");
 
 // ════════════════════════════════════════════════════════════════
-// OpenClaw 用户配置目录解析（dev / prod / container 三模式）
+// GalaxyOS / OpenClaw 用户配置目录解析（paths.js 统一真相源）
 // ════════════════════════════════════════════════════════════════
-//
-// OpenClaw 2026.5.6 实际部署布局：
-//   核心代码: /home/sandbox/openclaw/node_modules/openclaw/  (npm 全局)
-//   用户配置: $HOME/.openclaw/                              (生产默认)
-//   dev 模式: $HOME/.openclaw-dev/                          (开发测试)
-//   容器:    /opt/openclaw/                                 (固定路径)
-//
-// 优先级:
-//   1) OPENCLAW_HOME / GALAXYOS_OPENCLAW_HOME 环境变量（显式覆盖）
-//   2) /opt/openclaw               (容器固定布局)
-//   3) $HOME/.openclaw             (生产)
-//   4) $HOME/.openclaw-dev         (dev)
-//   5) 自动检测 __dirname 上溯找到的 OPENCLAW_HOME
-function _openclawHome() {
-    const envVars = ["OPENCLAW_HOME", "GALAXYOS_OPENCLAW_HOME"];
-    for (const k of envVars) {
-        const v = process.env[k];
-        if (v && existsSync(v) && statSyncSafe(v)?.isDirectory()) return v;
+const GALAXYOS_HOME = galaxyosHome();
+const OPENCLAW_HOME = openclawHome();
+
+// ── JS/Python 双端路径一致性校验 ──
+try {
+    const _pyHome = spawnSync(
+        _pythonBin || "python3",
+        ["-c", "from galaxyos.shared.paths import galaxyos_home; print(galaxyos_home())"],
+        { encoding: "utf-8", timeout: 5000, stdio: ["pipe", "pipe", "ignore"] }
+    );
+    if (_pyHome.status === 0 && _pyHome.stdout) {
+        const _pyPath = _pyHome.stdout.trim();
+        if (_pyPath && _pyPath !== GALAXYOS_HOME) {
+            console.error(
+                `[galaxyos] PATH MISMATCH: JS GALAXYOS_HOME=${GALAXYOS_HOME} vs Python galaxyos_home()=${_pyPath}. ` +
+                `Set GALAXYOS_HOME to the same value on both sides.`
+            );
+        }
     }
-    // 容器布局
-    if (existsSync("/opt/openclaw") && statSyncSafe("/opt/openclaw")?.isDirectory()) {
-        return "/opt/openclaw";
-    }
-    const home = process.env.HOME || "/home/sandbox";
-    // 生产
-    const prod = `${home}/.openclaw`;
-    if (existsSync(prod) && statSyncSafe(prod)?.isDirectory()) return prod;
-    // dev
-    const dev = `${home}/.openclaw-dev`;
-    if (existsSync(dev) && statSyncSafe(dev)?.isDirectory()) return dev;
-    // 兜底：生产默认
-    return prod;
-}
-function statSyncSafe(p) {
-    try { return fs.statSync(p); } catch { return null; }
-}
-const OPENCLAW_HOME = _openclawHome();
+} catch (_) {}
 
 // Rust 原生扩展 — 三级检测
 // 1. PyO3 Python 模块（最优：零序列化，直接 import）
@@ -77,9 +62,10 @@ let _pyo3Native = false;
 let _pyo3Shim = false;  // true if using pure-Python shim (no Rust)
 try {
     const pyEnv = { ...process.env };
-    // 确保 scripts/ 在 PYTHONPATH 中以发现 embedded galaxyos_native.py
+    // 确保 scripts/ + engine/ 在 PYTHONPATH 中以发现 embedded galaxyos_native.py 及引擎模块
     const scriptsDir = path.join(__dirname, "scripts");
-    pyEnv.PYTHONPATH = [scriptsDir, pyEnv.PYTHONPATH].filter(Boolean).join(":");
+    const engineDir = path.join(__dirname, "..", "..", "galaxyos", "engine");
+    pyEnv.PYTHONPATH = [scriptsDir, engineDir, pyEnv.PYTHONPATH].filter(Boolean).join(path.delimiter);
     const r = spawnSync(_pythonBin, ["-c", "import galaxyos_native; print(galaxyos_native.__version__)"], {
         encoding: "utf-8", timeout: 5000, stdio: ["pipe", "pipe", "ignore"],
         env: pyEnv,
@@ -163,7 +149,7 @@ try {
 }
 
 function resolveWorkspace(api) {
-    const ws = api.runtime.workspace?.cwd?.();
+    const ws = host.getWorkspace();
     if (ws && existsSync(ws)) return ws;  // 必须存在
     // 兼容 sandbox: 优先 OPENCLAW_WORKSPACE 显式,再尝试 OPENCLAW_HOME/下的多个候选
     const ocHome = OPENCLAW_HOME;
@@ -1128,7 +1114,7 @@ function startGatewayUdsServer(api, _ws) {
     registerGatewayMethod("channel_send", async (params, ctx) => {
         // 通过 api.emit 或 hook 触发消息发送
         // 实际发送由 OpenClaw 通道处理
-        api.logger.info?.(`${TAG} [gateway-uds] channel_send requested: ${JSON.stringify(params).slice(0, 200)}`);
+        host.getLogger().info?.(`${TAG} [gateway-uds] channel_send requested: ${JSON.stringify(params).slice(0, 200)}`);
         // 通过 api 的 event 触发--这里先做 stub
         return { ok: true, note: "channel_send noted - handled by OpenClaw pipeline" };
     });
@@ -1155,9 +1141,9 @@ function startGatewayUdsServer(api, _ws) {
                     return { ok: true, result: toolResult };
                 });
             }
-            api.logger.info?.(`${TAG} [gateway-uds] auto-registered ${(toolNames || []).length} tool methods`);
+            host.getLogger().info?.(`${TAG} [gateway-uds] auto-registered ${(toolNames || []).length} tool methods`);
         } catch (e) {
-            api.logger.debug?.(`${TAG} [gateway-uds] tool auto-register: ${e.message}`);
+            host.getLogger().debug?.(`${TAG} [gateway-uds] tool auto-register: ${e.message}`);
         }
     }
 
@@ -1188,7 +1174,7 @@ function startGatewayUdsServer(api, _ws) {
 
     server.listen(udsPath, () => {
         try { chmodSync(udsPath, 0o600); } catch (e) {}
-        api.logger.info?.(`${TAG} [gateway-uds] HTTP over UDS listening on ${udsPath} (${Object.keys(_gatewayMethods).length} methods registered)`);
+        host.getLogger().info?.(`${TAG} [gateway-uds] HTTP over UDS listening on ${udsPath} (${Object.keys(_gatewayMethods).length} methods registered)`);
     });
 
     _gatewayServer = server;
@@ -1216,7 +1202,7 @@ function startZmqRouter(api) {
     try {
         zmq = _cjsRequire(path.join(__dirname, "node_modules", "zeromq"));
     } catch (e) {
-        api.logger.warn?.(`${TAG} [zmq-router] zeromq not available, skipping`);
+        host.getLogger().warn?.(`${TAG} [zmq-router] zeromq not available, skipping`);
         return;
     }
 
@@ -1227,9 +1213,9 @@ function startZmqRouter(api) {
     (async () => {
         try {
             await router.bind(`tcp://127.0.0.1:5560`);
-            api.logger.info?.(`${TAG} [zmq-router] listening on tcp://127.0.0.1:5560`);
+            host.getLogger().info?.(`${TAG} [zmq-router] listening on tcp://127.0.0.1:5560`);
         } catch (err) {
-            api.logger.warn?.(`${TAG} [zmq-router] bind failed: ${err.message}`);
+            host.getLogger().warn?.(`${TAG} [zmq-router] bind failed: ${err.message}`);
             return;
         }
 
@@ -1257,7 +1243,7 @@ function startZmqRouter(api) {
                                     try {
                                         _zmqRouter.send([Buffer.from(target), '', Buffer.from(JSON.stringify({ worker_send: true, from: identity.toString(), payload }))]);
                                         sendReply({ id: msg.id, result: { ok: true, target } });
-                                        api.logger.debug?.(`${TAG} [zmq-router] forwarded ${identity.toString()} → ${target}`);
+                                        host.getLogger().debug?.(`${TAG} [zmq-router] forwarded ${identity.toString()} → ${target}`);
                                     } catch (e) {
                                         sendReply({ id: msg.id, error: `forward failed: ${e.message}` });
                                     }
@@ -1276,17 +1262,17 @@ function startZmqRouter(api) {
                                 }
                             } else {
                                 // 透传事件(无 handler 即 pub-sub 事件)
-                                api.logger.debug?.(`${TAG} [zmq-router] event from ${identity.toString()}: ${method} ${JSON.stringify(params).slice(0, 200)}`);
+                                host.getLogger().debug?.(`${TAG} [zmq-router] event from ${identity.toString()}: ${method} ${JSON.stringify(params).slice(0, 200)}`);
                             }
                         } else if (msg.event) {
                             // 纯粹的事件通知(不需要回复)
-                            api.logger.debug?.(`${TAG} [zmq-router] event ${msg.event} from ${identity.toString()}`);
+                            host.getLogger().debug?.(`${TAG} [zmq-router] event ${msg.event} from ${identity.toString()}`);
                         }
                     } catch (e) {}
                 }
             }
         } catch (e) {
-            api.logger.warn?.(`${TAG} [zmq-router] loop error: ${e.message}`);
+            host.getLogger().warn?.(`${TAG} [zmq-router] loop error: ${e.message}`);
         }
     })();
 
@@ -1621,7 +1607,7 @@ class ClawWorkerClient {
             const galaxosVarDir = path.dirname(getUdsPath());
             this.proc = spawn(_pythonBin, [WORKER_SCRIPT], {
                 cwd: this.workspace,
-                env: { ...process.env, PYTHONIOENCODING: 'utf-8', OPENCLAW_WORKSPACE: this.workspace, WORKER_UDS: '1', WORKER_ID: this.id, WORKER_TIER: (this.id || '').split(':')[0], GALAXYOS_VAR_DIR: galaxosVarDir, GALAXYOS_REPO: path.join(os.homedir(), '.openclaw', 'galaxyos') },
+                env: { ...process.env, PYTHONIOENCODING: 'utf-8', PYTHONPATH: [path.join(__dirname, '..', '..', 'galaxyos', 'engine'), process.env.PYTHONPATH].filter(Boolean).join(path.delimiter), OPENCLAW_WORKSPACE: this.workspace, WORKER_UDS: '1', WORKER_ID: this.id, WORKER_TIER: (this.id || '').split(':')[0], GALAXYOS_VAR_DIR: galaxosVarDir, GALAXYOS_REPO: path.join(os.homedir(), '.openclaw', 'galaxyos') },
                 stdio: ['pipe', 'pipe', 'pipe'],
             });
             let settled = false;
@@ -1935,16 +1921,17 @@ function formatClawVerifyResult(data) {
 }
 
 export default function register(api) {
+    const host = createHost(api);
     const ws = resolveWorkspace(api);
-    api.logger.info?.(`${TAG} v2 plugin initialized, workspace=${ws}`);
+    host.getLogger().info?.(`${TAG} v2 plugin initialized, workspace=${ws}`);
 
     // 原生扩展状态报告
     if (_pyo3Native) {
-        api.logger.info?.(`${TAG} galaxyos_native: ${_pyo3Shim ? 'pure-Python shim (PIL/numpy)' : 'Rust/PyO3 compiled — zero-copy, no GIL'}`);
+        host.getLogger().info?.(`${TAG} galaxyos_native: ${_pyo3Shim ? 'pure-Python shim (PIL/numpy)' : 'Rust/PyO3 compiled — zero-copy, no GIL'}`);
     } else if (_nativeBinary) {
-        api.logger.info?.(`${TAG} Rust native: subprocess binary (${_nativeBinary})`);
+        host.getLogger().info?.(`${TAG} Rust native: subprocess binary (${_nativeBinary})`);
     } else {
-        api.logger.warn?.(`${TAG} Rust native extension NOT found — image/vector ops fall back to Python PIL (slower, GIL-bound). Run \`make native-py\` or \`make native\`.`);
+        host.getLogger().warn?.(`${TAG} Rust native extension NOT found — image/vector ops fall back to Python PIL (slower, GIL-bound). Run \`make native-py\` or \`make native\`.`);
     }
 
     // ==========================================
@@ -1953,7 +1940,7 @@ export default function register(api) {
     // 6 类组件：mmap_control → gateway_uds → zmq_router → native_binary → gateway_heartbeat → workers
     // 单入口启动/停止/健康检查，电路断路器防级联崩溃
     // ═══════════════════════════════════════════════════════════════
-    const pluginConfig = api.getConfig?.() || {};
+    const pluginConfig = host.getConfig?.() || {};
     const workerEnabled = pluginConfig.worker?.enabled !== false;
 
     if (!_galaxyPool) {
@@ -2054,14 +2041,14 @@ export default function register(api) {
 
     // 统一启动
     _galaxyPool.start().then(() => {
-        api.logger?.info?.(`${TAG} GalaxyPool running: ${JSON.stringify(_galaxyPool.getStatus())}`);
+        host.getLogger()?.info?.(`${TAG} GalaxyPool running: ${JSON.stringify(_galaxyPool.getStatus())}`);
     }).catch((e) => {
-        api.logger?.warn?.(`${TAG} GalaxyPool start error: ${e.message}`);
+        host.getLogger()?.warn?.(`${TAG} GalaxyPool start error: ${e.message}`);
     });
-    api.logger.info?.(`${TAG} REST API available via Worker TCP: GET/POST http://127.0.0.1:8765/<method>`);
+    host.getLogger().info?.(`${TAG} REST API available via Worker TCP: GET/POST http://127.0.0.1:8765/<method>`);
 
     // ═══ Gateway stop：统一关闭所有组件 ═══
-    api.on("gateway_stop", async () => {
+    host.on("gateway_stop", async () => {
         if (_zmqSub) { try { _zmqSub.close(); } catch (e) {} _zmqSub = null; }
         _zmqSubActive = false;
         if (_galaxyPool) {
@@ -2077,19 +2064,19 @@ export default function register(api) {
     const _isGatewayProcess = () => process.env.OPENCLAW_NO_RESPAWN || process.argv.includes('gateway') || process.argv.some(a => a.includes('gateway'));
     if (_isGatewayProcess()) {
         const _onExitSignal = async (signal) => {
-            api.logger?.info?.(`${TAG} received ${signal}, flushing cron state before exit...`);
+            host.getLogger()?.info?.(`${TAG} received ${signal}, flushing cron state before exit...`);
             if (_galaxyPool) {
                 try {
                     await _galaxyPool._flushCronState();
                 } catch (e) {
-                    api.logger?.warn?.(`${TAG} cron state flush on signal error: ${e.message}`);
+                    host.getLogger()?.warn?.(`${TAG} cron state flush on signal error: ${e.message}`);
                 }
             }
             process.exit(0);
         };
         process.on('SIGTERM', () => _onExitSignal('SIGTERM'));
         process.on('SIGINT', () => _onExitSignal('SIGINT'));
-        api.logger?.info?.(`${TAG} SIGTERM/SIGINT handlers registered for Gateway process`);
+        host.getLogger()?.info?.(`${TAG} SIGTERM/SIGINT handlers registered for Gateway process`);
     }
 
     // ════════════════════════════════════════════════════════════════
@@ -2150,7 +2137,7 @@ export default function register(api) {
     }
 
     // ── before_tool_call：记录调用前状态，喂给 BoundaryDetector ──
-    api.on("before_tool_call", async (event) => {
+    host.on("before_tool_call", async (event) => {
         try {
             if (!event) return;
             const { toolName, args, channel, userId } = event;
@@ -2166,12 +2153,12 @@ export default function register(api) {
                 metadata: { type: "tool_call_boundary", phase: "pre", tool: toolName },
             }, 5000).catch(() => {});
         } catch (err) {
-            api.logger?.warn?.(`${TAG} before_tool_call handler failed: ${err.message}`);
+            host.getLogger()?.warn?.(`${TAG} before_tool_call handler failed: ${err.message}`);
         }
     });
 
     // ── after_tool_call：捕��结果，更新 Skill Bank + engram + DAG（幂等 + 异步降级）──
-    api.on("after_tool_call", async (event) => {
+    host.on("after_tool_call", async (event) => {
         try {
             if (!event) return;
             const { toolName, args, result, channel, userId, callId } = event;
@@ -2185,7 +2172,7 @@ export default function register(api) {
 
             // Phase 2.3: 群聊场景禁止写入记忆（只读降级）
             if (!allowMemoryWrite(channel)) {
-                api.logger?.info?.(`${TAG} after_tool_call: memory write skipped for group channel=${channel}`);
+                host.getLogger()?.info?.(`${TAG} after_tool_call: memory write skipped for group channel=${channel}`);
                 return;
             }
 
@@ -2221,16 +2208,16 @@ export default function register(api) {
             ]).then((results) => {
                 const failed = results.filter(r => r.status === "rejected").length;
                 if (failed > 0) {
-                    api.logger?.warn?.(`${TAG} after_tool_call: ${failed}/3 subsystems failed for tool=${toolName}`);
+                    host.getLogger()?.warn?.(`${TAG} after_tool_call: ${failed}/3 subsystems failed for tool=${toolName}`);
                 }
             }).catch(() => {});
         } catch (err) {
-            api.logger?.warn?.(`${TAG} after_tool_call handler failed: ${err.message}`);
+            host.getLogger()?.warn?.(`${TAG} after_tool_call handler failed: ${err.message}`);
         }
     });
 
     // ── before_compaction：压缩前持久化高价值上下文 ──
-    api.on("before_compaction", async (event) => {
+    host.on("before_compaction", async (event) => {
         try {
             if (!event) return;
             const { sessionId, channel, userId, contextWindow } = event;
@@ -2240,7 +2227,7 @@ export default function register(api) {
 
             // Phase 2.3: 群聊场景跳过持久化（只读降级，不写入个人记忆）
             if (!allowMemoryWrite(channel)) {
-                api.logger?.info?.(`${TAG} before_compaction: flush skipped for group channel=${channel}`);
+                host.getLogger()?.info?.(`${TAG} before_compaction: flush skipped for group channel=${channel}`);
                 return;
             }
 
@@ -2282,14 +2269,14 @@ export default function register(api) {
                     metadata: { type: "pre_compaction_flush", count: highValue.length, session_id: sessionId },
                 }, 10000).catch(() => {}),
             ]);
-            api.logger?.info?.(`${TAG} pre-compaction flush: ${highValue.length} items persisted for session=${structKey}`);
+            host.getLogger()?.info?.(`${TAG} pre-compaction flush: ${highValue.length} items persisted for session=${structKey}`);
         } catch (err) {
-            api.logger?.warn?.(`${TAG} before_compaction handler failed: ${err.message}`);
+            host.getLogger()?.warn?.(`${TAG} before_compaction handler failed: ${err.message}`);
         }
     });
 
     // ── after_compaction：压缩后触发索引同步 ──
-    api.on("after_compaction", async (event) => {
+    host.on("after_compaction", async (event) => {
         try {
             if (!event) return;
             const { sessionId, channel, userId } = event;
@@ -2302,29 +2289,29 @@ export default function register(api) {
                 force: false,
                 metadata: { type: "post_compaction_sync", session_id: sessionId },
             }, 15000).catch(() => {});
-            api.logger?.info?.(`${TAG} post-compaction index sync triggered for session=${structKey}`);
+            host.getLogger()?.info?.(`${TAG} post-compaction index sync triggered for session=${structKey}`);
         } catch (err) {
-            api.logger?.warn?.(`${TAG} after_compaction handler failed: ${err.message}`);
+            host.getLogger()?.warn?.(`${TAG} after_compaction handler failed: ${err.message}`);
         }
     });
 
     // ── gateway_start：注册心跳与定时维护任务（Phase 3.2 对接）──
-    if (typeof api.on === "function") {
-        api.on("gateway_start", async () => {
+    if (true) {
+        host.on("gateway_start", async () => {
             try {
-                api.logger?.info?.(`${TAG} gateway_start: registering heartbeat & lane type`);
+                host.getLogger()?.info?.(`${TAG} gateway_start: registering heartbeat & lane type`);
                 // 声明 galaxyos-hot lane 类型（Phase 1.3）
-                if (typeof api.registerLaneType === "function") {
-                    api.registerLaneType({
+                if (true) {
+                    host.registerLaneType({
                         name: "galaxyos-hot",
                         description: "GalaxyOS Hot Tier — 高频低延迟请求",
                         serial: true, // 同一会话串行执行
                     });
-                    api.logger?.info?.(`${TAG} registered lane type: galaxyos-hot`);
+                    host.getLogger()?.info?.(`${TAG} registered lane type: galaxyos-hot`);
                 }
                 // 注册心跳维护（Phase 3.2 — 每 30 分钟轻量维护）
-                if (typeof api.registerHeartbeat === "function") {
-                    api.registerHeartbeat({
+                if (true) {
+                    host.registerHeartbeat({
                         interval: 30 * 60 * 1000, // 30 分钟
                         handler: async () => {
                             try {
@@ -2332,17 +2319,17 @@ export default function register(api) {
                                 if (!w) return;
                                 // 轻量维护：engram 衰减 + LFM 状态重置
                                 await w.call("mmap_cleanup", {}, 10000).catch(() => {});
-                                api.logger?.info?.(`${TAG} heartbeat maintenance done`);
+                                host.getLogger()?.info?.(`${TAG} heartbeat maintenance done`);
                             } catch (e) {
-                                api.logger?.warn?.(`${TAG} heartbeat maintenance error: ${e.message}`);
+                                host.getLogger()?.warn?.(`${TAG} heartbeat maintenance error: ${e.message}`);
                             }
                         },
                     });
-                    api.logger?.info?.(`${TAG} registered heartbeat (30min interval)`);
+                    host.getLogger()?.info?.(`${TAG} registered heartbeat (30min interval)`);
                 }
                 // 注册深度维护 cron（Phase 3.2 — 低峰时段执行）
-                if (typeof api.registerCron === "function") {
-                    api.registerCron({
+                if (true) {
+                    host.registerCron({
                         schedule: "0 3 * * *", // 每天凌晨 3 点
                         handler: async () => {
                             try {
@@ -2350,16 +2337,16 @@ export default function register(api) {
                                 if (!w) return;
                                 // 深度维护：DAG 剪枝 + 向量索引重建
                                 await w.call("dag_compact", { force: true, deep: true }, 60000).catch(() => {});
-                                api.logger?.info?.(`${TAG} cron deep maintenance done`);
+                                host.getLogger()?.info?.(`${TAG} cron deep maintenance done`);
                             } catch (e) {
-                                api.logger?.warn?.(`${TAG} cron maintenance error: ${e.message}`);
+                                host.getLogger()?.warn?.(`${TAG} cron maintenance error: ${e.message}`);
                             }
                         },
                     });
-                    api.logger?.info?.(`${TAG} registered cron deep maintenance (daily 03:00)`);
+                    host.getLogger()?.info?.(`${TAG} registered cron deep maintenance (daily 03:00)`);
                 }
             } catch (err) {
-                api.logger?.warn?.(`${TAG} gateway_start handler failed: ${err.message}`);
+                host.getLogger()?.warn?.(`${TAG} gateway_start handler failed: ${err.message}`);
             }
         });
     }
@@ -2370,14 +2357,14 @@ export default function register(api) {
         if (_loadReportTimer) return;
         _loadReportTimer = setInterval(() => {
             try {
-                if (typeof api.reportLoad !== "function") return;
+                if (typeof host.reportLoad !== "function") return;
                 const poolStatus = _galaxyPool ? _galaxyPool.getStatus() : null;
                 if (!poolStatus) return;
                 // 从 GalaxyPool 状态提取负载指标
                 const hotQueue = poolStatus.tiers?.hot?.queueDepth || 0;
                 const warmQueue = poolStatus.tiers?.warm?.queueDepth || 0;
                 const coldQueue = poolStatus.tiers?.cold?.queueDepth || 0;
-                api.reportLoad({
+                host.reportLoad({
                     laneType: "galaxyos-hot",
                     queueDepth: hotQueue + warmQueue + coldQueue,
                     load: poolStatus.tiers?.hot?.busy || 0,
@@ -2390,7 +2377,7 @@ export default function register(api) {
     _startLoadReporting();
 
     // ═══ 暴露 GalaxyPool 运行时状态给 AI Agent ═══
-    api.registerTool({
+    host.registerTool({
         name: "galaxy_pool",
         label: "GalaxyPool 系统状态",
         policy: { channels: ["dm", "group"], roles: ["owner", "member"], rateLimit: { perMinute: 30 } },
@@ -2403,7 +2390,7 @@ export default function register(api) {
         },
     });
     // ═══ R-CCAM 实时进度查询 ═══
-    api.registerTool({
+    host.registerTool({
         name: "claw_rccam_progress",
         label: "R-CCAM 进度",
         policy: { channels: ["dm", "group"], roles: ["owner", "member"], rateLimit: { perMinute: 60 } },
@@ -2442,7 +2429,7 @@ export default function register(api) {
     // ==========================================
     // Tool: claw_recall - Enhanced recall via workflow
     // ==========================================
-    api.registerTool({
+    host.registerTool({
         name: "claw_recall",
         label: "Claw Memory Recall",
         policy: { channels: ["dm"], roles: ["owner", "member"], rateLimit: { perMinute: 60 } },
@@ -2468,24 +2455,24 @@ export default function register(api) {
             const query = String(params.query ?? "");
             const topK = Math.min(Math.max(Number(params.top_k) || 5, 1), 20);
             const startMs = Date.now();
-            api.logger.debug?.(`${TAG} [tool] claw_recall: query="${query.slice(0, 80)}", top_k=${topK}`);
+            host.getLogger().debug?.(`${TAG} [tool] claw_recall: query="${query.slice(0, 80)}", top_k=${topK}`);
             try {
                 const w = getWorker(ws);
                 const result = await w.call("recall", { query, top_k: topK }, 30000);
                 const elapsedMs = Date.now() - startMs;
                 const text = formatResults(result);
-                api.logger.debug?.(`${TAG} [tool] claw_recall completed via Worker (${elapsedMs}ms)`);
+                host.getLogger().debug?.(`${TAG} [tool] claw_recall completed via Worker (${elapsedMs}ms)`);
                 return { content: [{ type: "text", text }], details: { elapsedMs, worker: true } };
             }
             catch (err) {
-                api.logger.warn?.(`${TAG} [tool] claw_recall Worker failed, falling back to spawnSync: ${err.message}`);
+                host.getLogger().warn?.(`${TAG} [tool] claw_recall Worker failed, falling back to spawnSync: ${err.message}`);
                 const result = runClawScript(ws, "workflow", {
                     scenario: "smart_recall",
                     input: JSON.stringify({ query, top_k: topK }),
                 }, 30000);
                 const elapsedMs = Date.now() - startMs;
                 if (result.error) {
-                    api.logger.warn?.(`${TAG} [tool] claw_recall (fallback) also failed: ${result.message}`);
+                    host.getLogger().warn?.(`${TAG} [tool] claw_recall (fallback) also failed: ${result.message}`);
                     const fbResult = runClawScript(ws, "workflow", {
                         scenario: "enhanced_recall",
                         input: JSON.stringify({ query, top_k: topK }),
@@ -2499,7 +2486,7 @@ export default function register(api) {
     // ==========================================
     // Tool: claw_lobster - Run Lobster pipelines
     // ==========================================
-    api.registerTool({
+    host.registerTool({
         name: "claw_lobster",
         label: "Claw Lobster Pipeline",
         policy: { channels: ["dm"], roles: ["owner"], rateLimit: { perMinute: 20 } },
@@ -2553,7 +2540,7 @@ export default function register(api) {
                 if (argsKeys.length > 0) {
                     lobArgs.push("--args-json", JSON.stringify(args));
                 }
-                api.logger.debug?.(`${TAG} [tool] claw_lobster: lobster ${lobArgs.join(" ").slice(0, 120)}`);
+                host.getLogger().debug?.(`${TAG} [tool] claw_lobster: lobster ${lobArgs.join(" ").slice(0, 120)}`);
                 const result = spawnSync("node", [lobsterCli, ...lobArgs], {
                     timeout: 30000,
                     maxBuffer: 5 * 1024 * 1024,
@@ -2566,13 +2553,13 @@ export default function register(api) {
                 const stderr = result.stderr?.toString("utf-8")?.trim() || "";
                 if (result.status !== 0) {
                     const msg = stderr || stdout || `exit code ${result.status}`;
-                    api.logger.warn?.(`${TAG} [tool] claw_lobster failed (${elapsedMs}ms): ${msg.slice(0, 200)}`);
+                    host.getLogger().warn?.(`${TAG} [tool] claw_lobster failed (${elapsedMs}ms): ${msg.slice(0, 200)}`);
                     return {
                         content: [{ type: "text", text: `❌ Lobster 管道执行失败:${msg.slice(0, 500)}` }],
                         isError: true,
                     };
                 }
-                api.logger.debug?.(`${TAG} [tool] claw_lobster completed (${elapsedMs}ms)`);
+                host.getLogger().debug?.(`${TAG} [tool] claw_lobster completed (${elapsedMs}ms)`);
                 return {
                     content: [{ type: "text", text: stdout || "✅ Lobster 管道执行完成" }],
                 };
@@ -2588,7 +2575,7 @@ export default function register(api) {
     // ==========================================
     // Tool: claw_health - System health via workflow
     // ==========================================
-    api.registerTool({
+    host.registerTool({
         name: "claw_health",
         label: "Claw System Health",
         policy: { channels: ["dm", "group"], roles: ["owner", "member"], rateLimit: { perMinute: 30 } },
@@ -2600,17 +2587,17 @@ export default function register(api) {
         },
         async execute() {
             const startMs = Date.now();
-            api.logger.debug?.(`${TAG} [tool] claw_health called`);
+            host.getLogger().debug?.(`${TAG} [tool] claw_health called`);
             try {
                 const w = getWorker(ws);
                 const result = await w.call("health", {}, 20000);
                 const elapsedMs = Date.now() - startMs;
                 const text = formatResults(result);
-                api.logger.debug?.(`${TAG} [tool] claw_health completed via Worker (${elapsedMs}ms)`);
+                host.getLogger().debug?.(`${TAG} [tool] claw_health completed via Worker (${elapsedMs}ms)`);
                 return { content: [{ type: "text", text }], details: { elapsedMs, worker: true } };
             }
             catch (err) {
-                api.logger.warn?.(`${TAG} [tool] claw_health Worker failed, falling back to spawnSync: ${err.message}`);
+                host.getLogger().warn?.(`${TAG} [tool] claw_health Worker failed, falling back to spawnSync: ${err.message}`);
                 const wfResult = runClawScript(ws, "workflow", { scenario: "health_check" }, 20000);
                 if (!wfResult.error) {
                     return { content: [{ type: "text", text: formatResults(wfResult) }] };
@@ -2630,7 +2617,7 @@ export default function register(api) {
                         }
                     }
                 }
-                api.logger.debug?.(`${TAG} [tool] claw_health completed via fallback (${elapsedMs}ms)`);
+                host.getLogger().debug?.(`${TAG} [tool] claw_health completed via fallback (${elapsedMs}ms)`);
                 return { content: [{ type: "text", text }] };
             }
         },
@@ -2638,7 +2625,7 @@ export default function register(api) {
     // ==========================================
     // Tool: claw_vector_info - 跨平台 SIMD 向量计算能力查询
     // ==========================================
-    api.registerTool({
+    host.registerTool({
         name: "claw_vector_info",
         label: "Vector Compute Capability",
         policy: { channels: ["dm", "group"], roles: ["owner", "member"], rateLimit: { perMinute: 30 } },
@@ -2675,7 +2662,7 @@ export default function register(api) {
     // ==========================================
     // Tool: claw_events - TKG 事件日志查询
     // ==========================================
-    api.registerTool({
+    host.registerTool({
         name: "claw_events",
         label: "Claw Events Query",
         policy: { channels: ["dm"], roles: ["owner", "member"], rateLimit: { perMinute: 60 } },
@@ -2711,7 +2698,7 @@ export default function register(api) {
             const since = Number(params.since) || 0;
             const until = Number(params.until) || 0;
             const startMs = Date.now();
-            api.logger.debug?.(`${TAG} [tool] claw_events: query="${query.slice(0, 80)}", limit=${limit}`);
+            host.getLogger().debug?.(`${TAG} [tool] claw_events: query="${query.slice(0, 80)}", limit=${limit}`);
             try {
                 const w = getWorker(ws);
                 const result = await w.call("events", { query, limit, since, until }, 10000);
@@ -2723,17 +2710,17 @@ export default function register(api) {
                     const ts = new Date(ev.t_ingested * 1000).toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" });
                     text += `  [${ts}] ${ev.src_name} → ${ev.dst_name} | ${(ev.content || "").slice(0, 80)}\n`;
                 }
-                api.logger.debug?.(`${TAG} [tool] claw_events completed via Worker (${elapsedMs}ms)`);
+                host.getLogger().debug?.(`${TAG} [tool] claw_events completed via Worker (${elapsedMs}ms)`);
                 return { content: [{ type: "text", text }], details: { count: events.length, elapsedMs, worker: true } };
             }
             catch (err) {
-                api.logger.warn?.(`${TAG} [tool] claw_events Worker failed: ${err.message}`);
+                host.getLogger().warn?.(`${TAG} [tool] claw_events Worker failed: ${err.message}`);
                 return { content: [{ type: "text", text: `查询事件日志失败: ${err.message}` }], isError: true };
             }
         },
     });
     // ==========================================
-    api.registerTool({
+    host.registerTool({
         name: "claw_store",
         label: "Claw Memory Store",
         policy: { channels: ["dm"], roles: ["owner"], rateLimit: { perMinute: 30 } },
@@ -2774,7 +2761,7 @@ export default function register(api) {
     // ==========================================
     // Tool: claw_verify - 防幻觉验证
     // ==========================================
-    api.registerTool({
+    host.registerTool({
         name: "claw_verify",
         label: "Claw Hallucination Verify",
         policy: { channels: ["dm", "group"], roles: ["owner", "member"], rateLimit: { perMinute: 30 } },
@@ -2813,7 +2800,7 @@ export default function register(api) {
     // ==========================================
     // Tool: claw_rccam - R-CCAM 结构化认知循环
     // ==========================================
-    api.registerTool({
+    host.registerTool({
         name: "claw_rccam",
         label: "R-CCAM 认知循环",
         policy: { channels: ["dm"], roles: ["owner", "member"], rateLimit: { perMinute: 20 } },
@@ -2894,7 +2881,7 @@ export default function register(api) {
     // ==========================================
     // Tool: claw_save_memory - 回复后记忆持久化
     // ==========================================
-    api.registerTool({
+    host.registerTool({
         name: "claw_save_memory",
         label: "记忆持久化",
         policy: { channels: ["dm"], roles: ["owner"], rateLimit: { perMinute: 30 } },
@@ -2937,7 +2924,7 @@ export default function register(api) {
     // ==========================================
     // Tool: claw_compile_skill - SkVM 编译技能
     // ==========================================
-    api.registerTool({
+    host.registerTool({
         name: "claw_compile_skill",
         label: "Skill Compiler (SkVM)",
         policy: { channels: ["dm"], roles: ["owner"], rateLimit: { perMinute: 10 } },
@@ -2980,7 +2967,7 @@ export default function register(api) {
     // ==========================================
     // Tool: claw_asset_search - AssetRegistry 查询
     // ==========================================
-    api.registerTool({
+    host.registerTool({
         name: "claw_asset_search",
         label: "Asset Registry Search",
         policy: { channels: ["dm", "group"], roles: ["owner", "member"], rateLimit: { perMinute: 60 } },
@@ -3028,7 +3015,7 @@ export default function register(api) {
     // ==========================================
     // Tool: claw_asset_register - 注册新 Asset
     // ==========================================
-    api.registerTool({
+    host.registerTool({
         name: "claw_asset_register",
         label: "Asset Registry Register",
         policy: { channels: ["dm"], roles: ["owner"], rateLimit: { perMinute: 20 } },
@@ -3066,7 +3053,7 @@ export default function register(api) {
     });
 
     // ═══ Phase 4.1: Node 系统集成 — 健康监测 skill 对接外设 ═══
-    api.registerTool({
+    host.registerTool({
         name: "claw_node_invoke",
         label: "Node 外设调用",
         description: "通过 OpenClaw Node 系统调用外设能力（拍照、定位、录屏等）。\\n"
@@ -3232,7 +3219,7 @@ export default function register(api) {
             try { unlinkSync(SUMMARY_CACHE_PATH); } catch {}
             renameSync(tmp, SUMMARY_CACHE_PATH);
         } catch (e) {
-            api.logger.debug?.(`${TAG} [context-engine] save summary cache failed: ${e.message}`);
+            host.getLogger().debug?.(`${TAG} [context-engine] save summary cache failed: ${e.message}`);
         }
     }
     function _loadSummaryCache() {
@@ -3250,10 +3237,10 @@ export default function register(api) {
                 } catch {}
             }
             if (loaded > 0) {
-                api.logger.info?.(`${TAG} [context-engine] loaded ${loaded} session summaries from cache`);
+                host.getLogger().info?.(`${TAG} [context-engine] loaded ${loaded} session summaries from cache`);
             }
         } catch (e) {
-            api.logger.debug?.(`${TAG} [context-engine] load summary cache failed: ${e.message}`);
+            host.getLogger().debug?.(`${TAG} [context-engine] load summary cache failed: ${e.message}`);
         }
     }
     _loadSummaryCache();
@@ -3304,8 +3291,8 @@ export default function register(api) {
                 backoff = BASE_BACKOFF;
                 consecutiveFails = 0;
 
-                if (api.logger.info) {
-                    api.logger.info(`${TAG} [zmq] SUB 已连接 tcp://127.0.0.1:${ZMQ_PUB_PORT} (重试 #${consecutiveFails})`);
+                if (host.getLogger().info) {
+                    host.getLogger().info(`${TAG} [zmq] SUB 已连接 tcp://127.0.0.1:${ZMQ_PUB_PORT} (重试 #${consecutiveFails})`);
                 } else {
                     process.stderr.write(`${TAG} [zmq] SUB connected :${ZMQ_PUB_PORT}\n`);
                 }
@@ -3333,8 +3320,8 @@ export default function register(api) {
                         // Worker 主动推送恢复信号 → 自动关熔断器
                         if (evt.event === "dag_recovered" && _dagCB.state === 'OPEN') {
                             _dagCB.reset();
-                            if (api.logger.info) {
-                                api.logger.info(`${TAG} [context-engine] DAG circuit CLOSED via ZMQ recovery signal`);
+                            if (host.getLogger().info) {
+                                host.getLogger().info(`${TAG} [context-engine] DAG circuit CLOSED via ZMQ recovery signal`);
                             }
                         }
                         // channel_heartbeat → 标记 ZMQ 通道正常
@@ -3355,8 +3342,8 @@ export default function register(api) {
                                     elapsedMs: evt.elapsed_ms || 0,
                                 });
                             }
-                            if (api.logger.info) {
-                                api.logger.info(`${TAG} [rccam-events] session=${sessionKey} phase=${phase} status=${status} cycle=${cycle}`);
+                            if (host.getLogger().info) {
+                                host.getLogger().info(`${TAG} [rccam-events] session=${sessionKey} phase=${phase} status=${status} cycle=${cycle}`);
                             }
                         }
                         // ── mmap 大结果通知（Worker 侧写完后推送）──
@@ -3500,7 +3487,7 @@ export default function register(api) {
         if (method === "dag_assemble") {
             const cached = _dagReadMmap();
             if (cached && cached.text) {
-                api.logger.debug?.(`${TAG} [context-engine] dag_assemble from mmap (~${cached.text.length}B)`);
+                host.getLogger().debug?.(`${TAG} [context-engine] dag_assemble from mmap (~${cached.text.length}B)`);
                 _dagCB.reset();
                 return { text: cached.text, stats: cached.stats, _from_mmap: true };
             }
@@ -3510,7 +3497,7 @@ export default function register(api) {
         if (_dagCB.state === 'OPEN') {
             if (Date.now() - _dagCB.lastFailureTime > _dagCB.resetTimeout) {
                 _dagCB.state = 'HALF_OPEN';
-                api.logger.info?.(`${TAG} [context-engine] DAG circuit half-open, probing ${method}`);
+                host.getLogger().info?.(`${TAG} [context-engine] DAG circuit half-open, probing ${method}`);
             } else {
                 return null;
             }
@@ -3521,7 +3508,7 @@ export default function register(api) {
             if (w.ready) {
                 const result = await w.call(method, params, 10000);
                 if (result && result._dag_degraded) {
-                    api.logger.debug?.(`${TAG} [context-engine] dag ${method} degraded: ${result.reason || "unavailable"}`);
+                    host.getLogger().debug?.(`${TAG} [context-engine] dag ${method} degraded: ${result.reason || "unavailable"}`);
                     return null;
                 }
                 _dagCB.reset();
@@ -3536,13 +3523,13 @@ export default function register(api) {
             _dagCB.lastFailureTime = Date.now();
             if (_dagCB.failures >= _dagCB.threshold) {
                 _dagCB.state = 'OPEN';
-                api.logger.warn?.(`${TAG} [context-engine] DAG circuit OPENED — ${_dagCB.threshold} consecutive failures, disabling DAG for ${_dagCB.resetTimeout / 1000}s`);
+                host.getLogger().warn?.(`${TAG} [context-engine] DAG circuit OPENED — ${_dagCB.threshold} consecutive failures, disabling DAG for ${_dagCB.resetTimeout / 1000}s`);
             }
-            api.logger.debug?.(`${TAG} [context-engine] dag ${method} failed (${_dagCB.failures}/${_dagCB.threshold}): ${e.message}`);
+            host.getLogger().debug?.(`${TAG} [context-engine] dag ${method} failed (${_dagCB.failures}/${_dagCB.threshold}): ${e.message}`);
 
             if (_dagCB.failures >= _dagCB.threshold && _dagCB.state !== 'OPEN') {
                 _dagCB.state = 'OPEN';
-                api.logger.warn?.(`${TAG} [context-engine] DAG circuit OPENED — ${_dagCB.threshold} consecutive failures, disabling DAG calls for ${_dagCB.resetTimeout / 1000}s`);
+                host.getLogger().warn?.(`${TAG} [context-engine] DAG circuit OPENED — ${_dagCB.threshold} consecutive failures, disabling DAG calls for ${_dagCB.resetTimeout / 1000}s`);
             }
         }
         return null;
@@ -3550,12 +3537,12 @@ export default function register(api) {
 
     // --- compact 核心逻辑(独立函数,被 compact() try/catch 包裹) ---
     async function _compactInner(sessionId, force, tokenBudget, currentTokenCount) {
-        api.logger.info?.(`${TAG} [context-engine] compact called (force=${force}, budget=${tokenBudget}, current=${currentTokenCount})`);
+        host.getLogger().info?.(`${TAG} [context-engine] compact called (force=${force}, budget=${tokenBudget}, current=${currentTokenCount})`);
 
         // CMV 风格全局阈值:token 使用 ≥ compactThreshold 就触发强制压缩
         const FORCE_RATIO = CE_COMPACT_THRESHOLD;
         if (!force && currentTokenCount > 0 && tokenBudget > 0 && currentTokenCount > tokenBudget * FORCE_RATIO) {
-            api.logger.info?.(`${TAG} [context-engine] compact FORCED: current(${currentTokenCount}) > ${Math.round(FORCE_RATIO * 100)}% of budget(${tokenBudget})`);
+            host.getLogger().info?.(`${TAG} [context-engine] compact FORCED: current(${currentTokenCount}) > ${Math.round(FORCE_RATIO * 100)}% of budget(${tokenBudget})`);
             force = true;
         }
 
@@ -3581,7 +3568,7 @@ export default function register(api) {
                 await dagCall("rccam_compact_cycle", { sessionId, cycleId });
                 sumCount++;
             }
-            api.logger.info?.(`${TAG} [context-engine] compact: R-CCAM compacted ${sumCount}/${totalAvail} cycles, raw_tokens_before=${rccamStatus.stats?.raw_tokens}`);
+            host.getLogger().info?.(`${TAG} [context-engine] compact: R-CCAM compacted ${sumCount}/${totalAvail} cycles, raw_tokens_before=${rccamStatus.stats?.raw_tokens}`);
 
             // 多轮循环压缩:持续重检直到 token 降到阈值以下或没有更多可压缩 cycle
             if (currentTokenCount > 0 && tokenBudget > 0) {
@@ -3606,7 +3593,7 @@ export default function register(api) {
                         ? currentTokenCount * (1 - roundCount / compressible.length * 0.3)
                         : currentTokenCount * 0.9;
                     currentTokenCount = Math.max(0, Math.round(totalAfter));
-                    api.logger.info?.(`${TAG} [context-engine] compact: multi-round #${rounds} compressed ${roundCount} more cycles, estimated tokens now ~${currentTokenCount} (target=${Math.round(tokenBudget * TARGET_RATIO)})`);
+                    host.getLogger().info?.(`${TAG} [context-engine] compact: multi-round #${rounds} compressed ${roundCount} more cycles, estimated tokens now ~${currentTokenCount} (target=${Math.round(tokenBudget * TARGET_RATIO)})`);
                 }
             }
 
@@ -3616,10 +3603,10 @@ export default function register(api) {
             try {
                 const dagResult = await dagCall("cognitive_compress_dag", { sessionId, maxToCompress: 20 });
                 if (dagResult?.summarized > 0) {
-                    api.logger.info?.(`${TAG} [context-engine] compact: DAG cognitive compressed ${dagResult.summarized} groups`);
+                    host.getLogger().info?.(`${TAG} [context-engine] compact: DAG cognitive compressed ${dagResult.summarized} groups`);
                 }
             } catch (e) {
-                api.logger.debug?.(`${TAG} [context-engine] compact: DAG cognitive compress skipped: ${e.message}`);
+                host.getLogger().debug?.(`${TAG} [context-engine] compact: DAG cognitive compress skipped: ${e.message}`);
             }
 
             if (dagCtx?.text) {
@@ -3638,7 +3625,7 @@ export default function register(api) {
             try {
                 const dagResult = await dagCall("cognitive_compress_dag", { sessionId, maxToCompress: 10 });
                 if (dagResult?.summarized > 0) {
-                    api.logger.info?.(`${TAG} [context-engine] compact: DAG cognitive compressed ${dagResult.summarized} groups (no rccam cycles)`);
+                    host.getLogger().info?.(`${TAG} [context-engine] compact: DAG cognitive compressed ${dagResult.summarized} groups (no rccam cycles)`);
                     // 压过东西就更新摘要缓存
                     const dagCtx = await dagCall("dag_assemble", { sessionId, freshCycles: 1, maxTokens: tokenBudget || 240000 });
                     if (dagCtx?.text) {
@@ -3647,7 +3634,7 @@ export default function register(api) {
                     return { ok: true, compacted: true };
                 }
             } catch (e) {
-                api.logger.debug?.(`${TAG} [context-engine] compact: DAG cognitive compress skipped: ${e.message}`);
+                host.getLogger().debug?.(`${TAG} [context-engine] compact: DAG cognitive compress skipped: ${e.message}`);
             }
         }
 
@@ -3658,7 +3645,7 @@ export default function register(api) {
 
         if (!dagStatus) {
             const usage = currentTokenCount > 0 && tokenBudget > 0 ? currentTokenCount / tokenBudget : 0;
-            api.logger.info?.(`${TAG} [context-engine] compact: DAG unavailable, usage=${Math.round(usage * 100)}%`);
+            host.getLogger().info?.(`${TAG} [context-engine] compact: DAG unavailable, usage=${Math.round(usage * 100)}%`);
             // ownsCompaction=true, 没有 OpenClaw safeguard 兜底,必须自己处理
             // Level 3 终极兜底:直接写 hard truncation 摘要
             _sessionSummaries.set(sessionId, `[上下文使用率 ${Math.round(usage * 100)}%,DAG 不可用]`);
@@ -3689,9 +3676,9 @@ export default function register(api) {
 
         const dagResult = await dagCall("dag_compact", { sessionId, summary, batchSize: 10 });
         if (dagResult?.summarized > 0) {
-            api.logger.info?.(`${TAG} [context-engine] compact: DAG summarized ${dagResult.summarized} nodes`);
+            host.getLogger().info?.(`${TAG} [context-engine] compact: DAG summarized ${dagResult.summarized} nodes`);
         }
-        api.logger.info?.(`${TAG} [context-engine] compact: summary ${summary.length} chars`);
+        host.getLogger().info?.(`${TAG} [context-engine] compact: summary ${summary.length} chars`);
         return { ok: true, compacted: true };
     }
 
@@ -3711,14 +3698,14 @@ export default function register(api) {
                     if (isHeartbeat) return { ingested: true };
                     const content = extractText(message);
                     if (!content || content.trim().length < 5) return { ingested: false };
-                    api.logger.debug?.(`${TAG} [context-engine] ingest: session=${sessionId}, role=${message?.role}, len=${content.length}`);
+                    host.getLogger().debug?.(`${TAG} [context-engine] ingest: session=${sessionId}, role=${message?.role}, len=${content.length}`);
 
                     // 新会话检测:/new 后自动清理当前会话的 DAG 节点和摘要缓存
                     // 注意：不移除 _rccamCache（按 query 做 key，不依赖 session），
                     // 新会话可从旧会话的 R-CCAM 分析结果中直接命中，避免"失忆"。
                     if (!_seenSessions.has(sessionId)) {
                         _seenSessions.add(sessionId);
-                        api.logger.info?.(`${TAG} [context-engine] new session detected: ${sessionId}, clearing per-session caches`);
+                        host.getLogger().info?.(`${TAG} [context-engine] new session detected: ${sessionId}, clearing per-session caches`);
                         _sessionSummaries.delete(sessionId);
                         dagCall("dag_clear_session", { sessionId }).catch(() => {});
                     }
@@ -3745,10 +3732,10 @@ export default function register(api) {
                         }),
                     ]);
                     if (!stored) {
-                        api.logger.debug?.(`${TAG} [context-engine] ingest: store failed for session=${sessionId}`);
+                        host.getLogger().debug?.(`${TAG} [context-engine] ingest: store failed for session=${sessionId}`);
                     }
                     if (!dagResult) {
-                        api.logger.debug?.(`${TAG} [context-engine] ingest: DAG ingest skipped (worker unavailable)`);
+                        host.getLogger().debug?.(`${TAG} [context-engine] ingest: DAG ingest skipped (worker unavailable)`);
                     }
 
                     // ═══ 管道自动路由: ingest 时并行触发 R-CCAM(fire-and-forget) ═══
@@ -3817,7 +3804,7 @@ export default function register(api) {
                     return { ingested: true };
                 } catch (e) {
                     // ingest 失败不应阻止消息进入会话
-                    api.logger.warn?.(`${TAG} [context-engine] ingest error (degraded): ${e.message}`);
+                    host.getLogger().warn?.(`${TAG} [context-engine] ingest error (degraded): ${e.message}`);
                     return { ingested: true };
                 }
             },
@@ -3829,7 +3816,7 @@ export default function register(api) {
             // 所以 assemble 必须有兜底返回,绝不抛异常
             // ──────────────────────────────────
             async assemble({ sessionId, messages, tokenBudget, availableTools, citationsMode }) {
-                api.logger.debug?.(`${TAG} [context-engine] assemble: session=${sessionId}, msgs=${messages?.length}, budget=${tokenBudget}`);
+                host.getLogger().debug?.(`${TAG} [context-engine] assemble: session=${sessionId}, msgs=${messages?.length}, budget=${tokenBudget}`);
                 try {
                     // v7.1: 系统消息去重 + 上限（防 Gateway 被塞爆）
                     const dedupedSystem = [];
@@ -3874,7 +3861,7 @@ export default function register(api) {
                     let estimateBeforeAdditions = systemTokens + usedTokens;
                     // 如果系统消息+最近消息已经接近 88%,强制压缩
                     if (estimateBeforeAdditions > tokenBudget * CRITICAL_USAGE_RATIO) {
-                        api.logger.info?.(`${TAG} [context-engine] assemble CRITICAL: ${estimateBeforeAdditions} tokens > ${Math.round(CRITICAL_USAGE_RATIO * 100)}% of budget (${tokenBudget}), forcing emergency trim`);
+                        host.getLogger().info?.(`${TAG} [context-engine] assemble CRITICAL: ${estimateBeforeAdditions} tokens > ${Math.round(CRITICAL_USAGE_RATIO * 100)}% of budget (${tokenBudget}), forcing emergency trim`);
                         needsEmergencyTrim = true;
                         // v7.1: RLM 递归压缩 → 替代简单截断
                         let rlmSummary = "";
@@ -3900,7 +3887,7 @@ export default function register(api) {
                             const evicted = recentMsgs.shift();
                             usedTokens -= estimateTokens(evicted);
                         }
-                        api.logger.info?.(`${TAG} [context-engine] assemble emergency trim: kept ${recentMsgs.length} msgs, ~${systemTokens + usedTokens} tokens, rlm=${rlmSummary ? 'compressed' : 'truncated'}`);
+                        host.getLogger().info?.(`${TAG} [context-engine] assemble emergency trim: kept ${recentMsgs.length} msgs, ~${systemTokens + usedTokens} tokens, rlm=${rlmSummary ? 'compressed' : 'truncated'}`);
                     }
 
                     // 4) 增强检索: 全论文模块编排 (MemGPT+MemoryOS+HAConvDR+AriGraph+RAPTOR)
@@ -3922,7 +3909,7 @@ export default function register(api) {
                                             }, 15000);
                                             if (ctxResult?.success && ctxResult?.injection) {
                                                 injection = ctxResult.injection;
-                                                api.logger.debug?.(`${TAG} [context-engine] context_assemble layers: ${Object.keys(ctxResult.layers || {}).filter(k => !k.endsWith('_error')).join(',')}`);
+                                                host.getLogger().debug?.(`${TAG} [context-engine] context_assemble layers: ${Object.keys(ctxResult.layers || {}).filter(k => !k.endsWith('_error')).join(',')}`);
                                             }
                                         }
                                     } catch (e) { /* 降级 */ }
@@ -3940,7 +3927,7 @@ export default function register(api) {
                                 }
                             }
                         } catch (e) {
-                            api.logger.debug?.(`${TAG} [context-engine] assemble recall failed: ${e.message}`);
+                            host.getLogger().debug?.(`${TAG} [context-engine] assemble recall failed: ${e.message}`);
                         }
                     }
 
@@ -3970,7 +3957,7 @@ export default function register(api) {
                                 }
                             }
                         } catch (e) {
-                            api.logger.debug?.(`${TAG} [context-engine] cross-session search failed: ${e.message}`);
+                            host.getLogger().debug?.(`${TAG} [context-engine] cross-session search failed: ${e.message}`);
                         }
                     }
 
@@ -3994,7 +3981,7 @@ export default function register(api) {
                             }
                         }
                     } catch (e) {
-                        api.logger.debug?.(`${TAG} assemble persona injection skipped: ${e.message}`);
+                        host.getLogger().debug?.(`${TAG} assemble persona injection skipped: ${e.message}`);
                     }
 
                                         // 6) R-CCAM 三源:mmap(零拷贝)> _rccamCache(当前轮)> dag_assemble(持久层)+ pending前轮
@@ -4010,7 +3997,7 @@ export default function register(api) {
                             if (_pending.strategy) summaryInjection += "[策略] " + _pending.strategy + "\n\n";
                             summaryInjection += "[提示] 以上是上一轮对话的 R-CCAM 深度分析(实时分析跟不上回复节奏,回追补充)。\n";
                             _pendingRccamInjection.delete(sessionId);
-                            api.logger.debug?.(`${TAG} [context-engine] assemble: injected pending R-CCAM from previous turn`);
+                            host.getLogger().debug?.(`${TAG} [context-engine] assemble: injected pending R-CCAM from previous turn`);
                         }
                     }
 
@@ -4302,13 +4289,13 @@ export default function register(api) {
                     // 最终复查:如果算上 systemPromptAddition 仍然溢出,丢弃 addition 中的非人格内容
                     const additionTokens = Math.ceil((systemPromptAddition?.length || 0) / 2.5);
                     if (totalEstimate + additionTokens > tokenBudget * 0.95) {
-                        api.logger.info?.(`${TAG} [context-engine] assemble final check: dropping recall/summary injection (total+addition=${totalEstimate + additionTokens} > 95% of ${tokenBudget})`);
+                        host.getLogger().info?.(`${TAG} [context-engine] assemble final check: dropping recall/summary injection (total+addition=${totalEstimate + additionTokens} > 95% of ${tokenBudget})`);
                         // 只保留人格块,去掉检索和摘要注入
                         const personaOnly = systemPromptAddition?.split("\n\n")[0] || "";
                         systemPromptAddition = personaOnly;
                     }
 
-                    api.logger.info?.(`${TAG} [context-engine] assemble: ${finalMessages.length} msgs, ~${totalEstimate} tokens (budget=${tokenBudget}, recalled=${recentMsgs.length}/${nonSystemMsgs.length})`);
+                    host.getLogger().info?.(`${TAG} [context-engine] assemble: ${finalMessages.length} msgs, ~${totalEstimate} tokens (budget=${tokenBudget}, recalled=${recentMsgs.length}/${nonSystemMsgs.length})`);
 
                     return {
                         messages: finalMessages,
@@ -4318,7 +4305,7 @@ export default function register(api) {
                     };
                 } catch (e) {
                     // 终极兜底:assemble 绝不能抛异常,否则 OpenClaw runs 直接失败
-                    api.logger.error?.(`${TAG} [context-engine] assemble unexpected error (returning raw messages): ${e.message}`);
+                    host.getLogger().error?.(`${TAG} [context-engine] assemble unexpected error (returning raw messages): ${e.message}`);
                     return {
                         messages: messages || [],
                         estimatedTokens: 0,
@@ -4340,7 +4327,7 @@ export default function register(api) {
                     return await _compactInner(sessionId, force, tokenBudget, currentTokenCount);
                 } catch (e) {
                     // 终极兜底:compact 绝不能抛异常
-                    api.logger.error?.(`${TAG} [context-engine] compact unexpected error (using emergency fallback): ${e.message}`);
+                    host.getLogger().error?.(`${TAG} [context-engine] compact unexpected error (using emergency fallback): ${e.message}`);
                     try {
                         _sessionSummaries.set(sessionId, `[Emergency summary] compact failed: ${e.message.slice(0, 200)}`);
                     } catch (_) { /* 静默 */ }
@@ -4361,7 +4348,7 @@ export default function register(api) {
                     }
                     return { ingested: true, count: results.filter(r => r?.ingested).length };
                 } catch (e) {
-                    api.logger.warn?.(`${TAG} [context-engine] ingestBatch error: ${e.message}`);
+                    host.getLogger().warn?.(`${TAG} [context-engine] ingestBatch error: ${e.message}`);
                     return { ingested: true, count: 0 };
                 }
             },
@@ -4390,7 +4377,7 @@ export default function register(api) {
 
                 // L2: 缓存预热 + 硬件调优 - 每 20 轮
                 if (counter % MAINTENANCE_L2 === 0) {
-                    api.logger.info?.(`${TAG} [context-engine] L2 maintenance: cache_warmup + hardware_tune`);
+                    host.getLogger().info?.(`${TAG} [context-engine] L2 maintenance: cache_warmup + hardware_tune`);
                     try {
                         const w = getWorker(ws);
                         if (w.ready) {
@@ -4402,7 +4389,7 @@ export default function register(api) {
                             runClawScript(ws, "workflow", { scenario: "cache_warmup", input: "{}" }, 15000);
                         }
                     } catch (e) {
-                        api.logger.debug?.(`${TAG} [context-engine] L2 cache_warmup failed: ${e.message}`);
+                        host.getLogger().debug?.(`${TAG} [context-engine] L2 cache_warmup failed: ${e.message}`);
                     }
                     try {
                         const w = getWorker(ws);
@@ -4415,13 +4402,13 @@ export default function register(api) {
                             runClawScript(ws, "workflow", { scenario: "hardware_tune", input: "{}" }, 15000);
                         }
                     } catch (e) {
-                        api.logger.debug?.(`${TAG} [context-engine] L2 hardware_tune failed: ${e.message}`);
+                        host.getLogger().debug?.(`${TAG} [context-engine] L2 hardware_tune failed: ${e.message}`);
                     }
                 }
 
                 // L3: 全优化周期 - 每 50 轮
                 if (counter % MAINTENANCE_L3 === 0) {
-                    api.logger.info?.(`${TAG} [context-engine] L3 maintenance: optimization_run`);
+                    host.getLogger().info?.(`${TAG} [context-engine] L3 maintenance: optimization_run`);
                     try {
                         const w = getWorker(ws);
                         if (w.ready) {
@@ -4433,14 +4420,14 @@ export default function register(api) {
                             runClawScript(ws, "workflow", { scenario: "optimization_run", input: "{}" }, 30000);
                         }
                     } catch (e) {
-                        api.logger.debug?.(`${TAG} [context-engine] L3 optimization_run failed: ${e.message}`);
+                        host.getLogger().debug?.(`${TAG} [context-engine] L3 optimization_run failed: ${e.message}`);
                     }
                 }
 
                 // 清理过期摘要缓存(防止内存泄漏)
                 if (counter % 100 === 0) {
                     if (_sessionSummaries.size > 50) {
-                        api.logger.debug?.(`${TAG} [context-engine] trimming summary cache (${_sessionSummaries.size} entries)`);
+                        host.getLogger().debug?.(`${TAG} [context-engine] trimming summary cache (${_sessionSummaries.size} entries)`);
                         // 保留最近的 20 个
                         const keys = [..._sessionSummaries.keys()];
                         for (let i = 0; i < keys.length - 20; i++) {
@@ -4454,7 +4441,7 @@ export default function register(api) {
             // dispose - 释放资源(Gateway shutdown/reload 时调用)
             // ──────────────────────────────────
             dispose() {
-                api.logger.info?.(`${TAG} [context-engine] dispose: cleaning up`);
+                host.getLogger().info?.(`${TAG} [context-engine] dispose: cleaning up`);
                 try {
                     // 关闭前落盘摘要缓存
                     _saveSummaryCache();
@@ -4464,12 +4451,12 @@ export default function register(api) {
                         w.stop();
                     }
                 } catch (e) {
-                    api.logger.debug?.(`${TAG} [context-engine] dispose worker stop failed: ${e.message}`);
+                    host.getLogger().debug?.(`${TAG} [context-engine] dispose worker stop failed: ${e.message}`);
                 }
                 _sessionSummaries.clear();
             },
         }));
-    api.logger.info?.(`${TAG} ContextEngine "claw-core-engine" registered (ownsCompaction=true, tokenBudget=${CE_TOKEN_BUDGET}, compactThreshold=${CE_COMPACT_THRESHOLD}, emergencyCeiling=${CE_EMERGENCY_CEILING}, maxRecent=${CE_MAX_RECENT}, recallOnAssemble=${CE_RECALL_ON_ASSEMBLE}, dag=${dagEnabled}(${MEM_DAG.maxNodes}nodes/${MEM_DAG.retentionDays}d), verified≥${MEM_VERIFIED.minConfidence}/${MEM_VERIFIED.maxEntries}max, neural(HNSW M${MEM_NEURAL.hnswM}/ef${MEM_NEURAL.hnswEfConstruction}/efSearch${MEM_NEURAL.hnswEfSearch}), circuitBreaker=${_dagCB.threshold}fails/${_dagCB.resetTimeout / 1000}s)`);
+    host.getLogger().info?.(`${TAG} ContextEngine "claw-core-engine" registered (ownsCompaction=true, tokenBudget=${CE_TOKEN_BUDGET}, compactThreshold=${CE_COMPACT_THRESHOLD}, emergencyCeiling=${CE_EMERGENCY_CEILING}, maxRecent=${CE_MAX_RECENT}, recallOnAssemble=${CE_RECALL_ON_ASSEMBLE}, dag=${dagEnabled}(${MEM_DAG.maxNodes}nodes/${MEM_DAG.retentionDays}d), verified≥${MEM_VERIFIED.minConfidence}/${MEM_VERIFIED.maxEntries}max, neural(HNSW M${MEM_NEURAL.hnswM}/ef${MEM_NEURAL.hnswEfConstruction}/efSearch${MEM_NEURAL.hnswEfSearch}), circuitBreaker=${_dagCB.threshold}fails/${_dagCB.resetTimeout / 1000}s)`);
 
     // --- L0 日志异步批写(debounce 2 秒,不阻塞 agent_end) ---
     const _l0LogBuffer = [];
@@ -4497,10 +4484,10 @@ export default function register(api) {
                 const entries = group.items.map(i => `### ${i.timestamp}\n**User:** ${i.user}\n**AI:** ${i.asst}\n\n`).join("");
                 await fsp.appendFile(dailyFile, header + entries, "utf-8");
             }
-            api.logger.debug?.(`${TAG} [agent_end] L0 log flushed ${batch.length} entries`);
+            host.getLogger().debug?.(`${TAG} [agent_end] L0 log flushed ${batch.length} entries`);
         } catch (e) {
             if (batch.length + _l0LogBuffer.length <= 100) _l0LogBuffer.unshift(...batch);
-            api.logger.debug?.(`${TAG} [agent_end] L0 log flush failed: ${e.message}`);
+            host.getLogger().debug?.(`${TAG} [agent_end] L0 log flush failed: ${e.message}`);
         }
     }
     function _l0LogScheduleFlush() {
@@ -4533,7 +4520,7 @@ export default function register(api) {
     }
 
     // 钩子1: before_agent_reply — 异步调 R-CCAM,fire-and-forget 不阻塞回复发送
-    api.on("before_agent_reply", async (event) => {
+    host.on("before_agent_reply", async (event) => {
         if (!event) { console.error('[rccam_hook] no event'); return; }
         const text = (event.cleanedBody || "").trim();
         if (!text || text.length < 1) { console.error('[rccam_hook] empty text, event keys:', Object.keys(event).join(',')); return; }
@@ -4642,7 +4629,7 @@ export default function register(api) {
     }
 
     // --- 钩子3: agent_end - AI 回复后:L0 日志 + save_memory + 关键词追踪 ---
-    api.on("agent_end", async (event, ctx) => {
+    host.on("agent_end", async (event, ctx) => {
         try {
             // Phase 2.3: 使用结构化 session key（workspace:channel:userId）
             const sessionKey = ctx?.sessionKey || buildStructKey(event?.channel, event?.userId) || "default";
@@ -4702,7 +4689,7 @@ export default function register(api) {
                         }
                     }
                 } catch (e) {
-                    api.logger.debug?.(`${TAG} [agent_end] L0 log failed: ${e.message}`);
+                    host.getLogger().debug?.(`${TAG} [agent_end] L0 log failed: ${e.message}`);
                 }
             }
 
@@ -4767,7 +4754,7 @@ export default function register(api) {
     // 钩子2: before_prompt_build - 第二层兜底: assemble 没等到 R-CCAM 但现在已经完成了
     // 如果 cache 有数据且未被 assemble 消费 → 渲染注入
     // 如果已消费 → 继续原来的动态锚定逻辑
-    api.on("before_prompt_build", async (event) => {
+    host.on("before_prompt_build", async (event) => {
         try {
             if (!event) return;
             const msgs = event.messages || [];
@@ -5017,11 +5004,11 @@ export default function register(api) {
                     return result.results;
                 }
                 if (result && result.error) {
-                    api.logger.warn?.(`${TAG} [memory-slot] search error: ${result.error}`);
+                    host.getLogger().warn?.(`${TAG} [memory-slot] search error: ${result.error}`);
                 }
                 return [];
             } catch (err) {
-                api.logger.warn?.(`${TAG} [memory-slot] search failed: ${err.message}`);
+                host.getLogger().warn?.(`${TAG} [memory-slot] search failed: ${err.message}`);
                 return [];
             }
         }
@@ -5043,7 +5030,7 @@ export default function register(api) {
                     lineCount,
                 };
             } catch (err) {
-                api.logger.warn?.(`${TAG} [memory-slot] readFile failed: ${err.message}`);
+                host.getLogger().warn?.(`${TAG} [memory-slot] readFile failed: ${err.message}`);
                 return { content: "", fromLine: from || 1, lineCount: 0, error: err.message };
             }
         }
@@ -5088,7 +5075,7 @@ export default function register(api) {
 
     const memSlotsConfig = pluginConfig.memorySlots || {};
 
-    api.registerMemoryCapability({
+    host.registerMemoryCapability({
         runtime: {
             getMemorySearchManager: async () => {
                 const manager = new GalaxyOSMemorySearchManager(ws, memSlotsConfig);
@@ -5183,5 +5170,5 @@ export default function register(api) {
         },
     });
 
-    api.logger.info?.(`${TAG} v5 plugin registration complete: 14 tools + 9 hooks (gateway_start/stop, before/after_tool_call, before/after_compaction, before_agent_reply, agent_end, before_prompt_build) + context-engine + memory-slot + public-artifacts + rccam-pipeline + lane-type + load-reporting + 通信自发现 (worker=${workerEnabled ? "enabled" : "disabled"})`);
+    host.getLogger().info?.(`${TAG} v5 plugin registration complete: 14 tools + 9 hooks (gateway_start/stop, before/after_tool_call, before/after_compaction, before_agent_reply, agent_end, before_prompt_build) + context-engine + memory-slot + public-artifacts + rccam-pipeline + lane-type + load-reporting + 通信自发现 (worker=${workerEnabled ? "enabled" : "disabled"})`);
 }

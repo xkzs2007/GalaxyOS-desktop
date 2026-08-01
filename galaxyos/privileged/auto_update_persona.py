@@ -9,12 +9,12 @@ import os
 import logging
 
 # ── Centralized path resolution ──
-import os as _os, sys as _sys
-_ws_root = _os.environ.get("OPENCLAW_WORKSPACE", _os.path.expanduser("~/.openclaw/workspace"))
+import sys as _sys
+from galaxyos.shared.paths import galaxyos_home, workspace
+_ws_root = workspace()
 for _p in [_ws_root, "/workspace"]:
     if _p not in _sys.path:
         _sys.path.insert(0, _p)
-import path_resolver
 logger = logging.getLogger(__name__)
 PERSONA_WRITE_ENABLED = os.environ.get("LLM_MEMORY_ALLOW_PERSONA_WRITE") == "1"
 
@@ -37,7 +37,7 @@ LLM 增强：
 CONFIG_DIR = Path(__file__).parent.parent / "config"
 
 # 统一路径：优先使用环境变量，回退到 ~/.openclaw 默认路径
-_OPENCLAW_HOME = Path(os.environ.get("OPENCLAW_HOME", str(path_resolver.OPENCLAW_HOME)))
+_OPENCLAW_HOME = Path(galaxyos_home())
 PERSONA_FILE = Path(os.environ.get("OPENCLAW_PERSONA_FILE", str(_OPENCLAW_HOME / "workspace" / "memory" / "persona.md")))
 MEMORY_FILE = Path(os.environ.get("OPENCLAW_MEMORY_FILE", str(_OPENCLAW_HOME / "workspace" / "MEMORY.md")))
 VECTORS_DB = Path(os.environ.get("OPENCLAW_VECTORS_DB", str(_OPENCLAW_HOME / "memory-tdai" / "vectors.db")))

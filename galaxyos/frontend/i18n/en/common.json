@@ -1,0 +1,20 @@
+{
+  "app_name": "GalaxyOS",
+  "loading": "Loading...",
+  "error": "Error",
+  "retry": "Retry",
+  "cancel": "Cancel",
+  "confirm": "Confirm",
+  "save": "Save",
+  "close": "Close",
+  "open": "Open",
+  "search": "Search",
+  "no_results": "No results",
+  "status_ready": "Ready",
+  "status_loading": "Loading",
+  "status_error": "Error",
+  "status_degraded": "Degraded",
+  "language": "Language",
+  "language_zh": "Chinese",
+  "language_en": "English"
+}

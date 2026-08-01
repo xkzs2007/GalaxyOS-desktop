@@ -21,20 +21,17 @@ SSM 状态预测器 — 轻量时序记忆热度预测
   - 两者输出取加权平均 → 更准确的惊讶度
 
 Layer: L0 (底层预测器)
-作者: 小艺 Claw
+Author: GalaxyOS
 版本: 1.0.0
 创建: 2026-06-09
 """
 
-import json
-import os
 import time
 import math
 import logging
 import threading
-from typing import Dict, List, Optional, Tuple, Any, Set
+from typing import Dict, List, Optional, Any, Set
 from collections import defaultdict, deque
-from pathlib import Path
 
 import numpy as np
 
@@ -398,7 +395,7 @@ class CompositePredictor:
         w_cooc: float = 0.6,
         tau: float = 3600.0,
     ):
-        from services.neural_memory_gate import RecallPatternPredictor
+        from galaxyos.engine.neural_memory_gate import RecallPatternPredictor
 
         self.ssm = SSMStatePredictor(tau=tau)
         self.cooc = RecallPatternPredictor()

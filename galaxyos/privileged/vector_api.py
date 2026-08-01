@@ -380,7 +380,7 @@ class VectorAPI:
         """惰性检测 galaxyos_native PyO3 模块"""
         if cls._has_native_vec is None:
             try:
-                from galaxyos_native import vector_cosine, vector_batch_cosine
+                from galaxyos.engine.galaxyos_native import vector_cosine, vector_batch_cosine
                 cls._native_cosine = vector_cosine
                 cls._native_batch_cosine = vector_batch_cosine
                 cls._has_native_vec = True

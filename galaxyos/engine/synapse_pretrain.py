@@ -9,25 +9,26 @@
 
 学到的嵌入存储为 models/synapse_pretrain.pth，供 GAT 初始化用。
 
-Author: 小艺 Claw
+Author: GalaxyOS
 Version: 1.0.0
 Created: 2026-06-07
 """
 
-import json
 import os
-import math
 import logging
-from typing import Dict, List, Optional, Tuple, Any
-from pathlib import Path
+from typing import Dict, Optional, Tuple, Any
 
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-import numpy as np
+try:
+    import torch
+    import torch.nn as nn
+    import torch.nn.functional as F
+    TORCH_AVAILABLE = True
+except ImportError:
+    TORCH_AVAILABLE = False
 
-import os as _os, sys as _sys
-_ws_root = _os.environ.get("OPENCLAW_WORKSPACE", _os.path.expanduser("~/.openclaw/workspace"))
+import sys as _sys
+from galaxyos.shared.paths import workspace
+_ws_root = workspace()
 for _p in [_ws_root, "/workspace"]:
     if _p not in _sys.path:
         _sys.path.insert(0, _p)
@@ -49,6 +50,8 @@ class GraphAugmentor:
 
     def __init__(self, feature_dim: int = 64, mask_ratio: float = 0.3,
                  edge_drop_ratio: float = 0.2, subgraph_ratio: float = 0.8):
+        if not TORCH_AVAILABLE:
+            raise ImportError("torch is required for GraphAugmentor")
         self.feature_dim = feature_dim
         self.mask_ratio = mask_ratio
         self.edge_drop_ratio = edge_drop_ratio
@@ -134,6 +137,8 @@ class SynapseContrastor(nn.Module):
         dropout: float = 0.3,
     ):
         super().__init__()
+        if not TORCH_AVAILABLE:
+            raise ImportError("torch is required for SynapseContrastor")
         self.input_dim = input_dim
         self.hidden_dim = hidden_dim
         self.output_dim = output_dim
@@ -283,6 +288,8 @@ class SynapsePretrainer:
         lr: float = 1e-3,
         device: str = "cpu",
     ):
+        if not TORCH_AVAILABLE:
+            raise ImportError("torch is required for SynapsePretrainer")
         self.ws = workspace_path or path_resolver.WORKSPACE_ROOT
         self.model_dir = model_dir or os.path.join(self.ws, "models")
         os.makedirs(self.model_dir, exist_ok=True)
@@ -340,7 +347,6 @@ class SynapsePretrainer:
         Returns:
             训练统计
         """
-        import sys as _sys
 
         graph = self._get_graph()
         if graph.num_nodes < 3:
@@ -428,6 +434,8 @@ def run_pretrain(epochs: int = 50, workspace_path: str = None) -> Dict:
 def load_pretrained_weights(model: torch.nn.Module,
                             workspace_path: str = None) -> bool:
     """将预训练权重加载到已有模型"""
+    if not TORCH_AVAILABLE:
+        raise ImportError("torch is required for load_pretrained_weights")
     trainer = get_pretrainer(workspace_path)
     params = trainer.get_gat_init_params()
     if params is None:
@@ -458,7 +466,6 @@ def load_pretrained_weights(model: torch.nn.Module,
 
 
 if __name__ == "__main__":
-    import sys
     logging.basicConfig(level=logging.INFO)
 
     print("=== 突触对比学习测试 ===\n")

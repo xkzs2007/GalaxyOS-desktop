@@ -1,0 +1,13 @@
+{
+  "TOKUI_UNKNOWN_COMPONENT": "未知组件类型",
+  "TOKUI_INVALID_JSON": "属性必须是有效的 JSON",
+  "TOKUI_RENDER_FAILED": "TokUI 渲染失败",
+  "MCP_CONNECTION_FAILED": "MCP 连接失败",
+  "MCP_TOOL_NOT_FOUND": "工具未找到",
+  "AGENT_CORE_UNAVAILABLE": "Agent Core 不可用",
+  "SWARM_CONNECTION_FAILED": "JiuwenSwarm 连接失败",
+  "SSE_CONNECTION_FAILED": "SSE 连接失败",
+  "EUI_NEO_LOAD_FAILED": "EUI-NEO 加载失败",
+  "EUI_NEO_FFI_TIMEOUT": "EUI-NEO FFI 调用超时",
+  "DSL_BRIDGE_CONVERSION_FAILED": "DSL Bridge 转换失败"
+}

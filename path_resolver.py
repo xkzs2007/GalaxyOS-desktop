@@ -6,16 +6,11 @@ path_resolver.py — Centralized path configuration for GalaxyOS
 All file paths MUST be resolved through this module.
 Do NOT hardcode paths anywhere else.
 
-v9.0: GalaxyOS standalone Agent APP. No more OpenClaw coupling.
-     - Default home: ~/.galaxyos/  (was ~/.openclaw/ in legacy)
-     - OPENCLAW_HOME is still accepted for backward compatibility with
-       legacy OpenClaw users, but GALAXYOS_HOME always wins.
+v7.0: galaxyos/ unified package structure.
 
 Environment variables (override defaults):
-  GALAXYOS_HOME      — root directory (default: ~/.galaxyos)
-  GALAXYOS_WORKSPACE — workspace directory (default: $GALAXYOS_HOME/workspace)
-  OPENCLAW_HOME      — LEGACY root directory (only if GALAXYOS_HOME unset and ~/.openclaw exists)
-  OPENCLAW_WORKSPACE — LEGACY workspace directory
+  OPENCLAW_HOME      — root directory (default: ~/.openclaw)
+  OPENCLAW_WORKSPACE — workspace directory (default: $OPENCLAW_HOME/workspace)
   GALAXYOS_REPO      — GalaxyOS git repo (default: auto-detect from __file__)
 
 Usage:
@@ -29,28 +24,11 @@ import sys
 from pathlib import Path
 
 # ── Base paths ──────────────────────────────────────────────────────────
-# Priority: GALAXYOS_HOME > OPENCLAW_HOME (legacy) > ~/.galaxyos (default)
-# The variable is still named OPENCLAW_HOME for backward compatibility
-# (60+ call sites reference it), but its *default value* is now standalone.
-_GALAXYOS_HOME = os.environ.get("GALAXYOS_HOME")
-_OPENCLAW_HOME_LEGACY = os.environ.get("OPENCLAW_HOME")
-
-if _GALAXYOS_HOME:
-    _resolved_home = Path(_GALAXYOS_HOME)
-elif _OPENCLAW_HOME_LEGACY and Path(_OPENCLAW_HOME_LEGACY).exists():
-    # Legacy OpenClaw interop: if OPENCLAW_HOME is set and points to
-    # a real OpenClaw install, use it (so legacy users keep their data).
-    _resolved_home = Path(_OPENCLAW_HOME_LEGACY)
-else:
-    _resolved_home = Path.home() / ".galaxyos"
-
-OPENCLAW_HOME = _resolved_home
-# New canonical name (same value, preferred in new code)
-GALAXYOS_HOME = _resolved_home
-
+OPENCLAW_HOME = Path(
+    os.environ.get("OPENCLAW_HOME", Path.home() / ".openclaw")
+)
 WORKSPACE_ROOT = Path(
-    os.environ.get("GALAXYOS_WORKSPACE",
-    os.environ.get("OPENCLAW_WORKSPACE", OPENCLAW_HOME / "workspace"))
+    os.environ.get("OPENCLAW_WORKSPACE", OPENCLAW_HOME / "workspace")
 )
 _GALAXYOS_REPO = Path(os.environ.get(
     "GALAXYOS_REPO",
@@ -139,7 +117,7 @@ XIAOYI_OMEGA_LLM_CONFIG  = GALAXYOS_CONFIG / "llm_config.json"
 XIAOYI_OMEGA_SCRIPTS     = GALAXYOS_SCRIPTS
 
 SEEDREAM_SCRIPT          = SKILLS_DIR / "seedream-image_gen" / "scripts" / "generate_seedream.py"
-XIAOYI_WEB_SEARCH_SCRIPT = SKILLS_DIR / "xiaoyi-web-search" / "scripts" / "search.js"
+XIAOYI_WEB_SEARCH_SCRIPT = SKILLS_DIR / "galaxy-web-search" / "scripts" / "search.js"
 TODAY_TASK_DIR           = SKILLS_DIR / "today-task"
 HUAWEI_DRIVE_SCRIPT      = SKILLS_DIR / "huawei-drive" / "scripts" / "smart_backup.py"
 

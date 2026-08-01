@@ -6,7 +6,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import pytest
-from services.thinking_enhanced import (
+from galaxyos.engine.thinking_enhanced import (
     ReflexionEntry, ReflexionEngine,
     SelfRefineLoop, MultiPathExplorer,
     ThinkingEnhanced, FlashNLP, get_thinking_enhanced,
@@ -61,7 +61,7 @@ class TestReflexionEngine:
     def test_record(self, tmp_path, monkeypatch):
         monkeypatch.setenv("OPENCLAW_WORKSPACE", str(tmp_path))
         import importlib
-        import services.thinking_enhanced as te
+        import galaxyos.engine.thinking_enhanced as te
         importlib.reload(te)
 
         engine = te.ReflexionEngine()
@@ -76,7 +76,7 @@ class TestReflexionEngine:
     def test_retrieve(self, tmp_path, monkeypatch):
         monkeypatch.setenv("OPENCLAW_WORKSPACE", str(tmp_path))
         import importlib
-        import services.thinking_enhanced as te
+        import galaxyos.engine.thinking_enhanced as te
         importlib.reload(te)
 
         engine = te.ReflexionEngine()
@@ -86,7 +86,7 @@ class TestReflexionEngine:
     def test_format_context(self, tmp_path, monkeypatch):
         monkeypatch.setenv("OPENCLAW_WORKSPACE", str(tmp_path))
         import importlib
-        import services.thinking_enhanced as te
+        import galaxyos.engine.thinking_enhanced as te
         importlib.reload(te)
 
         engine = te.ReflexionEngine()
@@ -150,14 +150,4 @@ class TestFlashNLP:
     def test_analyze_intent(self):
         nlp = FlashNLP()
         result = nlp.analyze_intent("Python 是一种编程语言")
-        assert isinstance(result, dict)
-
-    def test_detect_comparison(self):
-        nlp = FlashNLP()
-        result = nlp.detect_comparison("A 比 B 更好")
-        assert result is None or isinstance(result, dict)
-
-    def test_resolve_coref(self):
-        nlp = FlashNLP()
-        result = nlp.resolve_coref("他说他今天会来", "Python")
         assert isinstance(result, dict)

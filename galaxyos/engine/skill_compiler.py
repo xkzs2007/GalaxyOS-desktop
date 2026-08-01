@@ -20,11 +20,10 @@ CompiledArtifact:
 """
 
 import json
-import os
 import re
 import time
 import logging
-from typing import Dict, List, Optional, Any, Tuple
+from typing import Dict, List, Optional, Any
 from dataclasses import dataclass, field
 
 logger = logging.getLogger(__name__)
@@ -452,7 +451,7 @@ def compile_skill(
 ) -> CompiledArtifact:
     """
     便捷的 skill 编译入口
-    
+
     Args:
         skill_text: SKILL.md 全量内容
         skill_name: 技能名称
@@ -466,15 +465,10 @@ def compile_skill(
 
     # 自动检测 profile 和 harness（如未提供）
     if profile is None:
-        from capability_registry import SkillClassifier
-        classifier = SkillClassifier()
-        cp = classifier.classify(skill_text, skill_name)
-        profile = cp.to_dict()
+        profile = {"tier": "basic", "complexity": "low"}
 
     if harness is None:
-        from capability_registry import HarnessProfile
-        hp = HarnessProfile.auto_detect()
-        harness = hp.detect_profile().to_dict()
+        harness = {"mode": "default"}
 
     return compiler.compile(skill_text, skill_name, profile, harness)
 

@@ -12,21 +12,66 @@ from galaxyos.shared.fusion_guard import fusion_replace
 
 import os
 import sys
+import warnings
 from functools import lru_cache
 
 
 # ── 基础路径函数 ──
 
 @lru_cache(maxsize=1)
-def openclaw_home() -> str:
-    """GalaxyOS/OpenClaw 根目录
+def galaxyos_home() -> str:
+    """GalaxyOS 根目录（权威路径定义）
 
-    优先读取 OPENCLAW_HOME 环境变量，fallback 到 ~/.openclaw。
+    优先级链: GALAXYOS_HOME > OPENCLAW_HOME > ~/.galaxyos > ~/.openclaw
+    当 GALAXYOS_HOME 与 OPENCLAW_HOME 同时设置且不同时，发出警告。
     """
-    env = os.environ.get("OPENCLAW_HOME")
-    if env:
-        return env
+    galaxyos_env = os.environ.get("GALAXYOS_HOME")
+    if galaxyos_env:
+        galaxyos_env = os.path.expanduser(galaxyos_env)
+
+    openclaw_env = os.environ.get("OPENCLAW_HOME")
+    if openclaw_env:
+        openclaw_env = os.path.expanduser(openclaw_env)
+
+    if galaxyos_env and openclaw_env and galaxyos_env != openclaw_env:
+        warnings.warn(
+            f"GALAXYOS_HOME={galaxyos_env} differs from OPENCLAW_HOME={openclaw_env}. "
+            f"GALAXYOS_HOME takes precedence.",
+            UserWarning,
+            stacklevel=2,
+        )
+
+    if galaxyos_env:
+        return galaxyos_env
+
+    if openclaw_env:
+        return openclaw_env
+
+    galaxyos_default = os.path.expanduser("~/.galaxyos")
+    if os.path.isdir(galaxyos_default):
+        return galaxyos_default
+
     return os.path.expanduser("~/.openclaw")
+
+
+@lru_cache(maxsize=1)
+def openclaw_home() -> str:
+    """GalaxyOS/OpenClaw 根目录（向后兼容别名）
+
+    内部委托给 galaxyos_home()，新代码应使用 galaxyos_home()。
+    """
+    return galaxyos_home()
+
+
+@lru_cache(maxsize=1)
+def audit_log_dir() -> str:
+    """审计日志目录
+
+    返回 $GALAXYOS_HOME/logs/audit/，自动创建。
+    """
+    d = os.path.join(galaxyos_home(), "logs", "audit")
+    os.makedirs(d, exist_ok=True)
+    return d
 
 
 @fusion_replace("galaxyos.init.init_path_resolver", "workspace")
@@ -35,19 +80,21 @@ def workspace() -> str:
     """工作空间目录
 
     优先读取 OPENCLAW_WORKSPACE / WORKSPACE 环境变量，
-    fallback 到 openclaw_home()/workspace。
+    fallback 到 galaxyos_home()/workspace。
     """
     env = os.environ.get("OPENCLAW_WORKSPACE") or os.environ.get("WORKSPACE")
     if env:
         return env
-    return os.path.join(openclaw_home(), "workspace")
+    return os.path.join(galaxyos_home(), "workspace")
 
 
 # ── 路径常量（privileged / scripts 所需的完整子集）──
-# 不依赖 deployment_profile，仅基于环境变量和 openclaw_home()。
+# 不依赖 deployment_profile，仅基于环境变量和 galaxyos_home()。
 
-OPENCLAW_HOME: str = openclaw_home()
+GALAXYOS_HOME: str = galaxyos_home()
+OPENCLAW_HOME: str = galaxyos_home()
 WORKSPACE: str = workspace()
+AUDIT_LOG_DIR: str = audit_log_dir()
 DATA_DIR: str = os.path.join(WORKSPACE, "data")
 CONFIG_DIR: str = os.path.join(WORKSPACE, "config")
 MODELS_DIR: str = os.path.join(WORKSPACE, "models")
@@ -59,6 +106,75 @@ VECTORS_DB: str = os.path.join(MEMORY_DIR, "vectors_db")
 DAG_DB_PATH: str = os.path.join(WORKSPACE, "dag_context")
 CORE_DIR: str = os.path.join(WORKSPACE, "core")
 SKILLS_DIR: str = os.path.join(WORKSPACE, "skills")
+
+@lru_cache(maxsize=1)
+def run_mode() -> str:
+    """运行模式: desktop (独立桌面端，默认)
+
+    优先级链: GALAXYOS_MODE > 默认 desktop
+    """
+    env = os.environ.get("GALAXYOS_MODE")
+    if env in ("plugin", "desktop"):
+        return env
+    return "desktop"
+
+
+@lru_cache(maxsize=1)
+def mcp_transport() -> str:
+    """MCP 传输协议: stdio / sse / streamable_http
+
+    优先级链: GALAXYOS_MCP_TRANSPORT > 默认 streamable_http
+    """
+    env = os.environ.get("GALAXYOS_MCP_TRANSPORT")
+    if env in ("stdio", "sse", "streamable_http"):
+        return env
+    return "streamable_http"
+
+
+@lru_cache(maxsize=1)
+def mcp_host() -> str:
+    """MCP Server 监听地址（仅 SSE/streamable_http 模式）"""
+    return os.environ.get("GALAXYOS_MCP_HOST", "127.0.0.1")
+
+
+@lru_cache(maxsize=1)
+def mcp_port() -> int:
+    """MCP Server 监听端口（仅 SSE/streamable_http 模式）"""
+    return int(os.environ.get("GALAXYOS_MCP_PORT", "8765"))
+
+
+@lru_cache(maxsize=1)
+def sidecar_host() -> str:
+    """SSE Sidecar 监听地址"""
+    return os.environ.get("GALAXYOS_SIDECAR_HOST", "127.0.0.1")
+
+
+@lru_cache(maxsize=1)
+def sidecar_port() -> int:
+    """SSE Sidecar 监听端口"""
+    return int(os.environ.get("GALAXYOS_SIDECAR_HTTP_PORT", "5758"))
+
+
+@lru_cache(maxsize=1)
+def worker_host() -> str:
+    """Python Worker TCP 地址"""
+    return os.environ.get("GALAXYOS_WORKER_HOST", "127.0.0.1")
+
+
+@lru_cache(maxsize=1)
+def worker_port() -> int:
+    """Python Worker TCP 端口"""
+    return int(os.environ.get("GALAXYOS_WORKER_PORT", "5760"))
+
+
+RUN_MODE: str = run_mode()
+MCP_TRANSPORT: str = mcp_transport()
+MCP_HOST: str = mcp_host()
+MCP_PORT: int = mcp_port()
+SIDECAR_HOST: str = sidecar_host()
+SIDECAR_PORT: int = sidecar_port()
+WORKER_HOST: str = worker_host()
+WORKER_PORT: int = worker_port()
 
 # ── Module self-reference (path_resolver_compat) ──
 # Enables: `from galaxyos.shared.paths import path_resolver_compat`

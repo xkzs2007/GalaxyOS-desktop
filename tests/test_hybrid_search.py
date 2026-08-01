@@ -1,7 +1,7 @@
 """测试 hybrid_search — BM25 + 向量混合检索"""
 import sys; sys.path.insert(0, '.')
 import pytest
-from services.hybrid_search import (
+from galaxyos.privileged.hybrid_search import (
     BM25Index, HybridSearcher, HybridSearchResult,
     QueryRewriter, RRFFusion,
 )

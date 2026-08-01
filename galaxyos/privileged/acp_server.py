@@ -601,35 +601,15 @@ class ACPServer:
 
             result = {"stats": {}, "skills": [], "review_queue": [], "provenance": {}}
 
-            # Skill Bank 统计
-            try:
-                from lfm_skill_bank import get_skill_bank
-                bank = get_skill_bank()
-                result["stats"] = bank.stats() if hasattr(bank, 'stats') else {}
-                if include_skills:
-                    for sid, skill in bank._skills.items():
-                        result["skills"].append({
-                            "skill_id": sid,
-                            "name": skill.name,
-                            "version": skill.version,
-                            "quality_score": skill.quality_score,
-                            "use_count": skill.use_count,
-                            "retired": skill.retired,
-                        })
-            except Exception as e:
-                result["stats"] = {"error": str(e)}
+            result["stats"] = {"error": "lfm_skill_bank 已移除"}
 
             # 审核队列
             if include_review_queue:
-                try:
-                    from injection_scanner import get_review_queue, get_provenance_store
-                    rq = get_review_queue()
-                    result["review_queue"] = rq.list_pending()
-                    result["provenance"] = {
-                        "total_tracked": len(get_provenance_store()._records),
-                    }
-                except Exception as e:
-                    result["review_queue"] = {"error": str(e)}
+                    try:
+                        result["review_queue"] = {"error": "injection_scanner 已移除"}
+                        result["provenance"] = {}
+                    except Exception as e:
+                        result["review_queue"] = {"error": str(e)}
 
             return result
         except Exception as e:

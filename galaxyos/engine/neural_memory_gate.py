@@ -17,19 +17,15 @@ arXiv: 2501.00663
   Titans 的 "surprise"      → 当前检索与历史模式差异
 
 Layer: L1 (神经状态管理层)
-作者: 小艺 Claw
+Author: GalaxyOS
 版本: 1.0.0
 创建: 2026-06-09
 """
 
-import json
-import os
-import time
 import logging
 import threading
-from typing import Dict, List, Optional, Tuple, Any
-from collections import defaultdict, deque, Counter
-from pathlib import Path
+from typing import Dict, List, Any
+from collections import defaultdict, Counter
 
 import numpy as np
 

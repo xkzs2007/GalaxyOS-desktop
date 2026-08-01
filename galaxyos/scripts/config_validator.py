@@ -5,7 +5,6 @@
 """
 
 from dataclasses import dataclass
-from typing import Optional, List
 import json
 from pathlib import Path
 
@@ -16,7 +15,7 @@ class EmbeddingConfig:
     api_key: str
     model: str
     dimensions: int = 4096
-    
+
     def validate(self):
         if not self.api_url:
             raise ValueError("❌ api_url 不能为空")
@@ -37,7 +36,7 @@ class LLMConfig:
     model: str
     max_tokens: int = 150
     temperature: float = 0.5
-    
+
     def validate(self):
         if not self.api_url:
             raise ValueError("❌ api_url 不能为空")
@@ -60,7 +59,7 @@ class MemoryConfig:
     l1_idle_timeout_seconds: int = 30
     max_results: int = 12
     score_threshold: float = 0.2
-    
+
     def validate(self):
         if self.max_memories_per_session < 1:
             raise ValueError("❌ max_memories_per_session 必须 >= 1")
@@ -74,7 +73,7 @@ class MemoryConfig:
 def validate_config(config_path: Path) -> dict:
     """
     验证配置文件
-    
+
     Returns:
         验证结果
     """
@@ -83,12 +82,12 @@ def validate_config(config_path: Path) -> dict:
         "errors": [],
         "warnings": []
     }
-    
+
     if not config_path.exists():
         result["valid"] = False
         result["errors"].append(f"配置文件不存在: {config_path}")
         return result
-    
+
     try:
         with open(config_path, 'r', encoding='utf-8') as f:
             config = json.load(f)
@@ -96,7 +95,7 @@ def validate_config(config_path: Path) -> dict:
         result["valid"] = False
         result["errors"].append(f"配置文件格式错误: {e}")
         return result
-    
+
     # 验证 Embedding 配置
     if "embedding" in config:
         try:
@@ -110,7 +109,7 @@ def validate_config(config_path: Path) -> dict:
             emb_config.validate()
         except ValueError as e:
             result["errors"].append(str(e))
-    
+
     # 验证 LLM 配置
     if "llm" in config:
         try:
@@ -125,7 +124,7 @@ def validate_config(config_path: Path) -> dict:
             llm_config.validate()
         except ValueError as e:
             result["errors"].append(str(e))
-    
+
     # 验证 Memory 配置
     if "memory" in config:
         try:
@@ -140,6 +139,6 @@ def validate_config(config_path: Path) -> dict:
             mem_config.validate()
         except ValueError as e:
             result["errors"].append(str(e))
-    
+
     result["valid"] = len(result["errors"]) == 0
     return result

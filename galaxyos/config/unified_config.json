@@ -40,7 +40,7 @@
   "embedding": {
     "provider": "infini",
     "base_url": "https://cloud.infini-ai.com/maas/v1",
-    "api_key": "YOUR_EMBEDDING_API_KEY",
+    "api_key": "",
     "model": "bge-m3",
     "dimensions": 1024
   },

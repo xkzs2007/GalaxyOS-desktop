@@ -26,11 +26,14 @@ import hashlib
 import math
 import re
 import threading
-import numpy as np
-from typing import Dict, List, Optional, Any, Tuple, Callable
+from typing import Dict, List, Optional, Any, Tuple, Union
 from dataclasses import dataclass, field, asdict
 
-import torch
+try:
+    import torch
+    TORCH_AVAILABLE = True
+except ImportError:
+    TORCH_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +48,7 @@ class SpatialAnchor:
     anchor_id: str
     node_id: str                  # 关联的 DAG 节点 ID
     context: str                  # 锚点的上下文描述
-    anchor_vector: str            # JSON 序列化的锚点向量（256 维，不依赖 numpy）
+    anchor_vector: Union[str, List[float]]  # JSON 序列化或原始列表（256 维，不依赖 numpy）
     dimension: int = 256          # 向量维度
     timestamp: float = 0.0        # 创建时间
     session_key: str = ""         # 会话 Key
@@ -108,16 +111,23 @@ class CognitiveQuery:
 class VectorOps:
     """基于 PyTorch 的向量运算（利用 torch 张量操作）"""
 
-    _DEVICE = torch.device('cpu')
+    _DEVICE = None
+
+    if TORCH_AVAILABLE:
+        _DEVICE = torch.device('cpu')
 
     @staticmethod
     def tensor(vec) -> torch.Tensor:
+        if not TORCH_AVAILABLE:
+            raise ImportError("torch is required for VectorOps.tensor")
         if isinstance(vec, torch.Tensor):
             return vec.detach().clone().to(dtype=torch.float32, device=VectorOps._DEVICE)
         return torch.tensor(vec, dtype=torch.float32, device=VectorOps._DEVICE)
 
     @staticmethod
     def tensors(vectors) -> torch.Tensor:
+        if not TORCH_AVAILABLE:
+            raise ImportError("torch is required for VectorOps.tensors")
         if isinstance(vectors, torch.Tensor):
             return vectors.detach().clone().to(dtype=torch.float32, device=VectorOps._DEVICE)
         return torch.tensor(vectors, dtype=torch.float32, device=VectorOps._DEVICE)
@@ -125,6 +135,8 @@ class VectorOps:
     @staticmethod
     def cosine_similarity(a, b) -> torch.Tensor:
         """余弦相似度 [0, 1]，支持 batch 计算"""
+        if not TORCH_AVAILABLE:
+            raise ImportError("torch is required for VectorOps.cosine_similarity")
         a_t = VectorOps.tensor(a)
         b_t = VectorOps.tensor(b)
         # 单向量 vs 单向量
@@ -146,6 +158,8 @@ class VectorOps:
     @staticmethod
     def euclidean_distance(a, b) -> torch.Tensor:
         """欧氏距离，支持 batch"""
+        if not TORCH_AVAILABLE:
+            raise ImportError("torch is required for VectorOps.euclidean_distance")
         a_t = VectorOps.tensor(a)
         b_t = VectorOps.tensor(b)
         if a_t.dim() == 1 and b_t.dim() == 1:
@@ -160,6 +174,8 @@ class VectorOps:
     @staticmethod
     def mean(vectors) -> torch.Tensor:
         """向量均值"""
+        if not TORCH_AVAILABLE:
+            raise ImportError("torch is required for VectorOps.mean")
         if not vectors:
             return torch.empty(0, device=VectorOps._DEVICE)
         vec_t = VectorOps.tensors(vectors)
@@ -168,6 +184,8 @@ class VectorOps:
     @staticmethod
     def spatial_similarity(a, b) -> torch.Tensor:
         """空间相似度 = 余弦相似度 × 高斯距离衰减"""
+        if not TORCH_AVAILABLE:
+            raise ImportError("torch is required for VectorOps.spatial_similarity")
         a_t = VectorOps.tensor(a)
         b_t = VectorOps.tensor(b)
 
@@ -186,6 +204,8 @@ class VectorOps:
         Returns:
             (N,) 张量
         """
+        if not TORCH_AVAILABLE:
+            raise ImportError("torch is required for VectorOps.batch_spatial_similarity")
         q = VectorOps.tensor(query_vec).flatten().unsqueeze(0)  # (1, dim)
         a = VectorOps.tensors(anchors_mat)                      # (N, dim)
 
@@ -201,8 +221,10 @@ class VectorOps:
         特征提取部分仍用 Python dict（纯字符串操作，不适合张量化），
         但投影计算改用 torch 向量化操作。
         """
+        if not TORCH_AVAILABLE:
+            raise ImportError("torch is required for VectorOps.randomized_projection")
         chars = text.lower().strip()
-        features = {}
+        features: Dict[str, Any] = {}
 
         clean_chars = ''.join(c for c in chars if c.isalnum() or '\u4e00' <= c <= '\u9fff')
         if not clean_chars:
@@ -242,7 +264,7 @@ class VectorOps:
 
 class AnchorHashMap:
     """锚点哈希表 — LASAR codebook 的轻量化替代
-    
+
     LASAR 用可训练的 codebook（向量量化 + cross-attention）。
     我们轻量化: 用确定性哈希 + 语义聚类做锚点查找。
     """
@@ -292,6 +314,8 @@ class AnchorHashMap:
 
     def _build_anchor_tensor(self) -> Tuple[torch.Tensor, List[SpatialAnchor]]:
         """将所有锚点向量组装为 (N, dim) 张量，用于 torch batch 计算"""
+        if not TORCH_AVAILABLE:
+            raise ImportError("torch is required for AnchorHashMap._build_anchor_tensor")
         anchors = list(self._anchors.values())
         if not anchors:
             return torch.empty(0, self.dim, device=VectorOps._DEVICE), []
@@ -303,13 +327,15 @@ class AnchorHashMap:
             dtype=torch.float32, device=VectorOps._DEVICE)
         return mat, anchors
 
-    def find_nearby(self, vec: List[float], k: int = 5,
+    def find_nearby(self, vec: Union[str, List[float]], k: int = 5,
                     radius: float = 0.3) -> List[SpatialAnchor]:
         """在哈希表中找最近的 k 个锚点
 
         使用 torch batch 相似度计算替代逐元素循环。
         先通过 LSH bucket 过滤候选集，再批量算空间相似度。
         """
+        if not TORCH_AVAILABLE:
+            raise ImportError("torch is required for AnchorHashMap.find_nearby")
         if not self._anchors:
             return []
 
@@ -403,7 +429,7 @@ class AnchorHashMap:
 
 class CognitiveMap:
     """LASAR 轻量认知地图
-    
+
     模拟 LASAR 论文的 Latent Cognitive Map 能力：
     1. 空间锚点管理（记忆在认知空间中的位置）
     2. 三类认知 query（回顾/内省/预测）
@@ -412,6 +438,8 @@ class CognitiveMap:
     """
 
     def __init__(self, db_path: Optional[str] = None, dim: int = 256):
+        if not TORCH_AVAILABLE:
+            raise ImportError("torch is required for CognitiveMap")
         self.dim = dim
         self.db_path = db_path or os.path.expanduser(
             "~/.openclaw/workspace/cognitive_map.db")
@@ -611,7 +639,7 @@ class CognitiveMap:
                 return embedding + [0.0] * (self.dim - len(embedding))
         return VectorOps.randomized_projection(context, self.dim)
 
-    def get_nearby_anchors(self, anchor_vector: List[float],
+    def get_nearby_anchors(self, anchor_vector: Union[str, List[float]],
                             k: int = 5, radius: float = 0.3) -> List[SpatialAnchor]:
         """在认知空间中找最近的锚点（torch batch 实现）"""
         nearby = self.hash_map.find_nearby(anchor_vector, k=k, radius=radius)
@@ -745,7 +773,7 @@ class CognitiveMap:
         Returns:
             内省结果文本（你在一个什么类型的认知区域）
         """
-        vec = self.compute_anchor_vector(current_context)
+        vec: Union[str, List[float]] = self.compute_anchor_vector(current_context)
 
         if current_anchor and current_anchor in self._anchor_cache:
             vec = self._anchor_cache[current_anchor].anchor_vector
@@ -760,7 +788,7 @@ class CognitiveMap:
         density = self.get_anchor_density(centroid)
 
         # 分析附近锚点的主题分布
-        topics = {}
+        topics: Dict[str, Any] = {}
         for a in nearby:
             # 从 context 中提取主题词（前几个非停用词字符）
             words = re.findall(r'[\u4e00-\u9fff]{2,}|[a-zA-Z]{3,}', a.context[:50])
@@ -1046,13 +1074,13 @@ class CognitiveMap:
         avg_importance = sum(a.importance for a in self._anchor_cache.values()) / max(total, 1)
 
         # 会话分布
-        session_dist = {}
+        session_dist: Dict[str, Any] = {}
         for a in self._anchor_cache.values():
             sk = a.session_key or "unknown"
             session_dist[sk] = session_dist.get(sk, 0) + 1
 
         # 聚类统计
-        cluster_dist = {}
+        cluster_dist: Dict[str, Any] = {}
         for a in self._anchor_cache.values():
             cid = a.cluster_id or "unclustered"
             cluster_dist[cid] = cluster_dist.get(cid, 0) + 1

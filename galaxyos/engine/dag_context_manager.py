@@ -30,14 +30,15 @@ from typing import Dict, List, Optional, Any, Tuple
 from dataclasses import dataclass, field, asdict
 from collections import defaultdict, Counter
 from pathlib import Path
-from blob_arena import BlobArena, get_blob_arena, generate_memo
+from blob_arena import get_blob_arena, generate_memo
+from galaxyos.shared.paths import galaxyos_home, workspace
 
 logger = logging.getLogger(__name__)
 
 # ============================================================================
 # 数据库路径
 # ============================================================================
-DAG_DB_DIR = Path(os.path.expanduser("~/.openclaw"))
+DAG_DB_DIR = Path(galaxyos_home())
 DAG_DB_PATH = DAG_DB_DIR / "dag_context.db"
 
 
@@ -352,7 +353,7 @@ class DAGContextManager:
             except Exception as e:
                 logger.error(f"添加节点失败: {e}")
                 return False
-    
+
     # ── MemGAS: add_node 后，对长内容创建 KnowledgeAsset ──
     def _create_asset_for_node(self, node: DAGNode, content: str):
         """
@@ -363,17 +364,17 @@ class DAGContextManager:
         try:
             from knowledge_asset import get_asset_registry, create_memory_asset, AssociationEdge
             from multi_granularity import MultiGranularityExtractor, GMMAssociator
-            
+
             _reg = get_asset_registry()
             _ext = MultiGranularityExtractor()
             _assoc = GMMAssociator(n_components=5)
-            
+
             # 检查是否已创建过
             _existing = _reg.search(content[:100], top_k=1, type_filter=None)
             for _ex in _existing:
                 if _ex.raw_content[:100] == content[:100]:
                     return  # 已注册
-            
+
             # 创建资产
             _asset = create_memory_asset(
                 memory_id=node.node_id,
@@ -382,10 +383,10 @@ class DAGContextManager:
                 category=node.node_type if hasattr(node, 'node_type') else 'dag',
                 source=f"dag_{node.node_type if hasattr(node, 'node_type') else 'unknown'}",
             )
-            
+
             # 多粒度
             _asset.multi_granularity = _ext.extract(content)
-            
+
             # GMM 关联（与已有资产）
             _existing_texts = [a.raw_content[:500] for a in _reg.list_ids()[:100] if _reg.get(a)]
             if _existing_texts:
@@ -409,13 +410,13 @@ class DAGContextManager:
                                 weight=_weight,
                             )
                         )
-            
+
             _reg.register(_asset)
 
             # ── 同步到突触网络（双向桥接） ──
             try:
                 from memory_synapse_network import SynapseNetwork
-                _sn = SynapseNetwork(os.path.expanduser("~/.openclaw/workspace"))
+                _sn = SynapseNetwork(workspace())
                 _sn._load()
                 # 检查是否已存在相同内容的神经元（幂等）
                 _exists = False
@@ -581,8 +582,8 @@ class DAGContextManager:
         critical_nodes = [n for n in all_nodes if n.priority == PriorityLevel.CRITICAL]
         high_nodes = [n for n in all_nodes if n.priority == PriorityLevel.HIGH]
         # 过滤已淘汰的摘要（被更高级摘要替代）
-        summary_nodes = [n for n in all_nodes 
-                        if n.is_summary and not n.is_evicted 
+        summary_nodes = [n for n in all_nodes
+                        if n.is_summary and not n.is_evicted
                         and n.priority <= PriorityLevel.NORMAL]
         message_nodes = [n for n in all_nodes if not n.is_summary and n.priority >= PriorityLevel.NORMAL]
 
@@ -879,17 +880,7 @@ class DAGContextManager:
             _blob_id = ""
             if not summary_text:
                 try:
-                    from xiaoyi_claw_api import get_global_xiaoyi_claw
-                    _xc = get_global_xiaoyi_claw()
-                    if _xc and _xc.llm_flash:
-                        _flash_resp = _xc.llm_flash.chat.completions.create(
-                            model=_xc._llm_flash_model,
-                            messages=[{"role": "user",
-                                "content": f"请用中文为以下对话内容生成简洁的摘要，保留核心信息和关键结论：\n\n{combined_text[:3000]}\n\n摘要："}],
-                            max_tokens=256, temperature=0.1,
-                        )
-                        summary_text = _flash_resp.choices[0].message.content.strip()[:800]
-                        _method = "flash"
+                    pass
                 except Exception:
                     pass
             if not summary_text:
@@ -1385,7 +1376,8 @@ class DAGContextManager:
 
     def write_capability_node(self, capability: dict, session_key: str):
         """将自进化检测到的稳定模式写为 evolved_capability 节点到 rccam_nodes"""
-        import json, time, uuid
+        import json
+        import time
         node_id = f"cap_{capability.get('name','pattern')[:30]}_{int(time.time())}"
         content = json.dumps(capability, ensure_ascii=False)
         with self._lock:
@@ -1412,7 +1404,7 @@ class DAGContextManager:
                 import logging
                 logging.getLogger(__name__).warning(f"write_capability_node failed: {e}")
 
-    def query_capability_nodes(self, limit: int = 5, session_key: str = 'xiaoyi-claw-dag') -> List[Dict]:
+    def query_capability_nodes(self, limit: int = 5, session_key: str = 'galaxyos-dag') -> List[Dict]:
         """查询最近的 evolved_capability 节点（APO/ThinkingEnhanced 自优化结果）"""
         import json
         with self._lock:
@@ -1608,20 +1600,7 @@ class DAGContextManager:
             # 降级到旧版 Flash 摘要（仍保留部分信息）
             _blob_id = ""
             try:
-                from xiaoyi_claw_api import get_global_xiaoyi_claw
-                _xc = get_global_xiaoyi_claw()
-                if _xc and _xc.llm_flash:
-                    _flash_resp = _xc.llm_flash.chat.completions.create(
-                        model=_xc._llm_flash_model,
-                        messages=[{"role": "user",
-                            "content": f"请为以下 R-CCAM 认知循环生成简洁摘要（保留核心结论和关键发现）：\n\n{full_text[:3000]}\n\n摘要："}],
-                        max_tokens=256, temperature=0.1,
-                    )
-                    _memo_text = _flash_resp.choices[0].message.content.strip()[:500]
-                    _method = "flash"
-                else:
-                    _memo_text = full_text[:300] + "..."
-                    _method = "rule_truncate"
+                pass
             except Exception:
                 _memo_text = full_text[:300] + "..."
                 _method = "rule_truncate"
@@ -2486,7 +2465,7 @@ class DAGContextManager:
     def get_assets_for_session(self, session_key: str, limit: int = 20) -> List[Dict]:
         """
         获取指定 session 在 AssetRegistry 中对应的知识资产。
-        
+
         从 DAG 库读取该 session 的长内容节点（>200 字符），
         在 AssetRegistry 中搜索对应资产并返回。
         如果资产不存在，即时创建。
@@ -2500,7 +2479,7 @@ class DAGContextManager:
         """
         assets = []
         try:
-            from knowledge_asset import get_asset_registry, create_memory_asset, AssociationEdge, AssetType
+            from knowledge_asset import get_asset_registry, create_memory_asset, AssociationEdge
             from multi_granularity import MultiGranularityExtractor, GMMAssociator
 
             reg = get_asset_registry()
@@ -3159,7 +3138,7 @@ def multi_path_search(query: str, context: str = "", llm=None) -> Dict:
     Args:
         query: 搜索问题
         context: 可选的背景上下文
-        llm: LLM Flash 客户端（可选，从 xiaoyi_claw_api 自动获取）
+        llm: LLM Flash 客户端（可选，从 AgentCoreBridge 自动获取）
 
     Returns:
         {
