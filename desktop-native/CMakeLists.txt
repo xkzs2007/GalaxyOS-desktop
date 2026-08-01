@@ -113,7 +113,9 @@ set(CPACK_PACKAGE_EXECUTABLES "galaxyos-desktop;GalaxyOS")
 set(CPACK_PACKAGE_CONTACT "dev@galaxyos.ai")
 set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_SOURCE_DIR}/../LICENSE")
 set(CPACK_PACKAGE_CHECKSUM "SHA256")
-set(CPACK_THREADS 0)
+# CPACK_THREADS=1: 多线程并行写入同一个 gzip 流会导致 data.tar.gz 损坏
+# (gzip 是流式压缩，不支持并发写入)。见 CMake #23043。
+set(CPACK_THREADS 1)
 
 set(CPACK_PROJECT_CONFIG_FILE "${CMAKE_SOURCE_DIR}/CPackPlatformConfig.cmake")
 

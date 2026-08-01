@@ -202,6 +202,11 @@ jobs:
         run: |
           python nuitka-build.py
 
+      - name: Verify Nuitka build output
+        shell: bash
+        run: |
+          python scripts/verify_nuitka_build.py galaxyos-mcp-dist || echo "WARNING: verify_nuitka_build.py failed (non-blocking)"
+
       - name: Checkout EUI-NEO source
         shell: bash
         run: |
@@ -237,6 +242,20 @@ jobs:
         shell: bash
         run: |
           cd desktop-native/build && cpack -G DEB
+
+      - name: Verify DEB integrity (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          cd desktop-native/build
+          DEB_FILE=$(ls *.deb 2>/dev/null | head -1)
+          if [ -z "$DEB_FILE" ]; then echo "ERROR: no .deb found"; exit 1; fi
+          echo "=== Verifying: $DEB_FILE ==="
+          dpkg-deb --info "$DEB_FILE"
+          dpkg-deb --contents "$DEB_FILE" | tail -5
+          # 完整性测试：解压 data.tar.gz 到 /dev/null
+          dpkg-deb --fsys-tarfile "$DEB_FILE" | tar tf - >/dev/null || { echo "ERROR: deb data.tar is corrupt"; exit 1; }
+          echo "OK: deb integrity verified"
 
       - name: Upload native artifacts (Windows)
         if: runner.os == 'Windows'
